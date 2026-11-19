@@ -121973,6 +121973,31 @@ function isClientLike(r){ var t=low(r&&r.type); return t==='client'||t==='custom
 function isSubInv(r){ var t=low(r&&r.type); return t==='sub'||t==='supplier'; }
 function isQbCopy(r){ return /^QB_/.test(s(r&&r.id)) && /^QB_/.test(s(r&&r._oldPid||r&&r.pid)); }
 /* the invoice's OWN number — never the job PO (CRM invoices carry the job's PO in `po`) */
+/* patch ACCTAUTO-IMP (11/19): a bill / invoice number is the same with or without leading zeros (the 11/05 import read 009075376 as
+   9075376 and the 11/13 import then added 42 bills a second time); a bill payment pays the bills whose totals it adds up to */
+function noNorm(v){ return s(v).toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/^0+(?=.)/,''); }
+function sameNo(a, b){ return !!s(a) && !!s(b) && noNorm(a)===noNorm(b); }
+function qbKeyNorm(k){ var p=s(k).split(':'); if(p.length>=4 && p[0]==='QB' && /^(bill|invoice|salesreceipt|creditmemo|vendorcredit)$/.test(p[1])) p[2]=noNorm(p[2]); return p.join(':'); }
+/* the open bills a payment of `amount` pays: one bill of exactly that open amount, else the ONE set of up to 6 open bills (dated on or
+   before the payment) whose open amounts add up to it exactly; else null — a payment is never guessed onto a bill as a "part payment" */
+function billsPaidBy(pool, amount, date, openOf){
+  var want=Math.round(Math.abs(num(amount))*100); if(!want) return null;
+  var op=(pool||[]).filter(function(x){ return x && !/^paid$/i.test(s(x.status)) && x.paid!==true && Math.round(openOf(x)*100)>0 && (!date || !ymd(x.recvDate||x.date) || ymd(x.recvDate||x.date)<=date); });
+  var one=op.filter(function(x){ return Math.round(openOf(x)*100)===want; });
+  if(one.length===1) return one;
+  if(one.length>1) return null;
+  var c=op.filter(function(x){ return Math.round(openOf(x)*100)<want; }).sort(function(a,b){ return s(b.recvDate||b.date)<s(a.recvDate||a.date)?-1:1; }).slice(0,16);
+  var vals=c.map(function(x){ return Math.round(openOf(x)*100); }), found=null, count=0;
+  (function walk(i, sum, pick){
+    if(count>1) return;
+    if(sum===want && pick.length>1){ count++; found=pick.slice(); return; }
+    if(i>=c.length || pick.length>=6 || sum>want) return;
+    pick.push(i); walk(i+1, sum+vals[i], pick); pick.pop();
+    walk(i+1, sum, pick);
+  })(0, 0, []);
+  return count===1 ? found.map(function(i){ return c[i]; }) : null;
+}
+window._gcQbBillsPaidBy = billsPaidBy;
 function invNo(r){
   if(!r) return '';
   var v = s(r.qbNum||r.invNum||r.invNo||r.docNumber||r.invoiceNumber);
@@ -122780,19 +122805,20 @@ function parseQb(text){
     var t=low(g('type'));
     rec.kind = d.kind==='transactions' || d.kind==='salesbycustomer' || d.kind==='openinvoices' ? (QB_TYPES[t] || (t?'unknown':'invoice')) : 'invoice';
     if(d.kind==='salesbycustomer' && !t) rec.kind='invoice';
-    if(d.kind==='billlist') rec.kind=/payment/.test(t)?'billpayment':(/credit/.test(t)?'vendorcredit':'bill');   /* patch STMTPDF */
+    if(d.kind==='billlist') rec.kind=/payment/.test(t)?'billpayment':(/credit/.test(t)?'vendorcredit':(!t && /bill payment/.test(d.title||'')?'billpayment':'bill'));   /* patch STMTPDF · ACCTAUTO-IMP: a Bill Payment List is payments */
     rec.qbType=g('type')||(d.kind==='billlist'?'Bill':'Invoice');
     rec.date=ymd(g('date'))||qbDate(g('date')); rec.num=g('num').replace(/^#/,''); rec.name=g('name')||curName; rec.memo=g('memo'); rec.due=ymd(g('due'))||qbDate(g('due'));
     var a=g('amount'); rec.amount=num(a); rec.open = (g('open')!=='' && !(d.kind==='transactions' && /^balance$/i.test(s(d.headers[m.open])))) ? num(g('open')) : null; rec.account=(curAcct && /^split/i.test(s(d.headers[m.account]))) ? curAcct : (g('account')||curAcct); rec.status=g('status');   /* patch STMTPDF: a running Balance is not an open balance; the heading is the account, Split the other side */
     if(!rec.date && !rec.num && !rec.amount) continue;
     if(d.kind==='transactions' && !rec.date && !rec.num) continue;   /* patch ACCTFIX-1: P&L Detail's "Gross Profit" / "Net Income" lines are not invoices */
+    rec.signed=rec.amount;   /* patch ACCTAUTO-IMP: a bill's lines add up with their signs (a discount line takes off) */
     if(rec.kind==='bill'||rec.kind==='billpayment'||rec.kind==='expense'||rec.kind==='check') rec.amount=Math.abs(rec.amount);
     rec.key='QB:'+rec.kind+':'+(rec.num?rec.num:(rec.date+':'+cents(rec.amount)))+':'+nk(rec.name).split(' ')[0];
     recs.push(rec);
   }
   /* patch STMTPDF: Transaction Detail by Account lists an invoice under A/R (its total) and again under each income account
      (its lines): keep the total, once */
-  if(d.kind==='transactions'){ var byK={}, keepR=[]; recs.forEach(function(r){ var k=r.key, big=/^(invoice|bill|salesreceipt|creditmemo)$/.test(r.kind); if(!big || !byK[k]){ if(big){ byK[k]=r; r.lines=1; } keepR.push(r); return; } if(!sawHead){ var b0=byK[k]; b0.amount=Math.round((b0.amount+r.amount)*100)/100; b0.lines=(b0.lines||1)+1; if(!b0.memo && r.memo) b0.memo=r.memo; return; }   /* QBMULTI: a plain Transaction List = one row per line → add them up */ if(Math.abs(r.amount)>Math.abs(byK[k].amount)){ keepR[keepR.indexOf(byK[k])]=r; byK[k]=r; } }); recs=keepR; }
+  if(d.kind==='transactions'){ var byK={}, keepR=[]; recs.forEach(function(r){ var k=r.key, big=/^(invoice|bill|salesreceipt|creditmemo)$/.test(r.kind); if(!big || !byK[k]){ if(big){ byK[k]=r; r.lines=1; } keepR.push(r); return; } if(!sawHead){ var b0=byK[k]; if(b0.signed!=null && r.signed!=null){ b0.signed=Math.round((b0.signed+r.signed)*100)/100; b0.amount=Math.abs(b0.signed); } else b0.amount=Math.round((b0.amount+r.amount)*100)/100; b0.lines=(b0.lines||1)+1; if(!b0.memo && r.memo) b0.memo=r.memo; return; }   /* QBMULTI: a plain Transaction List = one row per line → add them up */ if(Math.abs(r.amount)>Math.abs(byK[k].amount)){ keepR[keepR.indexOf(byK[k])]=r; byK[k]=r; } }); recs=keepR; }
   /* Sales by Customer Detail: one invoice = several product lines → add them up per invoice number */
   if(d.kind==='salesbycustomer'){
     var by={}, order=[];
@@ -122823,7 +122849,7 @@ window._gcQbCsvPlan = async function(text){
   /* patch LCLEAN: a file whose dated rows are all before today is history — imported as a record, never sent */
   (function(){ var td=today(), dated=P.recs.filter(function(r){ return r && r.date; }); plan.history = dated.length===0 || dated.every(function(r){ return s(r.date)<td; }); })();
   var seenKey={};
-  function hasKey(list, key){ return list.find(function(x){ return x && (x.qbKey===key || (Array.isArray(x.qbKeys) && x.qbKeys.indexOf(key)>=0)); }); }
+  function hasKey(list, key){ var nkK=qbKeyNorm(key); return list.find(function(x){ return x && !/^archived$/i.test(s(x.type)) && (x.qbKey===key || (Array.isArray(x.qbKeys) && x.qbKeys.indexOf(key)>=0) || (nkK!==key && (qbKeyNorm(x.qbKey)===nkK || (Array.isArray(x.qbKeys) && x.qbKeys.some(function(k){ return qbKeyNorm(k)===nkK; }))))); }); }   /* patch ACCTAUTO-IMP: 009075376 = 9075376 */
   P.recs.forEach(function(r){
     var row={ rec:r, action:'', why:'', target:null, candidates:[], changes:{} };
     if(seenKey[r.key]){ row.action='already'; row.why='same row twice in this file'; plan.rows.push(row); plan.counts.already++; return; }
@@ -122890,9 +122916,10 @@ window._gcQbCsvPlan = async function(text){
     } else if(r.kind==='payment' || r.kind==='billpayment'){
       var isBill=r.kind==='billpayment';
       var pool=I.filter(function(x){ return x && (isBill?isSubInv(x):isClientLike(x)) && sameParty(party(x), r.name); });
-      var hits=r.num ? pool.filter(function(x){ return invNo(x)===r.num; }) : [];
+      var hits=(r.num && !isBill) ? pool.filter(function(x){ return invNo(x)===r.num; }) : [];   /* patch ACCTAUTO-IMP: a bill payment's Num is its check number */
       if(!hits.length) hits=pool.filter(function(x){ return Math.abs(cents(amtOf(x))-cents(r.amount))<=1 && low(x.status)!=='paid'; });
       if(!hits.length) hits=pool.filter(function(x){ return Math.abs(cents(amtOf(x))-cents(r.amount))<=1; });
+      if(isBill && !hits.length){ var many=billsPaidBy(pool, r.amount, r.date, function(x){ return num(amtOf(x))-num(x.amountPaid||0); }); if(many && many.length>1){ row.action='payMany'; row.targets=many; row.why='bill payment pays '+many.length+' bills: '+many.map(function(x){ return '#'+(invNo(x)||x.id)+' '+money(amtOf(x)); }).join(' + ')+' = '+money(r.amount); plan.counts.updated++; plan.counts.matched++; plan.rows.push(row); return; } }
       if(hits.length===1){
         var h=hits[0]; row.target=h;
         if(low(h.status)==='paid'){ row.action='match'; row.why='payment matches '+(invNo(h)?'#'+invNo(h):h.id)+', already paid in the CRM'; }
@@ -122901,7 +122928,7 @@ window._gcQbCsvPlan = async function(text){
       else { row.action='todo'; row.why=(pool.length?'no '+(isBill?'bill':'invoice')+' of '+money(r.amount):'no '+(isBill?'vendor':'customer')+' "'+r.name+'"')+' in the CRM to put this payment on'; }
     } else if(r.kind==='bill'){
       var ve=findVendor(r.name);
-      var bl=I.filter(function(x){ return x && isSubInv(x) && sameParty(party(x), r.name) && ((r.num && invNo(x)===r.num) || (Math.abs(cents(amtOf(x))-cents(r.amount))<=1 && (!r.date || ymd(x.recvDate||x.date)===r.date))); });
+      var bl=I.filter(function(x){ return x && isSubInv(x) && sameParty(party(x), r.name) && ((r.num && sameNo(invNo(x), r.num)) || (Math.abs(cents(amtOf(x))-cents(r.amount))<=1 && (!r.date || ymd(x.recvDate||x.date)===r.date))); });
       if(bl.length===1 && window._gcQbBillAmtHold(bl[0], r.amount)){ row.action='todo'; row.candidates=[bl[0]]; row.why=window._gcQbBillAmtHold(bl[0], r.amount); }   /* patch REGFIX-AMT */
       else if(bl.length===1 && /quickbooks/i.test(s(bl[0].source)) && Math.abs(cents(amtOf(bl[0]))-cents(r.amount))>1){ row.target=bl[0]; row.action='update'; row.changes={ amt:r.amount, qbAmountWas:num(amtOf(bl[0])) }; if(bl[0].amount!=null) row.changes.amount=r.amount; if(!invNo(bl[0]) && r.num) row.changes.invNum=r.num; row.why='QuickBooks is fact: bill'+(r.num?' #'+r.num:'')+' is '+money(r.amount)+(r.lines>1?' ('+r.lines+' lines)':'')+' — the CRM had '+money(amtOf(bl[0])); plan.counts.amountFixed=(plan.counts.amountFixed||0)+1; }   /* QBMULTI */
       else if(bl.length===1){ row.target=bl[0]; row.action='match'; row.why='bill already in the CRM'; if(!invNo(bl[0]) && r.num){ row.action='update'; row.changes={ invNum:r.num }; row.why='bill matched — QuickBooks number linked'; } }
@@ -122955,6 +122982,10 @@ window._gcQbCsvApply = async function(plan){
       }
       return;
     }
+    if(row.action==='payMany' && row.targets){   /* patch ACCTAUTO-IMP: one bill payment, several bills */
+      row.targets.forEach(function(tg){ var x=findIn(I,tg); if(!x) return; var a=num(amtOf(x)); x.status='paid'; x.paid=true; x.amountPaid=a; x.openBalance=0; x.paidDate=r.date||x.paidDate||today(); x.qbKeys=(x.qbKeys||[]); if(x.qbKey && x.qbKeys.indexOf(x.qbKey)<0) x.qbKeys.unshift(x.qbKey); if(x.qbKeys.indexOf(r.key)<0) x.qbKeys.push(r.key); x.qbPaidBy=(Array.isArray(x.qbPaidBy)?x.qbPaidBy:[]).concat([{ key:r.key, num:r.num||'', amount:r.amount, date:r.date||'', bills:row.targets.length }]); x.updatedAt=nowISO(); ch.invs=true; });
+      return;
+    }
     if(row.action==='update' && row.target){
       var lst = (row.rec.kind==='customer') ? C : (row.rec.kind==='vendor' ? V : (findIn(I,row.target)?I:E));
       var t=findIn(lst,row.target); if(!t) return;
@@ -122994,6 +123025,12 @@ window._gcQbCsvApply = async function(plan){
     acctPays.forEach(function(row){
       var r=row.rec, isBill=r.kind==='billpayment', mineNew=I.filter(function(x){ return x && x.qbKey && /quickbooks/i.test(s(x.source)) && (isBill?isSubInv(x):isClientLike(x)) && sameParty(party(x), r.name) && !/^paid$/i.test(s(x.status)); });
       var openOf=function(x){ return num(amtOf(x))-num(x.amountPaid||0); }, run=mineNew.filter(function(x){ return runKeys[x.qbKey] && (!r.date || !x.date || s(x.date)<=r.date); });
+      if(isBill){   /* patch ACCTAUTO-IMP: a bill payment marks the bill(s) it adds up to PAID — never a part payment on a guessed bill */
+        var bp=billsPaidBy(mineNew, r.amount, r.date, openOf);
+        if(!bp){ acctPayLeft++; acctKeys.push(r.key); return; }
+        bp.forEach(function(x){ var a=num(amtOf(x)); x.status='paid'; x.paid=true; x.amountPaid=a; x.openBalance=0; x.paidDate=r.date||x.paidDate||''; x.qbKeys=(x.qbKeys||[]); if(x.qbKey && x.qbKeys.indexOf(x.qbKey)<0) x.qbKeys.unshift(x.qbKey); if(x.qbKeys.indexOf(r.key)<0) x.qbKeys.push(r.key); x.qbPaidBy=(Array.isArray(x.qbPaidBy)?x.qbPaidBy:[]).concat([{ key:r.key, num:r.num||'', amount:r.amount, date:r.date||'', bills:bp.length }]); x.updatedAt=nowISO(); });
+        ch.invs=true; return;
+      }
       var hit=(r.num?mineNew.filter(function(x){ return invNo(x)===r.num; }):[]);
       if(hit.length!==1) hit=mineNew.filter(function(x){ return Math.abs(cents(openOf(x))-cents(r.amount))<=1; });
       if(hit.length!==1) hit=run.filter(function(x){ return Math.abs(cents(openOf(x))-cents(r.amount))<=1; });
@@ -236912,8 +236949,12 @@ function actionFor(rec, pid, ctx){
   if (rec.voided) return { action: 'skip', becomes: 'left out — voided in QuickBooks', include: false };
   if (rec.side === 'skip') {
     if (rec.kind === 'billpayment') {
-      var bl = (ctx.invs || []).filter(live).filter(function(x){ return isSubBill(x) && sameParty(party(x), rec.name) && !isPaid(x) && (cents(amtOf(x)) === cents(rec.amount) || (poNorm(rec.num) && invNoOf(x) === poNorm(rec.num))); });
+      /* patch ACCTAUTO-IMP: a bill payment's # is its check number, not a bill number; it pays the bill of exactly its amount, or the one
+         set of the vendor's open bills that adds up to it — never a bill total, never a guessed part payment */
+      var vb = (ctx.invs || []).filter(live).filter(function(x){ return isSubBill(x) && sameParty(party(x), rec.name); });
+      var bl = typeof window._gcQbBillsPaidBy === 'function' ? (window._gcQbBillsPaidBy(vb, rec.amount, rec.date, function(x){ return num(amtOf(x)) - num(x.amountPaid || 0); }) || []) : vb.filter(function(x){ return !isPaid(x) && cents(amtOf(x)) === cents(rec.amount); });
       if (bl.length === 1) return { action: 'billpay', target: bl[0], list: 'invs', becomes: '🔄 marks bill ' + (invNoOf(bl[0]) ? '#' + invNoOf(bl[0]) : s(bl[0].id)) + ' paid', include: true };
+      if (bl.length > 1) return { action: 'billpay', target: bl[0], targets: bl, list: 'invs', becomes: '🔄 pays ' + bl.length + ' bills: ' + bl.map(function(x){ return '#' + (invNoOf(x) || s(x.id)) + ' ' + money2(amtOf(x)); }).join(' + '), include: true };
     }
     return { action: 'skip', becomes: 'left out — ' + (SKIP_WHY[rec.kind] || ('QuickBooks type "' + s(rec.qbType || '?') + '" has no place in a job P&L')), include: false };
   }
@@ -236930,7 +236971,7 @@ function actionFor(rec, pid, ctx){
   return { action: 'new', make: 'expense', becomes: '➕ cost: ' + (rec.kind === 'check' ? 'check' : /credit card/i.test(rec.qbType) ? 'card expense' : 'expense') + ' → paid Expense', include: true };
 }
 function decide(row, pid, ctx){
-  ['action', 'make', 'target', 'list', 'set', 'diff', 'conflicts', 'gotJob', 'becomes', 'include', 'quiet', 'pidFrom'].forEach(function(k){ delete row[k]; });
+  ['action', 'make', 'target', 'targets', 'list', 'set', 'diff', 'conflicts', 'gotJob', 'becomes', 'include', 'quiet', 'pidFrom'].forEach(function(k){ delete row[k]; });
   Object.assign(row, actionFor(row.rec, pid, ctx));
   if (row.target && s(row.target.pid) && (row.action === 'update' || row.action === 'same' || row.action === 'dup')) row.jobPid = s(row.target.pid);
   if (row.action === 'new' && !pid) { row.include = false; row.noJob = true; }   /* no job → left out until one is picked (or 📥 no job) */
@@ -237002,7 +237043,7 @@ function recordsFor(row, o){
     var t = row.target, ta = num(amtOf(t)), pd = r2(num(t.amountPaid || 0) + num(rec.amount)), full = pd >= ta - 0.005;
     out.updates.push({ list: 'invs', id: s(t.id), set: full ? { status: 'paid', paid: true, amountPaid: ta, openBalance: 0, paidDate: rec.date || today } : { status: 'partial', amountPaid: pd, openBalance: r2(ta - pd) }, addKey: rec.key });
   } else if (act === 'billpay') {
-    out.updates.push({ list: 'invs', id: s(row.target.id), set: { status: 'paid', paid: true, paidDate: rec.date || today }, addKey: rec.key });
+    (row.targets || [row.target]).forEach(function(tg){ out.updates.push({ list: 'invs', id: s(tg.id), set: { status: 'paid', paid: true, paidDate: rec.date || today, amountPaid: r2(amtOf(tg)), openBalance: 0 }, addKey: rec.key }); });   /* patch ACCTAUTO-IMP */
   } else if (act === 'bill') {
     var v = o.vendor || {}, bpaid = rec.open === 0 || (rec.open == null && rec.date && rec.date < today);
     var inv = Object.assign({ id: 'INVQ' + id, type: o.supplier ? 'supplier' : 'sub', payeeType: o.supplier ? 'supplier' : 'sub', pid: pid, po: po, sub: s(v.name) || rec.name, subId: s(v.id), invNum: rec.num || '', amt: amt,
@@ -247742,6 +247783,504 @@ W._gcInvLink = Object.assign({}, CORE, { open: open, close: close, poCell: funct
 W._gcInvPoCell = W._gcInvLink.poCell;
 W._gcInvNumCell = function(inv){ try { return CORE.qbNums(inv)[0] || s(inv && (inv.invNum || inv.num || inv.number)); } catch (e) { return ''; } };
 try { console.log('[GC] 🔗 invoice ↔ job links, QuickBooks-only past jobs, sub / supplier tabs (patch INVLINK) — _gcInvLink'); } catch (e) {}
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="gc-patch-acctauto">
+/* __GC_PATCH_ACCTAUTO__ — 🧾 ACCOUNTING FIXES, DONE ONCE BY THEMSELVES (owner 11/19: "I'm overloaded with duplicates, wrong info and bad
+   invoices… all these fix buttons are hard to find, why can't you just fix things… I'm not sure QuickBooks accounting and everything is
+   doing it correctly" · "#373642 IS $49.19; the $31,484 was probably us paying their invoice for multiple jobs").
+   What the live data showed (read-only check 11/19):
+     • the FIRST QuickBooks import (11/05) kept ONE line of each bill, not its total; the 11/13 re-import put the real totals on 56 bills
+       and kept the one-line number in qbAmountWas. The totals are right: 11 bills have a QuickBooks bill payment of exactly the new total
+       (none of the old one), 7 are the old line + 9.75% sales tax, the rest are bigger than the one line. qbAmountWas is retired here.
+     • the import's in-file payment matcher hung bill payments on the wrong bill as "part payments" (Tom Eubanks payment #1011 $2,297.91
+       on #373642 → "open $29,186.79"); a payment of exactly another bill of the vendor is moved to that bill, paid bills read open $0.
+     • the 11/05 import dropped leading zeros (009075376 → 9075376), so 11/13 made 42 second copies (Farrell Calhoun, Central Roofing);
+       the 11/05 copy (one line) is archived into the 11/13 copy (the QuickBooks total) — counted once.
+     • one register line per bill (the line at the bill's total; the old one-line / duplicate lines folded into it — gc_folded keeps them).
+     • 🔗 INVLINK: invoices on the wrong job where the evidence is SURE are moved; the QuickBooks-only cleanup for past jobs is applied.
+   1. RUNS ONCE BY ITSELF on the first admin / office desk that opens this build (claim in gc_kv gc_acctfix_state, a second desk waits;
+      never while the CRM copy is older than the live one — the stale gate — or while someone types). Nothing is deleted: bills /
+      invoices are archived (type 'archived', _typeWas, _dupOf), register lines folded (gc_folded), every field's old value kept.
+   2. 🧾 ACCOUNTING FIXES LOG (gc_kv gc_acctfix_log): every change, what it was, why, the money — ↩ Undo per item, or all.
+   3. ⚠ NEEDS A LOOK — ONE list, Accounting → the top card: what the evidence could not settle (a bill total with no proof, a copy with
+      a different amount, a payment that fits no bill, an invoice whose job is only a guess …), each with "✓ Done / it's right".
+   The QuickBooks import never takes a bill payment as a bill's total and ties a payment to the bills it pays (patch J + QBCSV,
+   ACCTAUTO-IMP). API: window._gcAcctFix = { core, plan(), run(opts), undoItem(logId, itemId), undoAll(logId), open(tab), state() } */
+(function(W){
+'use strict';
+var CORE = (function(){
+var RUN_ID = 'ACCTAUTO-1', BY = 'Automatic accounting fix', TAX = 0.0975;
+/* what the owner told us about one bill (11/19) */
+var OWNER_SAYS = { '373642|tom': 49.19 };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function num(v){ var x = typeof v === 'number' ? v : parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function c(v){ return Math.round(num(v) * 100); }
+function money(n){ n = num(n); return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function amtOf(r){ return r ? (r.amt != null && r.amt !== '' ? r.amt : r.amount) : 0; }
+function lineAmt(r){ return r ? (r.amount != null && r.amount !== '' ? r.amount : r.amt) : 0; }
+function isBill(r){ var t = low(r && r.type); return t === 'sub' || t === 'supplier'; }
+function isQB(r){ return /quickbooks/i.test(s(r && r.source)) || /^QB:/.test(s(r && r.qbKey)); }
+function dead(r){ return !r || r.deleted === true || r._deleted === true || /^(archived)$/i.test(s(r.type)) || /^(void|voided|deleted|denied|rejected|cancell?ed)$/i.test(s(r.status)); }
+function day(v){ var t = s(v); return /^\d{4}-\d\d-\d\d/.test(t) ? t.slice(0, 10) : ''; }
+function payee(r){ return s(r && (r.sub || r.vendor || r.payee || r.client || r.customer)).replace(/&amp;/g, '&'); }
+/* the import's own vendor word (last part of the QuickBooks key), else the payee's first word */
+function vkey(r){ var k = s(r && r.qbKey).split(':'); if (k.length >= 4 && k[0] === 'QB') return low(k[k.length - 1]); return low(payee(r)).replace(/[^a-z0-9 ]/g, ' ').trim().split(/\s+/)[0] || ''; }
+function normNo(v){ return s(v).toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^0+(?=.)/, ''); }
+function billNo(r){ return s(r && (r.invNum || r.qbNum)); }
+function rid(r){ return s(r && (r._id || r.id)); }
+function bare(v){ return s(v).replace(/^(SUB_|SUPPLIER_)/, ''); }
+/* a QuickBooks bill-payment key → { key, vk, num, date, amount } (the amount is in the key when QuickBooks had no number) */
+function payKey(k){
+  var p = s(k).split(':'); if (p[0] !== 'QB' || p[1] !== 'billpayment') return null;
+  if (/^\d{4}-\d\d-\d\d$/.test(p[2]) && p.length >= 5) return { key: s(k), vk: low(p[p.length - 1]), num: '', date: p[2], amount: num(p[3]) / 100 };
+  return { key: s(k), vk: low(p[p.length - 1]), num: s(p[2]), date: '', amount: null };
+}
+function same(a, b){ return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); }
+/* one record change: before / after of each field (a missing field comes back as null on Undo, like INVLINK) */
+function change(list, rec, after){
+  var before = {}, aft = {}, any = false;
+  Object.keys(after).forEach(function(f){ var b = rec[f] === undefined ? null : rec[f]; if (!same(b, after[f])) { before[f] = b; aft[f] = after[f] === undefined ? null : after[f]; any = true; } });
+  return any ? { list: list, id: list === 'gcAcctRegister' ? rid(rec) : s(rec.id), before: before, after: aft } : null;
+}
+function applyChange(rec, ch, at){ var n = Object.assign({}, rec); Object.keys(ch.after).forEach(function(f){ n[f] = ch.after[f]; }); n.updatedAt = at; return n; }
+
+/* ── 1. the QuickBooks payments we know (keys on bills + the import's "no home" list) ── */
+function payments(invs, extraKeys){
+  var by = {}, out = [];
+  function add(k, onBill, amount){
+    var p = payKey(k); if (!p) return; var e = by[p.key];
+    if (!e) { e = by[p.key] = Object.assign(p, { on: [] }); out.push(e); }
+    if (e.amount == null && amount != null && amount > 0) e.amount = r2(amount);
+    if (onBill && e.on.indexOf(onBill) < 0) e.on.push(onBill);
+  }
+  arr(invs).forEach(function(b){
+    if (!isBill(b)) return;
+    var ks = (Array.isArray(b.qbKeys) ? b.qbKeys : []).filter(function(k){ return /^QB:billpayment:/.test(s(k)); });
+    /* the import wrote a PART payment's amount on the bill it guessed (amountPaid, with an open balance left) */
+    var partAmt = ks.length === 1 && num(b.openBalance) > 0.005 && num(b.amountPaid) > 0 ? num(b.amountPaid) : null;
+    /* … and a payment it found of exactly the bill's open amount as amountPaid = the total, open 0 */
+    if (partAmt == null && ks.length === 1 && b.openBalance != null && c(b.openBalance) === 0 && c(b.amountPaid) === c(amtOf(b)) && c(amtOf(b)) > 0) partAmt = num(b.amountPaid);
+    ks.forEach(function(k){ add(k, s(b.id), partAmt); });
+  });
+  (Array.isArray(extraKeys) ? extraKeys : []).forEach(function(k){ add(k, '', null); });
+  return out;
+}
+
+/* ── the plan: what is fixed by itself (items) and what a person looks at (look) ── */
+function plan(lists, opts){
+  opts = opts || {};
+  var at = opts.at || new Date().toISOString(), IL = opts.invlink || null;
+  var invs = arr(lists.invs).slice(), reg = arr(lists.reg), folded = arr(lists.folded), delReg = {}, items = [], look = [];
+  (Array.isArray(lists.deletedReg) ? lists.deletedReg : []).forEach(function(x){ delReg[s(x)] = 1; });
+  var idx = {}; invs.forEach(function(r, i){ idx[s(r.id)] = i; });
+  function get(id){ var i = idx[s(id)]; return i == null ? null : invs[i]; }
+  function put(ch){ if (!ch) return null; var i = idx[ch.id]; invs[i] = applyChange(invs[i], ch, at); return ch; }
+  function item(kind, title, why, amount, changes, extra){ var it = Object.assign({ id: kind + ':' + (extra && extra.key || (changes[0] && changes[0].id) || items.length), kind: kind, title: title, why: why, amount: r2(amount), changes: changes.filter(Boolean), folds: [] }, extra || {}); delete it.key; items.push(it); return it; }
+  function lookAdd(kind, title, detail, amount, ids, extra){ look.push(Object.assign({ id: 'look:' + kind + ':' + (ids[0] || look.length), kind: kind, title: title, detail: detail, amount: r2(amount), ids: ids }, extra || {})); }
+  var pays = payments(invs, opts.payKeys), liveBills = function(){ return invs.filter(function(b){ return isBill(b) && !dead(b); }); };
+  var byVendor = function(vk){ return liveBills().filter(function(b){ return vkey(b) === vk; }); };
+
+  /* A. QuickBooks bills whose total the 11/13 re-import changed (qbAmountWas = the 11/05 one-line number) */
+  invs.filter(function(b){ return isBill(b) && isQB(b) && b.qbAmountWas != null && b.qbAmountWas !== '' && !(b.amtCheck && b.amtCheck.ok); }).forEach(function(b){
+    var amt = r2(amtOf(b)), was = r2(b.qbAmountWas), vk = vkey(b), no = billNo(b), ev = '';
+    var exact = pays.filter(function(p){ return p.vk === vk && p.amount != null && c(p.amount) === c(amt); })[0];
+    var owner = OWNER_SAYS[normNo(no).toLowerCase() + '|' + vk];
+    if (c(amt) === c(was)) ev = 'the re-import did not change it';
+    else if (exact) ev = 'QuickBooks has a bill payment of exactly ' + money(amt) + ' (' + exact.key.split(':').slice(2, -1).join(' ').replace(/^(\d{4}-\d\d-\d\d) \d+$/, '$1') + ')';
+    else if (owner != null && c(owner) === c(amt)) ev = 'the owner confirmed ' + money(amt);
+    else if (Math.abs(r2(was * (1 + TAX)) - amt) <= 0.011) ev = money(was) + ' + 9.75% sales tax = ' + money(amt) + ': the old number was the line before tax';
+    else if (amt > was) ev = 'the old number (' + money(was) + ') was one line of this bill; QuickBooks\' total is ' + money(amt);
+    if (!ev) { lookAdd('billtotal', 'Bill #' + no + ' — ' + payee(b) + ': is the total ' + money(amt) + '?', 'The first QuickBooks import had ' + money(was) + ', the 11/13 re-import ' + money(amt) + '. No payment or tax math settles it — check the bill in QuickBooks. The CRM keeps ' + money(amt) + '.', amt, [s(b.id)]); return; }
+    /* qbAmountWas := the total (not null: a record merge fills an empty field back from an older copy); the old number is kept */
+    var ch = change('invs', b, { qbAmountWas: amt, _qbAmountWasWrong: was, amtCheck: { ok: true, total: amt, why: ev, at: at, by: BY, rule: RUN_ID } });
+    put(ch);
+    item('billtotal', 'Bill #' + no + ' — ' + payee(b) + ': ' + money(amt) + ' is right' + (c(amt) !== c(was) ? ' (not ' + money(was) + ')' : ''), ev, amt, [ch], { key: s(b.id) });
+  });
+
+  /* B. the payments the import hung on the wrong bill; paid bills read open $0 */
+  pays.forEach(function(p){
+    if (p.amount == null || !p.on.length) return;
+    p.on.forEach(function(onId){
+      var b = get(onId); if (!b || dead(b) || c(amtOf(b)) === c(p.amount)) return;
+      var to = byVendor(p.vk).filter(function(x){ return s(x.id) !== onId && c(amtOf(x)) === c(p.amount); });
+      if (to.length !== 1) return;
+      var t = to[0], keys = (b.qbKeys || []).filter(function(k){ return k !== p.key; });
+      if (b.qbKey && keys.indexOf(b.qbKey) < 0) keys.unshift(b.qbKey);
+      var c1 = put(change('invs', b, { qbKeys: keys, _qbPayKeysWrong: (b._qbPayKeysWrong || []).concat([p.key]) }));
+      var tk = (t.qbKeys || []).slice(); if (t.qbKey && tk.indexOf(t.qbKey) < 0) tk.unshift(t.qbKey); if (tk.indexOf(p.key) < 0) tk.push(p.key);
+      var tp = (Array.isArray(t.qbPaidBy) ? t.qbPaidBy : []).filter(function(x){ return x && x.key !== p.key; }).concat([{ key: p.key, amount: p.amount, date: p.date || '' }]);
+      var c2 = put(change('invs', t, { qbKeys: tk, qbPaidBy: tp }));
+      item('paylink', 'QuickBooks payment ' + (p.num ? '#' + p.num : p.date) + ' (' + money(p.amount) + ') pays bill #' + billNo(t) + ', not #' + billNo(b), 'the import put it on #' + billNo(b) + ' (' + money(amtOf(b)) + ') as a part payment; it is exactly bill #' + billNo(t), p.amount, [c1, c2], { key: p.key });
+      p.on = [s(t.id)];
+    });
+  });
+  liveBills().forEach(function(b){
+    var paid = b.paid === true || /^paid$/i.test(s(b.status)); if (!paid) return;
+    var amt = r2(amtOf(b));
+    if ((b.openBalance == null || c(b.openBalance) === 0) && (b.amountPaid == null || c(b.amountPaid) === c(amt))) return;
+    var ch = put(change('invs', b, { openBalance: 0, amountPaid: amt }));
+    if (ch) item('paidopen', 'Bill #' + billNo(b) + ' — ' + payee(b) + ': paid, open $0', 'it is paid in QuickBooks but showed paid ' + money(ch.before.amountPaid) + ' / open ' + money(ch.before.openBalance) + ' (left from a payment of another bill)', amt, [ch], { key: 'open:' + s(b.id) });
+  });
+  pays.forEach(function(p){
+    if (p.amount == null) return;
+    var fits = byVendor(p.vk).filter(function(x){ return c(amtOf(x)) === c(p.amount); });
+    if (!fits.length) lookAdd('payment', 'QuickBooks payment ' + (p.num ? '#' + p.num : 'of ' + p.date) + ' — ' + money(p.amount) + ' (' + p.vk + '): which bills did it pay?', 'No single bill of this vendor is ' + money(p.amount) + '; it probably paid several. Nothing in the CRM changes — it is only so you know.', p.amount, p.on.slice(), { key: p.key });
+  });
+
+  /* C. one bill entered twice (the 11/05 import dropped the leading zeros of the bill number) */
+  var groups = {};
+  liveBills().forEach(function(b){ var n = normNo(billNo(b)); if (!n) return; var k = vkey(b) + '|' + n; (groups[k] = groups[k] || []).push(b); });
+  var dropped = {};
+  Object.keys(groups).forEach(function(k){
+    var g = groups[k]; if (g.length < 2) return;
+    var qb = g.filter(isQB), other = g.filter(function(b){ return !isQB(b); });
+    var zero = qb.filter(function(b){ return /^0/.test(s(billNo(b)).replace(/[^A-Za-z0-9]/g, '')); }), plain = qb.filter(function(b){ return zero.indexOf(b) < 0; });
+    var keep = zero.length === 1 ? zero[0] : null;
+    plain.forEach(function(d){
+      if (!keep || day(d.date || d.recvDate) !== day(keep.date || keep.recvDate) || c(amtOf(d)) > c(amtOf(keep))) {
+        if (other.length) return;   /* one look item for the whole group, below */
+        lookAdd('dupbill', 'Bill #' + billNo(d) + ' — ' + payee(d) + ' is in the CRM ' + g.length + ' times', g.map(function(x){ return '#' + billNo(x) + ' ' + money(amtOf(x)) + ' ' + day(x.date || x.recvDate) + ' (' + (isQB(x) ? 'QuickBooks' : s(x.source) || 'CRM') + ')'; }).join(' · ') + ' — keep the right one, archive the other.', amtOf(d), g.map(function(x){ return s(x.id); }), { key: k });
+        return;
+      }
+      var kk = (keep.qbKeys || []).slice(); if (keep.qbKey && kk.indexOf(keep.qbKey) < 0) kk.unshift(keep.qbKey);
+      (d.qbKeys || []).concat(d.qbKey ? [d.qbKey] : []).forEach(function(x){ if (/^QB:billpayment:/.test(s(x)) && kk.indexOf(x) < 0) kk.push(x); });
+      var upd = { qbKeys: kk, qbNumAlso: s(billNo(d)) }; if (!s(keep.pid) && s(d.pid)) { upd.pid = s(d.pid); upd.po = s(d.po); }
+      var c1 = put(change('invs', d, { type: 'archived', _typeWas: s(d.type) || 'sub', _dupOf: s(keep.id), _archived: { why: 'the same QuickBooks bill as #' + billNo(keep) + ' (the first import dropped the leading zeros and kept one line: ' + money(amtOf(d)) + '; QuickBooks\' total is ' + money(amtOf(keep)) + ')', at: at, by: BY, rule: RUN_ID } }));
+      var c2 = put(change('invs', keep, upd));
+      dropped[s(d.id)] = s(keep.id);
+      item('dupbill', 'Bill #' + billNo(keep) + ' — ' + payee(keep) + ' was in twice: the copy #' + billNo(d) + ' (' + money(amtOf(d)) + ') is archived', 'the first import dropped the leading zeros, so the 11/13 import added it again with the QuickBooks total ' + money(amtOf(keep)) + '; costs counted ' + money(amtOf(d)) + ' too many', amtOf(d), [c1, c2], { key: 'dup:' + s(d.id) });
+    });
+    if (other.length && qb.length) {
+      var oq = qb.filter(function(b){ return !dropped[s(b.id)]; });
+      if (oq.length) lookAdd('dupbill', 'Bill #' + billNo(other[0]) + ' — ' + payee(other[0]) + ': entered in the CRM and also from QuickBooks', other.concat(oq).map(function(x){ return '#' + billNo(x) + ' ' + money(amtOf(x)) + ' ' + day(x.date || x.recvDate) + ' ' + s(x.status) + (s(x.pid) ? ' (on a job)' : ' (no job)') + ' — ' + (isQB(x) ? 'QuickBooks' : s(x.source) || 'CRM'); }).join(' · ') + ' — if it is one bill, keep the one on the job and archive the other.', amtOf(other[0]), other.concat(oq).map(function(x){ return s(x.id); }), { key: 'x' + k });
+    }
+  });
+  /* a bill with the same number + amount + day but a different spelling of the vendor (an e-mailed copy and QuickBooks') */
+  var seen = {};
+  liveBills().forEach(function(b){ var n = normNo(billNo(b)); if (!n || n.length < 5) return; var k = n + '|' + c(amtOf(b)) + '|' + day(b.date || b.recvDate); (seen[k] = seen[k] || []).push(b); });
+  Object.keys(seen).forEach(function(k){ var g = seen[k]; if (g.length < 2) return; var vs = {}; g.forEach(function(b){ vs[vkey(b)] = 1; }); if (Object.keys(vs).length < 2) return;
+    lookAdd('dupbill', 'Bill #' + billNo(g[0]) + ' (' + money(amtOf(g[0])) + ') is in the CRM ' + g.length + ' times under different names', g.map(function(x){ return payee(x) + (s(x.pid) ? ' (on a job)' : ' (no job)') + ' — ' + (isQB(x) ? 'QuickBooks' : s(x.source) || 'CRM'); }).join(' · ') + ' — same number, amount and day: probably one bill. Keep one, archive the other.', amtOf(g[0]), g.map(function(x){ return s(x.id); }), { key: 'n' + k }); });
+
+  /* D. the register: one line per bill, at the bill's total */
+  var fid = {}; folded.forEach(function(f){ if (f && !f.unfolded && f.list === 'gcAcctRegister') fid[s(f.recordId)] = 1; });
+  var vis = reg.filter(function(r){ return r && !r._dupOf && !delReg[rid(r)] && !fid[rid(r)] && !r.deleted; }), lines = {};
+  vis.forEach(function(r){ var b = bare(r.srcInvId); if (b) (lines[b] = lines[b] || []).push(r); });
+  var regOut = reg.slice(), regIdx = {}; regOut.forEach(function(r, i){ regIdx[rid(r)] = i; });
+  var regPut = function(ch){ if (!ch) return null; var i = regIdx[ch.id]; regOut[i] = applyChange(regOut[i], ch, at); return ch; };
+  var foldsOut = [];
+  var extra = {}, dropAmt = {};
+  Object.keys(dropped).forEach(function(d){ var k = dropped[d]; extra[k] = (extra[k] || []).concat(lines[d] || []); var db = get(d); (dropAmt[k] = dropAmt[k] || []).push(c(amtOf(db))); });
+  invs.forEach(function(b){
+    if (!isBill(b) || dead(b)) return;
+    var into = (lines[s(b.id)] || []).concat(extra[s(b.id)] || []); if (!into.length) return;
+    var keepBill = b, target = r2(amtOf(b)), was = b._qbAmountWasWrong != null ? r2(b._qbAmountWasWrong) : null, dAmts = dropAmt[s(b.id)] || [];
+    var at0 = function(r){ return c(lineAmt(r)) === c(target); };
+    var ownPaid = function(r){ return bare(r.srcInvId) === s(r.srcInvId) && s(r.srcInvId) === s(keepBill.id); };
+    var keep = into.filter(function(r){ return at0(r) && ownPaid(r); })[0] || into.filter(at0)[0] || into.filter(ownPaid)[0] || into[0];
+    var fixes = [], why = [];
+    var want = { amount: target, amt: target };
+    if (s(keep.srcInvId) !== s(keepBill.id) && bare(keep.srcInvId) !== s(keepBill.id)) want.srcInvId = s(keepBill.id);
+    if (!at0(keep)) { want._origAmount = keep.amount == null ? null : keep.amount; want._origAmt = keep.amt == null ? null : keep.amt; why.push('its line said ' + money(lineAmt(keep)) + ', the bill is ' + money(target)); }
+    if (!at0(keep) || want.srcInvId) fixes.push(regPut(change('gcAcctRegister', keep, want)));
+    var fold = [], odd = [];
+    into.forEach(function(r){
+      if (r === keep) return;
+      var a = c(lineAmt(r));
+      if (a === c(target) || a === c(lineAmt(keep)) || (was != null && a === c(was)) || dAmts.indexOf(a) >= 0) fold.push(r); else odd.push(r);
+    });
+    if (odd.length) lookAdd('register', 'Bill #' + billNo(keepBill) + ' — ' + payee(keepBill) + ': ' + (odd.length + 1) + ' register lines, different amounts', odd.concat([keep]).map(function(r){ return money(lineAmt(r)) + ' ' + day(r.date) + ' "' + s(r.desc).slice(0, 50) + '"'; }).join(' · ') + ' — the bill is ' + money(target) + '. Part payments are fine; a copy is not.', target, odd.map(rid), { key: 'reg:' + s(keepBill.id) });
+    if (!fold.length && !fixes.filter(Boolean).length) return;
+    var fids = fold.map(function(r){
+      var f = { id: 'FOLD_gcAcctRegister_' + rid(r), list: 'gcAcctRegister', recordId: rid(r), keptId: rid(keep), rule: RUN_ID + ' one bill, one register line', reason: 'bill #' + billNo(keepBill) + ' ' + payee(keepBill) + ': one line at ' + money(target), foldedAt: at, updatedAt: at, by: BY, record: JSON.parse(JSON.stringify(r)) };
+      foldsOut.push(f); return f.id;
+    });
+    var foldAmt = r2(fold.reduce(function(t, r){ return t + num(lineAmt(r)); }, 0));
+    var it = item('register', 'Register: bill #' + billNo(keepBill) + ' — ' + payee(keepBill) + ' shows once, at ' + money(target), (fold.length ? fold.length + ' extra line' + (fold.length > 1 ? 's' : '') + ' (' + money(foldAmt) + ') folded into it' : '') + (why.length ? (fold.length ? '; ' : '') + why.join('; ') : ''), foldAmt, fixes, { key: 'reg:' + s(b.id) });
+    it.folds = fids;
+  });
+  var foldIds = {}; foldsOut.forEach(function(f){ foldIds[f.recordId] = 1; });
+  regOut = regOut.filter(function(r){ return !foldIds[rid(r)]; });
+
+  /* E. 🔗 INVLINK: the wrong job where the evidence is SURE; the QuickBooks-only cleanup of past jobs */
+  var projects = arr(lists.projects), customers = arr(lists.customers);
+  if (IL && IL.audit) {
+    var A = IL.audit(invs, projects, { amap: IL.aliasMap ? IL.aliasMap(customers) : undefined, isDeleted: opts.isDeleted });
+    A.forEach(function(r){
+      var inv = get(r.id); if (!inv) return;
+      var sug = r.sug || {};
+      if (r.verdict === 'wrong' && sug.level === 'sure' && sug.pid && !(IL.placedByPerson && IL.placedByPerson(inv))) {
+        var p = projects.filter(function(x){ return s(x.id) === s(sug.pid); })[0]; if (!p) return;
+        var ch = put(change('invs', inv, { pid: s(p.id), po: s(p.autoPO || p.po), project: s(p.name), autoLinked: false, autoLinkWhy: 'moved by ' + BY, qbNeedsHome: false, linkedBy: BY + ' (sure: ' + (sug.why || []).slice(0, 2).join(', ') + ')', linkLog: (Array.isArray(inv.linkLog) ? inv.linkLog : []).concat([{ at: at, by: BY, from: s(inv.pid), to: s(p.id), why: (sug.why || []).join('; ') }]) }));
+        item('relink', 'Invoice #' + s(r.num) + ' — ' + s(r.client) + ' moved to "' + s(p.name) + '"', 'it was on "' + s(r.cur && r.cur.name || 'no job') + '"; the evidence: ' + (sug.why || []).join('; '), r.amt, [ch], { key: 'link:' + s(inv.id) });
+      } else if (/^(wrong|suspect|needs a job|job gone)$/.test(s(r.verdict))) {
+        lookAdd('link', 'Invoice #' + s(r.num) + ' — ' + s(r.client) + ' (' + money(r.amt) + '): ' + (r.verdict === 'needs a job' ? 'no job' : r.verdict === 'job gone' ? 'its job was deleted' : 'on "' + s(r.cur && r.cur.name) + '" — is that right?'), (sug.name ? 'Best guess: "' + s(sug.name) + '" (' + (sug.why || []).join('; ') + ').' : 'No good guess.') + ' Open 🔗 Check invoice ↔ job links to pick the job.', r.amt, [s(r.id)], { key: 'link:' + s(r.id), open: 'invlink' });
+      }
+    });
+  }
+  if (IL && IL.plan && IL.apply) {
+    var pl = IL.plan({ invs: invs, projects: projects, customers: customers }, { today: opts.today || at.slice(0, 10) });
+    if ((pl.archive || []).length || (pl.merge || []).length || (pl.customerMerge || []).some(function(x){ return x.keepId && x.dropIds.length; })) {
+      var res = IL.apply({ invs: invs, projects: projects, customers: customers }, pl, { at: at, by: BY, id: RUN_ID + '-IL' });
+      var chs = (res.log && res.log.changes || []).map(function(x){ var after = {}; var cur = (x.list === 'invs' ? res.invs : x.list === 'projects' ? res.projects : res.customers).filter(function(r){ return s(r.id) === s(x.id); })[0] || {}; Object.keys(x.before || {}).forEach(function(f){ after[f] = cur[f] === undefined ? null : cur[f]; }); return { list: x.list, id: s(x.id), before: x.before, after: after }; });
+      var byRec = {}; chs.forEach(function(x){ (byRec[x.list + ':' + x.id] = byRec[x.list + ':' + x.id] || []).push(x); });
+      (pl.archive || []).concat(pl.merge || []).forEach(function(x){
+        var cs = byRec['invs:' + s(x.id)] || []; if (!cs.length) return;
+        item('qbonly', 'Invoice ' + (x.num ? '#' + x.num : s(x.desc).slice(0, 40)) + ' — ' + s(x.client) + ' (' + money(x.amt) + ') ' + (x.into ? 'was a copy of a QuickBooks invoice: merged' : 'archived: not in QuickBooks'), s(x.why) + (x.open ? ' — ' + money(x.open) + ' leaves A/R' : ''), x.amt, cs, { key: 'qb:' + s(x.id) });
+        delete byRec['invs:' + s(x.id)];
+      });
+      var rest = []; Object.keys(byRec).forEach(function(k){ rest = rest.concat(byRec[k]); });
+      if (rest.length) item('qbonly', 'Customers that are one company merged (' + (pl.customerMerge || []).map(function(m){ return m.from + ' → ' + m.keepName; }).join(', ') + ')', 'their jobs and invoices now name one customer; the extra record is archived with its name kept as an alias', 0, rest, { key: 'qb:customers' });
+      invs = res.invs; projects = res.projects; customers = res.customers;
+    }
+  }
+
+  /* F. QuickBooks bills from the first import that nothing confirms (it kept one line of a bill) */
+  var unconf = invs.filter(function(b){ return isBill(b) && !dead(b) && isQB(b) && /^2026-11-05/.test(s(b.savedAt)) && b.qbAmountWas == null && !b.amtCheck && !(b._qbAmountWasWrong != null) && !pays.some(function(p){ return p.vk === vkey(b) && p.amount != null && c(p.amount) === c(amtOf(b)); }); });
+  if (unconf.length) lookAdd('oldbills', unconf.length + ' QuickBooks bills from the first import (11/05) — check the totals', 'That import kept ONE line of each bill. Nothing confirms these totals (no later import, no payment of the same amount): ' + unconf.slice(0, 40).map(function(b){ return '#' + billNo(b) + ' ' + payee(b) + ' ' + money(amtOf(b)); }).join(' · ') + (unconf.length > 40 ? ' …' : '') + '. Compare them with QuickBooks; a QuickBooks "Bill List" export run through 💎 → Import from QuickBooks lists each one whose total differs (it changes nothing by itself).', unconf.reduce(function(t, b){ return t + num(amtOf(b)); }, 0), unconf.map(function(b){ return s(b.id); }), { key: 'oldbills' });
+  /* QuickBooks client invoices marked paid with an open balance */
+  invs.filter(function(v){ return !isBill(v) && /^client/i.test(s(v.type)) && isQB(v) && (v.paid === true || /^paid$/i.test(s(v.status))) && num(v.openBalance) > 0.005; }).forEach(function(v){
+    lookAdd('openbal', 'Invoice #' + billNo(v) + ' — ' + payee(v) + ' (' + money(amtOf(v)) + '): marked paid, but QuickBooks shows ' + money(v.openBalance) + ' open', 'Check in QuickBooks whether it is paid in full.', v.openBalance, [s(v.id)], { key: 'ob:' + s(v.id) });
+  });
+
+  var tot = { items: items.length, look: look.length, money: {} };
+  items.forEach(function(i){ tot.money[i.kind] = r2((tot.money[i.kind] || 0) + num(i.amount)); tot[i.kind] = (tot[i.kind] || 0) + 1; });
+  return { runId: RUN_ID, at: at, items: items, look: look, totals: tot, invs: invs, reg: regOut, folds: foldsOut, projects: projects, customers: customers };
+}
+
+/* Undo one item (or several): a field goes back only if it still has the value the fix gave it (a later edit by a person wins) */
+function undo(lists, its, at){
+  var want = {}, folds = {}, skipped = [];
+  its.forEach(function(it){ (it.changes || []).forEach(function(ch){ (want[ch.list + ':' + ch.id] = want[ch.list + ':' + ch.id] || []).push(ch); }); (it.folds || []).forEach(function(f){ folds[f] = 1; }); });
+  var out = {};
+  ['invs', 'gcAcctRegister', 'projects', 'customers'].forEach(function(k){
+    if (!lists[k]) return;
+    out[k] = arr(lists[k]).map(function(r){
+      var cs = want[k + ':' + (k === 'gcAcctRegister' ? rid(r) : s(r.id))]; if (!cs) return r;
+      var n = Object.assign({}, r);
+      cs.slice().reverse().forEach(function(ch){ Object.keys(ch.before).forEach(function(f){ if (f === 'updatedAt') return; if (same(n[f], ch.after[f])) n[f] = ch.before[f]; else skipped.push(ch.id + '.' + f); }); });
+      n.updatedAt = at; return n;
+    });
+  });
+  var back = [];
+  if (lists.folded) {
+    out.folded = arr(lists.folded).map(function(f){ if (!folds[f.id] || f.unfolded) return f; back.push(f.record); return Object.assign({}, f, { unfolded: true, unfoldedAt: at, unfoldedBy: BY + ' — undo', updatedAt: at }); });
+    if (out.gcAcctRegister || lists.gcAcctRegister) {
+      var R = out.gcAcctRegister || arr(lists.gcAcctRegister).slice(), have = {}; R.forEach(function(r){ have[rid(r)] = 1; });
+      back.forEach(function(r){ if (r && !have[rid(r)]) R.push(Object.assign({}, r, { updatedAt: at })); });
+      out.gcAcctRegister = R;
+    }
+  }
+  out.skipped = skipped;
+  return out;
+}
+
+return { RUN_ID: RUN_ID, BY: BY, OWNER_SAYS: OWNER_SAYS, plan: plan, undo: undo, payments: payments, payKey: payKey, normNo: normNo, vkey: vkey, money: money };
+})();
+
+var D = W.document;
+if (!D || !D.createElement) { W._gcAcctFix = { core: CORE }; return; }
+var ST = W.setTimeout, SI = W.setInterval;
+var STATEK = 'gc_acctfix_state', LOGK = 'gc_acctfix_log', LOOKK = 'gc_acctfix_look';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(ch){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
+var money = CORE.money;
+function nowIso(){ return new Date().toISOString(); }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+function crm(){ return W._crm || {}; }
+function me(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u) return u; } } catch (e) {} try { return JSON.parse(lsGet('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function meName(){ var u = me(); return s(u.name) || 'office'; }
+function allowed(){
+  var u = me(); if (/^(admin|owner|office)/i.test(s(u.role)) || /^office/i.test(s(u.profile)) || low(u.payType) === 'owner') return true;
+  try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; }
+}
+var DEV = (function(){ var d = lsGet('gc_acctfix_dev'); if (!d) { d = 'D' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); lsSet('gc_acctfix_dev', d); } return d; })();
+function sbBase(){ return s(lsGet('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvGet(key){
+  if (W._gcOT_kv) return Promise.resolve(W._gcOT_kv.get(key));
+  var k = s(lsGet('grayco_sb_key')); if (!k || !W.fetch) return Promise.resolve(undefined);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: { apikey: k }, cache: 'no-store' })
+    .then(function(r){ return r && r.ok ? r.json() : undefined; }).then(function(rows){ if (!Array.isArray(rows)) return undefined; var v = rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return undefined; });
+}
+function kvPut(key, value){
+  if (W._gcOT_kv) { W._gcOT_kv.put(key, value); return Promise.resolve(true); }
+  var k = s(lsGet('grayco_sb_key')); if (!k || !W.fetch) return Promise.resolve(false);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ return !!(r && r.ok); }, function(){ return false; });
+}
+/* the app's own lists (the register through its guarded accessor, like REGFIX) */
+var REG = 'gcAcctRegister', FOLDK = 'gc_folded';
+async function getList(k){ try { var v = await (k === REG && W._gcAc ? W._gcAc(k) : W.idbGet(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+var SETTER = { invs: '_setInvoices', projects: '_setProjects', customers: '_setCustomers' };
+async function putList(k, list, why){
+  try { if (W._gcManualNow) W._gcManualNow(why); } catch (e) {}
+  try { await (k === REG && W._gcAcW ? W._gcAcW(k, list) : W.idbSet(k, list)); } catch (e) {}
+  try { var f = W[SETTER[k]]; if (typeof f === 'function') f(list.slice()); } catch (e) {}
+  try { if (W._crm) { if (k === 'invs') { W._crm.invs = list; W._crm.invoices = list; } else W._crm[k] = list; } } catch (e) {}
+  try { var up = W._supaUpsertNow || W._supaUpsert; if (up) await up(k, list); } catch (e) { try { console.warn('[GC] ACCTAUTO upload:', e && e.message || e); } catch (_e) {} }
+  if (k === REG) { try { if (W._gcRegisterFlush) await W._gcRegisterFlush(); } catch (e) {} try { if (W._gcRefreshSpend) W._gcRefreshSpend(); } catch (e) {} }
+}
+function invList(){ var c = crm(); return arr(c.invs && c.invs.length ? c.invs : c.invoices); }
+/* gc_folded is a "heavy" list loaded after start-up (patch STUCKFIX): read / write it only once it is loaded, or this computer's
+   partial copy would be taken for the whole list */
+async function heavyReady(){ try { if (W._gcHeavy && !W._gcHeavy.loaded()) await W._gcHeavy.load('accounting fixes'); } catch (e) {} return !W._gcHeavy || W._gcHeavy.loaded(); }
+/* patch J keeps its own copy of gc_folded (what hides a folded line): refresh it after a write */
+async function foldRefresh(){ try { if (W._gcDupCheck) await W._gcDupCheck({ quiet: true }); } catch (e) {} }
+async function lists(){
+  var del = []; try { del = JSON.parse(lsGet('gc_deleted_gcAcctRegister') || '[]') || []; } catch (e) {}
+  var tasks = [], keys = []; try { tasks = arr(JSON.parse(lsGet('gc_office_tasks') || '[]')); } catch (e) {}
+  tasks.forEach(function(t){ if (t && t.kind === 'qb_history_costs' && Array.isArray(t.qbKeys)) keys = keys.concat(t.qbKeys); });
+  var I = invList(); if (!I.length) I = await getList('invs');
+  return { invs: I, reg: await getList(REG), folded: await getList(FOLDK), deletedReg: del, projects: arr(crm().projects), customers: arr(crm().customers), payKeys: keys };
+}
+function isDel(id){ try { return !!(W._gcIsProjectDeleted && W._gcIsProjectDeleted(id)); } catch (e) { return false; } }
+async function plan(){ var L = await lists(); return CORE.plan(L, { invlink: W._gcInvLink && W._gcInvLink.core || W._gcInvLink, payKeys: L.payKeys, isDeleted: isDel, today: nowIso().slice(0, 10) }); }
+
+var LOG = null, LOOK = null, STATE = null;
+async function logLoad(){ var v = await kvGet(LOGK); LOG = Array.isArray(v) ? v : (LOG || []); return LOG; }
+async function lookLoad(){ var v = await kvGet(LOOKK); LOOK = v && typeof v === 'object' ? v : (LOOK || { list: [], done: {} }); if (!LOOK.done) LOOK.done = {}; return LOOK; }
+
+/* ── the one-time run ── */
+var RUNNING = false;
+async function run(opts){
+  opts = opts || {};
+  if (RUNNING) return { skipped: 'running' };
+  if (!opts.force) {
+    try { if (W._gcStaleGate && W._gcStaleGate.holdSweeps()) return { skipped: 'stale copy' }; } catch (e) {}
+    if (W.__GC_IS_TYPING__ || W.__GC_FORM_OPEN__) return { skipped: 'typing' };
+  }
+  RUNNING = true;
+  try {
+    var st = await kvGet(STATEK); if (st === undefined && !opts.force) return { skipped: 'no cloud' };
+    st = st && typeof st === 'object' ? st : {}; st.runs = st.runs || {};
+    if (st.runs[CORE.RUN_ID] && !opts.again) { STATE = st; return { skipped: 'done', at: st.runs[CORE.RUN_ID].at }; }
+    if (!opts.force && st.claim && st.claim.device !== DEV && Date.now() - Date.parse(st.claim.at || 0) < 10 * 60000) return { skipped: 'another desk' };
+    st.claim = { device: DEV, at: nowIso(), by: meName() }; await kvPut(STATEK, st);
+    if (!opts.force) { await new Promise(function(r){ ST(r, opts.claimWait != null ? opts.claimWait : 4000); }); var st2 = await kvGet(STATEK); if (st2 && st2.claim && st2.claim.device !== DEV) return { skipped: 'another desk' }; if (st2 && st2.runs && st2.runs[CORE.RUN_ID]) return { skipped: 'done' }; }
+    if (!(await heavyReady())) return { skipped: 'folded list not loaded' };
+    var P = await plan(), at = P.at, who = meName();
+    var touched = {}; P.items.forEach(function(it){ it.changes.forEach(function(ch){ touched[ch.list] = 1; }); if (it.folds.length) touched[REG] = touched[FOLDK] = 1; });
+    if (touched[FOLDK]) { var nf = {}; P.folds.forEach(function(f){ nf[f.id] = f; }); var F = (await getList(FOLDK)).filter(function(f){ return f && !nf[f.id]; }).concat(P.folds); await putList(FOLDK, F, 'accounting fixes — fold'); await foldRefresh(); }
+    if (touched.invs) await putList('invs', P.invs, 'accounting fixes (automatic, once)');
+    if (touched[REG]) await putList(REG, P.reg, 'accounting fixes — register');
+    if (touched.projects) await putList('projects', P.projects, 'accounting fixes — jobs');
+    if (touched.customers) await putList('customers', P.customers, 'accounting fixes — customers');
+    var entry = { id: 'AF' + Date.parse(at).toString(36), runId: CORE.RUN_ID, at: at, by: who + ' (automatic)', device: DEV, totals: P.totals, items: P.items };
+    var L = await logLoad(); L = L.filter(function(x){ return x.id !== entry.id; }).concat([entry]); LOG = L; await kvPut(LOGK, L);
+    var LK = await lookLoad(); LK.list = P.look; LK.at = at; LOOK = LK; await kvPut(LOOKK, LK);
+    st.runs[CORE.RUN_ID] = { at: at, by: who, device: DEV, logId: entry.id, items: P.items.length, look: P.look.length }; delete st.claim; STATE = st; await kvPut(STATEK, st);
+    try { console.log('%c[GC] 🧾 Accounting fixes: ' + P.items.length + ' fixed by themselves, ' + P.look.length + ' need a look (' + entry.id + ').', 'background:#0f2440;color:#fff;padding:2px 6px'); } catch (e) {}
+    paint(true);
+    return { done: true, log: entry, look: P.look };
+  } finally { RUNNING = false; }
+}
+async function undoItems(logId, itemIds){
+  var L = await logLoad(), e = L.filter(function(x){ return x.id === logId; })[0]; if (!e) return { undone: 0 };
+  var its = e.items.filter(function(it){ return !it.undone && (!itemIds || itemIds.indexOf(it.id) >= 0); }); if (!its.length) return { undone: 0 };
+  await heavyReady();
+  var at = nowIso(), base = { invs: invList().length ? invList() : await getList('invs'), gcAcctRegister: await getList(REG), folded: await getList(FOLDK), projects: arr(crm().projects), customers: arr(crm().customers) };
+  var res = CORE.undo(base, its, at), need = {};
+  its.forEach(function(it){ it.changes.forEach(function(ch){ need[ch.list] = 1; }); if (it.folds && it.folds.length) need[REG] = need[FOLDK] = 1; });
+  if (need[FOLDK]) { await putList(FOLDK, res.folded, 'accounting fixes — undo fold'); await foldRefresh(); }
+  if (need.invs) await putList('invs', res.invs, 'accounting fixes — undo');
+  if (need[REG]) await putList(REG, res.gcAcctRegister, 'accounting fixes — undo register');
+  if (need.projects) await putList('projects', res.projects, 'accounting fixes — undo');
+  if (need.customers) await putList('customers', res.customers, 'accounting fixes — undo');
+  its.forEach(function(it){ it.undone = at; it.undoneBy = meName(); if (res.skipped.length) it.undoKept = res.skipped.slice(0, 20); });
+  LOG = L; await kvPut(LOGK, L);
+  paint(true);
+  return { undone: its.length, kept: res.skipped };
+}
+async function lookDone(id, how){ var LK = await lookLoad(); LK.done[id] = { at: nowIso(), by: meName(), how: how || 'done' }; LOOK = LK; await kvPut(LOOKK, LK); paint(true); }
+
+/* ── Accounting → the top card, the log, Needs a look ── */
+var CSS = '.af-card{margin:0 0 12px;padding:12px 14px;border:1px solid #c7d2fe;border-radius:12px;background:#f8faff;font:13px/1.45 Inter,system-ui,sans-serif;color:#0f1d2f;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}' +
+  '.af-card b{font-weight:800}.af-card .af-look{color:#9a3412}.af-b{border:0;border-radius:8px;padding:7px 12px;font-weight:800;cursor:pointer;background:#0f1d2f;color:#fff;font-size:12.5px}.af-b.l{background:#fff;color:#0f1d2f;border:1px solid #cbd5e1}.af-b.w{background:#c2410c}' +
+  '#af-ov{position:fixed;inset:0;z-index:100050;background:rgba(15,29,47,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 10px}' +
+  '#af-ov .af-box{background:#fff;border-radius:14px;max-width:1040px;width:100%;padding:16px 18px;font:13px/1.45 Inter,system-ui,sans-serif;color:#0f1d2f}' +
+  '#af-ov h2{margin:0 0 6px;font-size:18px}#af-ov table{width:100%;border-collapse:collapse;margin-top:8px}#af-ov td,#af-ov th{border-bottom:1px solid #eef2f7;padding:6px;vertical-align:top;text-align:left}#af-ov th{font-size:11.5px;color:#475569;text-transform:uppercase}' +
+  '#af-ov .af-tabs button{margin-right:6px}#af-ov .af-dim{color:#64748b;font-size:12px}#af-ov .af-undone{opacity:.5;text-decoration:line-through}@media(max-width:640px){#af-ov .af-box{padding:12px}#af-ov td{display:block}}';
+function css(){ if (D.getElementById('af-css')) return; var st = D.createElement('style'); st.id = 'af-css'; st.textContent = CSS; (D.head || D.body).appendChild(st); }
+function liveLog(){ return arr(LOG).filter(function(e){ return e.runId; }); }
+function openLook(){ var L = LOOK || { list: [], done: {} }; return arr(L.list).filter(function(x){ return !L.done[x.id]; }); }
+function cardHtml(){
+  var E = liveLog(), n = 0; E.forEach(function(e){ n += arr(e.items).filter(function(i){ return !i.undone; }).length; });
+  var lk = openLook().length;
+  if (!E.length && !lk) return '';
+  return '<span>🧾 <b>Accounting fixes:</b> ' + n + ' fixed by themselves' + (E.length ? ' (' + esc(s(E[E.length - 1].at).slice(0, 10)) + ')' : '') + '</span>' +
+    '<span class="af-look">⚠ <b>Needs a look: ' + lk + '</b></span>' +
+    '<button type="button" class="af-b w" data-af="look">⚠ Needs a look (' + lk + ')</button><button type="button" class="af-b l" data-af="log">🧾 Accounting fixes log</button>';
+}
+var lastSig = '';
+function paint(force){
+  try {
+    if (D.hidden || !allowed()) return;
+    var main = D.querySelector('main'), v = low(lsGet('grayco_view'));
+    var box = D.querySelector('.af-mount');
+    if (!main || v !== 'taxcenter') { if (box) box.remove(); return; }
+    var html = cardHtml(), sig = html;
+    if (!html) { if (box) box.remove(); return; }
+    if (!box || box.parentElement !== main) { if (box) box.remove(); css(); box = D.createElement('div'); box.className = 'af-mount af-card'; main.insertBefore(box, main.firstChild); lastSig = ''; }
+    else if (box !== main.firstElementChild) main.insertBefore(box, main.firstChild);
+    if (force || sig !== lastSig) { box.innerHTML = html; lastSig = sig; }
+  } catch (e) {}
+}
+var UI = { tab: 'look' };
+function open(tab){
+  UI.tab = tab || UI.tab; css();
+  var ov = D.getElementById('af-ov'); if (!ov) { ov = D.createElement('div'); ov.id = 'af-ov'; D.body.appendChild(ov); }
+  var lk = openLook(), E = liveLog().slice().reverse(), h = '<div class="af-box"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><h2>' + (UI.tab === 'look' ? '⚠ Needs a look' : '🧾 Accounting fixes log') + '</h2><button type="button" class="af-b l" data-af="close">✕ Close</button></div>' +
+    '<div class="af-tabs"><button type="button" class="af-b' + (UI.tab === 'look' ? '' : ' l') + '" data-af="look">⚠ Needs a look (' + lk.length + ')</button><button type="button" class="af-b' + (UI.tab === 'log' ? '' : ' l') + '" data-af="log">🧾 Accounting fixes log</button></div>';
+  if (UI.tab === 'look') {
+    h += '<p class="af-dim">What the evidence could not settle on its own. Nothing here was changed. "✓ Done" takes it off this list.</p>';
+    h += lk.length ? '<table><tr><th>What</th><th>Amount</th><th></th></tr>' + lk.map(function(x){ return '<tr data-look="' + esc(x.id) + '"><td><b>' + esc(x.title) + '</b><div class="af-dim">' + esc(x.detail) + '</div></td><td>' + (x.amount ? money(x.amount) : '') + '</td><td style="white-space:nowrap">' + (x.open === 'invlink' ? '<button type="button" class="af-b l" data-af="invlink">🔗 Pick the job</button> ' : '') + '<button type="button" class="af-b" data-af="done" data-id="' + esc(x.id) + '">✓ Done</button></td></tr>'; }).join('') + '</table>' : '<p>Nothing needs a look. ✓</p>';
+  } else {
+    h += '<p class="af-dim">Every change the automatic fixes made, what it was and why. Nothing was deleted: copies are archived, extra register lines folded. ↩ Undo puts it back (a field someone has changed since is left as they set it).</p>';
+    E.forEach(function(e){
+      var its = arr(e.items);
+      h += '<h3 style="margin:12px 0 2px;font-size:14px">' + esc(s(e.at).slice(0, 16).replace('T', ' ')) + ' — ' + esc(e.by) + ' — ' + its.length + ' fixes <button type="button" class="af-b l" data-af="undoall" data-log="' + esc(e.id) + '">↩ Undo all</button></h3>';
+      h += '<table><tr><th>Fix</th><th>Why</th><th>$</th><th></th></tr>' + its.map(function(i){ return '<tr class="' + (i.undone ? 'af-undone' : '') + '"><td><b>' + esc(i.title) + '</b></td><td class="af-dim">' + esc(i.why) + '</td><td>' + (i.amount ? money(i.amount) : '') + '</td><td>' + (i.undone ? 'undone' : '<button type="button" class="af-b l" data-af="undo" data-log="' + esc(e.id) + '" data-id="' + esc(i.id) + '">↩ Undo</button>') + '</td></tr>'; }).join('') + '</table>';
+    });
+    if (!E.length) h += '<p>No automatic fixes yet.</p>';
+  }
+  ov.innerHTML = h + '</div>';
+}
+function close(){ var ov = D.getElementById('af-ov'); if (ov) ov.remove(); }
+D.addEventListener('click', function(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-af]') : null; if (!t) return;
+  var a = t.getAttribute('data-af');
+  if (a === 'look' || a === 'log') { Promise.all([logLoad(), lookLoad()]).then(function(){ open(a); }); return; }
+  if (a === 'close') return close();
+  if (a === 'invlink') { close(); try { W._gcInvLink.open('links'); } catch (e) {} return; }
+  if (a === 'done') { t.disabled = true; lookDone(t.getAttribute('data-id')).then(function(){ open('look'); }); return; }
+  if (a === 'undo' || a === 'undoall') { t.disabled = true; undoItems(t.getAttribute('data-log'), a === 'undo' ? [t.getAttribute('data-id')] : null).then(function(){ open('log'); }); return; }
+});
+
+/* boot: load the log for the card; run once when this desk may (admin / office, data loaded, live copy) */
+var tries = 0;
+function ready(){ var c = crm(); return invList().length > 0 && arr(c.projects).length > 0 && typeof W.idbGet === 'function'; }
+function tick(){
+  if (!allowed()) return;
+  /* an automated browser (the test harness) runs it only when its test asks for it — every other test's made-up books stay as they are */
+  try { if (W.navigator && W.navigator.webdriver && !W.__GC_ACCTFIX_TEST__) return; } catch (e) {}
+  if (!LOG) { logLoad(); lookLoad(); }
+  paint(false);
+  if (STATE && STATE.runs && STATE.runs[CORE.RUN_ID]) return;
+  if (lsGet('gc_acctfix_off') === '1' || W.__GC_ACCTFIX_OFF__) return;
+  if (!ready() || ++tries < 3) return;
+  run().then(function(r){ if (r && r.skipped === 'done') { logLoad().then(function(){ lookLoad().then(function(){ paint(true); }); }); } }, function(e){ try { console.warn('[GC] ACCTAUTO:', e && e.message || e); } catch (_e) {} });
+}
+SI.call(W, tick, 5000); ST.call(W, tick, 1500);
+
+W._gcAcctFix = { core: CORE, plan: plan, run: run, undoItem: function(logId, itemId){ return undoItems(logId, [itemId]); }, undoAll: function(logId){ return undoItems(logId, null); },
+  lookDone: lookDone, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; } };
+try { console.log('[GC] 🧾 Accounting fixes run once by themselves; Accounting → ⚠ Needs a look (patch ACCTAUTO) — _gcAcctFix.plan()'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="gc-patch-jobinfo">
