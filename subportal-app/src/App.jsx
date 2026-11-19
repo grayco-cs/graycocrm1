@@ -143,6 +143,18 @@ const T = {
     plansAsked: 'Request sent — we will e-mail you when the plans are ready.', plansAskedNote: 'Plans requested — we will e-mail you as soon as they are here.', plansReadyNote: 'The plans are ready (we e-mailed you).',
     plansRequestedBy: 'Plans requested by {n} sub(s)', plansAllTold: 'all told', uploadPlansZip: 'Upload plans, specs or scopes', plansUploading: 'Uploading…', plansZipHint: 'Any file — PDF, Word, Excel, PowerPoint, pictures, DWG, or a ZIP (unpacked; folders become categories) — up to 50 MB each. Each file is sorted by trade: a scope goes on its trade, a sheet like E-101 is linked to Electrical.',
     plansUploaded: '{n} plan file(s) added.', plansTold: '{n} sub(s) e-mailed that the plans are ready.', plansSkipped: 'left out',
+    acctTypeQ: 'I am signing up as', acctSub: 'Subcontractor (labour)', acctSupplier: 'Supplier / vendor (materials)', supplierL: 'Supplier',
+    materialsTap: 'Materials you supply — tap all that fit', myQuotes: 'My Quotes', approvedSuppliers: 'Suppliers', materialList: 'Materials to quote',
+    suppliersCanQuote: 'Suppliers can quote (materials)', suppliersHint: 'Approved suppliers see this job, its plans and the material list below, and send a material quote. They never see labour scopes or bids.',
+    mqTitle: 'Material quote', mqEnter: 'Send a material quote', mqDesc: 'Item', mqQty: 'Qty', mqUnit: 'Unit', mqPrice: 'Unit price', mqAddLine: '+ Add a line',
+    mqLead: 'Lead time', mqValid: 'Valid until', mqNotes: 'Notes', mqTax: 'Tax', mqFreight: 'Freight / delivery', mqSubtotal: 'Subtotal', mqTotal: 'Total',
+    mqSubmit: 'Send quote', mqUpdate: 'Update quote', mqSent: 'Quote sent to GrayCo.', mqNeedLine: 'Add at least one item with a description.',
+    mqStatus: { submitted: 'Sent — GrayCo is reviewing', accepted: 'Accepted', declined: 'Not selected' }, mqClosed: 'This job is not taking material quotes right now.',
+    mqAdminTitle: 'Material quotes (suppliers)', mqNone: 'No material quotes yet.', mqAccept: 'Accept', mqDecline: 'Decline', mqReopen: 'Undo', mqNoJobs: 'No jobs are open for material quotes right now.',
+    supWorkTitle: 'My orders & bills with GrayCo', supNotLinked: 'GrayCo has not linked your account to its vendor record yet. Once it does, your purchase orders and bills show here.',
+    supPos: 'Purchase orders', supBills: 'Bills', supJobs: 'Jobs', supOpen: 'Open bills', supPaidYr: 'Paid this year', supNoPos: 'No purchase orders yet.', supNoBills: 'No bills on file yet.',
+    supDocsNote: 'Suppliers: a W-9 helps GrayCo pay you. Insurance certificates are not needed for material quotes.', crmVendor: 'CRM vendor (POs, bills)', likelyMatch: 'Likely match', linkIt: 'Link it',
+    selectPerson: '— Select —', subsVisOn: 'Visible to subs', subsVisOff: 'Hidden from subs', subsVisHint: 'Subs and suppliers see this only when ticked. The invitation to bid, the solicitation and bid forms start hidden; plans, specs, addenda and scopes start shown.',
     draftBadge: 'Draft', draftHint: 'From the CRM Lead Inbox. Subcontractors cannot see it until you publish it.', publishDraft: 'Publish to bid portal', draftPublished: 'Published — subs can see it now.', draftNeedsDue: 'Add a bid due date first (Edit Job Details).',
     won: 'Won', lost: 'Lost',
     planArchive: 'Plan Archive', archivedPlans: 'Archived plans (won jobs)',
@@ -443,6 +455,18 @@ const T = {
     plansAsked: 'Pedido enviado — le avisaremos por correo cuando estén los planos.', plansAskedNote: 'Planos pedidos — le avisaremos por correo en cuanto estén.', plansReadyNote: 'Los planos ya están (le enviamos un correo).',
     plansRequestedBy: 'Planos pedidos por {n} subcontratista(s)', plansAllTold: 'todos avisados', uploadPlansZip: 'Subir planos, especificaciones o alcances', plansUploading: 'Subiendo…', plansZipHint: 'Cualquier archivo — PDF, Word, Excel, PowerPoint, fotos, DWG o un ZIP (se separa; las carpetas son categorías) — hasta 50 MB cada uno. Cada archivo se ordena por oficio.',
     plansUploaded: '{n} plano(s) agregados.', plansTold: '{n} subcontratista(s) avisados.', plansSkipped: 'no incluidos',
+    acctTypeQ: 'Me registro como', acctSub: 'Subcontratista (mano de obra)', acctSupplier: 'Proveedor (materiales)', supplierL: 'Proveedor',
+    materialsTap: 'Materiales que suministra — toque todos los que apliquen', myQuotes: 'Mis cotizaciones', approvedSuppliers: 'Proveedores', materialList: 'Materiales a cotizar',
+    suppliersCanQuote: 'Los proveedores pueden cotizar (materiales)', suppliersHint: 'Los proveedores aprobados ven este trabajo, sus planos y la lista de materiales, y envían una cotización. Nunca ven alcances ni ofertas de mano de obra.',
+    mqTitle: 'Cotización de materiales', mqEnter: 'Enviar una cotización de materiales', mqDesc: 'Artículo', mqQty: 'Cant.', mqUnit: 'Unidad', mqPrice: 'Precio unitario', mqAddLine: '+ Agregar línea',
+    mqLead: 'Tiempo de entrega', mqValid: 'Válida hasta', mqNotes: 'Notas', mqTax: 'Impuesto', mqFreight: 'Flete / entrega', mqSubtotal: 'Subtotal', mqTotal: 'Total',
+    mqSubmit: 'Enviar cotización', mqUpdate: 'Actualizar cotización', mqSent: 'Cotización enviada a GrayCo.', mqNeedLine: 'Agregue al menos un artículo con descripción.',
+    mqStatus: { submitted: 'Enviada — GrayCo la está revisando', accepted: 'Aceptada', declined: 'No seleccionada' }, mqClosed: 'Este trabajo no recibe cotizaciones de materiales ahora.',
+    mqAdminTitle: 'Cotizaciones de materiales (proveedores)', mqNone: 'Aún no hay cotizaciones.', mqAccept: 'Aceptar', mqDecline: 'Rechazar', mqReopen: 'Deshacer', mqNoJobs: 'No hay trabajos abiertos para cotizar materiales ahora.',
+    supWorkTitle: 'Mis pedidos y facturas con GrayCo', supNotLinked: 'GrayCo aún no ha vinculado su cuenta a su registro de proveedor. Cuando lo haga, sus órdenes de compra y facturas aparecerán aquí.',
+    supPos: 'Órdenes de compra', supBills: 'Facturas', supJobs: 'Trabajos', supOpen: 'Facturas abiertas', supPaidYr: 'Pagado este año', supNoPos: 'Aún no hay órdenes de compra.', supNoBills: 'Aún no hay facturas.',
+    supDocsNote: 'Proveedores: un W-9 ayuda a GrayCo a pagarle. No se necesitan certificados de seguro para cotizar materiales.', crmVendor: 'Proveedor en el CRM (órdenes, facturas)', likelyMatch: 'Posible coincidencia', linkIt: 'Vincular',
+    selectPerson: '— Elegir —', subsVisOn: 'Visible para subs', subsVisOff: 'Oculto para subs', subsVisHint: 'Los subs y proveedores lo ven solo si está marcado. La invitación a licitar, la convocatoria y los formularios de oferta empiezan ocultos; planos, especificaciones, adendas y alcances, visibles.',
     draftBadge: 'Borrador', draftHint: 'Del buzón de oportunidades del CRM. Los subcontratistas no lo ven hasta que usted lo publique.', publishDraft: 'Publicar en el portal de licitaciones', draftPublished: 'Publicado — los subcontratistas ya lo ven.', draftNeedsDue: 'Primero ponga la fecha límite (Editar trabajo).',
     won: 'Ganado', lost: 'Perdido',
     planArchive: 'Archivo de Planos', archivedPlans: 'Planos archivados (trabajos ganados)',
@@ -650,7 +674,9 @@ async function deletePlansFor(jobId) {
   await sdel(`plans:${jobId}`);
 }
 function stripPlanBinaries(plans) {
-  return (plans || []).map(p => ({ name: p.name, size: p.size, type: p.type }));
+  /* patch BIDVIS: only the file itself (a picked "data:" copy) is left out — the plan's category, trades, version and the admin's
+     "Visible to subs" tick stay on the job (they were dropped here, so the tick never reached the server) */
+  return (plans || []).map(p => { const { dataUrl, ...rest } = p || {}; return rest; });
 }
 
 /* ============================================================
@@ -786,7 +812,7 @@ const ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.t
 /* patch PLANREQ-B (owner 11/12: "make sure I can add all types of files"): every common type on a bid job — 50 MB each, bigger → a 🔗 link */
 const ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip,application/pdf,image/*';
 const ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip)$/i;
-function SignupPapers({ t, papers, setPapers }) {
+function SignupPapers({ t, papers, setPapers, w9Only }) {
   const pick = async (key, e, i) => {
     const f = e.target.files && e.target.files[0];
     try {
@@ -821,9 +847,9 @@ function SignupPapers({ t, papers, setPapers }) {
       <div style={{ fontSize: 13, fontWeight: 700, color: styles.text, marginBottom: 4 }}>📎 {t.ppT}</div>
       <div style={{ fontSize: 12, color: styles.text2, lineHeight: 1.5, marginBottom: 8 }}>{t.ppWhy}</div>
       {Row({ k: 'w9', label: t.ppW9 })}
-      {Row({ k: 'gl', label: t.ppGl, exp: true })}
-      {Row({ k: 'wc', label: t.ppWc, exp: true, exempt: true })}
-      <div data-pp-row="lic" style={{ padding: '8px 0', borderTop: `1px dashed ${styles.border}` }}>
+      {!w9Only && Row({ k: 'gl', label: t.ppGl, exp: true })}
+      {!w9Only && Row({ k: 'wc', label: t.ppWc, exp: true, exempt: true })}
+      {!w9Only && <div data-pp-row="lic" style={{ padding: '8px 0', borderTop: `1px dashed ${styles.border}` }}>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{t.ppLicOpt || t.ppLic}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr 1fr', gap: 8 }}>
           <input style={inputStyle} placeholder={t.ppLicState} maxLength={2} value={l.state || ''} onChange={e => setLic('state', e.target.value)} />
@@ -831,7 +857,7 @@ function SignupPapers({ t, papers, setPapers }) {
           <input style={inputStyle} placeholder={t.ppLicNum} value={l.number || ''} onChange={e => setLic('number', e.target.value)} />
         </div>
         <input type="file" accept={ACCEPT_DOCS} style={{ marginTop: 6 }} data-pp="lic" onChange={e => pick('lic', e, 0)} />
-      </div>
+      </div>}
     </div>
   );
 }
@@ -967,8 +993,8 @@ const Badge = ({ children, color = styles.navy, bg }) => (
   }}>{children}</span>
 );
 
-const Card = ({ children, hover, style = {}, onClick }) => (
-  <div className={hover ? 'card-hover' : ''} onClick={onClick} style={{
+const Card = ({ children, hover, style = {}, onClick, ...rest }) => (
+  <div {...rest} className={hover ? 'card-hover' : ''} onClick={onClick} style={{
     background: styles.card, border: `1px solid ${styles.border}`,
     borderRadius: styles.radius, padding: 22,
     boxShadow: styles.shadowSm,
@@ -1135,6 +1161,7 @@ export default function App() {
   const [invites, setInvites] = useState([]);     // {id, jobId, email, token, createdAt, createdBy, usedBy?}
   const [messages, setMessages] = useState([]);   // {id, jobId, senderId, senderName, senderCompany, senderRole, body, at, readBy: []}
   const [questions, setQuestions] = useState([]); // 33.151 pre-bid Q&A: {id, jobId, body, attachments, at, answer, visibility, num}
+  const [mquotes, setMquotes] = useState([]);     // patch SUPPLIER: material quotes {id, jobId, userId, lines, total, status}
   const [acks, setAcks] = useState([]);           // patch SYS2: {id, jobId, num, userId, at} — "I acknowledge addendum #n"
   const [subDocs, setSubDocs] = useState({});  // { userId: docs[] }
   const [user, setUser] = useState(null);
@@ -1168,6 +1195,7 @@ export default function App() {
     setMessages(data.messages || []);
     setQuestions(data.questions || []);
     setAcks(data.acks || []);
+    setMquotes(data.mquotes || []);
     setSubDocs(u.role === 'admin' ? (data[subKey] || {}) : { [u.id]: data[subKey] || [] });
     const fresh = (data.users || []).find(x => x.id === u.id);
     if (fresh) setUser(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
@@ -1264,6 +1292,7 @@ export default function App() {
       setMessages(data.messages || []);
       setQuestions(data.questions || []);
       setAcks(data.acks || []);
+      setMquotes(data.mquotes || []);
       const subKey = keys[keys.length - 1];
       setSubDocs(user.role === 'admin' ? (data[subKey] || {}) : { [user.id]: data[subKey] || [] });
       setActiveJob(prev => prev ? ((data.jobs || []).find(j => j.id === prev.id) || prev) : prev);
@@ -1298,6 +1327,10 @@ export default function App() {
     if (loading || !user) return;
     sset('bids', bids).catch(e => console.warn('bids save failed', e));
   }, [bids, loading]);
+  useEffect(() => {   /* patch SUPPLIER */
+    if (loading || !user) return;
+    sset('mquotes', mquotes).catch(e => console.warn('quotes save failed', e));
+  }, [mquotes, loading]);
   useEffect(() => {
     if (loading || !user) return;
     sset('links', links).catch(e => console.warn('links save failed', e));
@@ -1387,7 +1420,8 @@ export default function App() {
   // ============ MAIN SHELL ============
   const isAdmin = user.role === 'admin';
 
-  const pendingApproval = user.role === 'sub' && !user.approved;
+  const isSupplier = user.role === 'supplier';   /* patch SUPPLIER */
+  const pendingApproval = (user.role === 'sub' || isSupplier) && !user.approved;
   const navTabs = pendingApproval ? [
     { id: 'mySettings', label: t.mySettings, icon: Settings },
   ] : isAdmin ? [
@@ -1398,8 +1432,14 @@ export default function App() {
     { id: 'archive', label: t.planArchive, icon: Building2 },
     { id: 'pending', label: t.pendingSubs, icon: UserCheck },
     { id: 'subs', label: t.approvedSubs, icon: Users },
+    { id: 'suppliers', label: t.approvedSuppliers, icon: Building2 },
     { id: 'team', label: t.teamMembers, icon: Shield },
     { id: 'links', label: t.adminLinks, icon: LinkIcon },
+  ] : isSupplier ? [
+    { id: 'jobs', label: t.jobs, icon: Briefcase },
+    { id: 'myQuotes', label: t.myQuotes, icon: FileText },
+    { id: 'myWork', label: t.myWork, icon: DollarSign },
+    { id: 'mySettings', label: t.mySettings, icon: Settings },
   ] : [
     { id: 'jobs', label: t.jobs, icon: Briefcase },
     { id: 'myBids', label: t.myBids, icon: FileText },
@@ -1444,7 +1484,7 @@ export default function App() {
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{user.name}</div>
                 <div style={{ fontSize: 11, color: styles.text2 }}>
-                  {user.company} · {isAdmin ? t.admin : t.sub}
+                  {user.company} · {isAdmin ? t.admin : isSupplier ? t.supplierL : t.sub}
                 </div>
               </div>
               {isAdmin && !impersonatedFrom && (
@@ -1586,6 +1626,7 @@ export default function App() {
               messages={messages} setMessages={setMessages}
               questions={questions} setQuestions={setQuestions}
               acks={acks} setAcks={setAcks}
+              mquotes={mquotes} setMquotes={setMquotes}
               setView={setView} />
           ) : (
             <>
@@ -1593,7 +1634,9 @@ export default function App() {
                 invites={invites} onOpen={setActiveJob} bids={bids} />}
               {view === 'myBids' && <MyBids t={t} bids={bids} jobs={jobs} user={user}
                 onOpen={setActiveJob} />}
-              {view === 'myWork' && <MyWork t={t} user={user} asAdmin={!!impersonatedFrom} />}
+              {view === 'myWork' && (isSupplier ? <SupplierWork t={t} user={user} /> : <MyWork t={t} user={user} asAdmin={!!impersonatedFrom} />)}
+              {view === 'myQuotes' && <MyQuotes t={t} mquotes={mquotes} jobs={jobs} user={user} onOpen={setActiveJob} />}
+              {view === 'suppliers' && <ApprovedSuppliers t={t} users={users} setUsers={setUsers} subDocs={subDocs} showToast={showToast} />}
               {view === 'mySettings' && <SubSettings t={t} user={user}
                 onSaveProfile={patch => {
                   setUsers(users.map(u => u.id === user.id ? { ...u, ...patch } : u));
@@ -1719,6 +1762,8 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
       return token && jobId ? { token, jobId } : null;
     } catch { return null; }
   })();
+  useEffect(() => { if (form.acctType === 'supplier') setMode('register'); /* patch SUPPLIER: ?as=supplier → the supplier sign-up */ // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!inviteParams) return;
     fetchInviteInfo(inviteParams.token, inviteParams.jobId).then(info => {
@@ -1731,6 +1776,8 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
   }, []);
 
   const [form, setForm] = useState({
+    /* patch SUPPLIER: a subcontractor or a supplier (materials) account; ?as=supplier opens the supplier sign-up */
+    acctType: (() => { try { return new URLSearchParams(window.location.search).get('as') === 'supplier' ? 'supplier' : 'sub'; } catch (e) { return 'sub'; } })(),
     // Login
     username: '', password: '',
     // Contact
@@ -1794,6 +1841,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
       businessCity: form.businessCity, businessState: form.businessState,
       numEmployees: form.numEmployees, serviceArea: form.serviceArea,
       trades: tradesList, lang, papersClaimed: papersDocs.claimed,
+      acctType: form.acctType === 'supplier' ? 'supplier' : 'sub',   /* patch SUPPLIER */
     };
     setBusy(true);
     let result;
@@ -1925,6 +1973,15 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
             </>
           ) : (
             <>
+              {/* patch SUPPLIER: which kind of account */}
+              <Field label={t.acctTypeQ + ' *'}>
+                <div data-acct-type={form.acctType} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {[['sub', '🔨 ' + t.acctSub], ['supplier', '🧱 ' + t.acctSupplier]].map(([k, l]) => (
+                    <button key={k} type="button" data-acct={k} aria-pressed={form.acctType === k} onClick={() => setForm({ ...form, acctType: k })}
+                      style={{ flex: '1 1 160px', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: styles.fontBody,
+                        border: `2px solid ${form.acctType === k ? styles.accent : styles.border}`, background: form.acctType === k ? '#FFFBEB' : '#fff', color: styles.text }}>{l}</button>))}
+                </div>
+              </Field>
               {/* patch SIGNUPPAPERS (owner 11/12: "just what I need: their trades and some basic stuff") — one short screen */}
               <div data-signup-short="1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label={t.legalCompanyName + ' *'}><input style={inputStyle} data-su="company" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></Field>
@@ -1939,7 +1996,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
                 <Field label={t.businessState + ' *'}><input style={inputStyle} data-su="state" maxLength={2} value={form.businessState} onChange={e => setForm({ ...form, businessState: e.target.value.toUpperCase() })} /></Field>
                 <Field label={t.crewSize || 'Crew size'}><input style={inputStyle} type="number" min="1" data-su="crew" value={form.numEmployees} onChange={e => setForm({ ...form, numEmployees: e.target.value })} /></Field>
               </div>
-              <Field label={(t.tradesTap || 'Your trade(s) — tap all that fit') + ' *'}>
+              <Field label={(form.acctType === 'supplier' ? t.materialsTap : (t.tradesTap || 'Your trade(s) — tap all that fit')) + ' *'}>
                 <TradeChips picked={form.tradesPicked || {}} onChange={tp => setForm({ ...form, tradesPicked: tp })} />
                 <input style={{ ...inputStyle, marginTop: 6 }} data-su="tradeOther" placeholder={t.tradeOther || 'Other trade(s) — type them here'} value={form.trades} onChange={e => setForm({ ...form, trades: e.target.value })} />
               </Field>
@@ -1951,7 +2008,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
               </Field>
 
               {/* patch SIGNUPPAPERS: the papers, optional — for faster approval */}
-              <SignupPapers t={t} papers={papers} setPapers={setPapers} />
+              <SignupPapers t={t} papers={papers} setPapers={setPapers} w9Only={form.acctType === 'supplier'} />
             </>
           )}
 
@@ -2095,6 +2152,46 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
         })}
       </div>
     </div>
+  );
+}
+
+/* patch BIDEST: the people who can be a job's PM / estimator (GrayCo staff on the bid site), the Senior Estimator (the CRM's
+   Admin → 🧮 Senior Estimator setting, marked by the server), and a commercial bid job (type commercial or not set) */
+function staffPick(users) { return (users || []).filter(u => u && u.role === 'admin'); }
+function seniorEstimatorOf(users) { return staffPick(users).find(u => u.seniorEstimator) || null; }
+function commercialJob(j) { const v = String((j && j.projectType) || '').toLowerCase(); return !v || v === 'commercial'; }
+/* ✎ Edit Job Details: a PM / estimator id that is not one of the people in the list is no pick at all (the select used to SHOW the
+   first person while the form held '' — "Please select an Estimator." with an estimator on screen); a commercial job with none → the Senior Estimator */
+function pickOrDefault(id, users, job, isEst) {
+  const list = staffPick(users);
+  if (id && list.some(u => u.id === id)) return id;
+  if (isEst && commercialJob(job)) { const se = seniorEstimatorOf(users); if (se) return se.id; }
+  return '';
+}
+/* patch BIDVIS: the same default as netlify/functions/_lib/subvis.js — the invitation to bid / solicitation / bid form / a bid board's
+   page start HIDDEN from subs; plans, specs, addenda and GrayCo's scopes start shown. An admin's "Visible to subs" tick wins. */
+const SV_HIDE = /\b(solicitations?|invitations?(\s+(to|for)\s+bids?)?|invite\s+to\s+bid|itb|ifb|rfp|rfq|rfb|bid\s*forms?|proposal\s*forms?|forms?\s+of\s+(bid|proposal)|notices?\s+(to|of)\s+(bidders|contractors|bid|solicitation)|notice\s*&\s*documents|bid\s+notices?|advertisement(\s+for\s+bids)?|legal\s+notices?|instructions?\s+to\s+bidders|bid\s+bonds?|bidders?'?\s+(list|registration)|bid\s+tabulations?|bid\s+invite)\b/i;
+const SV_PLAN = /\b(plans?|drawings?|sheets?|blueprints?|addend\w*|specs?|specifications?|project\s+manual|scopes?)\b/i;
+const SV_HOST = /(^|\.)(buildingconnected\.com|sam\.gov|bidnetdirect\.com|bonfirehub\.com|demandstar\.com|publicpurchase\.com|planetbids\.com|ionwave\.net|bidsync\.com|periscopeholdings\.com)$/i;
+function svSolicitation(item, kind) {
+  if (!item || kind === 'scope' || kind === 'addendum') return false;
+  const clean = a => a.map(x => String(x == null ? '' : x).trim()).join(' ').replace(/[_\-.]+/g, ' ');
+  const text = clean([item.name, item.label, item.category, item.title]), own = clean([item.name, item.label, item.title]);
+  if (SV_HIDE.test(text) && !SV_PLAN.test(own)) return true;
+  if (kind === 'link' && !SV_PLAN.test(own)) { let h = ''; try { h = new URL(item.url).host; } catch (e) {}
+    if (/^(government|buildingconnected|bid\s*board)$/i.test(String(item.board || '').trim()) || SV_HOST.test(h)) return true; }
+  return false;
+}
+function subsVisible(item, kind) { return item && item.subsVisible === true ? true : item && item.subsVisible === false ? false : !svSolicitation(item, kind); }
+function VisToggle({ t, item, kind, onChange }) {
+  const on = subsVisible(item, kind);
+  return (
+    <label data-subvis={on ? 'on' : 'off'} title={t.subsVisHint} onClick={e => e.stopPropagation()}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+        padding: '4px 8px', borderRadius: 999, border: `1px solid ${on ? styles.green : styles.border}`, color: on ? styles.green : styles.text2, background: '#fff' }}>
+      <input type="checkbox" checked={on} onChange={e => onChange(e.target.checked)} style={{ margin: 0 }} />
+      {on ? t.subsVisOn : t.subsVisOff}
+    </label>
   );
 }
 
@@ -2601,8 +2698,9 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
 /* ============================================================
    JOB DETAIL — view, download plans, submit bid
    ============================================================ */
-function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJobs, users, subDocs, estimates, setEstimates, activity, setActivity, invites, setInvites, messages, setMessages, questions, setQuestions, acks, setAcks, setView }) {
+function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJobs, users, subDocs, estimates, setEstimates, activity, setActivity, invites, setInvites, messages, setMessages, questions, setQuestions, acks, setAcks, mquotes, setMquotes, setView }) {
   const isAdmin = user.role === 'admin';
+  const isSupplier = user.role === 'supplier';   /* patch SUPPLIER */
   const myBid = bids.find(b => b.jobId === job.id && b.userId === user.id);
   const jobBids = bids.filter(b => b.jobId === job.id);
   const dueI = dueInfo(job.bidDueDate, t);
@@ -2762,6 +2860,12 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
     showToast('Job reopened.');
   }
 
+  /* patch BIDVIS: an admin's "Visible to subs" tick on a plan file, spec / scope file or plan-room link (kept on the job) */
+  function setVis(field, item, v) {
+    setJobs(jobs.map(j => j.id === job.id ? { ...j, [field]: (j[field] || []).map(x => x === item || (x && item && ((x.id && x.id === item.id) || (!x.id && x.name && x.name === item.name && x.url === item.url))) ? { ...x, subsVisible: !!v } : x) } : j));
+    showToast(v ? t.subsVisOn + ' ✓' : t.subsVisOff);
+  }
+
   // ---- EDIT JOB ----
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -2770,8 +2874,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       title: job.title || '',
       address: job.address || '',
       bidDueDate: job.bidDueDate || '',
-      pmId: job.pmId || '',
-      estimatorId: job.estimatorId || '',
+      pmId: pickOrDefault(job.pmId, users, job, false),
+      estimatorId: pickOrDefault(job.estimatorId, users, job, true),   /* patch BIDEST */
       /* patch BIDPO: no PO / CRM id typed here; the site walk + questions deadline (the CRM's site walk when the bid site has none) */
       ...(() => { const w = (job.siteWalk && job.siteWalk.date) ? job.siteWalk : ((job._po && job._po.crmSiteWalk) || {});
         return { swDate: w.date || '', swTime: w.time || '', swMandatory: !!w.mandatory, swLocation: w.location || '', swFromCrm: !(job.siteWalk && job.siteWalk.date) && !!w.date }; })(),
@@ -2780,6 +2884,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       bidResultsSharing: job.bidResultsSharing || 'private',
       grayCoRole: job.grayCoRole || 'gc',
       tradesSought: job.tradesSought || '',
+      suppliersCanQuote: job.suppliersCanQuote === true, materialList: job.materialList || '',   /* patch SUPPLIER */
       tradeScopes: job.tradeScopes || [],
       scope: job.scope || '',
       specifications: job.specifications || '',
@@ -2798,7 +2903,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       address: editForm.address.trim(),
       bidDueDate: editForm.bidDueDate,
       pmId: editForm.pmId,
-      estimatorId: editForm.estimatorId,
+      estimatorId: editForm.estimatorId, _estAuto: false,   /* patch BIDEST: picked here = the job's own estimator */
       siteWalk: editForm.swDate
         ? { ...(job.siteWalk || {}), date: editForm.swDate, time: editForm.swTime || '', mandatory: !!editForm.swMandatory, location: (editForm.swLocation || '').trim() || editForm.address.trim() }
         : ((job.siteWalk && job.siteWalk.date) ? { ...job.siteWalk, date: '', time: '', location: '', mandatory: false } : job.siteWalk),
@@ -2808,6 +2913,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       bidResultsSharing: editForm.bidResultsSharing,
       grayCoRole: editForm.grayCoRole,
       tradesSought: editForm.tradesSought,
+      suppliersCanQuote: !!editForm.suppliersCanQuote, materialList: editForm.materialList || '',
       tradeScopes: editForm.tradeScopes,
       scope: editForm.scope,
       specifications: editForm.specifications,
@@ -3027,21 +3133,33 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <Field label={t.projectManager} required>
-              <select style={inputStyle} value={editForm.pmId}
+              <select style={inputStyle} value={editForm.pmId} data-edit-pm="1"
                 onChange={e => setEditForm({ ...editForm, pmId: e.target.value })}>
-                {users.filter(u => u.role === 'admin').map(u => (
+                {!editForm.pmId && <option value="">{t.selectPerson}</option>}
+                {staffPick(users).map(u => (
                   <option key={u.id} value={u.id}>{u.name}{u.title ? ` — ${u.title}` : ''}</option>
                 ))}
               </select>
             </Field>
             <Field label={t.estimator} required>
-              <select style={inputStyle} value={editForm.estimatorId}
+              <select style={inputStyle} value={editForm.estimatorId} data-edit-est="1"
                 onChange={e => setEditForm({ ...editForm, estimatorId: e.target.value })}>
-                {users.filter(u => u.role === 'admin').map(u => (
+                {!editForm.estimatorId && <option value="">{t.selectPerson}</option>}
+                {staffPick(users).map(u => (
                   <option key={u.id} value={u.id}>{u.name}{u.title ? ` — ${u.title}` : ''}</option>
                 ))}
               </select>
             </Field>
+          </div>
+          {/* patch SUPPLIER: open the job for MATERIAL quotes from approved suppliers */}
+          <div data-supplier-edit="1" style={{ border: `1px solid ${styles.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 14, background: '#fff' }}>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" data-sq="on" checked={!!editForm.suppliersCanQuote} onChange={e => setEditForm({ ...editForm, suppliersCanQuote: e.target.checked })} /> 🧱 {t.suppliersCanQuote}
+            </label>
+            <div style={{ fontSize: 11, color: styles.text3 || styles.text2, margin: '4px 0 8px', lineHeight: 1.4 }}>{t.suppliersHint}</div>
+            {editForm.suppliersCanQuote && <label style={{ fontSize: 12, color: styles.text2, display: 'block' }}>{t.materialList}
+              <textarea style={{ ...inputStyle, minHeight: 90, fontFamily: styles.fontBody }} data-sq="list" value={editForm.materialList}
+                placeholder="e.g. 4 RTUs 10-ton, curbs, duct per M-101…" onChange={e => setEditForm({ ...editForm, materialList: e.target.value })} /></label>}
           </div>
           <Field label={t.visibility} required>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -3251,7 +3369,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         borderRadius: 6, textDecoration: 'none', fontWeight: 600, fontSize: 13,
                         border: `1.5px solid ${styles.border}`,
                       }}>
-                        <Mail size={14} /> {t.emailPM}
+                        <Mail size={14} /> <span data-contact-email="1">{person.email}</span>
                       </a>
                     )}
                   </div>
@@ -3296,6 +3414,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                             <div style={{ fontSize: 11, color: styles.text2 }}>{sizeLabel}</div>
                           </div>
                         </div>
+                        {isAdmin && <VisToggle t={t} item={doc} kind="scope" onChange={v => setVis('scopeDocs', doc, v)} />}
                         <Btn size="sm" icon={Download} onClick={() => {
                           openFile(doc.dataUrl, doc.name);
                           logDownload(doc.name);
@@ -3332,6 +3451,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                             <div style={{ fontSize: 11, color: styles.text2 }}>{sizeLabel}</div>
                           </div>
                         </div>
+                        {isAdmin && <VisToggle t={t} item={doc} kind="spec" onChange={v => setVis('specDocs', doc, v)} />}
                         <Btn size="sm" icon={Download} onClick={() => {
                           openFile(doc.dataUrl, doc.name);
                           logDownload(doc.name);
@@ -3482,7 +3602,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         <div style={{ fontSize: 12, color: styles.text2 }}>{(plan.size / 1024).toFixed(0)} KB</div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {isAdmin && <VisToggle t={t} item={plan} kind="plan" onChange={v => setVis('plans', plan, v)} />}
                       {/* Takeoff button — only shown for PDF plans */}
                       {(plan.name.toLowerCase().endsWith('.pdf') || plan.type === 'application/pdf') && (
                         <Btn size="sm" variant="ghost" onClick={() => {
@@ -3513,9 +3634,12 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               <h3 style={sectionTitleStyle} id="bid-planlinks"><FileText size={18} /> {t.planLinks}</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {job.plansLinks.map((l, i) => (
-                  <a key={l.id || i} href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
+                  <div key={l.id || i} data-planlink={i} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
                     🔗 {t.openPlans || 'Open plans'} ↗ — {l.label || t.openLink}{l.version ? ` · ${t.versionL} ${l.version}` : ''}{l.date ? ` · ${new Date(l.date + 'T12:00:00').toLocaleDateString()}` : ''}
                   </a>
+                  {isAdmin && <VisToggle t={t} item={l} kind="link" onChange={v => setVis('plansLinks', l, v)} />}
+                  </div>
                 ))}
               </div>
             </Card>
@@ -3525,6 +3649,17 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           {takeoffPlan && (
             <TakeoffModal plan={takeoffPlan} jobId={job.id} user={user} t={t}
               onClose={() => setTakeoffPlan(null)} />
+          )}
+
+          {/* patch SUPPLIER: the material list (suppliers + admins) and the suppliers' quotes (admins) */}
+          {(isAdmin || isSupplier) && job.suppliersCanQuote && job.materialList && (
+            <Card style={{ marginBottom: 16 }}>
+              <h3 style={sectionTitleStyle}><ClipboardList size={18} /> {t.materialList}</h3>
+              <div data-material-list="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{job.materialList}</div>
+            </Card>
+          )}
+          {isAdmin && (job.suppliersCanQuote || (mquotes || []).some(q => q.jobId === job.id)) && (
+            <MaterialQuotesAdmin t={t} job={job} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           )}
 
           {/* ADMIN: VIEW BIDS */}
@@ -3639,7 +3774,9 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
         {/* SIDEBAR — Bid form (subs) or Admin actions */}
         <div style={{ position: 'sticky', top: 20 }}>
-          {!isAdmin ? (
+          {isSupplier ? (
+            <SupplierQuoteForm t={t} job={job} user={user} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
+          ) : !isAdmin ? (
             <>
             {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" style={{ fontWeight: 700 }}>⏸ {t.biddingClosed}</div></Card>}
             {!job.biddingClosed && <Card>
@@ -4784,7 +4921,8 @@ function TradeScopesEditor({ t, tradeScopes, setTradeScopes, showToast }) {
    ============================================================ */
 function AddJob({ t, jobs, setJobs, user, users, showToast, setView }) {
   const [form, setForm] = useState({
-    title: '', address: '', bidDueDate: '', pmId: user.id, estimatorId: user.id,
+    title: '', address: '', bidDueDate: '', pmId: user.id, estimatorId: (seniorEstimatorOf(users) || user).id,   /* patch BIDEST: a new (commercial) bid job → the Senior Estimator */
+   
     visibility: 'public', bidResultsSharing: 'private',
     grayCoRole: 'gc', tradesSought: '',
     scope: '', specifications: '', notes: '',
@@ -5142,6 +5280,203 @@ function MyBids({ t, bids, jobs, user, onOpen }) {
   );
 }
 
+
+/* ============================================================
+   patch SUPPLIER — suppliers (materials): their quote form, their quotes, their POs / bills; the admin's quotes card and list
+   ============================================================ */
+const usd2 = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function SupplierQuoteForm({ t, job, user, mquotes, setMquotes, showToast }) {
+  const mine = (mquotes || []).find(q => q.jobId === job.id && q.userId === user.id);
+  const blank = () => ({ id: newId('l'), desc: '', qty: '', unit: '', unitPrice: '' });
+  const [lines, setLines] = useState(() => mine && mine.lines && mine.lines.length ? mine.lines.map(l => ({ ...l, qty: String(l.qty), unitPrice: String(l.unitPrice) })) : [blank()]);
+  const [f, setF] = useState(() => ({ leadTime: (mine && mine.leadTime) || '', validUntil: (mine && mine.validUntil) || '', notes: (mine && mine.notes) || '', tax: mine && mine.tax ? String(mine.tax) : '', freight: mine && mine.freight ? String(mine.freight) : '' }));
+  const decided = mine && mine.status && mine.status !== 'submitted';
+  const open = job.quotable !== false && !decided;
+  const n = v => Number(String(v).replace(/[^0-9.\-]/g, '')) || 0;
+  const sub = lines.reduce((a, l) => a + n(l.qty) * n(l.unitPrice), 0);
+  const total = sub + n(f.tax) + n(f.freight);
+  const setL = (id, k, v) => setLines(ls => ls.map(l => l.id === id ? { ...l, [k]: v } : l));
+  function send() {
+    const ok = lines.filter(l => String(l.desc).trim());
+    if (!ok.length) { showToast(t.mqNeedLine, 'error'); return; }
+    const now = new Date().toISOString();
+    const q = { ...(mine || {}), id: mine ? mine.id : newId('mq'), jobId: job.id, userId: user.id, userCompany: user.company, userName: user.name,
+      lines: ok.map(l => ({ id: l.id, desc: String(l.desc).trim(), qty: n(l.qty), unit: String(l.unit || '').trim(), unitPrice: n(l.unitPrice), total: Math.round(n(l.qty) * n(l.unitPrice) * 100) / 100 })),
+      subtotal: Math.round(sub * 100) / 100, tax: n(f.tax), freight: n(f.freight), total: Math.round(total * 100) / 100,
+      leadTime: f.leadTime, validUntil: f.validUntil, notes: f.notes, status: 'submitted', submittedAt: (mine && mine.submittedAt) || now, updatedAt: now };
+    setMquotes([...(mquotes || []).filter(x => x.id !== q.id), q]);
+    showToast(t.mqSent);
+  }
+  const cell = { ...inputStyle, padding: '7px 8px', fontSize: 13, marginBottom: 0 };
+  return (
+    <Card data-mq-form="1">
+      <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}><Send size={18} /> {mine ? t.mqTitle : t.mqEnter}</h3>
+      {mine && <div data-mq-status={mine.status || 'submitted'} style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: mine.status === 'accepted' ? styles.green : mine.status === 'declined' ? styles.red : styles.text2 }}>
+        {(t.mqStatus || {})[mine.status || 'submitted']}{mine.gcNote ? ' — ' + mine.gcNote : ''}</div>}
+      {!open && !mine && <div style={{ fontSize: 13, color: styles.text2 }}>{t.mqClosed}</div>}
+      {(open || mine) && <>
+        <div style={{ display: 'grid', gap: 6 }}>
+          {lines.map((l, i) => (
+            <div key={l.id} data-mq-line={i} style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 4, paddingBottom: 6, borderBottom: `1px dashed ${styles.border}` }}>
+              <input style={cell} disabled={!open} data-mq="desc" placeholder={t.mqDesc} value={l.desc} onChange={e => setL(l.id, 'desc', e.target.value)} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr auto', gap: 4, alignItems: 'center' }}>
+                <input style={cell} disabled={!open} data-mq="qty" inputMode="decimal" placeholder={t.mqQty} value={l.qty} onChange={e => setL(l.id, 'qty', e.target.value)} />
+                <input style={cell} disabled={!open} data-mq="unit" placeholder={t.mqUnit} value={l.unit} onChange={e => setL(l.id, 'unit', e.target.value)} />
+                <input style={cell} disabled={!open} data-mq="price" inputMode="decimal" placeholder={t.mqPrice} value={l.unitPrice} onChange={e => setL(l.id, 'unitPrice', e.target.value)} />
+                {open && lines.length > 1 ? <button type="button" aria-label="Remove" onClick={() => setLines(ls => ls.filter(x => x.id !== l.id))} style={{ border: 'none', background: 'transparent', color: styles.red, cursor: 'pointer' }}><X size={14} /></button> : <span />}
+              </div>
+            </div>
+          ))}
+        </div>
+        {open && <button type="button" data-mq="add" onClick={() => setLines(ls => [...ls, blank()])} style={{ border: 'none', background: 'transparent', color: styles.accentDk || styles.accent, fontWeight: 700, cursor: 'pointer', padding: '8px 0' }}>{t.mqAddLine}</button>}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 6 }}>
+          <label style={{ fontSize: 11, color: styles.text2 }}>{t.mqTax}<input style={cell} disabled={!open} data-mq="tax" inputMode="decimal" value={f.tax} onChange={e => setF({ ...f, tax: e.target.value })} /></label>
+          <label style={{ fontSize: 11, color: styles.text2 }}>{t.mqFreight}<input style={cell} disabled={!open} data-mq="freight" inputMode="decimal" value={f.freight} onChange={e => setF({ ...f, freight: e.target.value })} /></label>
+          <label style={{ fontSize: 11, color: styles.text2 }}>{t.mqLead}<input style={cell} disabled={!open} data-mq="lead" value={f.leadTime} placeholder="e.g. 3 weeks" onChange={e => setF({ ...f, leadTime: e.target.value })} /></label>
+          <label style={{ fontSize: 11, color: styles.text2 }}>{t.mqValid}<input style={cell} disabled={!open} type="date" data-mq="valid" value={f.validUntil} onChange={e => setF({ ...f, validUntil: e.target.value })} /></label>
+        </div>
+        <label style={{ fontSize: 11, color: styles.text2, display: 'block', marginTop: 6 }}>{t.mqNotes}<textarea style={{ ...cell, minHeight: 60 }} disabled={!open} data-mq="notes" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></label>
+        <div data-mq-total="1" style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 16, margin: '10px 0' }}><span>{t.mqTotal}</span><span>{usd2(total)}</span></div>
+        {open && <Btn icon={Send} onClick={send} style={{ width: '100%' }}>{mine ? t.mqUpdate : t.mqSubmit}</Btn>}
+      </>}
+    </Card>
+  );
+}
+function MaterialQuotesAdmin({ t, job, mquotes, setMquotes, showToast }) {
+  const qs = (mquotes || []).filter(q => q.jobId === job.id).sort((a, b) => (Number(a.total) || 0) - (Number(b.total) || 0));
+  const [openId, setOpenId] = useState(null);
+  function decide(q, status) { setMquotes(mquotes.map(x => x.id === q.id ? { ...x, status } : x)); showToast((t.mqStatus || {})[status] || status); }
+  return (
+    <Card style={{ marginBottom: 16 }} data-mq-admin="1">
+      <h3 style={sectionTitleStyle}><Building2 size={18} /> {t.mqAdminTitle} ({qs.length})</h3>
+      {!qs.length ? <div style={{ fontSize: 13, color: styles.text2 }}>{t.mqNone}</div> : qs.map(q => (
+        <div key={q.id} data-mq-row={q.id} style={{ border: `1px solid ${styles.border}`, borderRadius: 8, padding: 10, marginBottom: 8, background: styles.cream }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ cursor: 'pointer' }} onClick={() => setOpenId(openId === q.id ? null : q.id)}>
+              <div style={{ fontWeight: 700 }}>{q.userCompany} <span style={{ fontWeight: 400, color: styles.text2, fontSize: 12 }}>· {q.userName}{q.leadTime ? ' · ' + t.mqLead + ': ' + q.leadTime : ''}{q.validUntil ? ' · ' + t.mqValid + ' ' + q.validUntil : ''}</span></div>
+              <div style={{ fontSize: 12, color: q.status === 'accepted' ? styles.green : q.status === 'declined' ? styles.red : styles.text2, fontWeight: 700 }}>{(t.mqStatus || {})[q.status || 'submitted']} · {(q.lines || []).length} line(s)</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <b style={{ fontSize: 16 }}>{usd2(q.total)}</b>
+              {(!q.status || q.status === 'submitted') ? <>
+                <Btn size="sm" variant="success" onClick={() => decide(q, 'accepted')}>{t.mqAccept}</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => decide(q, 'declined')}>{t.mqDecline}</Btn>
+              </> : <Btn size="sm" variant="ghost" onClick={() => decide(q, 'submitted')}>{t.mqReopen}</Btn>}
+            </div>
+          </div>
+          {openId === q.id && (
+            <table style={{ width: '100%', fontSize: 12, marginTop: 8, borderCollapse: 'collapse' }}>
+              <tbody>
+                {(q.lines || []).map(l => <tr key={l.id}><td style={{ padding: '3px 4px' }}>{l.desc}</td><td style={{ textAlign: 'right' }}>{l.qty} {l.unit}</td><td style={{ textAlign: 'right' }}>{usd2(l.unitPrice)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{usd2(l.total)}</td></tr>)}
+                {Number(q.tax) > 0 && <tr><td colSpan={3}>{t.mqTax}</td><td style={{ textAlign: 'right' }}>{usd2(q.tax)}</td></tr>}
+                {Number(q.freight) > 0 && <tr><td colSpan={3}>{t.mqFreight}</td><td style={{ textAlign: 'right' }}>{usd2(q.freight)}</td></tr>}
+              </tbody>
+            </table>
+          )}
+          {openId === q.id && q.notes && <div style={{ fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{q.notes}</div>}
+        </div>
+      ))}
+    </Card>
+  );
+}
+function MyQuotes({ t, mquotes, jobs, user, onOpen }) {
+  const mine = (mquotes || []).filter(q => q.userId === user.id);
+  if (!mine.length) return <EmptyState icon={FileText} message={jobs.length ? t.mqNone : t.mqNoJobs} />;
+  return (
+    <div>
+      <SectionHeader icon={FileText} title={t.myQuotes} count={mine.length} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {mine.map(q => { const job = jobs.find(j => j.id === q.jobId); return (
+          <Card key={q.id} hover onClick={() => job && onOpen(job)}>
+            <div data-myquote={q.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div><div style={{ fontFamily: styles.fontDisplay, fontSize: 18, fontWeight: 600 }}>{job ? job.title : q.jobId}</div>
+                <div style={{ fontSize: 13, color: styles.text2 }}>{(t.mqStatus || {})[q.status || 'submitted']} · {new Date(q.submittedAt || q.updatedAt || Date.now()).toLocaleDateString()}</div></div>
+              <div style={{ fontFamily: styles.fontDisplay, fontSize: 22, fontWeight: 700, color: styles.accent }}>{usd2(q.total)}</div>
+            </div>
+          </Card>); })}
+      </div>
+    </div>
+  );
+}
+function SupplierWork({ t, user, asAdmin = false }) {
+  const [data, setData] = useState(null), [error, setError] = useState('');
+  useEffect(() => { api('my-work', asAdmin ? { userId: user.id } : {}).then(setData).catch(e => setError(e.message)); }, [user.id]);
+  if (error) return <Card><div style={{ color: styles.red }}>{error}</div></Card>;
+  if (!data) return <Card><Loader2 size={18} className="spin" /></Card>;
+  const day = d => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
+  return (
+    <div data-supplier-work="1">
+      <SectionHeader icon={DollarSign} title={t.supWorkTitle} />
+      {!data.linked ? <Card><div data-sw-unlinked="1" style={{ fontSize: 14, lineHeight: 1.5 }}>{t.supNotLinked}</div></Card> : <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 16 }}>
+          <Card><div style={{ fontSize: 12, color: styles.text2 }}>{t.supOpen}</div><div style={{ fontSize: 22, fontWeight: 800 }}>{usd2(data.totals.open)}</div></Card>
+          <Card><div style={{ fontSize: 12, color: styles.text2 }}>{t.supPaidYr}</div><div style={{ fontSize: 22, fontWeight: 800 }}>{usd2(data.totals.paidThisYear)}</div></Card>
+          <Card><div style={{ fontSize: 12, color: styles.text2 }}>{t.supJobs}</div><div style={{ fontSize: 14, fontWeight: 700 }}>{data.jobs.join(' · ') || '—'}</div></Card>
+        </div>
+        <Card style={{ marginBottom: 16 }}>
+          <h3 style={sectionTitleStyle}><FileText size={18} /> {t.supPos}</h3>
+          {!data.pos.length ? <div style={{ color: styles.text2, fontSize: 13 }}>{t.supNoPos}</div> : data.pos.map(po => (
+            <div key={po.id} data-sw-po={po.poNo} style={{ borderTop: `1px solid ${styles.border}`, padding: '8px 0' }}>
+              <div style={{ fontWeight: 700 }}>PO {po.poNo} · {po.job} <span style={{ fontWeight: 400, color: styles.text2, fontSize: 12 }}>{po.status} · {day(po.sentAt)}</span></div>
+              <div style={{ fontSize: 12, color: styles.text2 }}>{po.items.map(i => `${i.qty} ${i.unit} ${i.desc}`.trim()).join(' · ')}</div>
+            </div>))}
+        </Card>
+        <Card>
+          <h3 style={sectionTitleStyle}><DollarSign size={18} /> {t.supBills}</h3>
+          {!data.bills.length ? <div style={{ color: styles.text2, fontSize: 13 }}>{t.supNoBills}</div> : data.bills.map(b => (
+            <div key={b.id} data-sw-bill={b.number || b.id} style={{ borderTop: `1px solid ${styles.border}`, padding: '8px 0', display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div><b>{b.number ? '#' + b.number : '—'}</b> · {b.job || '—'}{b.po ? ' · PO ' + b.po : ''}<div style={{ fontSize: 12, color: styles.text2 }}>{b.state === 'paid' ? 'Paid ' + day(b.paidDate) + (b.checkNo ? ' · check ' + b.checkNo : '') : 'Open · due ' + day(b.due)}</div></div>
+              <b>{usd2(b.amount)}</b>
+            </div>))}
+        </Card>
+      </>}
+    </div>
+  );
+}
+function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
+  const list = users.filter(u => u.role === 'supplier' && u.approved);
+  const [vendors, setVendors] = useState(null), [work, setWork] = useState(null);
+  useEffect(() => { api('crm-vendors').then(r => setVendors(r.vendors || [])).catch(() => setVendors([])); }, []);
+  function link(id, vid) { setUsers(users.map(u => u.id === id ? { ...u, crmVendorId: vid || null } : u)); showToast(vid ? 'Linked to the CRM vendor.' : 'CRM link removed.'); }
+  function revoke(id) { if (!confirm('Revoke access for this supplier?')) return; setUsers(users.map(u => u.id === id ? { ...u, approved: false } : u)); showToast('Access revoked'); }
+  if (work) return (<div><Btn variant="ghost" size="sm" icon={ChevronLeft} onClick={() => setWork(null)} style={{ marginBottom: 20 }}>{t.back}</Btn><SupplierWork t={t} user={work} asAdmin /></div>);
+  if (!list.length) return <EmptyState icon={Building2} message="No approved suppliers yet." />;
+  return (
+    <div>
+      <SectionHeader icon={Building2} title={t.approvedSuppliers} count={list.length} />
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+        {list.map(u => {
+          /* a likely match by e-mail or tax ID (last 4) — staff confirm it; never linked by itself */
+          const hit = !u.crmVendorId && (vendors || []).find(v => (v.email && v.email === String(u.email || '').toLowerCase()) || (v.taxLast4 && u.einLast4 && v.taxLast4 === String(u.einLast4)));
+          const w9 = ((subDocs || {})[u.id] || []).some(d => d.type === 'w9');
+          return (
+            <Card key={u.id}>
+              <div data-supplier-card={u.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ fontFamily: styles.fontDisplay, fontSize: 18, fontWeight: 600 }}>{u.company}</div>
+                <Badge color={w9 ? styles.green : styles.text2}>{w9 ? '✓ W-9' : 'No W-9'}</Badge>
+              </div>
+              <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
+              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              {u.trades?.length > 0 && <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>{u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}</div>}
+              <Field label={t.crmVendor}>
+                <select style={{ ...inputStyle, marginTop: 4 }} data-crm-vendor={u.id} value={u.crmVendorId || ''} onChange={e => link(u.id, e.target.value)}>
+                  <option value="">{vendors === null ? 'Loading…' : 'Not linked — pick the CRM vendor'}</option>
+                  {(vendors || []).map(v => <option key={v.id} value={v.id}>{v.name}{v.cat ? ' · ' + v.cat : ''}{v.email ? ' · ' + v.email : ''}</option>)}
+                </select>
+              </Field>
+              {hit && <div data-vendor-match={hit.id} style={{ fontSize: 12, color: styles.text2, marginTop: -8, marginBottom: 10 }}>{t.likelyMatch}: <strong>{hit.name}</strong>{' '}
+                <button type="button" onClick={() => link(u.id, hit.id)} style={{ background: 'transparent', border: 'none', color: styles.accentDk, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{t.linkIt}</button></div>}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <Btn size="sm" variant="ghost" icon={DollarSign} onClick={() => setWork(u)}>{t.supPos} &amp; {t.supBills}</Btn>
+                <Btn size="sm" variant="ghost" onClick={() => revoke(u.id)}>Revoke</Btn>
+              </div>
+            </Card>);
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================
    ALL BIDS (admin view)
    ============================================================ */
@@ -5210,13 +5545,13 @@ function AllBids({ t, bids, jobs, users, onOpen }) {
    PENDING SUBS (admin)
    ============================================================ */
 function PendingSubs({ t, users, setUsers, showToast }) {
-  const pending = users.filter(u => u.role === 'sub' && !u.approved);
+  const pending = users.filter(u => (u.role === 'sub' || u.role === 'supplier') && !u.approved);   /* patch SUPPLIER: suppliers are approved here too */
   if (pending.length === 0) {
     return <EmptyState icon={UserCheck} message={t.noPending} />;
   }
   function approve(id) {
     setUsers(users.map(u => u.id === id ? { ...u, approved: true } : u));
-    showToast('Subcontractor approved');
+    showToast((users.find(u => u.id === id) || {}).role === 'supplier' ? 'Supplier approved' : 'Subcontractor approved');
   }
   function deny(id) {
     if (!confirm(t.confirmDelete)) return;
@@ -5231,7 +5566,7 @@ function PendingSubs({ t, users, setUsers, showToast }) {
           <Card key={u.id}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 240 }}>
-                <div style={{ fontFamily: styles.fontDisplay, fontSize: 18, fontWeight: 600 }}>{u.company}</div>
+                <div style={{ fontFamily: styles.fontDisplay, fontSize: 18, fontWeight: 600 }}>{u.company}{u.role === 'supplier' && <span data-pending-supplier="1" style={{ marginLeft: 8 }}><Badge color={styles.accentDk || styles.accent}>🧱 {t.supplierL}</Badge></span>}</div>
                 <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
                 <div style={{ fontSize: 13, color: styles.text2, marginTop: 6 }}>
                   <Mail size={12} style={{ verticalAlign: 'middle' }} /> {u.email}
@@ -5877,7 +6212,7 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
   return (
     <div>
       <SectionHeader icon={Settings} title={t.mySettings} count={docs.length} />
-      {user.role === 'sub' && onSaveProfile && <CompanyProfileCard t={t} user={user} onSave={onSaveProfile} showToast={showToast} />}
+      {(user.role === 'sub' || user.role === 'supplier') && onSaveProfile && <CompanyProfileCard t={t} user={user} onSave={onSaveProfile} showToast={showToast} />}
 
       {/* PORTAL STATS — sub's bid history at a glance */}
       <Card style={{ marginBottom: 18 }}>
@@ -5935,8 +6270,12 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
         )}
       </Card>
 
-      {/* Status banner */}
-      {check.ok ? (
+      {/* Status banner — patch SUPPLIER: a supplier needs no COI; a W-9 helps */}
+      {user.role === 'supplier' ? (
+        <div data-supplier-docs="1" style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#1E3A8A' }}>
+          {t.supDocsNote}
+        </div>
+      ) : check.ok ? (
         <div style={{
           background: '#D1FAE5', border: '1px solid #6EE7B7', borderRadius: 6,
           padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#065F46',
@@ -5957,12 +6296,12 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
       )}
 
       {/* Required types guide */}
-      <div style={{
+      {user.role !== 'supplier' && <div style={{
         background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 6,
         padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400E',
       }}>
         <strong>{t.docsRequired}</strong> {REQUIRED_DOC_TYPES.map(typeId => docTypeLabel(typeId, t)).join(', ')}
-      </div>
+      </div>}
 
       {!adding && (
         <Btn icon={Plus} onClick={() => setAdding(true)} style={{ marginBottom: 16 }}>

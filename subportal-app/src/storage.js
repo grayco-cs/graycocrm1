@@ -26,7 +26,7 @@
 import { api } from './auth.js';
 import { SB_ANON } from './config.js';
 
-export const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions', 'acks'];   // patch SYS2: acks = "I acknowledge addendum #n"
+export const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions', 'acks', 'mquotes'];   // patch SUPPLIER: mquotes = a supplier's material quote   // patch SYS2: acks = "I acknowledge addendum #n"
 
 const baselines = new Map();   // list key → Map(id → JSON of the saved form)
 const lastSingle = new Map();  // single-record key → JSON last saved / loaded
@@ -45,7 +45,7 @@ function savedForm(v) {
   for (const [k, x] of Object.entries(v)) {
     if (x === undefined) continue;
     if (k === 'dataUrl' && v.fileRef && typeof x === 'string' && !x.startsWith('data:')) continue;
-    if (k === '_rank' || k === '_total' || k === '_amounts' || k === '_po') continue;   // _po: patch BIDPO — the server's CRM-link info for an admin, never saved
+    if (k === '_rank' || k === '_total' || k === '_amounts' || k === '_po' || k === 'seniorEstimator' || k === 'quotable') continue;   // + patch BIDEST / SUPPLIER: the server's marks, never saved   // _po: patch BIDPO — the server's CRM-link info for an admin, never saved
     out[k] = (x && typeof x === 'object') ? savedForm(x) : x;
   }
   return out;
