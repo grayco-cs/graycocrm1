@@ -558,7 +558,7 @@ async function act(token, body){ const r = await W.handler(ev(token, body)); ret
   /* the new ZIP groups and Owner setup → 🏗️ Permit areas */
   { const names = ['Tipton Co., TN', 'Fayette Co., TN', 'Marshall Co., MS', 'Crittenden Co., AR'];
     const grp = n => P.ZIP_GROUPS.find(g => g[0].indexOf(n) === 0);
-    ok('ZIP groups: Tipton, Fayette, Marshall MS, Crittenden AR (West Memphis) listed, OFF by default', names.every(n => grp(n) && grp(n)[2] === false && grp(n)[1].length >= 7) && names.every(n => grp(n)[1].every(z => P.DEFAULT_ZIPS.indexOf(z) < 0)), names.map(grp));
+    ok('ZIP groups: Tipton, Fayette, Marshall MS, Crittenden AR (West Memphis) listed, ON by default (owner 11/19)', names.every(n => grp(n) && grp(n)[2] === true && grp(n)[1].length >= 7) && names.every(n => grp(n)[1].every(z => P.DEFAULT_ZIPS.indexOf(z) >= 0)), names.map(grp));
     ok('…every ZIP is 5 digits and in one group only', (() => { const all = P.ZIP_GROUPS.reduce((x, g) => x.concat(g[1]), []); return all.every(z => /^\d{5}$/.test(z)) && new Set(all).size === all.length; })());
     ok('…West Memphis 72301 → Crittenden; Covington 38019 → Tipton; Holly Springs 38635 → Marshall MS; Somerville 38068 → Fayette', /^Crittenden/.test(P.areaOfZip('72301')) && /^Tipton/.test(P.areaOfZip('38019')) && /^Marshall/.test(P.areaOfZip('38635')) && /^Fayette/.test(P.areaOfZip('38068')));
     const cg = P.clean({ customGroups: [['Lauderdale Co., TN', '38063, 38041, 123, 38063', true], { name: 'lauderdale co., tn', zips: ['38001'] }, ['Tipton Co., TN (Covington, Atoka, Munford, Brighton)', ['38019']], ['', ['38001']]] }).customGroups;

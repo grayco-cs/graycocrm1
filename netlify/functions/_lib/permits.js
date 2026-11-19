@@ -22,11 +22,11 @@ const ZIP_GROUPS = [
   ['DeSoto Co., MS (Southaven, Olive Branch, Horn Lake, Hernando)', ['38671', '38672', '38654', '38637', '38632', '38651', '38680', '38641'], true],
   ['Little Rock / North Little Rock, AR (Pulaski Co.)', ['72201', '72202', '72204', '72205', '72206', '72207', '72209', '72210', '72211', '72212', '72223', '72227', '72114', '72116', '72117', '72118', '72120', '72113', '72076'], true],
   ['Jonesboro, AR (Craighead Co.)', ['72401', '72404', '72416', '72417', '72437', '72411', '72419', '72447'], true],
-  /* patch PERMITS3 (owner-approved item 5): the rest of the nearby counties — OFF by default (tick them in Owner setup → 🏗️ Permit areas) */
-  ['Tipton Co., TN (Covington, Atoka, Munford, Brighton)', ['38004', '38011', '38015', '38019', '38023', '38049', '38058', '38071'], false],
-  ['Fayette Co., TN (Oakland, Somerville, Rossville, Moscow)', ['38036', '38039', '38042', '38046', '38048', '38057', '38060', '38066', '38068', '38076'], false],
-  ['Marshall Co., MS (Holly Springs, Byhalia, Potts Camp)', ['38611', '38635', '38642', '38649', '38659', '38661', '38685'], false],
-  ['Crittenden Co., AR (West Memphis, Marion, Earle)', ['72301', '72303', '72327', '72331', '72332', '72339', '72364', '72376', '72384'], false],
+  /* patch PERMITS3 (owner-approved item 5): the rest of the nearby counties — ON by default since 11/19 (owner: "turn those new areas on, Tipton, Marshall etc"); they only add ZIPs to the Shovels list and the free feeds (no cost without a Shovels key); untick them in Owner setup → 🏗️ Permit areas */
+  ['Tipton Co., TN (Covington, Atoka, Munford, Brighton)', ['38004', '38011', '38015', '38019', '38023', '38049', '38058', '38071'], true],
+  ['Fayette Co., TN (Oakland, Somerville, Rossville, Moscow)', ['38036', '38039', '38042', '38046', '38048', '38057', '38060', '38066', '38068', '38076'], true],
+  ['Marshall Co., MS (Holly Springs, Byhalia, Potts Camp)', ['38611', '38635', '38642', '38649', '38659', '38661', '38685'], true],
+  ['Crittenden Co., AR (West Memphis, Marion, Earle)', ['72301', '72303', '72327', '72331', '72332', '72339', '72364', '72376', '72384'], true],
   ['Nashville / Davidson Co., TN — free from Metro already', ['37201', '37203', '37204', '37205', '37206', '37207', '37208', '37209', '37210', '37211', '37212', '37213', '37214', '37215', '37216', '37217', '37218', '37219', '37220', '37221', '37013', '37072', '37076', '37080', '37115', '37138', '37189'], false]
 ];
 const DEFAULT_ZIPS = ZIP_GROUPS.reduce(function(a, g){ return g[2] ? a.concat(g[1]) : a; }, []);
