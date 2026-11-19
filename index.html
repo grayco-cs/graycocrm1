@@ -284,6 +284,10 @@ try {
      updated_at is still the one remembered (nobody wrote the row since), that row is not sent — the caller gets the usual
      201. Anything else (a changed value, another device's write since, a failed check, a row never sent from here) goes up
      as before.
+   · a list that differs from the cloud's current copy only in save stamps (updatedAt / savedAt / modifiedAt / updated_at /
+     _autoAssignChecked) is not a change either: a PM's desk re-saved vendors / subs with a fresh stamp on every open (and once
+     overwrote a newer read mark). The cloud's current copy is the one this page last uploaded or last pulled (its own pulls are
+     kept as text and read only when needed), checked against the row's updated_at.
    Console: __gcSame.state()   Off: localStorage gc_samekv_off = '1'. */
 (function(){
 'use strict';
@@ -296,6 +300,32 @@ try {
   var S = W.__gcSame = { known: {}, skipped: 0, skippedBytes: 0, checked: 0, sent: 0, learned: 0, loaded: false };
   var K = S.known;
   var fp = function(str){ var h1 = 2166136261, h2 = 5381, n = str.length; for (var i = 0; i < n; i++) { var c = str.charCodeAt(i); h1 ^= c; h1 = Math.imul(h1, 16777619); h2 = (Math.imul(h2, 33) + c) | 0; } return n + ':' + (h1 >>> 0).toString(36) + ':' + (h2 >>> 0).toString(36); };
+  var STAMPF = { updatedAt: 1, updated_at: 1, savedAt: 1, modifiedAt: 1, _autoAssignChecked: 1 };
+  var bareRep = function(k, v){ return STAMPF[k] ? undefined : v; };
+  var fpBare = function(v){ if (!Array.isArray(v) || !v.length || typeof v[0] !== 'object') return ''; try { return fp(JSON.stringify(v, bareRep)); } catch (e) { return ''; } };
+  /* this page's own pulls (select … value, updated_at): kept as text, read only when a row is needed */
+  var ONE = {}, BULK = [];
+  var seePull = function(r, url){
+    try {
+      var c = r.clone(), p = { at: Date.now(), t: c.text().then(null, function(){ return ''; }), map: null };
+      var m1 = /[?&]key=eq\.([^&]+)/.exec(url), k1 = m1 ? decodeURIComponent(m1[1]) : '';
+      if (k1) { ONE[k1] = p; var ks = Object.keys(ONE); if (ks.length > 24) { ks.sort(function(x, y){ return ONE[x].at - ONE[y].at; }); delete ONE[ks[0]]; } }
+      else { BULK.push(p); if (BULK.length > 3) BULK.shift(); }
+    } catch (e) {}
+  };
+  var pulled = function(k, at){
+    var list = (ONE[k] ? [ONE[k]] : []).concat(BULK.slice().reverse());
+    var i = 0;
+    var next = function(){
+      var p = list[i++]; if (!p) return Promise.resolve(null);
+      return (p.map ? Promise.resolve(p.map) : p.t.then(function(txt){
+        var m = {}; p.map = m; p.t = Promise.resolve('');
+        if (txt && txt.length < 12000000) { try { var rows = JSON.parse(txt); if (Array.isArray(rows)) rows.forEach(function(x){ if (x && x.key && x.updated_at && 'value' in x) m[x.key] = x; }); } catch (e) {} }
+        return m;
+      })).then(function(m){ var x = m && m[k]; if (x && tsEq(x.updated_at, at)) return x; return next(); });
+    };
+    return next();
+  };
   var tsEq = function(a, b){ if (!a || !b) return false; if (String(a) === String(b)) return true; var x = Date.parse(a), y = Date.parse(b); return !isNaN(x) && x === y; };
   /* the remembered fingerprints: IndexedDB, not localStorage (a full localStorage is where this went wrong) */
   var db = null;
@@ -323,16 +353,18 @@ try {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || String(input);
       var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
-      if (/\/rest\/v1\/gc_kv(\?|$)/.test(url) && !(m === 'POST' && init && typeof init.body === 'string' && init.body.length >= MIN)) { var pa = inner.apply(this, arguments); try { pa.then(function(r){ if (r && r.status) S.lastAnswer = Date.now(); }, function(){}); } catch (e) {} return pa; }   /* the line is alive while the database answers (sbWrite's give-up) */
+      if (/\/rest\/v1\/gc_kv(\?|$)/.test(url) && !(m === 'POST' && init && typeof init.body === 'string' && init.body.length >= MIN)) {
+        var tee = m === 'GET' && /select=[^&]*value/.test(url) && /select=[^&]*updated_at/.test(url);
+        var pa = inner.apply(this, arguments); try { pa.then(function(r){ if (r && r.status) S.lastAnswer = Date.now(); if (tee && r && r.ok) seePull(r, url); }, function(){}); } catch (e) {} return pa; }   /* the line is alive while the database answers (sbWrite's give-up) */
       if (m !== 'POST' || !/\/rest\/v1\/gc_kv(\?|$)/.test(url) || !init || typeof init.body !== 'string' || init.body.length < MIN || (init.signal && init.signal.aborted)) return inner.apply(this, arguments);
       var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
       var rows = Array.isArray(b) ? b : [b];
-      var info = rows.map(function(r){ if (!r || r.key == null || !('value' in r)) return null; var t; try { t = JSON.stringify(r.value); } catch (e) { return null; } return { key: String(r.key), h: fp(String(t)), len: t ? t.length : 0 }; });
+      var info = rows.map(function(r){ if (!r || r.key == null || !('value' in r)) return null; var t; try { t = JSON.stringify(r.value); } catch (e) { return null; } return { key: String(r.key), h: fp(String(t)), hb: fpBare(r.value), len: t ? t.length : 0 }; });
       var self = this, args = arguments, pref = ''; try { pref = String(new Headers(init.headers || undefined).get('Prefer') || ''); } catch (e) {}
-      var cand = info.filter(function(x){ return x && K[x.key] && K[x.key].h === x.h; });
+      var cand = info.filter(function(x){ return !!x; });
       var learn = function(sentInfo){
         var ks = sentInfo.filter(Boolean).map(function(x){ return x.key; }); if (!ks.length) return;
-        stamps(url, init, ks).then(function(st){ if (!st) return; sentInfo.forEach(function(x){ if (x && st[x.key]) { K[x.key] = { h: x.h, at: String(st[x.key]), t: Date.now() }; S.learned++; } }); save(); });
+        stamps(url, init, ks).then(function(st){ if (!st) return; sentInfo.forEach(function(x){ if (x && st[x.key]) { K[x.key] = { h: x.h, hb: x.hb, at: String(st[x.key]), t: Date.now() }; S.learned++; } }); save(); });
       };
       var send = function(keepRows, keepInfo){
         var a2 = args;
@@ -342,21 +374,37 @@ try {
       };
       if (!cand.length) return send(rows, info);
       S.checked++;
+      var same = function(x, k){ return !!k && (k.h === x.h || (!!x.hb && k.hb === x.hb)); };
       return stamps(url, init, cand.map(function(x){ return x.key; })).then(function(st){
-        var keepRows = [], keepInfo = [];
-        rows.forEach(function(r, i){
-          var x = info[i];
-          if (st && x && K[x.key] && K[x.key].h === x.h && tsEq(st[x.key], K[x.key].at)) { S.skipped++; S.skippedBytes += x.len; K[x.key].t = Date.now(); return; }
-          keepRows.push(r); keepInfo.push(x);
+        if (!st) return send(rows, info);
+        /* what the cloud has now: what this page last sent there, or the row as this page last pulled it (same updated_at) */
+        return Promise.all(info.map(function(x){
+          if (!x || !st[x.key]) return false;
+          var k = K[x.key];
+          if (k && tsEq(st[x.key], k.at)) return same(x, k);
+          return pulled(x.key, st[x.key]).then(function(row){
+            if (!row) return false;
+            var t; try { t = JSON.stringify(row.value); } catch (e) { return false; }
+            var kc = { h: fp(String(t)), hb: fpBare(row.value), at: String(st[x.key]), t: Date.now() };
+            K[x.key] = kc; save();
+            return same(x, kc);
+          }, function(){ return false; });
+        })).then(function(dup){
+          var keepRows = [], keepInfo = [];
+          rows.forEach(function(r, i){
+            var x = info[i];
+            if (dup[i]) { S.skipped++; S.skippedBytes += x.len; if (x.h !== (K[x.key] || {}).h) S.stampOnly = (S.stampOnly || 0) + 1; return; }
+            keepRows.push(r); keepInfo.push(x);
+          });
+          if (!keepRows.length) return EMPTY(pref);   /* the cloud has this already (exactly, or but for save stamps) */
+          return send(keepRows, keepInfo);
         });
-        if (!keepRows.length) return EMPTY(pref);   /* the cloud has exactly this already */
-        return send(keepRows, keepInfo);
       });
     } catch (e) { return inner.apply(this, arguments); }
   };
   sameFetch.__gcSame = true;
   W.fetch = sameFetch;
-  S.state = function(){ return { loaded: S.loaded, known: Object.keys(K).length, skipped: S.skipped, skippedKB: Math.round(S.skippedBytes / 1024), checked: S.checked, sent: S.sent, learned: S.learned }; };
+  S.state = function(){ return { loaded: S.loaded, known: Object.keys(K).length, skipped: S.skipped, skippedKB: Math.round(S.skippedBytes / 1024), checked: S.checked, sent: S.sent, learned: S.learned, stampOnly: S.stampOnly || 0 }; };
 } catch (e) { try { console.warn('[GC] SAMEKV not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
