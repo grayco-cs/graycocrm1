@@ -244587,11 +244587,16 @@ try {
     if (!app) return;
     /* the pills: in the page header (desk pages), or in the flow right under the Field home / job page header */
     var host = hd || null, row = null;
-    if (!host) {
-      var pg = [D.getElementById('_gcJobDash'), D.querySelector('#_gcJobPick.gc-fh')].filter(function(x){ return x && shown(x); })[0];
-      if (pg) {
-        row = pg.querySelector(':scope > #gc-pu-pills');
-        if (!row) { row = D.createElement('div'); row.id = 'gc-pu-pills'; var anc = pg.querySelector(':scope > .fh-top') || pg.firstElementChild; pg.insertBefore(row, anc ? anc.nextSibling : pg.firstChild); }
+    var pills = ['_gcSubDocPill', '_gcPayPill'].map(function(id){ return D.getElementById(id); }).filter(Boolean);
+    if (!host && pills.length) {
+      /* the Field home: right under its header; the job page: at the top of its scrolling body (its header stays first) */
+      var jd = D.getElementById('_gcJobDash'), jp = D.querySelector('#_gcJobPick.gc-fh');
+      var where = null, before = null;
+      if (jd && shown(jd)) { where = jd.children[1] || jd; before = where.firstChild; }
+      else if (jp && shown(jp)) { var anc = jp.querySelector(':scope > .fh-top'); where = jp; before = anc ? anc.nextSibling : jp.firstChild; }
+      if (where) {
+        row = where.querySelector(':scope > #gc-pu-pills');
+        if (!row) { row = D.createElement('div'); row.id = 'gc-pu-pills'; where.insertBefore(row, before); }
         host = row;
       }
     }

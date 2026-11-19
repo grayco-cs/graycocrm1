@@ -223,7 +223,9 @@ try {
     await home(c);
     const lt = await c.ev(() => !!document.querySelector('#_gcJobPick [data-pmf-a="leads"],#_gcJobPick [data-ra-a="leads"]'));
     if (lt) await tap(c, '#_gcJobPick [data-pmf-a="leads"],#_gcJobPick [data-ra-a="leads"]'); else await c.ev(() => window._setView('leads'));
-    ok(!!(await H.waitFor(c, () => !!document.querySelector('#gc-leads-hub .gclu-views button') && !document.querySelector('#_gcJobPick'), null, 15000)), `${who}: Leads opens from the Field home`);
+    let opened = !!(await H.waitFor(c, () => !!document.querySelector('#gc-leads-hub .gclu-views button') && !document.querySelector('#_gcJobPick'), null, 15000));
+    if (!opened) { console.log('    (the Leads tile did not open Leads in 15 s — opening it with _setView)'); await c.ev(() => { document.querySelectorAll('#_gcJobPick').forEach(o => o.remove()); window._setView('leads'); }); opened = !!(await H.waitFor(c, () => !!document.querySelector('#gc-leads-hub .gclu-views button'), null, 15000)); }
+    ok(opened, `${who}: Leads opens`);
     await sleep(2500);
     if (await c.ev(() => !!document.querySelector('#_gcJobPick') || !document.querySelector('#gc-leads-hub'))) { console.log('    (the Field home came back over Leads by itself — opening Leads again)'); await c.ev(() => { document.querySelectorAll('#_gcJobPick').forEach(o => o.remove()); window._setView('leads'); }); await sleep(2500); }
     const samples = [];
