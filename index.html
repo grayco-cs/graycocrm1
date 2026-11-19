@@ -162171,7 +162171,8 @@ function menu(Uf, list){
   /* SDS (owner 11/11): 🧪 Materials & SDS — admins; everyone while Mitigation or Environmental is the picked company; anyone whose menu
      has 💧 Mitigation or ☢️ Environmental. Right after those tabs. */
   try {
-    var sOk = !!(W._gcSdsCanSee && W._gcSdsCanSee()) || arr(r).some(function(g){ return g && (g.id === 'mitigation' || g.id === 'enviro'); });
+    var sOk = (function(){ try { return !W._gcCo || W._gcCo.filter() !== 'construction'; } catch (e2) { return true; } })()   /* patch SDSCO: Mitigation & Environmental's — never on Construction */
+      && (!!(W._gcSdsCanSee && W._gcSdsCanSee()) || arr(r).some(function(g){ return g && (g.id === 'mitigation' || g.id === 'enviro'); }));
     W.__gcSdsNav = sOk;
     r = arr(r).filter(function(g){ return g && (g.id !== 'sds' || sOk); });
     if (sOk && !r.some(function(g){ return g.id === 'sds'; })) { var sd = arr(Uf).filter(function(g){ return g && g.id === 'sds'; })[0] || { id: 'sds', l: 'Materials & SDS', ic: '🧪' };
@@ -224431,7 +224432,8 @@ function canSee(){
   try { if (W._gcEnviroCanSee && W._gcEnviroCanSee()) return true; } catch (e) {}
   return W.__gcSdsNav === true;   /* set by the menu (patch RP) when 💧 Mitigation or ☢️ Environmental is in this person's menu */
 }
-W._gcSdsCanSee = function(){ if (admin()) return true; var co = coPick(); if (co === 'mitigation' || co === 'environmental') return true; try { return !!(W._gcEnviroCanSee && W._gcEnviroCanSee()); } catch (e) { return false; } };
+W._gcSdsCanSee = function(){ if (W._gcSdsCo && !W._gcSdsCo.ctxOk()) return false;   /* patch SDSCO: not on Construction (admins too) */
+  if (admin()) return true; var co = coPick(); if (co === 'mitigation' || co === 'environmental') return true; try { return !!(W._gcEnviroCanSee && W._gcEnviroCanSee()); } catch (e) { return false; } };
 function canEdit(){ if (admin()) return true; var u = me(); return /manager|\bpm\b|project|office|mitigat|environment|insurance|restoration|supervisor|superintendent/i.test(s(u.role) + ' ' + s(u.title) + ' ' + s(u.position)); }
 function toast(msg, bad){
   try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.className = 'gcsds-toast'; t.textContent = msg;
@@ -225625,6 +225627,7 @@ function reqRef(pid){ return ('sds_' + s(pid)).replace(/[^A-Za-z0-9_.:-]/g, '_')
 function choicesOf(p){ return mats(p).slice(0, 30).map(function(j){ var m = byId(j.id) || { name: j.name }; return { id: j.id, n: cust(m.name || j.name).slice(0, 100), u: cust(m.use).slice(0, 200), c: cust([cleanTxt(m.cust), m.reentry && cleanTxt(m.reentry) ? 'Re-entry: ' + cleanTxt(m.reentry) : ''].filter(Boolean).join(' ')).slice(0, 300) }; }); }
 function send(pid){
   var p = job(pid); if (!p) return Promise.resolve({ ok: false, error: 'Open a job first.' });
+  if (W._gcSdsCo && !W._gcSdsCo.jobOk(p)) { toast('🧪 The materials consent is for Mitigation and Environmental jobs.', true); return Promise.resolve({ ok: false, error: 'Not a Mitigation / Environmental job.' }); }   /* patch SDSCO */
   var ch = choicesOf(p); if (!ch.length) { toast('Pick the materials for this job first.', true); return Promise.resolve({ ok: false, error: 'No materials.' }); }
   try { var st = W._gcPause && W._gcPause.state(); if (st && st.paused) { toast('⏸ Data-entry mode is on — nothing is sent.', true); return Promise.resolve({ ok: false, paused: true }); } } catch (e) {}
   var c = p.materialsConsent || {}, again = c.status === 'signed' || c.status === 'declined';
@@ -225716,13 +225719,14 @@ function jobRow(p){
 function draw(){
   var el = UI.el; if (!el || !el.isConnected) return; css(); wireDocLib();
   if (!canSee()) { el.innerHTML = '<div class="gcsds"><h2>🧪 Materials &amp; SDS</h2><p class="sub">For admins, the Mitigation and Environmental teams.</p></div>'; return; }
+  if (W._gcSdsCo && !W._gcSdsCo.ctxOk()) { el.innerHTML = W._gcSdsCo.offHtml(); return; }   /* patch SDSCO: Construction picked */
   var co = coPick(), L = list(), q = low(UI.q);
   var shown = L.filter(function(m){ return (UI.g === 'all' || arr(m.groups).indexOf(UI.g) >= 0) && (!q || low([m.name, m.use, m.hazards].join(' ')).indexOf(q) >= 0); });
   var cnt = function(g){ return L.filter(function(m){ return g === 'all' || arr(m.groups).indexOf(g) >= 0; }).length; };
   var J = jobs().filter(function(p){ try { return !W._gcCo || W._gcCo.passJob(p); } catch (e) { return true; } }).filter(function(p){ return mats(p).length; })
     .sort(function(a, b){ return warnings(b).length - warnings(a).length; });
-  var opts = jobs().filter(function(p){ try { return !W._gcCo || W._gcCo.passJob(p); } catch (e) { return true; } }).filter(function(p){ return !/complete|closed|cancel|lost/i.test(s(p.status)); }).slice(0, 400);
-  var coName = co === 'all' ? '' : (function(){ try { return W._gcCo.get(co).short; } catch (e) { return ''; } })();
+  var opts = jobs().filter(function(p){ try { return !W._gcCo || W._gcCo.passJob(p); } catch (e) { return true; } }).filter(function(p){ return !/complete|closed|cancel|lost/i.test(s(p.status)); }).filter(function(p){ return !W._gcSdsCo || W._gcSdsCo.isJob(p); }).slice(0, 400);   /* patch SDSCO: Mitigation / Environmental jobs only */
+  var coName = W._gcSdsCo ? W._gcSdsCo.title(co) : co === 'all' ? '' : (function(){ try { return W._gcCo.get(co).short; } catch (e) { return ''; } })();   /* patch SDSCO: All companies → "· Mitigation & Environmental" */
   var h = '<div class="gcsds"><h2>🧪 Materials &amp; SDS' + (coName ? ' <span style="font-size:15px;color:#64748b">· ' + esc(coName) + '</span>' : '') + '</h2>'
     + '<p class="sub">The products and equipment we use, by kind of work — what each is for, hazards, PPE, do\'s and don\'ts, re-entry, first aid — and, per job, which ones the customer approved in their portal before we use them.</p>'
     + (W._gcIicrc ? W._gcIicrc.chips(co) : '')   /* patch IICRCTRAIN */
@@ -225785,6 +225789,7 @@ function readForm(id){
 var PICK = { pid: '', all: false };
 function jobModal(pid){
   var p = job(pid); if (!p) { toast('That job was not found.', true); return; }
+  if (W._gcSdsCo && !W._gcSdsCo.jobOk(p)) { toast('🧪 Materials & SDS is for Mitigation and Environmental jobs — this is a Construction job.', true); return; }   /* patch SDSCO */
   PICK.pid = s(pid); wireDocLib();
   var G = forJob(p), have = {}; mats(p).forEach(function(m){ have[m.id] = m; });
   var spec = G.filter(function(g){ return g !== 'general'; }), use = spec.length ? spec : ['general'];
@@ -225809,7 +225814,8 @@ function savePicks(){ var pid = PICK.pid; if (!pid) return false; var p = job(pi
 
 /* ── 🧪 on the job page (desk): what is planned, what the customer said, and the button ── */
 function findBack(){ var m = D.querySelector('main'); if (!m) return null; var bs = m.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) return bs[i]; return null; }
-function relevant(p){ if (mats(p).length) return true; var co = 'construction'; try { co = W._gcCo ? W._gcCo.ofJob(p) : co; } catch (e) {} if (co !== 'construction') return true; return forJob(p).length > 1; }
+function relevant(p){ if (W._gcSdsCo) return W._gcSdsCo.jobOk(p);   /* patch SDSCO: Mitigation / Environmental jobs (+ a job's own earlier picks, outside the Construction pick) */
+  if (mats(p).length) return true; var co = 'construction'; try { co = W._gcCo ? W._gcCo.ofJob(p) : co; } catch (e) {} if (co !== 'construction') return true; return forJob(p).length > 1; }
 function drawJob(){
   try {
     if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
@@ -225979,6 +225985,7 @@ D.addEventListener('click', function(e){
   if (t.hasAttribute('data-sds-reset')) { hideMat(t.getAttribute('data-sds-reset'), true).then(function(){ closeM(); toast('↺ Back to the typical information'); }); return; }
   var a = t.getAttribute('data-sds');
   if (a === 'close') { closeM(); if (UI.backTo) { var b2 = UI.backTo; UI.backTo = ''; jobModal(b2); } return; }
+  if (a === 'coall' || a === 'co') { try { W._gcCo.setFilter(a === 'coall' ? 'all' : t.getAttribute('data-sds-co')); } catch (e2) {} ST.call(W, draw, 60); return; }   /* patch SDSCO */
   if (a === 'add') { editForm(''); return; }
   if (a === 'pickall') { savePicks(); PICK.all = !PICK.all; ST.call(W, function(){ jobModal(PICK.pid); }, 50); return; }
   if (a === 'savepick') { savePicks(); toast('✓ Materials saved on the job'); ST.call(W, function(){ jobModal(PICK.pid); draw(); }, 120); return; }
@@ -225992,6 +225999,57 @@ function loop(){ try { if (!D.hidden) { wireDocLib(); apply(); needTick(); drawJ
 ST.call(W, loop, 1500);
 ST.call(W, pull, 4000);
 W._gcSds = { mount: mount, draw: draw, list: list, byId: byId, forJob: forJob, setJob: setJob, setStatus: setStatus, send: send, apply: apply, warnings: warnings, consentTable: consentTable, preview: preview, open: jobModal, detail: detail, canSee: canSee, canEdit: canEdit, GROUPS: GROUPS, BUILTIN: BUILTIN, DOC_ID: DOC_ID, reqRef: reqRef, choicesOf: choicesOf, pull: pull, saveMat: saveMat, needList: needList, needTick: needTick, tick: tick, EQUIP: EQUIP };
+})(window);
+</script>
+<script id="gc-patch-sdsco">
+/* __GC_PATCH_SDSCO__ — 🧪 MATERIALS & SDS BELONGS TO MITIGATION AND ENVIRONMENTAL (owner 11/19, on "🧪 Materials & SDS · Construction":
+   "this stuff is for mit and env").
+   A job's company is the CRM's own: window._gcCo.ofJob(p) (project.companyId 'construction' | 'mitigation' | 'environmental'; the
+   MULTICO misfiled list reads as Construction), plus project.sharedWith (a job shared into Mitigation / Environmental) — the same rule
+   window._gcCo.passJob uses for every split page.
+   • Construction picked: no 🧪 Materials & SDS in the left menu (patch RP's menu), the page says it is Mitigation & Environmental's
+     (with "🏢 Show All companies" for people who can switch), and a Construction job's page has no 🧪 Materials card / button.
+   • All companies picked: the page is there (admins, and people whose menu has 💧 Mitigation / ☢️ Environmental, as before); its title
+     says "· Mitigation & Environmental" and "Pick materials for a job" lists only Mitigation / Environmental jobs.
+   • The job's 🧪 Materials window and ✍️ Send for customer signature (the portal's Chemical & Product Use Consent) are for Mitigation /
+     Environmental jobs. A job that already has materials picked or a consent keeps them (nothing is removed or rewritten) and is still
+     shown outside the Construction pick, so a paper already signed stays visible.
+   API: window._gcSdsCo = { isJob(p), hasData(p), ctxOk(), jobOk(p), coNow(), title(co), offHtml() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_SDSCO__) return; W.__GC_PATCH_SDSCO__ = true;
+var MIT_ENV = ['mitigation', 'environmental'];
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function coNow(){ try { return W._gcCo ? s(W._gcCo.filter()) || 'all' : 'all'; } catch (e) { return 'all'; } }
+function ofJob(p){ try { return W._gcCo ? s(W._gcCo.ofJob(p)) : (s(p && p.companyId) || 'construction'); } catch (e) { return 'construction'; } }
+/* a Mitigation / Environmental job: filed there (companyId), or shared into one of them */
+function isJob(p){
+  if (!p) return false;
+  if (MIT_ENV.indexOf(ofJob(p)) >= 0) return true;
+  return arr(p.sharedWith).some(function(c){ return MIT_ENV.indexOf(s(c && typeof c === 'object' ? c.id : c).toLowerCase()) >= 0; });
+}
+/* materials already picked / a consent already sent or signed on the job (kept as they are) */
+function hasData(p){ return !!p && (arr(p.materials).some(function(m){ return m && m.id; }) || !!p.materialsConsent); }
+function ctxOk(){ return coNow() !== 'construction'; }
+function jobOk(p){ return isJob(p) || (ctxOk() && hasData(p)); }
+function title(co){
+  co = co || coNow();
+  if (co === 'all') return 'Mitigation & Environmental';
+  try { return s(W._gcCo.get(co).short); } catch (e) { return ''; }
+}
+function canSwitch(){ try { return !W._gcCo || !W._gcCo.canSwitch || !!W._gcCo.canSwitch(); } catch (e) { return false; } }
+function offHtml(){
+  var cs = []; try { cs = arr(W._gcCo && W._gcCo.list && W._gcCo.list()).filter(function(c){ return c && MIT_ENV.indexOf(c.id) >= 0; }); } catch (e) {}
+  var names = cs.length ? cs.map(function(c){ return esc(c.icon + ' ' + c.short); }).join(' and ') : 'Mitigation and Environmental';
+  return '<div class="gcsds" data-sds-off="construction"><div style="font-size:24px;font-weight:800;margin:0 0 2px">🧪 Materials &amp; SDS</div>'
+    + '<p class="sub">Materials, safety data sheets, the dilution calculator and the customer\'s materials sign-off are for ' + names + ' jobs — not Construction.</p>'
+    + (canSwitch() ? '<div class="chips"><button type="button" class="gcsds-btn pr" data-sds="coall">🏢 Show All companies</button>'
+      + cs.map(function(c){ return ' <button type="button" class="gcsds-btn" data-sds="co" data-sds-co="' + esc(c.id) + '">' + esc(c.icon + ' ' + c.short) + '</button>'; }).join('') + '</div>' : '')
+    + '</div>';
+}
+W._gcSdsCo = { isJob: isJob, hasData: hasData, ctxOk: ctxOk, jobOk: jobOk, coNow: coNow, title: title, offHtml: offHtml, MIT_ENV: MIT_ENV };
 })(window);
 </script>
 <script id="gc-patch-multico-fresh">
