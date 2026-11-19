@@ -21456,9 +21456,10 @@ fmBtn.onclick = function() {
   fmBtn.textContent = inField ? "Field" : "Desk";
 };
 
-// First-time help
+// First-time help (a desk's: never on a phone or in the Field — owner 11/19, it sat over his lead on his iPhone)
 if (!localStorage.getItem("_helpShown")) {
   setTimeout(function() {
+    try { if (document.documentElement.classList.contains("_fieldmode") || /iPhone|iPod|iPad|Android/i.test(navigator.userAgent || "") || (window.innerWidth || 0) < 820) return; } catch (e) {}
     var tip = document.createElement("div");
     tip.style.cssText = "position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:9999;background:#d4a017;color:#0d1b2a;padding:14px 24px;border-radius:10px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,0.3);text-align:center;max-width:400px";
     tip.innerHTML = "New here? Tap <b>Field</b> at bottom-left for larger text and touch targets on mobile.";
@@ -177661,7 +177662,13 @@ function css(){
 function pipelineWrap(){ var tb = D.querySelector('#root table[data-gc-fid="LEAD"]'); if (!tb) return null; var w = tb.parentElement; while (w && w.parentElement && !/border/.test(w.getAttribute('style') || '')) w = w.parentElement; return w; }
 function anchor(){
   var la = D.getElementById('gc-la-set'); if (la && la.parentElement) return la;
-  return pipelineWrap();
+  var pw = pipelineWrap(); if (pw) return pw;
+  /* owner 11/19 (a lead's text link on his iPhone): before the classic list has its leads there is no table to stand before,
+     so the hub waited and "No lead pipeline — Click + Add" showed instead (an empty list, wrong). The hub has its own copy of
+     the leads: it stands before the Leads tab's content (the classic one, hidden under it) at once. */
+  var tb = D.getElementById('gc-leads-tabs'), c = tb && tb.getAttribute('data-tab') === 'leads' ? tb.nextElementSibling : null;
+  while (c && (c.id === 'gc-leads-hub' || c.hasAttribute('data-gc-keep'))) c = c.nextElementSibling;
+  return c && c.parentElement ? c : null;
 }
 function kpis0(){
   var all = scoped().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), open = all.filter(function(l){ return !shut(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);   /* patch HOT2; patch LCLEAN: 📦 imported not counted */
@@ -178506,7 +178513,7 @@ function mount(){
     a.parentElement.insertBefore(hub, a); HUB_SIG = '';
     bind(hub);
   }
-  var pw = pipelineWrap(); if (pw && !pw.classList.contains('gcl-classic-body')) pw.classList.add('gcl-classic-body');
+  var pw = pipelineWrap() || (a.id !== 'gc-la-set' ? a : null); if (pw && !pw.classList.contains('gcl-classic-body')) pw.classList.add('gcl-classic-body');
   D.body.classList.toggle('gcl-noclassic', !UI.classic && !D.documentElement.classList.contains('gcl-classic-ok'));   /* patch HOT2b: the admin's "old table" link (or a hub failure) shows it */
   var ae = D.activeElement, typing = ae && hub.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
