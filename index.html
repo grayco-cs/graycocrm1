@@ -125184,6 +125184,7 @@ function cardHtml(p, compact){
   var h = '<div data-row="1" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:44px">' +
     '<div style="display:flex;flex-direction:column;min-width:0;flex:1 1 ' + (compact ? '120px' : '170px') + ';margin-right:4px"><b style="font-size:14px;white-space:nowrap">🏠 Portal</b>' +
       '<span data-q="status" style="font-size:12px;color:#55626F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:' + (compact ? '180px' : '320px') + '">' + line + '</span></div>' +
+    (window._gcPortalEd && window._gcPortalEd.can(p.id) ? '<button type="button" data-q="ped" title="Open the customer portal: see it as the customer and edit it" style="min-height:40px;padding:0 12px;border:1px solid ' + NAVY + ';border-radius:10px;background:' + NAVY + ';color:#fff;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap">✏️ Open portal</button>' : '') +   /* patch PORTALED */
     '<button type="button" data-q="post" style="min-height:40px;padding:0 14px;border:0;border-radius:10px;background:' + GOLD + ';color:' + NAVY + ';font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap">📣 Post</button>' +
     ib('copy', '📋', 'Copy link', true) + ib('sms', '💬', 'Text it', true) + ib('mail', '✉️', 'Email it', true) + ib('open', '👁', 'See what the customer sees', true) + ib('docs', '📄', 'Documents & Google Docs', false) +
     '<button type="button" data-q="more" title="More" aria-label="More" aria-expanded="false" style="' + IB + ';font-weight:800">⋯</button></div>';
@@ -125211,6 +125212,7 @@ function wire(el, pid){
     var q = t.getAttribute('data-q'), p = proj(pid); if (!p) return;
     var url = linkOf(p);
     if (q === 'more') { var pn = el.querySelector('[data-q="panel"]'); if (pn) { pn.hidden = !pn.hidden; t.setAttribute('aria-expanded', pn.hidden ? 'false' : 'true'); if (!pn.hidden) loadSettings(el); } return; }
+    if (q === 'ped') { if (window._gcPortalEd) window._gcPortalEd.open(pid); return; }   /* patch PORTALED */
     if (q === 'post') return openPost(pid);
     if (q === 'docs') return openDocs(pid);
     if (q === 'copy' && url) return copy(url).then(function(ok){ toast(ok ? 'Link copied — paste it in a text or e-mail.' : url, ok ? null : '#1e3a5f'); });
@@ -207935,7 +207937,7 @@ function openPhotos(pid){ try { if (W._gcPhotos && W._gcPhotos.open) { W._gcPhot
 function run(a, p){
   if (!p) return false;
   var pm = perms(p);
-  if (a === 'fp-cust' && pm.cust) { custSheet(p); return true; }
+  if (a === 'fp-cust' && pm.cust) { if (W._gcPortalEd && W._gcPortalEd.open(p.id)) return true; custSheet(p); return true; }   /* patch PORTALED: the portal, full screen */
   if (a === 'fp-sub' && pm.sub) { subSheet(p); return true; }
   if (a === 'fp-photos' && pm.photos) { openPhotos(p.id); return true; }
   if (a === 'fp-msg' && pm.msg) { if (W._gcOpenJobMessages) W._gcOpenJobMessages(p.id); else toast('Job messages are not on this phone yet.'); return true; }
@@ -208535,6 +208537,720 @@ function css(){
 css(); wrapDocs();
 W._gcFP2 = { chooser: function(kind, pid){ var p = proj(pid); return p ? chooser(kind, p, (kind === 'call' ? 'tel:' : 'sms:') + custPhone(p)) : null; }, pref: pref, papers: function(pid){ var p = proj(pid); return p ? papers(p) : Promise.resolve([]); }, docShown: docShown, decorateDocs: decorateDocs };
 try { console.log('[GC] 📱 Field part 2: Call / Text from my phone or the GrayCo number · every paper on the job (patch FIELDPORTAL2) — _gcFP2'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-portaled">
+/* __GC_PATCH_PORTALED__ — 👤 CUSTOMER PORTAL: open the job's portal full screen, see what the customer sees, and edit it.
+   Owner 11/19 (iPhone, GrayCo Field): "If I click customer portal I'd like to open their portal and see what's in it, edit
+   jobs, add jobs, tasks, scopes, whatever in the portal, add plans, addendum, ask questions, all in portal."
+   • 👤 Customer portal on a job card / the job page (Field) and ✏️ Open portal on the desk's 🏠 Portal card open one full-screen
+     page for that job — admin / office / the job's own PM only (the same rule as the button: _gcFP.perms(pid).cust; a PM gets
+     only his own jobs). Everyone else: nothing opens.
+   • No portal yet → "🏠 Make the portal": says what it does first (the link is made, NOTHING is sent — no e-mail, no text;
+     the customer gets it only when you send the link yourself), then patch Q's own "by hand" link (_gcPortal.link).
+   • 👁 Customer view: the real portal page as the customer sees it (portal.html, the staff preview "&p=1": not counted as the
+     customer opening it, the customer's buttons are off). ✏️ Edit portal: the same contents with edit buttons:
+       📝 Project details — the job name, address, the stage the customer sees, "About your project" (job.portalSummary)
+       📅 Schedule — the job's own customer steps (from 📅 Schedule) + milestones added here (job.portalMilestones)
+       ✅ Checklist — tasks the customer sees (job.portalTasks), done / not done
+       📎 We need from you — the customer's to-dos (patch AUTO11, cust-care needs-*)
+       📐 Scope of work — from the job's scopes (the 📋 no-price sub scope — never the 💲 budget) or the Scopes-tab text, or typed
+          (job.portalScopes: area / work / qty / unit — never a price, a note or a sub)
+       📄 Plans & documents — upload a PDF / picture (job's Documents, "Plans", customer sees it); the portal gate (PORTALGATE)
+          holds a new paper until it is approved: "⏳ Waiting for approval" + ✅ Put it in the portal (the server's own approval)
+       ✍️ Change orders & addendums — ✨ New change order (the CRM's CO form; AUTO5 asks the customer to sign it) or an addendum
+          paper to sign (portal-sign: the paper shows in "Papers to sign"; the e-mail asking them waits on ✅ Approvals)
+       💬 Questions & messages — the portal's Messages thread (portal-access s-thread / s-send): no e-mail, no text
+       📣 Updates & photos — patch Q's 📣 Post; an update can be hidden from the customer (kept on the job)
+       ➕ Another job for this customer (admin / office — patch NEWPROJ's form), then its portal: the customer's sign-in shows every
+          job with their e-mail / phone that has a portal
+   • Every change shows "👁 Visible to the customer" (what exactly they will see) before it is saved; nothing here e-mails or
+     texts the customer. The ONE thing that may: "✉️ Tell the customer about new papers" — an explicit button, the server's
+     notify-docs (it waits on ✅ Approvals, where an approver may also ✅ Approve — don't send / APPRNOSEND); off while ⏸
+     data-entry mode is on (as are messages and signature requests).
+   • Archive, never delete: a task / milestone / scope is archived (kept on the job, not shown), an update is hidden, a paper is
+     turned off for the customer, a "We need" item is cancelled.
+   • The customer's page never gets an insurance carrier's name, a sub, a price or a portal link from here (the server cleans
+     every text: netlify/functions/_lib/portaled.js); this page never shows the sub portal.
+   No timers, no observers. API: window._gcPortalEd = { open(pid), close(), can(pid), state() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_PORTALED__) return; window.__GC_PATCH_PORTALED__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function crm(){ return W._crm || {}; }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function day(v){ var t = s(v).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return ''; try { return new Date(t + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (e) { return t; } }
+function ago(iso){ var t = Date.parse(iso); if (!t) return ''; var m = Math.round((Date.now() - t) / 60000); if (m < 2) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + ' h ago'; var d = Math.round(h / 24); return d === 1 ? 'yesterday' : d + ' days ago'; }
+function first(n){ return s(n).split(/\s+/)[0] || ''; }
+var Z = 100060;   /* above GrayCo Field's bar (100050) and its pages; other sheets opened from here are lifted above it */
+var STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Contract signed + scheduled', 'In progress', 'Punch list', 'Final invoice', 'Closed'];   /* patch Q's list (the card's "Stage the customer sees") */
+
+/* ── the job, who may open it ── */
+var recent = {};
+function proj(pid){
+  var p = arr(crm().projects).filter(function(x){ return x && String(x.id) === String(pid); })[0] || null;
+  var r = recent[pid]; if (r && (!p || s(r.updatedAt) > s(p.updatedAt))) return r;
+  return p;
+}
+function seesAll(){ try { if (typeof W._gcProjSeesAll === 'function') return !!W._gcProjSeesAll(); } catch (e) {} try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function role(){ try { return W._gcRP && W._gcRP.role ? s(W._gcRP.role()) : ''; } catch (e) { return ''; } }
+function can(p){
+  if (!p) return false;
+  try { if (W._gcFP && typeof W._gcFP.perms === 'function') return !!W._gcFP.perms(p.id).cust; } catch (e) {}
+  if (seesAll()) return true;   /* admin / owner / office (PROJLEAK) */
+  var mine = false; try { mine = typeof W._gcProjScope === 'function' && arr(W._gcProjScope([p])).length > 0; } catch (e) {}
+  return mine && /project manager|\bapm\b|assistant p/i.test(role());   /* the job's own PM */
+}
+function canAddJob(){ try { return typeof W._gcNewProjectFor === 'function' && typeof W._gcNewProjectCan === 'function' && !!W._gcNewProjectCan(); } catch (e) { return false; } }
+function paused(){ try { return !!(W._gcPause && W._gcPause.state && W._gcPause.state().paused); } catch (e) { return false; } }
+function me(){ try { var e = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); var u = arr(crm().users).filter(function(x){ return x && low(x.email) === e; })[0]; if (u && u.name) return s(u.name); } catch (e) {} try { return s(localStorage.getItem('grayco_user')) || 'GrayCo'; } catch (e) { return 'GrayCo'; } }
+
+/* ── the link (patch Q's: /portal.html#t=<43>) ── */
+var LINK = /^https:\/\/[^\s]+\/(?:portal\.html)?#t=([A-Za-z0-9_-]{43})$/, MADE = {};   /* crm…/portal.html#t= or portal.grayco-cs.com/#t= */
+function linkOf(p){ if (!p || p.portalOff) return ''; var u = s(p.portalUrl); if (!LINK.test(u)) u = s(MADE[p.id]); return LINK.test(u) ? u : ''; }
+function tokenOf(p){ var m = LINK.exec(linkOf(p)); return m ? m[1] : ''; }
+/* the staff preview on THIS site (the portal page allows frames from its own site only) */
+function frameUrl(p){ var t = tokenOf(p); return t ? '/portal.html#t=' + t + '&p=1' : ''; }
+
+/* ── the servers (the sign-in layer adds the staff sign-in to every /.netlify/functions call) ── */
+function fn(name, body){
+  return W.fetch('/.netlify/functions/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t) || {}; } catch (e) { j = { error: t.slice(0, 160) }; } j.__s = r.status; return j; }); },
+      function(e){ return { ok: false, __s: 0, error: 'No signal — try again.' }; });
+}
+
+/* ── saving the job (the CRM's own "a person did this" writer: this phone's copy, stamped, then synced) ── */
+function patchJob(pid, patch, why){
+  if (typeof W._gcxPatchJob !== 'function') return Promise.resolve(false);
+  return Promise.resolve(W._gcxPatchJob(pid, patch, why || 'customer portal editor')).then(function(ok){
+    if (ok) { var p = proj(pid); if (p) recent[pid] = Object.assign({}, p, patch, { updatedAt: nowIso() }); }
+    return ok;
+  }, function(){ return false; });
+}
+/* a row list on the job (tasks / milestones / scopes): changed from the newest copy of the job */
+function patchList(pid, key, change){
+  var p = proj(pid); if (!p) return Promise.resolve(false);
+  var l = arr(p[key]).map(function(x){ return Object.assign({}, x); });
+  var out = change(l); if (out) l = out;
+  var o = {}; o[key] = l; return patchJob(pid, o);
+}
+/* a paper on the job's Documents (the same way patch Q adds one: this phone's copy, the screen, the cloud) */
+function addDoc(rec){
+  var all0 = W.idbGet ? Promise.resolve(W.idbGet('projectDocs')).catch(function(){ return null; }) : Promise.resolve(null);
+  return all0.then(function(all){
+    if (!Array.isArray(all)) all = arr(crm().projectDocs || W._gcProjectDocs).slice();
+    if (all.some(function(d){ return d && d.id === rec.id; })) return true;
+    var next = all.concat([rec]);
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('customer portal editor'); } catch (e) {}
+    return Promise.resolve(W.idbSet ? W.idbSet('projectDocs', next) : null).catch(function(){}).then(function(){
+      try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? (prev.some(function(d){ return d && d.id === rec.id; }) ? prev : prev.concat([rec])) : next; }); } catch (e) {}
+      try { if (W._crm) W._crm.projectDocs = next; } catch (e) {}
+      try { if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+      later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+      return true;
+    });
+  });
+}
+function setDoc(id, change){
+  var all0 = W.idbGet ? Promise.resolve(W.idbGet('projectDocs')).catch(function(){ return null; }) : Promise.resolve(null);
+  return all0.then(function(all){
+    if (!Array.isArray(all)) all = arr(crm().projectDocs || W._gcProjectDocs).slice();
+    var hit = false, at = nowIso();
+    var next = all.map(function(d){ if (d && String(d.id) === String(id)) { hit = true; var q = Object.assign({}, d); change(q); q.updatedAt = at; q.savedAt = at; return q; } return d; });
+    if (!hit) return false;
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('customer portal editor'); } catch (e) {}
+    return Promise.resolve(W.idbSet ? W.idbSet('projectDocs', next) : null).catch(function(){}).then(function(){
+      try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? prev.map(function(d){ var n = next.filter(function(x){ return x && d && x.id === d.id; })[0]; return n || d; }) : next; }); } catch (e) {}
+      try { if (W._crm) W._crm.projectDocs = next; } catch (e) {}
+      try { if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+      later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+      return true;
+    });
+  });
+}
+function jobDocs(pid){
+  var all0 = W.idbGet ? Promise.resolve(W.idbGet('projectDocs')).catch(function(){ return null; }) : Promise.resolve(null);
+  return all0.then(function(all){ if (!Array.isArray(all) || !all.length) all = arr(crm().projectDocs || W._gcProjectDocs); return all.filter(function(d){ return d && String(d.pid) === String(pid) && d.deleted !== true; }); });
+}
+/* patch Q's rule for what a customer sees by itself (the server's docShown) */
+var CUSTOMER_DOC = /proposal|contract|change.?order|\binvoice|warrant|welcome|faq|completion|certificate of (substantial )?completion|final inspection|sign.?off|lien|waiver|work auth|customer portal|closeout|receipt|\bplans?\b|drawing/i;
+var INTERNAL_DOC = /\bsub(contract(or)?)?\b|subcontract|sub.?agreement|job sheet|w-?9|\bcoi\b|certificate of insurance|onboarding|\bbid|vendor|supplier|\bcost|budget|payroll|commission|internal|operations manual|takeoff|purchase order|timesheet|tax return/i;
+function shown(d){
+  if (d.internal === true || d.portalNever === true || d.needsReview === true) return false;
+  if (d.portalShare === true) return true; if (d.portalShare === false) return false;
+  if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
+  var t = s(d.cat) + ' | ' + s(d.name) + ' | ' + s(d.kind);
+  return !INTERNAL_DOC.test(t) && /proposal|contract|change.?order|\binvoice|warrant|welcome|faq|completion|final inspection|sign.?off|lien|waiver|work auth|customer portal|closeout|receipt/i.test(t);
+}
+
+/* ── words a customer never sees (the server takes them out too; here it is said before saving) ── */
+var CARRIERS = /\b(state\s*farm|allstate|usaa|liberty\s*mutual|nationwide|travelers|progressive|american\s*family|erie\s*insurance|chubb|the\s*hartford|auto[\s-]*owners|safeco|geico|homesite|metlife|amica|tennessee\s*farmers|farmers\s*insurance|farm\s*bureau|shelter\s*insurance)\b/i;
+function warnings(p, text){
+  var t = s(text), out = [];
+  if (!t) return out;
+  var car = ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName'].map(function(k){ return s(p && p[k]); }).filter(function(v){ return v.length >= 3; });
+  if (CARRIERS.test(t) || car.some(function(c){ return low(t).indexOf(low(c)) >= 0; })) out.push('An insurance company’s name is never shown to a customer — the portal will say “your insurance company”.');
+  if (arr(p && p.subs).some(function(r){ var n = s(r && (r.name || r.company)); return n.length >= 4 && low(t).indexOf(low(n)) >= 0; })) out.push('A sub’s name is never shown to a customer — the portal will say “our trade partner”.');
+  if (/https?:\/\/\S*(#t=|[?&]t=|subportal|portal-app|bids\.grayco|portal\.grayco)/i.test(t)) out.push('Portal links are taken out of what the customer sees (a sub’s portal link looks the same) — send links yourself.');
+  return out;
+}
+
+/* ── the page ── */
+var CUR = { pid: '', mode: 'edit', gate: null, gateAt: 0, msgs: null, needs: null, signs: null, viewed: undefined, saving: false, frameT: 0 };
+function css(){
+  if (D.getElementById('gcpe-css')) return;
+  var st = D.createElement('style'); st.id = 'gcpe-css';
+  st.textContent = [
+    '#gcpe{position:fixed;inset:0;z-index:' + Z + ';background:#F3F5F8;color:#14202E;display:flex;flex-direction:column;font:15px/1.4 Inter,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-text-size-adjust:100%}',
+    '#gcpe *{box-sizing:border-box}',
+    '#gcpe .pe-top{flex:0 0 auto;background:#0F1D2F;color:#fff;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;display:flex;align-items:center;gap:8px}',
+    '#gcpe .pe-top button{min-width:44px;min-height:44px;border:0;border-radius:10px;background:rgba(255,255,255,.12);color:#fff;font:700 15px inherit;font-family:inherit;padding:0 12px;cursor:pointer}',
+    '#gcpe .pe-tt{flex:1;min-width:0}#gcpe .pe-tt b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#gcpe .pe-tt small{display:block;color:#C9D3DF;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '#gcpe .pe-seg{flex:0 0 auto;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px;background:#0F1D2F}',
+    '#gcpe .pe-seg button{min-height:44px;border-radius:10px;border:1px solid #2B4466;background:transparent;color:#C9D3DF;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer}',
+    '#gcpe .pe-seg button[aria-pressed="true"]{background:#D4A017;border-color:#D4A017;color:#0F1D2F}',
+    '#gcpe .pe-seg button:disabled{opacity:.45}',
+    '#gcpe .pe-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 10px calc(28px + env(safe-area-inset-bottom,0px))}',
+    '#gcpe .pe-frame{flex:1 1 auto;border:0;width:100%;background:#fff}',
+    '#gcpe .pe-card{background:#fff;border:1px solid #E2DCCD;border-radius:14px;padding:12px;margin:0 0 10px}',
+    '#gcpe .pe-card h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:6px}',
+    '#gcpe .pe-sub{font-size:12px;color:#55626F;margin:0 0 8px}',
+    '#gcpe .pe-row{display:flex;align-items:center;gap:8px;border-top:1px solid #EFEAE0;padding:8px 0;min-height:44px}',
+    '#gcpe .pe-row .pe-x{flex:1;min-width:0;overflow-wrap:anywhere}',
+    '#gcpe .pe-row .pe-x small{display:block;color:#55626F;font-size:12px}',
+    '#gcpe .pe-row.off .pe-x{color:#8A94A6;text-decoration:line-through}',
+    '#gcpe button.pe-b,#gcpe label.pe-b,#gcpe a.pe-b{min-height:44px;border-radius:10px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F;font-weight:700;font-size:14px;font-family:inherit;padding:0 12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}',
+    '#gcpe .pe-b.pri{background:#D4A017;border-color:#D4A017;color:#0F1D2F;font-weight:800}',
+    '#gcpe .pe-b.navy{background:#0F1D2F;border-color:#0F1D2F;color:#fff}',
+    '#gcpe .pe-b.sm{min-height:40px;min-width:44px;padding:0 10px;font-size:13px}',
+    '#gcpe .pe-b.red{border-color:#b91c1c;color:#b91c1c}',
+    '#gcpe .pe-b:disabled{opacity:.45;cursor:default}',
+    '#gcpe .pe-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}',
+    '#gcpe .pe-btns.two{display:grid;grid-template-columns:1fr 1fr}',
+    '#gcpe input.pe-i,#gcpe textarea.pe-i,#gcpe select.pe-i{width:100%;min-height:44px;border:1px solid #C9C2B2;border-radius:10px;padding:8px 10px;font-size:16px;font-family:inherit;background:#fff;color:#14202E}',
+    '#gcpe textarea.pe-i{min-height:84px;resize:vertical}',
+    '#gcpe .pe-f{display:block;margin:0 0 8px}#gcpe .pe-f > span{display:block;font-size:12px;font-weight:700;color:#55626F;margin:0 0 3px}',
+    '#gcpe .pe-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}',
+    '#gcpe .pe-vis{border:2px solid #D4A017;background:#FFF8E5;border-radius:12px;padding:10px;margin:8px 0}',
+    '#gcpe .pe-vis b{display:block;font-size:14px;margin-bottom:4px}',
+    '#gcpe .pe-vis .w{color:#9A3412;font-size:13px;margin:4px 0}',
+    '#gcpe .pe-vis q{display:block;quotes:none;background:#fff;border:1px solid #E2DCCD;border-radius:8px;padding:6px 8px;margin:4px 0;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}',
+    '#gcpe .pe-note{font-size:12px;color:#55626F}',
+    '#gcpe .pe-pill{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;background:#EEF1F6;color:#1A3A5F;white-space:nowrap}',
+    '#gcpe .pe-x .pe-pill{display:table;white-space:normal;margin-top:3px;max-width:100%}',
+    '#gcpe .pe-pill.ok{background:#DCFCE7;color:#14532D}#gcpe .pe-pill.wait{background:#FEF3C7;color:#92400E}#gcpe .pe-pill.off{background:#F1F5F9;color:#64748B}',
+    '#gcpe .pe-ban{border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:13px;font-weight:600;background:#FEF3C7;color:#78350F;border:1px solid #F59E0B}',
+    '#gcpe .pe-msg{border-radius:12px;padding:8px 10px;margin:6px 0;max-width:88%;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}',
+    '#gcpe .pe-msg.gc{background:#0F1D2F;color:#fff;margin-left:auto}#gcpe .pe-msg.them{background:#EEF1F6}',
+    '#gcpe .pe-msg small{display:block;font-size:11px;opacity:.75;margin-bottom:2px}',
+    '#gcpe .pe-make{text-align:center;padding:18px 12px}#gcpe .pe-make .big{font-size:40px}',
+    '#gcpe details.pe-more > summary{cursor:pointer;font-weight:700;color:#1A3A5F;min-height:40px;display:flex;align-items:center}',
+    '#gcpe-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:' + (Z + 40) + ';background:#14532D;color:#fff;padding:12px 16px;border-radius:12px;font:600 14px/1.35 Inter,-apple-system,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);max-width:92vw;text-align:center;pointer-events:none}'
+  ].join('\n');
+  (D.head || D.documentElement).appendChild(st);
+}
+function toast(t, bad){
+  var el = D.getElementById('gcpe-toast'); if (!el) { el = D.createElement('div'); el.id = 'gcpe-toast'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'status'); D.body.appendChild(el); }
+  el.textContent = t; el.style.background = bad ? '#991B1B' : '#14532D'; el.style.display = 'block'; clearTimeout(el.__t); el.__t = later(function(){ el.style.display = 'none'; }, 4200);
+}
+function ov(){ return D.getElementById('gcpe'); }
+function body(){ var o = ov(); return o && o.querySelector('.pe-body'); }
+
+/* another part of the CRM opened its own sheet from here (📣 Post, ✨ New change order, ➕ New project …): lift it above this page */
+function lift(before){
+  [0, 120, 400].forEach(function(ms){ later(function(){
+    Array.prototype.forEach.call(D.body.children, function(e){
+      if (before.has(e) || e.id === 'gcpe' || e.id === 'gcpe-toast' || e.tagName === 'SCRIPT' || e.tagName === 'STYLE') return;
+      var cs = W.getComputedStyle(e); if (cs.position !== 'fixed' && cs.position !== 'absolute') return;
+      var z = parseInt(cs.zIndex, 10); if (!(z > Z)) e.style.zIndex = String(Z + 20);
+    });
+  }, ms); });
+}
+function foreign(run){ var before = new Set(Array.prototype.slice.call(D.body.children)); try { run(); } catch (e) { toast('That did not open: ' + s(e && e.message), true); } lift(before); }
+
+/* ── "👁 Visible to the customer" before every save ── */
+function confirmVis(anchor, o){
+  var box = anchor.parentNode && anchor.parentNode.querySelector(':scope > .pe-vis'); if (box) box.remove();
+  var p = proj(CUR.pid) || {};
+  var w = [];
+  arr(o.texts).forEach(function(t){ warnings(p, t).forEach(function(x){ if (w.indexOf(x) < 0) w.push(x); }); });
+  box = D.createElement('div'); box.className = 'pe-vis'; box.setAttribute('data-pe-vis', '1');
+  box.innerHTML = '<b>👁 Visible to the customer</b>' + arr(o.lines).map(function(l){ return '<q>' + esc(l) + '</q>'; }).join('') +
+    w.map(function(x){ return '<div class="w">⚠ ' + esc(x) + '</div>'; }).join('') +
+    '<div class="pe-note">' + esc(o.note || ('Shows in ' + (first(p.client) || 'the customer') + '’s portal. Nothing is e-mailed or texted.')) + '</div>' +
+    '<div class="pe-btns two"><button type="button" class="pe-b pri" data-v="ok">' + esc(o.ok || 'Save — the customer sees it') + '</button><button type="button" class="pe-b" data-v="no">Cancel</button></div>';
+  anchor.parentNode.insertBefore(box, anchor.nextSibling);
+  try { box.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  box.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-v]'); if (!b) return;
+    if (b.getAttribute('data-v') === 'no') { box.remove(); return; }
+    b.disabled = true; b.textContent = 'Saving…';
+    Promise.resolve(o.save()).then(function(r){
+      box.remove();
+      if (r === false) { toast('Not saved — try again (a signal is needed for some of this).', true); return; }
+      if (o.done) toast(o.done);
+      paint();
+    }, function(err){ box.remove(); toast('Not saved: ' + s(err && err.message || err), true); });
+  });
+  return box;
+}
+
+/* ── open / close ── */
+function open(pid){
+  var p = proj(pid);
+  if (!p) { toast('That job is not on this device yet.', true); return false; }
+  if (!can(p)) { toast('The customer portal opens for an admin, the office or this job’s own PM.', true); return false; }
+  css(); close(true);
+  CUR = { pid: String(pid), mode: 'edit', gate: null, gateAt: 0, msgs: null, needs: null, signs: null, viewed: undefined, saving: false };
+  CUR.lsBefore = {}; ['gc_portal_t', 'gc_portal_s', 'gc_lang'].forEach(function(k){ try { CUR.lsBefore[k] = localStorage.getItem(k); } catch (e) {} });
+  var o = D.createElement('div'); o.id = 'gcpe'; o.setAttribute('data-gc-keep', '1'); o.setAttribute('data-gcnav-ignore', '1'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('data-pid', String(pid));
+  o.innerHTML = '<div class="pe-top"><button type="button" data-pe="close" aria-label="Close the customer portal">‹ Back</button><div class="pe-tt"><b></b><small></small></div></div>' +
+    '<div class="pe-seg" role="tablist"><button type="button" data-pe="mode" data-m="edit" aria-pressed="true">✏️ Edit portal</button><button type="button" data-pe="mode" data-m="cust" aria-pressed="false">👁 Customer view</button></div>' +
+    '<div class="pe-body"></div>';
+  D.body.appendChild(o);
+  o.addEventListener('click', onClick);
+  o.addEventListener('change', onChange);
+  try { D.documentElement.classList.add('gcpe-open'); } catch (e) {}
+  /* the small floating buttons that sit above every page (💎 hub, 🎤 …) would cover this page's buttons: out of sight while it is open */
+  Array.prototype.forEach.call(D.body.children, function(e){
+    if (e === o || /^gcpe/.test(e.id) || e.tagName === 'SCRIPT' || e.tagName === 'STYLE') return;
+    try { var cs = W.getComputedStyle(e), r = e.getBoundingClientRect(); if (cs.position === 'fixed' && cs.display !== 'none' && cs.visibility !== 'hidden' && parseInt(cs.zIndex, 10) > Z && r.width > 0 && r.width <= 120 && r.height <= 120) { e.setAttribute('data-gcpe-hid', '1'); e.style.setProperty('visibility', 'hidden', 'important'); } } catch (x) {}
+  });
+  paint(); loadAll();
+  return true;
+}
+function close(quiet){
+  var o = ov(); if (o) o.remove();
+  Array.prototype.forEach.call(D.querySelectorAll('[data-gcpe-hid]'), function(e){ e.removeAttribute('data-gcpe-hid'); e.style.removeProperty('visibility'); });
+  try { D.documentElement.classList.remove('gcpe-open'); } catch (e) {}
+  /* the preview page wrote the customer's link code in this site's storage: put it back the way it was */
+  if (CUR && CUR.lsBefore) Object.keys(CUR.lsBefore).forEach(function(k){ try { var v = CUR.lsBefore[k]; if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} });
+  if (!quiet) CUR.pid = '';
+}
+
+/* ── what the page shows ── */
+function head(){
+  var o = ov(), p = proj(CUR.pid); if (!o || !p) return;
+  o.querySelector('.pe-tt b').textContent = '👤 ' + (s(p.client) ? s(p.client) + '’s portal' : 'Customer portal');
+  o.querySelector('.pe-tt small').textContent = [s(p.name), s(p.autoPO || p.po)].filter(Boolean).join(' · ');
+  var has = !!linkOf(p);
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pe="mode"]'), function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-m') === CUR.mode ? 'true' : 'false'); if (b.getAttribute('data-m') === 'cust') b.disabled = !has; });
+}
+function paint(){
+  var o = ov(), p = proj(CUR.pid); if (!o || !p) return;
+  head();
+  var bd = body(), fr = o.querySelector('.pe-frame');
+  if (CUR.mode === 'cust' && linkOf(p)) {
+    bd.style.display = 'none';
+    if (!fr) { fr = D.createElement('iframe'); fr.className = 'pe-frame'; fr.setAttribute('title', 'What the customer sees'); fr.setAttribute('data-pe-frame', '1'); o.appendChild(fr); }
+    var u = frameUrl(p);
+    /* a new frame each time (the same address with only a # would not load the page again — the customer view must be fresh) */
+    if (fr.getAttribute('data-src') !== u + '|' + CUR.frameT) { var nf = fr.cloneNode(false); nf.setAttribute('data-src', u + '|' + CUR.frameT); nf.removeAttribute('src'); fr.parentNode.replaceChild(nf, fr); fr = nf; fr.src = u; }
+    fr.style.display = '';
+    return;
+  }
+  if (fr) fr.style.display = 'none';
+  bd.style.display = '';
+  var keep = bd.scrollTop, openVis = bd.querySelector('.pe-vis');
+  if (openVis) return;   /* a "Visible to the customer" box is open: it is not drawn over */
+  bd.innerHTML = linkOf(p) ? editHtml(p) : makeHtml(p);
+  bd.scrollTop = keep;
+  if (linkOf(p)) paintDocs();
+}
+function makeHtml(p){
+  var who = first(p.client) || 'the customer';
+  if (p.portalOff) return '<div class="pe-card pe-make"><div class="big">🔒</div><h3 style="justify-content:center">The portal link is turned off for this job</h3><p class="pe-sub">Turn it back on from the desk (the job’s 🏠 Portal card → ⋯ → New link). Nothing is sent from there either.</p></div>';
+  return '<div class="pe-card pe-make" data-pe-make="1"><div class="big">🏠</div><h3 style="justify-content:center">No customer portal yet</h3>' +
+    '<p class="pe-sub" style="font-size:14px">Make ' + esc(who) + '’s portal for <b>' + esc(p.name) + '</b> in one tap. Then you can see it and add updates, tasks, plans, papers to sign and questions.</p>' +
+    '<button type="button" class="pe-b pri" data-pe="make" style="width:100%;min-height:52px;font-size:16px">🏠 Make the portal</button></div>';
+}
+function makeConfirmHtml(p){
+  var who = s(p.client) || 'the customer';
+  return '<div class="pe-vis" data-pe-makeok="1"><b>🏠 Make the portal — what happens</b>' +
+    '<q>GrayCo makes ' + esc(who) + '’s private portal link for ' + esc(p.name) + '.</q>' +
+    '<q>NOTHING is sent to ' + esc(who) + ' now — no e-mail, no text.</q>' +
+    '<q>They see it only when you send them the link yourself (📋 Copy link, then your own text or e-mail) — or when they sign in at portal.grayco-cs.com with the e-mail / phone on this job.</q>' +
+    '<div class="pe-btns two"><button type="button" class="pe-b pri" data-pe="make-go">Make it — send nothing</button><button type="button" class="pe-b" data-pe="make-no">Cancel</button></div></div>';
+}
+function sec(id, title, sub, inner){ return '<section class="pe-card" data-pe-sec="' + id + '"><h3>' + title + '</h3>' + (sub ? '<p class="pe-sub">' + sub + '</p>' : '') + inner + '</section>'; }
+function pill(st){ return st === 'ok' ? '<span class="pe-pill ok">Customer sees it</span>' : st === 'wait' ? '<span class="pe-pill wait">⏳ Waiting for approval — not in portal</span>' : st === 'off' ? '<span class="pe-pill off">Hidden from customer</span>' : '<span class="pe-pill">' + esc(st) + '</span>'; }
+function editHtml(p){
+  var who = first(p.client) || 'the customer', h = '';
+  if (paused()) h += '<div class="pe-ban" data-pe-paused="1">⏸ Data-entry mode is on: nothing is sent to customers. Messages, signature requests and "Tell the customer" are off until ▶ Resume sending. What you save here still shows in the portal.</div>';
+  h += '<div class="pe-card" data-pe-sec="status"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pe-pill ok">🔗 Portal ready</span><span class="pe-note" data-pe-viewed>' + (CUR.viewed === undefined ? 'Checking when it was last opened…' : CUR.viewed ? 'Opened by the customer ' + esc(ago(CUR.viewed)) : 'Not opened by the customer yet') + '</span></div>' +
+    '<div class="pe-btns two"><button type="button" class="pe-b" data-pe="view">👁 See it as ' + esc(who) + '</button><button type="button" class="pe-b" data-pe="copy">📋 Copy link</button></div>' +
+    '<p class="pe-note" style="margin:6px 0 0">Copying the link sends nothing — paste it in your own text or e-mail.</p></div>';
+  h += detailsSec(p) + schedSec(p) + tasksSec(p) + needsSec(p) + scopeSec(p) + docsSec(p) + coSec(p) + msgSec(p) + postsSec(p) + jobsSec(p) + tellSec(p);
+  return h;
+}
+/* 📝 details */
+function detailsSec(p){
+  var st = p.portalStage == null || p.portalStage === '' ? 'auto' : String(p.portalStage);
+  var sum = p.portalSummary && typeof p.portalSummary === 'object' ? s(p.portalSummary.text) : s(p.portalSummary);
+  return sec('details', '📝 Project details', 'What the customer sees at the top of their portal.',
+    '<label class="pe-f"><span>Job name (the CRM and the portal)</span><input class="pe-i" data-f="name" value="' + esc(p.name) + '" maxlength="90"></label>' +
+    '<label class="pe-f"><span>Job address</span><input class="pe-i" data-f="address" value="' + esc(p.address) + '" maxlength="160"></label>' +
+    '<label class="pe-f"><span>Stage the customer sees</span><select class="pe-i" data-f="stage"><option value="auto"' + (st === 'auto' ? ' selected' : '') + '>Automatic (from the job)</option>' + STAGES.map(function(n, i){ return '<option value="' + i + '"' + (st === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
+    '<label class="pe-f"><span>About your project (scope summary the customer reads)</span><textarea class="pe-i" data-f="summary" maxlength="3000" placeholder="e.g. Full roof replacement with architectural shingles, new gutters on the front, and a kitchen remodel.">' + esc(sum) + '</textarea></label>' +
+    '<button type="button" class="pe-b pri" data-pe="details-save" style="width:100%">Save details</button>');
+}
+/* 📅 schedule + milestones */
+function live(l){ return arr(l).filter(function(x){ return x && x.archived !== true; }); }
+function schedSec(p){
+  var steps = arr(p.schedPlan && p.schedPlan.steps).filter(function(x){ return x && x.portal === true && s(x.name) && x.draft !== true; });
+  var ms = arr(p.portalMilestones);
+  var h = steps.map(function(x){ return '<div class="pe-row" data-step="' + esc(x.id) + '"><span class="pe-x">' + (x.done ? '✓ ' : '') + esc(x.name) + '<small>' + esc([day(x.date), x.end && x.end !== x.date ? '– ' + day(x.end) : ''].filter(Boolean).join(' ')) + ' · from the job’s 📅 Schedule</small></span></div>'; }).join('');
+  h += live(ms).map(function(m){ return '<div class="pe-row" data-ms="' + esc(m.id) + '"><span class="pe-x">' + (m.done ? '✓ ' : '') + esc(m.name) + '<small>' + esc(day(m.date) + (m.end && m.end !== m.date ? ' – ' + day(m.end) : '')) + ' · milestone</small></span>' +
+    '<button type="button" class="pe-b sm" data-pe="ms-done" data-id="' + esc(m.id) + '">' + (m.done ? '↩ Not done' : '✓ Done') + '</button><button type="button" class="pe-b sm" data-pe="ms-arch" data-id="' + esc(m.id) + '" aria-label="Archive">🗄</button></div>'; }).join('');
+  if (!h) h = '<p class="pe-note">Nothing on the customer’s schedule yet.</p>';
+  h += '<div class="pe-two" style="margin-top:8px"><label class="pe-f"><span>Milestone</span><input class="pe-i" data-f="ms-name" placeholder="e.g. Cabinets installed" maxlength="90"></label><label class="pe-f"><span>Date</span><input class="pe-i" type="date" data-f="ms-date"></label></div>' +
+    '<button type="button" class="pe-b" data-pe="ms-add" style="width:100%">＋ Add milestone</button>';
+  return sec('sched', '📅 Schedule & milestones', 'The customer sees these under "Your schedule".', h);
+}
+/* ✅ checklist */
+function tasksSec(p){
+  var l = arr(p.portalTasks), h = '';
+  h += live(l).map(function(t){ return '<div class="pe-row' + (t.done ? ' off' : '') + '" data-task="' + esc(t.id) + '"><span class="pe-x">' + esc(t.text) + '<small>' + esc(t.done ? 'Done' + (t.doneAt ? ' ' + day(t.doneAt) : '') : (t.due ? 'By ' + day(t.due) : 'Open')) + '</small></span>' +
+    '<button type="button" class="pe-b sm" data-pe="task-done" data-id="' + esc(t.id) + '">' + (t.done ? '↩ Reopen' : '✓ Done') + '</button><button type="button" class="pe-b sm" data-pe="task-arch" data-id="' + esc(t.id) + '" aria-label="Archive">🗄</button></div>'; }).join('');
+  if (!h) h = '<p class="pe-note">No tasks in the portal yet.</p>';
+  var arch = l.filter(function(x){ return x && x.archived === true; }).length;
+  h += '<label class="pe-f" style="margin-top:8px"><span>New task the customer sees</span><input class="pe-i" data-f="task-text" placeholder="e.g. Pick your shingle color" maxlength="300"></label>' +
+    '<label class="pe-f"><span>By (optional)</span><input class="pe-i" type="date" data-f="task-due"></label>' +
+    '<button type="button" class="pe-b" data-pe="task-add" style="width:100%">＋ Add task</button>' + (arch ? '<p class="pe-note" style="margin:6px 0 0">' + arch + ' archived (kept on the job, not shown).</p>' : '');
+  return sec('tasks', '✅ Checklist', 'Tasks on the customer’s "Your project checklist".', h);
+}
+/* 📎 we need from you */
+function needsSec(p){
+  var h = '';
+  if (CUR.needs === null) h = '<p class="pe-note">Loading…</p>';
+  else if (CUR.needs === false) h = '<p class="pe-note">Could not load the list — check the signal.</p>';
+  else h = CUR.needs.filter(function(x){ return x.status !== 'cancelled'; }).map(function(x){ return '<div class="pe-row' + (x.status === 'done' ? ' off' : '') + '" data-need="' + esc(x.id) + '"><span class="pe-x">' + esc(x.label) + '<small>' + esc(x.status === 'done' ? 'Received' + (x.answeredAt ? ' ' + day(x.answeredAt) : '') : (x.answer ? 'Answered: ' + x.answer.slice(0, 80) : 'Waiting on the customer')) + '</small></span>' +
+    (x.status !== 'done' ? '<button type="button" class="pe-b sm" data-pe="need-cancel" data-id="' + esc(x.id) + '" aria-label="Cancel">🗄</button>' : '') + '</div>'; }).join('') || '<p class="pe-note">Nothing asked yet.</p>';
+  h += '<div class="pe-two" style="margin-top:8px"><label class="pe-f"><span>Ask for</span><select class="pe-i" data-f="need-kind"><option value="other">Something else…</option><option value="colors">Paint / material colors</option><option value="hoa">HOA approval letter</option><option value="forms">Signed forms</option><option value="photos">Photos</option><option value="codes">Door / gate / lockbox code</option></select></label>' +
+    '<label class="pe-f"><span>What exactly</span><input class="pe-i" data-f="need-label" placeholder="e.g. Your tile choice" maxlength="120"></label></div>' +
+    '<button type="button" class="pe-b" data-pe="need-add" style="width:100%">＋ Ask the customer</button>';
+  return sec('needs', '📎 We need from you', 'The customer’s to-dos: they answer or upload in the portal.', h);
+}
+/* 📐 scope */
+function scopeList(p){
+  var out = [];
+  var l = [], seen = {}; try { l = W._gcScopeSend && typeof W._gcScopeSend.list === 'function' ? arr(W._gcScopeSend.list(p.id)) : []; } catch (e) { l = []; }
+  l = l.concat(arr(crm().scopes)).filter(function(x){ if (!x || seen[x.id]) return false; seen[x.id] = 1; return true; });
+  l.forEach(function(x){ if (x && String(x.pid) === String(p.id) && x.kind === 'sub' && x.internal !== true && x.deleted !== true && arr(x.lines).length) out.push({ id: x.id, title: s(x.title) || 'Scope of work', n: arr(x.lines).length, rec: x }); });
+  var js = typeof p.scope === 'string' ? s(p.scope) : (Array.isArray(p.scope) ? p.scope.map(function(x){ return s(x && (x.desc || x.task || x.name || x)); }).filter(Boolean).join('\n') : '');
+  if (js) out.push({ id: 'jobscope', title: 'The job’s scope (Scopes tab)', n: 0, text: js });
+  return out;
+}
+function scopeSec(p){
+  var cur = live(p.portalScopes), h = '';
+  h += cur.map(function(x){ return '<div class="pe-row" data-scope="' + esc(x.id) + '"><span class="pe-x">' + esc(x.title || 'Scope of work') + '<small>' + esc(arr(x.lines).length ? arr(x.lines).length + ' line' + (arr(x.lines).length === 1 ? '' : 's') : s(x.text).slice(0, 80)) + '</small></span><button type="button" class="pe-b sm" data-pe="scope-arch" data-id="' + esc(x.id) + '" aria-label="Archive">🗄</button></div>'; }).join('') || '<p class="pe-note">No scope in the portal yet.</p>';
+  var src = scopeList(p);
+  h += '<label class="pe-f" style="margin-top:8px"><span>Add from</span><select class="pe-i" data-f="scope-src">' + src.map(function(x){ return '<option value="' + esc(x.id) + '">' + esc(x.title + (x.n ? ' (' + x.n + ' lines)' : '')) + '</option>'; }).join('') + '<option value="typed">Type it here…</option></select></label>' +
+    '<label class="pe-f" data-pe-typed><span>Scope text (only if typing)</span><textarea class="pe-i" data-f="scope-text" maxlength="4000" placeholder="What we will do — no prices."></textarea></label>' +
+    '<button type="button" class="pe-b" data-pe="scope-add" style="width:100%">＋ Put scope in the portal</button><p class="pe-note" style="margin:6px 0 0">Only the work words go in — never a price, a cost, a note or a sub.</p>';
+  return sec('scope', '📐 Scope of work', 'Shows as "Scope of work" in the portal.', h);
+}
+/* 📄 plans & documents */
+function gateOf(d){
+  var g = CUR.gate && CUR.gate.items ? CUR.gate.items.filter(function(x){ return x.key === 'd:' + d.id; })[0] : null;
+  return g || null;
+}
+function docsSec(p){
+  var h = '<div data-pe-docs><p class="pe-note">Loading…</p></div>';
+  h += '<label class="pe-b pri" style="width:100%;margin-top:8px">⬆ Add plans or a paper (PDF or picture)<input type="file" data-f="doc-file" accept=".pdf,application/pdf,image/*" multiple style="display:none"></label>' +
+    '<p class="pe-note" style="margin:6px 0 0">Goes to the job’s Documents as "Plans" and to the customer’s Documents once approved (every new paper is approved first — ✅ Approvals).</p>' +
+    (W._gcPortal && typeof W._gcPortal.docs === 'function' ? '<button type="button" class="pe-b sm" data-pe="docs-all" style="margin-top:6px">All files on this job (on / off)</button>' : '');
+  return sec('docs', '📄 Plans & documents', 'Proposals, contracts, plans and papers in the customer’s Documents.', h);
+}
+function paintDocs(){
+  var bd = body(); var box = bd && bd.querySelector('[data-pe-docs]'); if (!box) return;
+  jobDocs(CUR.pid).then(function(list){
+    var rows = list.filter(function(d){ return d.portalShare === true || shown(d) || /^pped_/.test(s(d.id)); }).sort(function(a, b){ return s(a.uploadedAt || a.uploaded) < s(b.uploadedAt || b.uploaded) ? 1 : -1; }).slice(0, 40);
+    var newWait = false;
+    box.innerHTML = rows.map(function(d){
+      /* the gate's own rule: approved, or there before the gate started (its first look) → shown; a newer paper with no gate row yet is waiting too */
+      var on = shown(d), g = gateOf(d), since = s(CUR.gate && CUR.gate.since), at = s(d.uploadedAt || d.savedAt || d.uploaded);
+      var st = !on ? 'off' : (g && g.st === 'approved') ? 'ok' : (g && g.st === 'pending') ? 'wait' : (g && (g.st === 'rejected' || g.st === 'recorded')) ? 'Not approved' : !CUR.gate ? '…' : (since && at && at > since) ? 'wait' : 'ok';
+      if (st === 'wait' && !g) newWait = true;
+      return '<div class="pe-row" data-doc="' + esc(d.id) + '"><span class="pe-x">' + esc(d.name || 'File') + '<small>' + esc(s(d.cat)) + '</small>' + pill(st) + '</span>' +
+        (st === 'wait' && g && g.aq ? '<button type="button" class="pe-b sm pri" data-pe="doc-appr" data-aq="' + esc(g.aq) + '">✅ Put in portal</button>' : '') +
+        (on ? '<button type="button" class="pe-b sm" data-pe="doc-off" data-id="' + esc(d.id) + '" aria-label="Hide from the customer">🙈</button>' : '<button type="button" class="pe-b sm" data-pe="doc-on" data-id="' + esc(d.id) + '">Show</button>') + '</div>';
+    }).join('') || '<p class="pe-note">No papers for the customer yet.</p>';
+    /* a paper the gate has not seen yet: ask it to look (its "Put in the customer portal" approval) — once a minute at most */
+    if (newWait && Date.now() - (CUR.scanAt || 0) > 60000) { CUR.scanAt = Date.now(); var pid0 = CUR.pid; fn('portal', { action: 'gate', op: 'scan', projectId: pid0 }).then(function(){ if (CUR.pid === pid0) loadGate(); }); }
+  });
+}
+/* ✍️ change orders & addendums */
+function coSec(p){
+  var h = '<div data-pe-signs>' + (CUR.signs === null ? '<p class="pe-note">Loading…</p>' : (CUR.signs || []).filter(function(x){ return x.status !== 'void'; }).map(function(x){
+    var st = x.status === 'signed' ? 'Signed' : x.status === 'declined' ? 'Not signed' : (x.inPortal ? 'In the portal — waiting for the signature' : 'E-mail waiting on ✅ Approvals');
+    return '<div class="pe-row"><span class="pe-x">' + esc(x.title || 'Paper to sign') + '<small>' + esc(st) + '</small></span></div>'; }).join('') || '<p class="pe-note">Nothing sent to sign yet.</p>') + '</div>';
+  var off = paused();
+  h += (W.gcAddCO && typeof W.gcAddCO.open === 'function' ? '<button type="button" class="pe-b" data-pe="co-new" style="width:100%;margin-top:8px">✨ New change order</button><p class="pe-note" style="margin:4px 0 8px">The CRM’s change-order form. Every new change order asks the customer to sign it in the portal; that e-mail waits on ✅ Approvals.</p>' : '') +
+    '<details class="pe-more"><summary>📝 Addendum — a paper for the customer to sign</summary>' +
+    '<label class="pe-f"><span>Title</span><input class="pe-i" data-f="add-title" placeholder="e.g. Addendum — upgrade to architectural shingles" maxlength="120"></label>' +
+    '<label class="pe-f"><span>What it says (the customer reads this)</span><textarea class="pe-i" data-f="add-text" maxlength="1200"></textarea></label>' +
+    '<div class="pe-two"><label class="pe-f"><span>Amount (optional)</span><input class="pe-i" data-f="add-amt" inputmode="decimal" placeholder="$"></label><label class="pe-f"><span>Paper (PDF, optional)</span><input class="pe-i" type="file" data-f="add-file" accept=".pdf,application/pdf"></label></div>' +
+    '<button type="button" class="pe-b" data-pe="add-send" style="width:100%"' + (off ? ' disabled' : '') + '>✍️ Put it in the portal to sign</button>' + (off ? '<p class="pe-note">Off while ⏸ data-entry mode is on.</p>' : '') + '</details>';
+  return sec('co', '✍️ Change orders & addendums', 'Papers the customer signs in the portal.', h);
+}
+/* 💬 messages */
+function msgSec(p){
+  var off = paused(), h = '<div data-pe-msgs>';
+  if (CUR.msgs === null) h += '<p class="pe-note">Loading…</p>';
+  else if (CUR.msgs === false) h += '<p class="pe-note">Could not load the messages — check the signal.</p>';
+  else h += CUR.msgs.slice(-12).map(function(m){ return '<div class="pe-msg ' + (m.mine ? 'gc' : 'them') + '"><small>' + esc((m.mine ? (m.by || 'GrayCo') : (m.by || 'Customer')) + ' · ' + ago(m.at)) + '</small>' + esc(m.text) + '</div>'; }).join('') || '<p class="pe-note">No messages yet.</p>';
+  h += '</div><label class="pe-f" style="margin-top:8px"><span>Ask ' + esc(first(p.client) || 'the customer') + ' a question</span><textarea class="pe-i" data-f="msg-text" maxlength="4000" placeholder="e.g. Do you want the gutters white or bronze?"></textarea></label>' +
+    '<button type="button" class="pe-b navy" data-pe="msg-send" style="width:100%"' + (off ? ' disabled' : '') + '>💬 Send in the portal</button>' + (off ? '<p class="pe-note">Off while ⏸ data-entry mode is on.</p>' : '');
+  return sec('msgs', '💬 Questions & messages', 'The portal’s Messages: they answer there. No e-mail or text is sent.', h);
+}
+/* 📣 updates */
+function postsSec(p){
+  var posts = arr(p.portalPosts).filter(function(x){ return x && (s(x.text) || arr(x.files).length); }).sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });
+  var h = posts.slice(0, 8).map(function(x){ return '<div class="pe-row' + (x.hidden ? ' off' : '') + '" data-post="' + esc(x.id) + '"><span class="pe-x">' + esc(s(x.text).slice(0, 140) || '(photos)') + '<small>' + esc((first(x.by) || 'GrayCo') + ' · ' + ago(x.at) + (arr(x.files).length ? ' · 📷 ' + arr(x.files).length : '')) + '</small></span>' +
+    (x.hidden ? '<button type="button" class="pe-b sm" data-pe="post-show" data-id="' + esc(x.id) + '">Show</button>' : '<button type="button" class="pe-b sm" data-pe="post-hide" data-id="' + esc(x.id) + '" aria-label="Hide from the customer">🙈</button>') + '</div>'; }).join('') || '<p class="pe-note">No updates yet.</p>';
+  h += (W._gcPortal && typeof W._gcPortal.post === 'function' ? '<button type="button" class="pe-b pri" data-pe="post" style="width:100%;margin-top:8px">📣 Post an update with photos</button>' : '');
+  return sec('posts', '📣 Updates & photos', 'The customer sees new updates on their Home page.', h);
+}
+/* ➕ another job for this customer */
+function jobsSec(p){
+  var nm = low(p.client), em = low(p.clientEmail || p.email), ph = s(p.clientPhone || p.phone).replace(/\D/g, '').slice(-10);
+  var mine = arr(crm().projects).filter(function(x){ if (!x || x.id === p.id || x.deleted || x.tombstoned) return false; var e2 = low(x.clientEmail || x.email), p2 = s(x.clientPhone || x.phone).replace(/\D/g, '').slice(-10); return (em && e2 === em) || (ph && ph.length === 10 && p2 === ph) || (nm && low(x.client) === nm); });
+  var h = mine.slice(0, 10).map(function(x){ var ok = !!linkOf(x); return '<div class="pe-row" data-job="' + esc(x.id) + '"><span class="pe-x">' + esc(x.name) + '<small>' + esc(s(x.status)) + '</small>' + (ok ? '<span class="pe-pill ok">In their portal</span>' : '<span class="pe-pill off">No portal</span>') + '</span>' +
+    (can(x) ? '<button type="button" class="pe-b sm" data-pe="job-open" data-id="' + esc(x.id) + '">' + (ok ? 'Open' : '🏠 Make') + '</button>' : '') + '</div>'; }).join('') || '<p class="pe-note">No other jobs for this customer.</p>';
+  if (canAddJob()) h += '<button type="button" class="pe-b" data-pe="job-add" style="width:100%;margin-top:8px">➕ Add a job for ' + esc(first(p.client) || 'this customer') + '</button><p class="pe-note" style="margin:4px 0 0">The CRM’s ＋ New project form, filled in with this customer. Then 🏠 Make its portal (nothing is sent): it shows in their portal’s job list when they sign in with the same e-mail or phone.</p>';
+  return sec('jobs', '🏗 This customer’s jobs', 'Each job has its own portal page; one sign-in shows them all.', h);
+}
+/* ✉️ the one button that may e-mail the customer */
+function tellSec(p){
+  var off = paused();
+  return sec('tell', '✉️ Tell the customer', 'Nothing above e-mails or texts the customer.',
+    '<button type="button" class="pe-b" data-pe="tell" style="width:100%"' + (off ? ' disabled' : '') + '>✉️ E-mail ' + esc(first(p.client) || 'the customer') + ' about new papers in the portal</button>' +
+    '<p class="pe-note" style="margin:6px 0 0">' + (off ? 'Off while ⏸ data-entry mode is on.' : 'Goes to ✅ Approvals first: an admin or the office approves it (or ✅ Approve — don’t send). Only new proposals, contracts, change orders and portal papers are listed.') + '</p>');
+}
+
+/* ── loading what lives on the servers ── */
+function loadAll(){
+  var pid = CUR.pid, p = proj(pid); if (!p || !linkOf(p)) return;
+  fn('portal', { action: 'status', projectId: pid }).then(function(r){ if (CUR.pid !== pid) return; CUR.viewed = r && r.ok ? (r.lastViewedAt || null) : null; var el = body() && body().querySelector('[data-pe-viewed]'); if (el) el.textContent = CUR.viewed ? 'Opened by the customer ' + ago(CUR.viewed) : 'Not opened by the customer yet'; });
+  loadGate(); loadNeeds(); loadSigns(); loadMsgs();
+  try { if (W._gcScopeSend && typeof W._gcScopeSend.load === 'function') Promise.resolve(W._gcScopeSend.load()).then(function(){ if (CUR.pid === pid) repaintSec('scope', scopeSec); }, function(){}); } catch (e) {}
+  paintDocs();
+}
+function loadGate(){ var pid = CUR.pid; return fn('portal', { action: 'gate', op: 'state', projectId: pid }).then(function(r){ if (CUR.pid !== pid) return; CUR.gate = r && r.ok ? r : { items: [] }; CUR.gateAt = Date.now(); paintDocs(); }); }
+function loadNeeds(){ var pid = CUR.pid; return fn('cust-care', { action: 'needs-list', pid: pid }).then(function(r){ if (CUR.pid !== pid) return; CUR.needs = r && r.ok ? arr(r.items) : false; repaintSec('needs', needsSec); }); }
+function loadSigns(){ var pid = CUR.pid; return fn('portal-sign', { action: 'list', projectId: pid }).then(function(r){ if (CUR.pid !== pid) return; CUR.signs = r && r.ok ? arr(r.items) : []; repaintSec('co', coSec); }); }
+function loadMsgs(){ var pid = CUR.pid; return fn('portal-access', { action: 's-thread', projectId: pid, party: 'c' }).then(function(r){ if (CUR.pid !== pid) return; CUR.msgs = r && r.ok ? arr(r.messages) : false; repaintSec('msgs', msgSec); }); }
+function repaintSec(id, f){
+  var bd = body(), p = proj(CUR.pid); if (!bd || !p || CUR.mode !== 'edit') return;
+  var el = bd.querySelector('[data-pe-sec="' + id + '"]'); if (!el || el.querySelector('.pe-vis') || el.contains(D.activeElement)) return;
+  var t = D.createElement('div'); t.innerHTML = f(p); el.parentNode.replaceChild(t.firstChild, el);
+}
+
+/* ── the buttons ── */
+function val(sel){ var bd = body(); var e = bd && bd.querySelector('[data-f="' + sel + '"]'); return e ? e.value : ''; }
+function onChange(e){
+  var t = e.target, f = t && t.getAttribute && t.getAttribute('data-f');
+  if (f === 'doc-file') { var fl = Array.prototype.slice.call(t.files || []); t.value = ''; if (fl.length) upload(fl, t.closest('label')); }
+}
+function onClick(e){
+  var b = e.target.closest && e.target.closest('[data-pe]'); if (!b || b.disabled) return;
+  var a = b.getAttribute('data-pe'), pid = CUR.pid, p = proj(pid); if (!p) return;
+  var who = first(p.client) || 'the customer';
+  if (a === 'close') { close(); return; }
+  if (a === 'mode') { CUR.mode = b.getAttribute('data-m'); if (CUR.mode === 'cust') CUR.frameT = Date.now(); paint(); return; }
+  if (a === 'view') { CUR.mode = 'cust'; CUR.frameT = Date.now(); paint(); return; }
+  if (a === 'make') { var c0 = b.closest('.pe-make'); if (c0 && !c0.querySelector('[data-pe-makeok]')) c0.insertAdjacentHTML('beforeend', makeConfirmHtml(p)); return; }
+  if (a === 'make-no') { var x0 = b.closest('[data-pe-makeok]'); if (x0) x0.remove(); return; }
+  if (a === 'make-go') {
+    if (!(W._gcPortal && typeof W._gcPortal.link === 'function')) { toast('The portal is not loaded on this device yet — reload.', true); return; }
+    b.disabled = true; b.textContent = 'Making the link…';
+    Promise.resolve(W._gcPortal.link(pid)).then(function(u){
+      if (u && LINK.test(u)) { var mb = b.closest('[data-pe-makeok]'); if (mb) mb.remove(); MADE[pid] = u; recent[pid] = Object.assign({}, proj(pid) || p, { portalUrl: u, portalOff: false }); toast('🏠 Portal made — nothing was sent to ' + who + '.'); paint(); loadAll(); }
+      else { b.disabled = false; b.textContent = 'Make it — send nothing'; toast('The portal link was not made — try again with a signal.', true); }
+    });
+    return;
+  }
+  if (a === 'copy') { var lk = linkOf(p); var done = function(ok){ toast(ok ? '📋 Link copied — nothing was sent. Paste it in your own text or e-mail.' : '📋 ' + lk); };
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(lk).then(function(){ done(true); }, function(){ done(false); }); return; } } catch (x) {} done(false); return; }
+  if (a === 'details-save') {
+    var nm = s(val('name')), ad = s(val('address')), stg = val('stage'), sm = s(val('summary'));
+    var curSum = p.portalSummary && typeof p.portalSummary === 'object' ? s(p.portalSummary.text) : s(p.portalSummary), curSt = p.portalStage == null || p.portalStage === '' ? 'auto' : String(p.portalStage);
+    var patch = {}, lines = [], texts = [];
+    if (nm && nm !== s(p.name)) { patch.name = nm; lines.push('Job name: ' + nm); texts.push(nm); }
+    if (ad !== s(p.address)) { patch.address = ad; lines.push('Address: ' + (ad || '(none)')); texts.push(ad); }
+    if (stg !== curSt) { patch.portalStage = stg === 'auto' ? '' : Number(stg); lines.push('Stage: ' + (stg === 'auto' ? 'automatic (from the job)' : STAGES[+stg])); }
+    if (sm !== curSum) { patch.portalSummary = { text: sm, at: nowIso(), by: me() }; lines.push(sm ? 'About your project: ' + sm : 'About your project: (taken off)'); texts.push(sm); }
+    if (!lines.length) { toast('Nothing changed.'); return; }
+    confirmVis(b, { lines: lines, texts: texts, save: function(){ return patchJob(pid, patch, 'customer portal: details'); }, done: 'Saved — ' + who + ' sees it in the portal.' });
+    return;
+  }
+  if (a === 'ms-add') {
+    var mn = s(val('ms-name')), md = s(val('ms-date'));
+    if (!mn) { toast('Type the milestone first.', true); return; }
+    var mrow = { id: uid('pm_'), name: mn.slice(0, 90), date: md, done: false, at: nowIso(), by: me() };
+    confirmVis(b, { lines: ['Your schedule: ' + mn + (md ? ' · ' + day(md) : '')], texts: [mn], save: function(){ return patchList(pid, 'portalMilestones', function(l){ l.push(mrow); }); }, done: 'Milestone added — ' + who + ' sees it.' });
+    return;
+  }
+  if (a === 'ms-done' || a === 'ms-arch') {
+    var mid = b.getAttribute('data-id'), m = arr(p.portalMilestones).filter(function(x){ return x && x.id === mid; })[0]; if (!m) return;
+    var arch = a === 'ms-arch';
+    confirmVis(b.closest('.pe-row'), { lines: [arch ? 'Taken off the schedule: ' + m.name + ' (kept on the job)' : (m.done ? 'Not done: ' : 'Done ✓: ') + m.name], save: function(){ return patchList(pid, 'portalMilestones', function(l){ l.forEach(function(x){ if (x && x.id === mid) { if (arch) { x.archived = true; x.archivedAt = nowIso(); x.archivedBy = me(); } else { x.done = !x.done; x.doneAt = x.done ? today() : ''; } } }); }); }, ok: arch ? 'Archive — the customer no longer sees it' : undefined });
+    return;
+  }
+  if (a === 'task-add') {
+    var tt = s(val('task-text')), td = s(val('task-due'));
+    if (!tt) { toast('Type the task first.', true); return; }
+    var trow = { id: uid('pt_'), text: tt.slice(0, 300), due: td, done: false, at: nowIso(), by: me() };
+    confirmVis(b, { lines: ['Your project checklist: ○ ' + tt + (td ? ' · by ' + day(td) : '')], texts: [tt], save: function(){ return patchList(pid, 'portalTasks', function(l){ l.push(trow); }); }, done: 'Task added — ' + who + ' sees it.' });
+    return;
+  }
+  if (a === 'task-done' || a === 'task-arch') {
+    var tid = b.getAttribute('data-id'), t0 = arr(p.portalTasks).filter(function(x){ return x && x.id === tid; })[0]; if (!t0) return;
+    var ta = a === 'task-arch';
+    confirmVis(b.closest('.pe-row'), { lines: [ta ? 'Taken off the checklist: ' + t0.text + ' (kept on the job)' : (t0.done ? '○ Open again: ' : '✓ Done: ') + t0.text], save: function(){ return patchList(pid, 'portalTasks', function(l){ l.forEach(function(x){ if (x && x.id === tid) { if (ta) { x.archived = true; x.archivedAt = nowIso(); x.archivedBy = me(); } else { x.done = !x.done; x.doneAt = x.done ? today() : ''; } } }); }); }, ok: ta ? 'Archive — the customer no longer sees it' : undefined });
+    return;
+  }
+  if (a === 'need-add') {
+    var nk = val('need-kind') || 'other', nl = s(val('need-label'));
+    var KL = { colors: 'Paint / material colors', hoa: 'HOA approval letter', forms: 'Signed forms', photos: 'Photos', codes: 'Door / gate / lockbox code', other: '' };
+    var label = nl || KL[nk]; if (!label) { toast('Say what you need from the customer.', true); return; }
+    confirmVis(b, { lines: ['We need from you: ' + label], texts: [label], note: 'Shows at the top of ' + who + '’s portal; they answer or upload there. Nothing is e-mailed now (if it is still open after 3 days, a reminder e-mail waits on ✅ Approvals).',
+      save: function(){ return fn('cust-care', { action: 'needs-request', pid: pid, items: [{ kind: nk, label: label }] }).then(function(r){ if (!r.ok) throw new Error(r.error || 'not saved'); return loadNeeds(); }); }, done: 'Asked — it shows in ' + who + '’s portal.' });
+    return;
+  }
+  if (a === 'need-cancel') {
+    var nid = b.getAttribute('data-id');
+    confirmVis(b.closest('.pe-row'), { lines: ['Taken off "We need from you" (kept on the job as cancelled)'], ok: 'Take it off', save: function(){ return fn('cust-care', { action: 'needs-update', id: nid, cancel: true }).then(function(r){ if (!r.ok) throw new Error(r.error || 'not saved'); return loadNeeds(); }); } });
+    return;
+  }
+  if (a === 'scope-add') {
+    var sid = val('scope-src'), list = scopeList(p), pick = list.filter(function(x){ return x.id === sid; })[0], rec;
+    if (sid === 'typed' || !pick) { var tx = s(val('scope-text')); if (!tx) { toast('Type the scope (or pick one).', true); return; } rec = { id: uid('psc_'), title: 'Scope of work', text: tx.slice(0, 4000), lines: [], src: 'typed' }; }
+    else if (pick.rec) rec = { id: uid('psc_'), title: s(pick.rec.title) || 'Scope of work', text: '', lines: arr(pick.rec.lines).slice(0, 200).map(function(l){ return { area: s(l.sec || l.section || l.area), work: s(l.desc || l.work), qty: l.qty === '' || l.qty == null ? '' : l.qty, unit: s(l.unit).slice(0, 20) }; }).filter(function(l){ return l.work || l.area; }), included: s(pick.rec.included), excluded: s(pick.rec.excluded), src: 'scope:' + pick.id };
+    else rec = { id: uid('psc_'), title: 'Scope of work', text: s(pick.text).slice(0, 4000), lines: [], src: 'jobscope' };
+    try { if (typeof W._gcStripPrices === 'function') { rec.text = s(W._gcStripPrices(rec.text)); rec.lines.forEach(function(l){ l.work = s(W._gcStripPrices(l.work)); }); } } catch (x) {}
+    rec.at = nowIso(); rec.by = me();
+    var prev = [rec.title].concat(rec.text ? [rec.text.slice(0, 400) + (rec.text.length > 400 ? '…' : '')] : []).concat(rec.lines.slice(0, 6).map(function(l){ return (l.area ? l.area + ': ' : '') + l.work + (l.qty !== '' ? ' — ' + l.qty + (l.unit ? ' ' + l.unit : '') : ''); })).concat(rec.lines.length > 6 ? ['… ' + (rec.lines.length - 6) + ' more lines'] : []);
+    confirmVis(b, { lines: prev, texts: [rec.title, rec.text, rec.included, rec.excluded].concat(rec.lines.map(function(l){ return l.work; })), save: function(){ return patchList(pid, 'portalScopes', function(l){ l.push(rec); }); }, done: 'Scope is in ' + who + '’s portal.' });
+    return;
+  }
+  if (a === 'scope-arch') {
+    var scid = b.getAttribute('data-id'), sc = arr(p.portalScopes).filter(function(x){ return x && x.id === scid; })[0]; if (!sc) return;
+    confirmVis(b.closest('.pe-row'), { lines: ['Taken out of the portal: ' + (sc.title || 'Scope of work') + ' (kept on the job)'], ok: 'Archive — the customer no longer sees it', save: function(){ return patchList(pid, 'portalScopes', function(l){ l.forEach(function(x){ if (x && x.id === scid) { x.archived = true; x.archivedAt = nowIso(); x.archivedBy = me(); } }); }); } });
+    return;
+  }
+  if (a === 'doc-off' || a === 'doc-on') {
+    var did = b.getAttribute('data-id'), on = a === 'doc-on', row = b.closest('.pe-row'), nmd = row ? row.querySelector('.pe-x').firstChild.textContent : 'the paper';
+    confirmVis(row, { lines: [(on ? 'In the customer’s Documents: ' : 'Hidden from the customer (kept on the job): ') + nmd], ok: on ? 'Show it to the customer' : 'Hide it', note: on ? 'A new paper waits for approval before the customer sees it. Nothing is e-mailed.' : 'Nothing is e-mailed.',
+      save: function(){ return setDoc(did, function(q){ q.portalShare = on; }).then(function(ok){ if (on) later(function(){ fn('portal', { action: 'gate', op: 'scan', projectId: pid }).then(loadGate); }, 2500); return ok; }); } });
+    return;
+  }
+  if (a === 'doc-appr') {
+    var aq = b.getAttribute('data-aq');
+    if (paused()) { toast('⏸ Data-entry mode is on: nothing goes in the portal until ▶ Resume sending (or approve it as record-only in ✅ Approvals).', true); return; }
+    confirmVis(b.closest('.pe-row'), { lines: ['In the customer’s Documents now: ' + (b.closest('.pe-row').querySelector('.pe-x').firstChild.textContent)], ok: '✅ Approve — put it in the portal', note: 'This is the paper’s ✅ Approvals item ("Put in the customer portal"). Nothing is e-mailed.',
+      save: function(){ return fn('portal', { action: 'approval', op: 'approve', id: aq, device: 'phone' }).then(function(r){ if (!r.ok) throw new Error(r.error || ('the server said ' + r.__s)); return loadGate(); }); }, done: 'Approved — it is in the portal.' });
+    return;
+  }
+  if (a === 'docs-all') { foreign(function(){ W._gcPortal.docs(pid); }); return; }
+  if (a === 'co-new') { foreign(function(){ W.gcAddCO.open(p.id, p.name, p.autoPO || p.po, p.client, p.pm); }); return; }
+  if (a === 'add-send') {
+    var at = s(val('add-title')), ax = s(val('add-text')), aa = s(val('add-amt')).replace(/[^0-9.\-]/g, ''), fi = body().querySelector('[data-f="add-file"]'), af = fi && fi.files && fi.files[0];
+    if (!at) { toast('Give the addendum a title.', true); return; }
+    if (!ax && !af) { toast('Write what it says or add the PDF.', true); return; }
+    if (typeof W._gcPortalESign !== 'function') { toast('Signatures are not loaded on this device yet — reload.', true); return; }
+    confirmVis(b, { lines: ['✍️ Papers to sign: ' + at].concat(ax ? [ax] : []).concat(aa ? ['Amount: $' + Number(aa).toFixed(2)] : []).concat(af ? ['📎 ' + af.name] : []), texts: [at, ax], ok: '✍️ Put it in the portal to sign',
+      note: 'It shows in ' + who + '’s portal under "Papers to sign". The e-mail asking them to sign waits on ✅ Approvals — nothing is e-mailed now.',
+      save: function(){
+        var up = af && typeof W._gcStoreFile === 'function' ? Promise.resolve(W._gcStoreFile(af, { kind: 'doc', pid: pid, name: af.name })) : Promise.resolve(null);
+        return up.then(function(meta){
+          return W._gcPortalESign({ pid: pid, kind: 'doc', refId: uid('add_'), title: at, amount: aa ? Number(aa) : undefined, ref: meta && meta.ref, name: meta ? (meta.name || af.name) : '', lines: ax ? [{ l: ax.slice(0, 600) }] : [] });
+        }).then(function(){ return loadSigns(); });
+      }, done: 'In the portal to sign — the e-mail waits on ✅ Approvals.' });
+    return;
+  }
+  if (a === 'msg-send') {
+    var mt = s(val('msg-text')); if (!mt) { toast('Type the question first.', true); return; }
+    if (paused()) { toast('⏸ Data-entry mode is on — messages to customers are off.', true); return; }
+    confirmVis(b, { lines: ['Message from ' + me() + ': ' + mt], texts: [mt], ok: '💬 Send in the portal', note: 'Shows in ' + who + '’s portal → Messages (with a red dot). No e-mail or text is sent.',
+      save: function(){ return fn('portal-access', { action: 's-send', projectId: pid, party: 'c', text: mt }).then(function(r){ if (!r.ok) throw new Error(r.error || ('the server said ' + r.__s)); return loadMsgs(); }); }, done: 'Sent in the portal — ' + who + ' sees it under Messages.' });
+    return;
+  }
+  if (a === 'post') { foreign(function(){ W._gcPortal.post(pid); }); return; }
+  if (a === 'post-hide' || a === 'post-show') {
+    var poid = b.getAttribute('data-id'), hide = a === 'post-hide', po = arr(p.portalPosts).filter(function(x){ return x && x.id === poid; })[0]; if (!po) return;
+    confirmVis(b.closest('.pe-row'), { lines: [(hide ? 'Hidden from the customer (kept on the job): ' : 'Back on the customer’s Home: ') + (s(po.text).slice(0, 120) || '(photos)')], ok: hide ? 'Hide it' : 'Show it',
+      save: function(){ return patchList(pid, 'portalPosts', function(l){ l.forEach(function(x){ if (x && x.id === poid) { x.hidden = hide; if (hide) { x.hiddenAt = nowIso(); x.hiddenBy = me(); } } }); }); } });
+    return;
+  }
+  if (a === 'job-open') { var jid = b.getAttribute('data-id'); open(jid); return; }
+  if (a === 'job-add') {
+    foreign(function(){
+      Promise.resolve(W._gcNewProjectFor({ kind: 'client', customer: s(p.client), client: s(p.client), address: s(p.address), rec: { client: s(p.client), customerName: s(p.client), address: s(p.address) } })).then(function(r){
+        var np = r && r.project; if (!np) return;
+        toast('New job “' + s(np.name) + '” made. Open it here to 🏠 make its portal (nothing is sent).');
+        later(function(){ if (proj(np.id) && can(proj(np.id))) open(np.id); else paint(); }, 900);
+      }, function(){});
+    });
+    return;
+  }
+  if (a === 'tell') {
+    if (paused()) { toast('⏸ Data-entry mode is on — nothing is sent to customers.', true); return; }
+    if (!(W._gcPortal && typeof W._gcPortal.notify === 'function')) return;
+    confirmVis(b, { lines: ['An e-mail: "New in your GrayCo portal" with the new papers listed and a button to the portal.'], ok: '✉️ Send to ✅ Approvals', note: 'Nothing goes to ' + who + ' until it is approved on ✅ Approvals (an approver may also ✅ Approve — don’t send).',
+      save: function(){ return Promise.resolve(W._gcPortal.notify(pid)).then(function(){ return true; }); }, done: 'Asked — the e-mail waits on ✅ Approvals (if there is something new to tell).' });
+    return;
+  }
+}
+/* ⬆ plans / papers: the job's Documents ("Plans"), customer sees it once the gate approves it */
+function upload(files, label){
+  var pid = CUR.pid, p = proj(pid); if (!p) return;
+  var ok = files.filter(function(f){ return /pdf|image\//.test(f.type || '') || /\.(pdf|jpe?g|png|heic|heif|webp)$/i.test(f.name || ''); }).filter(function(f){ return f.size <= 25 * 1048576; });
+  if (!ok.length) { toast('Pick a PDF or a picture (25 MB at most).', true); return; }
+  var anchor = label || body().querySelector('[data-pe-sec="docs"] label');
+  confirmVis(anchor, { lines: ok.map(function(f){ return '📄 In the customer’s Documents (Plans): ' + f.name; }), texts: ok.map(function(f){ return f.name; }), ok: 'Add — the customer sees it once approved',
+    note: 'It goes to the job’s Documents now; the customer sees it after its ✅ Approvals item ("Put in the customer portal") is approved. Nothing is e-mailed.',
+    save: function(){
+      if (typeof W._gcStoreFile !== 'function') return Promise.reject(new Error('file storage is not ready — try again in a moment'));
+      var chain = Promise.resolve(0), ids = [];
+      ok.forEach(function(f){ chain = chain.then(function(n){
+        return Promise.resolve(W._gcStoreFile(f, { kind: 'doc', pid: pid, name: f.name })).then(function(meta){
+          if (!meta || !meta.ref) throw new Error('“' + f.name + '” was not saved');
+          var at = nowIso();
+          var nid = uid('pped_'); ids.push(nid);
+          return addDoc({ id: nid, pid: pid, name: f.name, cat: 'Plans', type: meta.type || f.type || '', size: meta.size || f.size, ref: meta.ref, hash: meta.hash || '', uploaded: at.slice(0, 10), uploadedAt: at, by: me(), portalShare: true, source: 'portal-editor', savedAt: at, updatedAt: at }).then(function(){ return n + 1; });
+        });
+      }); });
+      return chain.then(function(n){
+        /* the portal gate: its "Put in the customer portal" approval (the server waits until the job's papers reached the cloud) */
+        /* the paper reaches the cloud a few seconds after it is saved here (the sync): ask again until the gate has it */
+        var want = ids.map(function(id){ return 'd:' + id; }), waits = [3000, 5000, 8000, 15000, 30000];
+        (function chase(i){ if (i >= waits.length) return; later(function(){
+          if (CUR.pid !== pid) return; CUR.scanAt = Date.now();
+          fn('portal', { action: 'gate', op: 'scan', projectId: pid }).then(loadGate).then(function(){
+            var have = arr(CUR.gate && CUR.gate.items).map(function(x){ return x.key; });
+            if (!want.every(function(k){ return have.indexOf(k) >= 0; })) chase(i + 1);
+          });
+        }, waits[i]); })(0);
+        paintDocs(); return n > 0;
+      });
+    }, done: 'Added to the job’s Documents — waiting for approval to show in the portal.' });
+}
+
+/* ── the job card / job page button (FIELDPORTAL's run 'fp-cust') and the desk's 🏠 Portal card call this ── */
+W._gcPortalEd = { open: open, close: close, can: function(pid){ return can(proj(pid)); }, state: function(){ return { pid: CUR.pid, mode: CUR.mode, open: !!ov(), gate: CUR.gate, msgs: CUR.msgs, needs: CUR.needs }; }, warnings: function(pid, t){ return warnings(proj(pid), t); } };
+/* the phone's back gesture / Escape closes it like ‹ Back */
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && ov() && !D.querySelector('.pe-vis')) close(); });
+try { console.log('[GC] 👤 Customer portal: open, see as the customer, edit (patch PORTALED) — _gcPortalEd'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-mainttab">
