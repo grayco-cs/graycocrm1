@@ -1,0 +1,619 @@
+<script id="gc-patch-mktoffice">
+/* __GC_PATCH_MKTOFFICE__ — the office's phone calls, the call script and the admins' messages to marketing (tools/patch_MKTOFFICE.py).
+   Owner 11/19: "marketing can keep data on the leads we get and where, and all organic leads not on LSA or website etc that are
+   just phone calls, we have to also document those, counting in the marketing data; need to be able to send messages to the
+   marketing manager too from admin; we should have a question sheet for the office to use to screen phone calls and tell them
+   what services we can offer, who to send the lead to for what service etc."
+   1. 📞 LOG A PHONE CALL LEAD (the office, admins, the Marketing Manager — by role): name, phone, what they need, the service
+      (by company), address, and "How did you hear about us?" (required: Google search · Google LSA · Google Maps / Business
+      Profile · Facebook / Instagram · Website · Referral (who) · Repeat customer · Yard sign / truck · Angi / Nextdoor / other
+      site · Other (type) · Did not ask). Saved as a lead: source "Phone call", sourceChannel 'phone', howHeard = the answer,
+      mkChannel = the marketing channel the Dashboard counts it under (MKTMATH reads howHeard first; "Did not ask" → "Phone call
+      (source not asked)"). Emergency / insurance (carrier, claim # — internal) / timeline go on the lead; the person it goes to is
+      preselected from the call script's routing (the office may change it or leave it for an admin). Nothing is sent to the caller.
+      Leads → "📞 Log a phone call", GrayCo Field ☰ More → Office, 📣 Marketing home; the Marketing Manager's form files the call in
+      the Lead Inbox through soc.js (mm_call_lead) — he cannot write the CRM's lists.
+      "How did you hear?" is also on the lead page (Leads → a lead → 🗣 How did you hear) and on the office's Google LSA intake.
+   2. 📋 CALL SCRIPT (the office and admins; Leads, 🏢 Office Manager, Field ☰ More): greeting, the questions with an answer box
+      each, the services by company, who gets the lead for each service (with today's names: on-call rotation, mitigation /
+      environmental role holders, the PM default rules, the LSA default PM, the estimator), common questions with answers, what
+      NOT to promise, the closing line. 🖨 Print, and "➡ Start a lead from this call" (the answers fill the form). Admins (owners)
+      edit every line: gc_kv "gc_call_script".
+   3. 💬 MESSAGE MARKETING (admins ⇄ the Marketing Manager): 📣 Marketing home "💬 Message marketing", 💬 Messages (desk and the
+      Field picker) "💬 Marketing — <name>", the ?mmmsg link of the text. Server: soc.js mmmsg_* (_lib/mmmsg.js): his CRM page shows
+      the thread and he replies; he gets a text on the cell of his CRM people record, the admins get the JOBMSG push + text.
+   API: window._gcCallLead = { open, save, can, HEARD, channelOf, setHeard }, window._gcCallScript = { open, get, defaults, routes,
+        print, save }, window._gcMMMsg = { open, list, send, can, state }. Kill switch: localStorage gc_mktoffice_off = '1'. */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_MKTOFFICE__) return; W.__GC_PATCH_MKTOFFICE__ = true;
+try { if (localStorage.getItem('gc_mktoffice_off') === '1') return; } catch (e) {}
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function every(f, ms){ return SI.call(W, f, ms); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+function warn(e){ try { console.warn('[GC MKTOFFICE]', e && e.message || e); } catch (x) {} }
+function nowIso(){ return new Date().toISOString(); }
+function lsGet(k){ try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.setAttribute('role', 'status'); t.className = 'mko-toast'; t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483600;background:' + (bad ? '#7f1d1d' : '#0f2440') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;max-width:92vw;box-shadow:0 8px 24px rgba(0,0,0,.25)';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 5200); } catch (e) {}
+}
+
+/* ── who (by role, never by name) ── */
+function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function myEmail(){ try { var e = W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email(); if (e) return low(e); } catch (x) {} return low(me().email); }
+function myName(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && u.name) return s(u.name); } } catch (e) {} var m = me(); if (s(m.name)) return s(m.name); var e2 = myEmail(); var r = arr(W._crm && W._crm.users).filter(function(u){ return u && low(u.email) === e2; })[0]; return r ? s(r.name) : e2.split('@')[0]; }
+function isMM(){ try { return typeof W._gcIsMM === 'function' && !!W._gcIsMM(); } catch (e) { return false; } }
+function isAdmin(){ if (isMM()) return false; try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function isOffice(){ if (isAdmin() || isMM()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = me(); return /office/i.test(s(u.role) + ' ' + s(u.profile)) || myEmail() === 'office@grayco-cs.com'; }
+function canLog(){ return !!myEmail() && (isAdmin() || isOffice() || isMM()); }
+function canScript(){ return !!myEmail() && (isAdmin() || isOffice()); }
+function canEditScript(){ return isAdmin(); }
+function users(){ var l = []; try { if (W._gcPeople && W._gcPeople.users) l = arr(W._gcPeople.users()); } catch (e) {} if (!l.length) l = arr(W._crm && W._crm.users); return l.filter(function(u){ return u && typeof u === 'object' && u.active !== false && !u.departed && (s(u.name) || s(u.email)); }); }
+
+/* ══ the "How did you hear about us?" answers ══ */
+var HEARD = [
+  { v: 'Google search', l: 'Google search' },
+  { v: 'Google LSA', l: 'Google LSA (Google Guaranteed ad)' },
+  { v: 'Google Maps / Business Profile', l: 'Google Maps / Business Profile' },
+  { v: 'Facebook / Instagram', l: 'Facebook / Instagram' },
+  { v: 'Website', l: 'Website (grayco-cs.com)' },
+  { v: 'Referral', l: 'Referral — who?', detail: 'Who referred them?' },
+  { v: 'Repeat customer', l: 'Repeat customer' },
+  { v: 'Yard sign / truck', l: 'Yard sign / truck' },
+  { v: 'site', l: 'Angi / Nextdoor / other site', site: true },
+  { v: 'Other', l: 'Other — type it', detail: 'What did they say?' },
+  { v: '', l: 'Did not ask / caller did not say' }
+];
+var SITES = ['Angi', 'HomeAdvisor', 'Nextdoor', 'Yelp', 'BBB', 'Thumbtack', 'Other site'];
+/* the marketing channel the Dashboard counts an answer under (MKTMATH's own rule, with Marketing's normalizer) */
+function channelOf(h){
+  h = s(h); if (!h) return 'Phone call (source not asked)';
+  try { var MM = W.__gcMktMath, X = W._gcMktExt; if (MM && MM.channelOf) { var c = MM.channelOf(h, X && X.M && X.M.normSource); if (c) return c; } } catch (e) {}
+  var t = low(h);
+  if (/lsa|local services/.test(t)) return 'Google LSA'; if (/^website/.test(t)) return 'Website'; if (/business profile|maps/.test(t)) return 'Google Business Profile';
+  if (/facebook|instagram/.test(t)) return 'Facebook/Instagram Ads'; if (/referr/.test(t)) return 'Referral'; if (/repeat/.test(t)) return 'Repeat customer';
+  if (/yard sign|truck/.test(t)) return 'Yard sign'; if (/angi|homeadvisor/.test(t)) return 'Angi/HomeAdvisor'; if (/nextdoor/.test(t)) return 'Nextdoor'; if (/google|search/.test(t)) return 'Google organic';
+  return 'Other';
+}
+
+/* ══ the services by company (the CRM's three companies; "(confirm)" = for the owner to check) ══ */
+var SERVICES = [
+  { id: 'remodel', co: 'construction', l: 'Remodel / renovation', type: 'Residential Reno', k: 'res' },
+  { id: 'addition', co: 'construction', l: 'Addition', type: 'Addition', k: 'res' },
+  { id: 'roofing', co: 'construction', l: 'Roofing (repair / replacement)', type: 'Roofing', k: 'roof' },
+  { id: 'insrepair', co: 'construction', l: 'Insurance repair (rebuild after a claim)', type: 'Insurance claim', k: 'ins' },
+  { id: 'buildout', co: 'construction', l: 'Commercial build-out', type: 'Build-out', k: 'com', sector: 'Commercial' },
+  { id: 'bid', co: 'construction', l: 'Bid / plans to price (GC or owner)', type: 'Commercial bid', k: 'bid', sector: 'Commercial' },
+  { id: 'water', co: 'mitigation', l: 'Water damage', type: 'Mitigation', k: 'mit' },
+  { id: 'fire', co: 'mitigation', l: 'Fire / smoke damage', type: 'Mitigation', k: 'mit' },
+  { id: 'storm', co: 'mitigation', l: 'Storm / tree / board-up / tarp', type: 'Mitigation', k: 'mit' },
+  { id: 'mold', co: 'environmental', l: 'Mold', type: 'Environmental', k: 'env' },
+  { id: 'asbestos', co: 'environmental', l: 'Asbestos', type: 'Environmental', k: 'env' },
+  { id: 'lead', co: 'environmental', l: 'Lead paint testing / abatement', type: 'Environmental', k: 'env' },
+  { id: 'other', co: 'construction', l: 'Not sure / other', type: '', k: '' }
+];
+var CO_L = { construction: '🏗 GrayCo Construction', mitigation: '💧 GrayCo Mitigation', environmental: '☢️ GrayCo Environmental' };
+function svc(id){ return SERVICES.filter(function(x){ return x.id === id; })[0] || null; }
+
+/* ══ who gets the lead (live names from the CRM's own settings) ══ */
+function nm(u){ return u ? s(u.name) || s(u.email) : ''; }
+function byRole(rx){ return users().filter(function(u){ return rx.test([u.role, u.title, u.profile].map(s).join(' ')); }); }
+function onCall(){ try { var r = W._gcX10 && W._gcX10._oc ? W._gcX10._oc() : null; if (r && r.now) return { name: s(r.now.name) || s(r.now.email), email: low(r.now.email) }; } catch (e) {} return null; }
+function holder(kind){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder ? W._gcLeadRoles.holder(kind) : null; if (h && s(h.name)) return { name: s(h.name), email: low(h.email) }; } catch (e) {} return null; }
+function seniorPm(){ try { var n = W._gcPeople && W._gcPeople.defaultPm ? s(W._gcPeople.defaultPm()) : ''; if (n) { var u = users().filter(function(x){ return low(x.name) === low(n); })[0]; return { name: n, email: low(u && u.email) }; } } catch (e) {} return null; }
+function lsaPm(){ try { var st = W._gcLsaCalls && W._gcLsaCalls.state ? W._gcLsaCalls.state() : null, id = s(st && st.defaultPm); if (!id) return null; var u = users().filter(function(x){ return s(x.id) === id || low(x.email) === low(id); })[0]; return u ? { name: nm(u), email: low(u.email) } : null; } catch (e) { return null; } }
+function estimator(){ try { var d = typeof W._gcDefEst === 'function' ? W._gcDefEst() : null; if (d && s(d.name) && !d.none && !d.ambiguous) return { name: s(d.name), email: low(d.email) }; } catch (e) {} return null; }
+function mitPm(){ var l = byRole(/mitigation/i), m = l.filter(function(u){ return /manager|pm|lead/i.test(s(u.role) + ' ' + s(u.title)); }); var u = (m.length ? m : l)[0]; return u ? { name: nm(u), email: low(u.email) } : null; }
+function envLead(){ var u = byRole(/environment/i)[0]; return u ? { name: nm(u), email: low(u.email) } : null; }
+/* key → [the rule, the person now] */
+function routes(){
+  return {
+    emergency: { rule: 'the on-call person (📟 On call rotation)', who: onCall() },
+    mit: { rule: 'the Mitigation PM (the mitigation role)', who: mitPm() },
+    env: { rule: 'the Environmental lead (the environmental role)', who: envLead() },
+    res: { rule: 'the PM by the default rules (Senior PM)', who: seniorPm() },
+    ins: { rule: 'the Senior Insurance PM (lead roles), else the Senior PM', who: holder('insurance') || seniorPm() },
+    roof: { rule: 'the Senior Roofing PM (lead roles), else the Senior PM', who: holder('roofing') || seniorPm() },
+    com: { rule: 'the PM by the default rules (Senior PM)', who: seniorPm() },
+    lsa: { rule: 'the Default PM for Google LSA leads (Owner 2 by default)', who: lsaPm() },
+    bid: { rule: 'the estimator (Senior Estimator)', who: estimator() }
+  };
+}
+function routeFor(serviceId, emergency, heard){
+  var R = routes(), x = svc(serviceId);
+  if (emergency) return Object.assign({ key: 'emergency' }, R.emergency);
+  if (s(heard) === 'Google LSA' && (!x || /^(res|ins|roof|com|)$/.test(x.k))) return Object.assign({ key: 'lsa' }, R.lsa);
+  var k = x && x.k ? x.k : 'res'; return Object.assign({ key: k }, R[k] || R.res);
+}
+
+/* ══ the call script (gc_kv gc_call_script; admins edit) ══ */
+var SKEY = 'gc_call_script';
+var QS = [
+  { k: 'name', q: 'May I have your name?' },
+  { k: 'phone', q: 'What is the best number to call you back?' },
+  { k: 'address', q: 'What is the address of the property?' },
+  { k: 'need', q: 'What happened, or what do you need done?' },
+  { k: 'emergency', q: 'Is anything happening right now — water still coming in, fire or smoke damage, or mold you can see?' },
+  { k: 'insurance', q: 'Is this an insurance claim? If yes: which insurance company, and do you have a claim number? (internal only — never say what insurance will cover)' },
+  { k: 'timeline', q: 'When are you hoping to get this done?' },
+  { k: 'heard', q: 'And how did you hear about us?' }
+];
+var DEF_SCRIPT = {
+  greeting: 'Thank you for calling GrayCo, this is ____. How can I help you today?',
+  q: (function(){ var o = {}; QS.forEach(function(x){ o[x.k] = x.q; }); return o; })(),
+  svc: {
+    construction: ['Remodels and renovations — kitchens, baths, whole-home', 'Additions', 'Roofing — repairs and full replacement', 'Commercial build-outs and tenant finish (confirm)', 'Insurance repairs — rebuilding after water, fire or storm damage', 'Bids from plans for GCs and owners (goes to the estimator)'],
+    mitigation: ['Water damage — water removal and drying, 24/7', 'Fire and smoke damage clean-up', 'Storm damage — board-up, tarping, tree on the house (confirm)', 'Emergency line answers 24/7: (901) 582-8255'],
+    environmental: ['Mold — inspection, testing and removal', 'Asbestos — testing and abatement (confirm)', 'Lead paint — testing and abatement (confirm)']
+  },
+  routing: [
+    ['emergency', '🚨 Emergency now (water coming in, fire / smoke, active leak)', 'The on-call person — call them now, then log the lead as Emergency'],
+    ['mit', '💧 Water, fire, smoke or storm damage (not an emergency)', 'The Mitigation PM'],
+    ['env', '☢️ Mold, asbestos or lead', 'The Environmental lead'],
+    ['res', '🏠 Construction — residential (remodel, addition)', 'The PM by the default rules'],
+    ['ins', '🛡 Insurance repair', 'The Senior Insurance PM'],
+    ['roof', '🏠 Roofing', 'The Senior Roofing PM'],
+    ['com', '🏢 Construction — commercial build-out', 'The PM by the default rules'],
+    ['lsa', '📍 Called from the Google LSA ad', 'The Default PM for Google LSA leads (Owner 2 by default)'],
+    ['bid', '📐 Bids / plans to price', 'The estimator']
+  ],
+  faq: [
+    ['Do you do free estimates?', 'Yes — the estimate is free. A project manager will call you to set up a visit. (confirm: environmental testing may have a fee)'],
+    ['Do you work with insurance?', 'Yes. We work with every insurance company and can meet your adjuster. Your insurance company decides what is covered — we document the damage and work with them.'],
+    ['How soon can you come out?', 'For an emergency, our on-call team responds right away, day or night. For everything else, a project manager will call you shortly to set up a time.'],
+    ['Are you licensed and insured?', 'Yes — GrayCo is a licensed Tennessee general contractor (#85034 BCB) and fully insured. We can send a certificate of insurance. (confirm: Mississippi / Arkansas licenses)'],
+    ['How do I pay?', 'For now we take check or cash.'],
+    ['What areas do you serve?', 'Memphis and the area around it — Bartlett, Germantown, Collierville, Cordova, Arlington, Lakeland, and DeSoto County, Mississippi: Southaven and Olive Branch. (confirm the edges)'],
+    ['Do you do small repairs?', 'Tell me what you need and I will have the right person call you back. (confirm the smallest job size)']
+  ],
+  dont: ['Do not give prices or ballpark numbers — the estimator or PM prices the job after the visit.', 'Do not say what insurance will or will not cover — the insurance company decides coverage.', 'Do not promise an arrival time unless it is an emergency the on-call person has accepted.', 'Do not give out the claim number or the caller\'s information to anyone else.'],
+  closing: 'Thank you, ____. I have everything I need — [the person] will call you back shortly at the number you gave me. If water is coming in and it is safe, shut off the main water valve. Thank you for calling GrayCo!'
+};
+var SCRIPT = { v: null, at: 0, p: null };
+function sbBase(){ return s(lsGet('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvGet(key){ var k = s(lsGet('grayco_sb_key')); if (!k) return Promise.resolve(undefined);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: { apikey: k }, cache: 'no-store' })
+    .then(function(r){ return r && r.ok ? r.json() : undefined; }).then(function(rows){ return Array.isArray(rows) ? (rows[0] ? rows[0].value : null) : undefined; }, function(){ return undefined; }); }
+function kvPut(key, value){ var k = s(lsGet('grayco_sb_key')); if (!k) return Promise.resolve(false);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) })
+    .then(function(r){ return !!(r && r.ok); }, function(){ return false; }); }
+function cleanScript(v){
+  v = v && typeof v === 'object' ? v : {}; var D0 = DEF_SCRIPT, o = {};
+  o.greeting = s(v.greeting) || D0.greeting; o.closing = s(v.closing) || D0.closing;
+  o.q = {}; QS.forEach(function(x){ o.q[x.k] = s(v.q && v.q[x.k]) || D0.q[x.k]; });
+  o.svc = {}; Object.keys(D0.svc).forEach(function(c){ var l = arr(v.svc && v.svc[c]).map(s).filter(Boolean); o.svc[c] = l.length ? l : D0.svc[c].slice(); });
+  var rt = arr(v.routing).filter(function(r){ return Array.isArray(r) && s(r[1]); }); o.routing = rt.length ? rt.map(function(r){ return [s(r[0]), s(r[1]), s(r[2])]; }) : D0.routing.map(function(r){ return r.slice(); });
+  var fq = arr(v.faq).filter(function(r){ return Array.isArray(r) && s(r[0]); }); o.faq = fq.length ? fq.map(function(r){ return [s(r[0]), s(r[1])]; }) : D0.faq.map(function(r){ return r.slice(); });
+  var dn = arr(v.dont).map(s).filter(Boolean); o.dont = dn.length ? dn : D0.dont.slice();
+  o.at = s(v.at); o.by = s(v.by); return o;
+}
+function getScript(force){
+  if (!force && SCRIPT.v && Date.now() - SCRIPT.at < 120e3) return Promise.resolve(SCRIPT.v);
+  if (SCRIPT.p) return SCRIPT.p;
+  SCRIPT.p = kvGet(SKEY).then(function(v){ SCRIPT.p = null; if (v !== undefined) { SCRIPT.v = cleanScript(v); SCRIPT.at = Date.now(); } return SCRIPT.v || cleanScript(null); }, function(){ SCRIPT.p = null; return SCRIPT.v || cleanScript(null); });
+  return SCRIPT.p;
+}
+function saveScript(v){
+  if (!canEditScript()) return Promise.resolve({ ok: false, error: 'Only an admin edits the call script.' });
+  var c = cleanScript(v); c.at = nowIso(); c.by = myName();
+  return kvPut(SKEY, c).then(function(ok){ if (ok) { SCRIPT.v = c; SCRIPT.at = Date.now(); } return { ok: ok, error: ok ? '' : 'The cloud did not answer — not saved.' }; });
+}
+
+/* ── CSS ── */
+(function(){
+  var st = D.createElement('style'); st.id = 'gc-mktoffice-css';
+  st.textContent = '.mko-ov{position:fixed;inset:0;z-index:2147483300;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow:auto;font:15px Inter,-apple-system,Segoe UI,Arial,sans-serif;color:#0f172a}' +
+    '.mko-ov.top{z-index:2147483350}.mko-box{background:#fff;border-radius:14px;width:min(640px,100%);box-sizing:border-box;padding:14px 16px 18px;margin:auto 0}' +
+    '.mko-hd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 8px}.mko-hd b{font-size:17px}.mko-x{border:0;background:none;font-size:22px;cursor:pointer;min-width:44px;min-height:44px}' +
+    '.mko-box label{display:block;font-size:13px;font-weight:700;margin-top:9px;color:#334155}.mko-box input,.mko-box select,.mko-box textarea{width:100%;box-sizing:border-box;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;padding:6px 10px;font:15px Inter,Arial,sans-serif;margin-top:3px;background:#fff;color:#0f172a}' +
+    '.mko-box textarea{min-height:70px}.mko-g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 10px}.mko-req{color:#b91c1c}.mko-note{font-size:12px;color:#64748b;margin-top:4px}' +
+    '.mko-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#1e3a8a;font:800 14px Inter,Arial,sans-serif;padding:8px 14px;cursor:pointer}' +
+    '.mko-btn.pri{background:#166534;border-color:#166534;color:#fff;width:100%;font-size:16px;min-height:52px;margin-top:12px}.mko-btn.blue{background:#1d4ed8;border-color:#1d4ed8;color:#fff}' +
+    '.mko-msg{font-size:13px;color:#b91c1c;margin-top:6px;min-height:1em}.mko-chk{display:flex!important;align-items:center;gap:8px;font-weight:700}.mko-chk input{width:auto;min-height:0;margin:0}' +
+    '.mko-cs h3{margin:14px 0 6px;font-size:15px;color:#1e3a8a}.mko-cs .say{background:#f0f9ff;border-left:4px solid #0284c7;padding:8px 10px;border-radius:6px;margin:4px 0}.mko-cs ol{padding-left:20px;margin:4px 0}.mko-cs li{margin:6px 0}' +
+    '.mko-cs .qa input,.mko-cs .qa select{min-height:36px;font-size:14px}.mko-cs table{width:100%;border-collapse:collapse;font-size:13px}.mko-cs td{border-top:1px solid #e2e8f0;padding:6px 4px;vertical-align:top}.mko-cs .who{color:#166534;font-weight:700}' +
+    '.mko-cs .co{border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;margin:6px 0}.mko-cs .dont li{color:#991b1b}.mko-cs details{margin:4px 0}.mko-cs summary{cursor:pointer;font-weight:700}' +
+    '.mko-ed textarea{min-height:90px;font-size:13px}.mko-bar{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}' +
+    '.mko-card{background:#fff;border:2px solid #0e7490;border-radius:14px;padding:10px 14px;margin:0 0 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif}.mko-card b{color:#0e7490;margin-right:6px}' +
+    '.mko-badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:9px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;margin-left:4px}' +
+    '.mko-th{max-height:50vh;overflow:auto;border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#f8fafc;margin:6px 0}.mko-m{max-width:85%;margin:6px 0;padding:8px 10px;border-radius:12px;background:#fff;border:1px solid #e2e8f0;white-space:pre-wrap;word-wrap:break-word}' +
+    '.mko-m.mine{margin-left:auto;background:#dbeafe;border-color:#bfdbfe}.mko-m .w{font-size:11px;color:#64748b;margin-bottom:2px}' +
+    '#gc-cl-btn,#gc-cs-btn{margin-left:6px}.om-tabs #gc-cs-omtab{margin-left:auto;border:1px solid #cbd5e1;background:#fff;color:#1e3a8a;border-radius:8px;padding:6px 12px;font-weight:800;cursor:pointer}' +
+    '.mko-heard select{max-width:260px}' +
+    '@media print{body.mko-printing>*:not(#gc-cs-ov){display:none!important}body.mko-printing #gc-cs-ov{position:static!important;background:#fff!important;padding:0!important;overflow:visible!important}body.mko-printing #gc-cs-ov .mko-box{width:100%!important;box-shadow:none!important}body.mko-printing .mko-noprint{display:none!important}body.mko-printing .mko-cs .qa input,body.mko-printing .mko-cs .qa select{border:0;border-bottom:1px solid #94a3b8;border-radius:0}}';
+  (D.head || D.documentElement).appendChild(st);
+})();
+
+/* ══ 1. 📞 LOG A PHONE CALL LEAD ══ */
+function heardOpts(sel){ return HEARD.map(function(h, i){ return '<option value="' + (i === HEARD.length - 1 ? '__none__' : esc(h.v)) + '"' + (sel != null && sel === h.v ? ' selected' : '') + '>' + esc(h.l) + '</option>'; }).join(''); }
+function svcOpts(sel){
+  var by = {}; SERVICES.forEach(function(x){ (by[x.co] = by[x.co] || []).push(x); });
+  return '<option value="">— pick the service —</option>' + Object.keys(CO_L).map(function(c){ return '<optgroup label="' + esc(CO_L[c]) + '">' + arr(by[c]).map(function(x){ return '<option value="' + esc(x.id) + '"' + (sel === x.id ? ' selected' : '') + '>' + esc(x.l) + '</option>'; }).join('') + '</optgroup>'; }).join('');
+}
+function staffPick(sel){
+  var l = users().filter(function(u){ return s(u.email) && !/sub|customer|vendor/i.test(s(u.role)); }).sort(function(a, b){ return nm(a).localeCompare(nm(b)); });
+  return '<option value="">— leave it for an admin to assign —</option>' + l.map(function(u){ return '<option value="' + esc(low(u.email)) + '"' + (low(sel) === low(u.email) ? ' selected' : '') + '>' + esc(nm(u)) + (u.role ? ' — ' + esc(u.role) : '') + '</option>'; }).join('');
+}
+function guessService(t){ t = low(t); if (/\bmold|mould/.test(t)) return 'mold'; if (/asbestos/.test(t)) return 'asbestos'; if (/\blead paint|\blead test/.test(t)) return 'lead'; if (/water|flood|leak|pipe/.test(t)) return 'water'; if (/fire|smoke|soot/.test(t)) return 'fire'; if (/storm|tree|tarp|board/.test(t)) return 'storm'; if (/roof|shingle/.test(t)) return 'roofing'; if (/addition/.test(t)) return 'addition'; if (/build-?out|tenant|office space|commercial/.test(t)) return 'buildout'; if (/insurance|claim|adjuster/.test(t)) return 'insrepair'; if (/remodel|renovat|kitchen|bath/.test(t)) return 'remodel'; return ''; }
+function openForm(pre){
+  if (!canLog()) { toast('Logging a phone call lead is for the office, admins and marketing.'); return null; }
+  pre = pre || {};
+  var old = D.getElementById('gc-cl-ov'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-cl-ov'; ov.className = 'mko-ov top'; ov.setAttribute('data-gc-keep', '1');
+  var heardSel = pre.howHeard === undefined ? null : (SITES.indexOf(pre.howHeard) >= 0 ? 'site' : pre.howHeard);
+  var sv = pre.service || guessService(pre.need);
+  ov.innerHTML = '<div class="mko-box" role="dialog" aria-label="Log a phone call lead"><div class="mko-hd"><b>📞 Log a phone call lead</b><button type="button" class="mko-x" data-cl-x aria-label="Close">✕</button></div>'
+    + '<div class="mko-note">For every call that is a real lead (not LSA / website — those come in by themselves). Nothing is sent to the caller.</div>'
+    + '<div class="mko-g2"><label>Name<input data-cl="name" autocomplete="off" value="' + esc(pre.name) + '"></label><label>Phone<input data-cl="phone" type="tel" inputmode="tel" value="' + esc(tidy(pre.phone)) + '"></label></div>'
+    + '<label>What they need<textarea data-cl="need" rows="3">' + esc(pre.need) + '</textarea></label>'
+    + '<div class="mko-g2"><label>Service / company<select data-cl="service">' + svcOpts(sv) + '</select></label><label>Address<input data-cl="address" value="' + esc(pre.address) + '"></label></div>'
+    + '<label>How did you hear about us? <span class="mko-req">*</span><select data-cl="heard" required><option value="__pick__">— ask the caller —</option>' + heardOpts(heardSel) + '</select></label>'
+    + '<div data-cl-site hidden><label>Which site?<select data-cl="site">' + SITES.map(function(x){ return '<option' + (pre.howHeard === x ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></label></div>'
+    + '<div data-cl-detail hidden><label data-cl-dl>Who referred them?<input data-cl="detail" value="' + esc(pre.howHeardDetail) + '"></label></div>'
+    + '<div class="mko-g2"><label class="mko-chk"><input type="checkbox" data-cl="emergency"' + (pre.emergency ? ' checked' : '') + '> 🚨 Emergency now (water / fire / mold)</label>'
+    + '<label>Timeline<select data-cl="timeline">' + ['', 'Emergency — now', 'This week', 'This month', 'In the next few months', 'Just getting prices'].map(function(x){ return '<option' + (pre.timeline === x ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></label></div>'
+    + '<div class="mko-g2"><label>Insurance claim?<select data-cl="ins"><option value="">Not asked</option><option value="yes"' + (pre.insurance === 'yes' ? ' selected' : '') + '>Yes</option><option value="no"' + (pre.insurance === 'no' ? ' selected' : '') + '>No</option></select></label>'
+    + '<label>Carrier (internal)<input data-cl="carrier" value="' + esc(pre.carrier) + '"></label><label>Claim # (internal)<input data-cl="claim" value="' + esc(pre.claim) + '"></label></div>'
+    + (isMM() ? '' : '<label>Send it to <span class="mko-note" data-cl-route></span><select data-cl="to">' + staffPick('') + '</select></label>')
+    + '<button type="button" class="mko-btn pri" data-cl-save>💾 Save lead</button><div class="mko-msg" data-cl-msg></div></div>';
+  D.body.appendChild(ov);
+  var q = function(k){ return ov.querySelector('[data-cl="' + k + '"]'); };
+  var touchedTo = false;
+  function sync(){
+    var h = q('heard').value, H = HEARD.filter(function(x){ return x.v === h; })[0];
+    ov.querySelector('[data-cl-site]').hidden = h !== 'site';
+    var dt = H && H.detail || (h === 'site' && q('site').value === 'Other site' ? 'Which site?' : '');
+    ov.querySelector('[data-cl-detail]').hidden = !dt; if (dt) ov.querySelector('[data-cl-dl]').firstChild.nodeValue = dt;
+    var r = routeFor(q('service').value, q('emergency').checked, h === 'site' ? q('site').value : h), rl = ov.querySelector('[data-cl-route]');
+    if (rl) rl.textContent = '(the call script says: ' + r.rule + (r.who ? ' — ' + r.who.name : '') + ')';
+    if (!touchedTo && q('to') && r.who && r.who.email) { q('to').value = r.who.email; if (q('to').value !== r.who.email) q('to').value = ''; }
+  }
+  ov.addEventListener('change', function(e){ if (e.target === q('to')) touchedTo = true; sync(); });
+  ov.addEventListener('input', function(e){ if (e.target === q('need') && !q('service').value) { var g = guessService(q('need').value); if (g) { q('service').value = g; sync(); } } });
+  ov.addEventListener('click', function(e){
+    var t = e.target;
+    if (t === ov || (t.closest && t.closest('[data-cl-x]'))) { ov.remove(); return; }
+    if (!(t.closest && t.closest('[data-cl-save]'))) return;
+    var msg = ov.querySelector('[data-cl-msg]'), h = q('heard').value;
+    var f = { name: s(q('name').value), phone: s(q('phone').value), need: s(q('need').value), service: q('service').value, address: s(q('address').value),
+      emergency: !!q('emergency').checked, timeline: q('timeline').value, insurance: q('ins').value, carrier: s(q('carrier').value), claim: s(q('claim').value), to: q('to') ? q('to').value : '' };
+    if (!f.name && d10(f.phone).length !== 10) { msg.textContent = 'Type the caller\'s name or a 10-digit phone number.'; return; }
+    if (h === '__pick__') { msg.textContent = 'Pick "How did you hear about us?" — ask the caller (or pick "Did not ask").'; q('heard').focus(); return; }
+    if (h === '__none__') { f.howHeard = ''; f.howHeardDetail = ''; }
+    else if (h === 'site') { f.howHeard = q('site').value; f.howHeardDetail = s(q('detail').value); if (f.howHeard === 'Other site' && !f.howHeardDetail) { msg.textContent = 'Which site?'; return; } }
+    else { f.howHeard = h; f.howHeardDetail = s(q('detail').value); if (h === 'Other' && !f.howHeardDetail) { msg.textContent = 'Type what they said (Other).'; return; } }
+    var b = t.closest('[data-cl-save]'); b.disabled = true; b.textContent = 'Saving…';
+    saveCall(f).then(function(r){
+      b.disabled = false; b.textContent = '💾 Save lead';
+      if (!r || !r.ok) { msg.textContent = s(r && r.error) || 'Not saved — try again.'; return; }
+      ov.remove();
+      toast('📞 Lead saved — ' + (r.lead && r.lead.name || f.name || tidy(f.phone)) + ' · counts under ' + r.channel + (r.to ? ' · sent to ' + r.to : '') + (r.inbox ? ' (in the Lead Inbox)' : ''));
+      try { if (typeof pre.onSaved === 'function') pre.onSaved(r); } catch (x) {}
+    });
+  });
+  sync(); later(function(){ try { (q('name').value ? q('heard') : q('name')).focus(); } catch (e) {} }, 50);
+  return ov;
+}
+/* the lead record (also what the Marketing Manager's server form writes, _lib/calllead.js) */
+function leadOf(f){
+  var t = Date.now(), at = new Date(t).toISOString(), x = svc(f.service) || svc('other'), by = myName();
+  var heard = s(f.howHeard), detail = s(f.howHeardDetail).slice(0, 60), hv = heard === 'Other' || heard === 'Other site' ? (detail || heard) : heard;
+  var ch = channelOf(hv);
+  var em = !!f.emergency, co = em && x.co === 'construction' && x.k !== 'bid' ? 'mitigation' : x.co;
+  var L = { id: 'LCALL_' + t.toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase(),
+    name: s(f.name) || tidy(f.phone) || 'Phone caller', client: s(f.name), contact: s(f.name), contactName: s(f.name), phone: tidy(f.phone), email: '',
+    address: s(f.address), type: x.type || 'Residential Reno', projectType: x.l, service: x.l, companyId: co, companyIdBy: by + ' (phone call)',
+    stage: 'New Lead', status: 'new', priority: em ? 'High' : 'Medium', estValue: 0,
+    source: 'Phone call', leadSource: 'Phone call', sourceChannel: 'phone', sourceChannelBy: by, origin: 'phone',
+    howHeard: hv, howHeardDetail: heard === 'Referral' ? detail : (detail && detail !== hv ? detail : ''), howHeardVia: 'phone call', howHeardAt: at, mkChannel: ch,
+    scope: s(f.need), message: s(f.need), timeline: s(f.timeline),
+    notes: '[' + (new Date(t).getMonth() + 1) + '/' + new Date(t).getDate() + ' ' + by + '] 📞 Phone call' + (s(f.need) ? ': ' + s(f.need) : '') + ' — heard about us: ' + (hv || 'not asked'),
+    created: at.slice(0, 10), createdAt: at, updatedAt: at, receivedAt: at, addedBy: by, createdBy: by, callLog: { by: by, byEmail: myEmail(), at: at, via: 'Log a phone call lead' }, grayCoLead: true, phoneCall: true };
+  if (heard === 'Referral' && detail) L.referredBy = detail;
+  if (x.sector) L.sector = x.sector;
+  if (em) { L.emergency = true; L.urgency = 'Emergency'; }
+  if (f.insurance === 'yes') { L.isInsurance = true; L.insurance = 'yes'; if (s(f.carrier)) L.carrier = s(f.carrier); if (s(f.claim)) L.claimNumber = s(f.claim); }
+  else if (f.insurance === 'no') { L.isInsurance = false; L.insurance = 'no'; }
+  var u = s(f.to) ? users().filter(function(z){ return low(z.email) === low(f.to); })[0] : null;
+  if (u) { if (x.k === 'bid') L.estimator = nm(u); else L.pm = nm(u); L.pmEmail = low(u.email); L.assignedBy = by + ' (phone call)'; L.assignedAt = at; }
+  return L;
+}
+function saveCall(f){
+  var L = leadOf(f);
+  if (isMM()) {
+    return W.fetch('/.netlify/functions/soc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'mm_call_lead', name: f.name, phone: f.phone, need: f.need, service: L.service, type: L.type, companyId: L.companyId, address: f.address, howHeard: s(f.howHeard), howHeardDetail: s(f.howHeardDetail), mkChannel: L.mkChannel, emergency: !!f.emergency }) })
+      .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); }, function(){ return { ok: false, error: 'No connection — not saved.' }; })
+      .then(function(j){ return j && j.ok ? { ok: true, inbox: true, lead: { id: j.leadId, name: L.name }, channel: L.mkChannel } : { ok: false, error: s(j && j.error) || 'Not saved.' }; });
+  }
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('phone call lead'); } catch (e) {}
+  var done = false;
+  try { if (typeof W._setLeads === 'function') { W._setLeads(function(prev){ prev = Array.isArray(prev) ? prev : []; if (prev.some(function(l){ return l && l.id === L.id; })) return prev; return [L].concat(prev); }); done = true; } } catch (e) { warn(e); }
+  var p = Promise.resolve();
+  if (!done) p = Promise.resolve().then(function(){ return W.idbGet ? W.idbGet('leads') : []; }).then(function(v){ var l = [L].concat(Array.isArray(v) ? v : []); return Promise.resolve(W.idbSet ? W.idbSet('leads', l) : null).then(function(){ try { if (W._supaUpsert) W._supaUpsert('leads', l); } catch (e) {} }); }).catch(warn);
+  try { if (W._crm && Array.isArray(W._crm.leads) && !W._crm.leads.some(function(l){ return l && l.id === L.id; })) W._crm.leads = [L].concat(W._crm.leads); } catch (e) {}
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  return p.then(function(){ W.__gcCallLeadLast = L; return { ok: true, lead: L, channel: L.mkChannel, to: L.pm || L.estimator || '' }; });
+}
+/* "How did you hear?" set on an existing lead (the lead page, the LSA intake) */
+function setHeard(id, heard, detail){
+  id = s(id); if (!id) return false; heard = s(heard).slice(0, 60); detail = s(detail).slice(0, 60);
+  var at = nowIso(), by = myName();
+  var put = function(l){ if (!l || l.id !== id) return l; var o = Object.assign({}, l, { howHeard: heard, howHeardDetail: detail, howHeardVia: s(l.howHeardVia) || 'set by ' + by, howHeardAt: at, mkChannel: channelOf(heard), updatedAt: at }); if (/^referr/i.test(heard) && detail) o.referredBy = detail; return o; };
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('how did you hear'); } catch (e) {}
+  var ok = false;
+  try { if (typeof W._setLeads === 'function') { W._setLeads(function(prev){ return Array.isArray(prev) ? prev.map(put) : prev; }); ok = true; } } catch (e) { warn(e); }
+  try { if (W._crm && Array.isArray(W._crm.leads)) W._crm.leads = W._crm.leads.map(put); } catch (e) {}
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  return ok;
+}
+
+/* ══ 2. 📋 THE CALL SCRIPT ══ */
+function whoTxt(key){ var r = routes()[key]; if (!r) return ''; return r.who ? r.who.name : 'nobody set yet — ' + r.rule; }
+function scriptHtml(v){
+  var A = function(k, ph, type){ return '<input data-cs-a="' + k + '"' + (type ? ' type="' + type + '"' : '') + ' placeholder="' + esc(ph || 'their answer') + '" class="mko-ans">'; };
+  var qa = QS.map(function(x){
+    var box = x.k === 'emergency' ? '<select data-cs-a="emergency"><option value="">—</option><option value="yes">Yes — emergency now</option><option value="no">No</option></select>'
+      : x.k === 'insurance' ? '<div class="mko-g2"><select data-cs-a="insurance"><option value="">—</option><option value="yes">Yes, a claim</option><option value="no">No</option></select>' + A('carrier', 'carrier (internal)') + A('claim', 'claim # (internal)') + '</div>'
+      : x.k === 'heard' ? '<select data-cs-a="heard"><option value="__pick__">— their answer —</option>' + heardOpts(null) + '</select>' + A('heardDetail', 'who referred them / which site / what they said')
+      : x.k === 'timeline' ? '<select data-cs-a="timeline">' + ['', 'Emergency — now', 'This week', 'This month', 'In the next few months', 'Just getting prices'].map(function(o){ return '<option>' + esc(o) + '</option>'; }).join('') + '</select>'
+      : x.k === 'need' ? '<textarea data-cs-a="need" rows="2" placeholder="what happened / what they need"></textarea><select data-cs-a="service">' + svcOpts('') + '</select>'
+      : A(x.k, '', x.k === 'phone' ? 'tel' : '');
+    return '<li class="qa" data-cs-q="' + x.k + '"><div class="say">' + esc(v.q[x.k]) + '</div>' + box + '</li>';
+  }).join('');
+  var cos = Object.keys(CO_L).map(function(c){ return '<div class="co" data-cs-co="' + c + '"><b>' + esc(CO_L[c]) + '</b><ul>' + arr(v.svc[c]).map(function(l){ return '<li>' + esc(l) + '</li>'; }).join('') + '</ul></div>'; }).join('');
+  var rt = '<table data-cs-routing><tr><th style="text-align:left">For</th><th style="text-align:left">Send the lead to</th><th style="text-align:left">Today</th></tr>' + v.routing.map(function(r){ return '<tr data-cs-rt="' + esc(r[0]) + '"><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td><td class="who">' + esc(r[0] ? whoTxt(r[0]) : '') + '</td></tr>'; }).join('') + '</table>';
+  var fq = v.faq.map(function(r){ return '<details data-cs-faq><summary>' + esc(r[0]) + '</summary><div class="say">' + esc(r[1]) + '</div></details>'; }).join('');
+  return '<div class="mko-cs">'
+    + '<h3>1. Greeting</h3><div class="say" data-cs-greet>' + esc(v.greeting) + '</div>'
+    + '<h3>2. Ask</h3><ol>' + qa + '</ol>'
+    + '<div class="mko-noprint"><button type="button" class="mko-btn pri" data-cs-lead>➡ Start a lead from this call</button></div>'
+    + '<h3>3. What we do — by company</h3>' + cos
+    + '<h3>4. Who gets the lead</h3>' + rt
+    + '<h3>5. Common questions</h3>' + fq
+    + '<h3>6. Do NOT promise</h3><ul class="dont">' + v.dont.map(function(l){ return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>'
+    + '<h3>7. Closing</h3><div class="say" data-cs-close>' + esc(v.closing) + '</div>'
+    + (v.at ? '<div class="mko-note">Last edited ' + esc(new Date(v.at).toLocaleString()) + (v.by ? ' by ' + esc(v.by) : '') + '</div>' : '') + '</div>';
+}
+function editorHtml(v){
+  var ta = function(k, val, rows){ return '<textarea data-cse="' + k + '" rows="' + (rows || 3) + '">' + esc(val) + '</textarea>'; };
+  return '<div class="mko-ed"><div class="mko-note">Every line can be changed. Lists: one per line. Who gets the lead: "For | Send to" per line. Questions: "Question | Answer" per line.</div>'
+    + '<label>Greeting' + ta('greeting', v.greeting, 2) + '</label>'
+    + QS.map(function(x){ return '<label>Ask — ' + esc(x.k) + ta('q:' + x.k, v.q[x.k], 2) + '</label>'; }).join('')
+    + Object.keys(CO_L).map(function(c){ return '<label>' + esc(CO_L[c]) + ' — services' + ta('svc:' + c, v.svc[c].join('\n'), 4) + '</label>'; }).join('')
+    + '<label>Who gets the lead (For | Send to)' + ta('routing', v.routing.map(function(r){ return r[1] + ' | ' + r[2]; }).join('\n'), 6) + '</label>'
+    + '<label>Common questions (Question | Answer)' + ta('faq', v.faq.map(function(r){ return r[0] + ' | ' + r[1]; }).join('\n'), 8) + '</label>'
+    + '<label>Do NOT promise' + ta('dont', v.dont.join('\n'), 4) + '</label>'
+    + '<label>Closing' + ta('closing', v.closing, 3) + '</label>'
+    + '<div class="mko-bar"><button type="button" class="mko-btn blue" data-cs-save>💾 Save the script</button><button type="button" class="mko-btn" data-cs-edit>Cancel</button><button type="button" class="mko-btn" data-cs-reset>↺ Back to the standard script</button></div><div class="mko-msg" data-cs-msg></div></div>';
+}
+function readEditor(box, cur){
+  var g = function(k){ var e = box.querySelector('[data-cse="' + k + '"]'); return e ? String(e.value) : ''; };
+  var lines = function(k){ return g(k).split(/\n+/).map(s).filter(Boolean); };
+  var pairs = function(k){ return lines(k).map(function(l){ var i = l.indexOf('|'); return i < 0 ? [s(l), ''] : [s(l.slice(0, i)), s(l.slice(i + 1))]; }); };
+  var v = { greeting: g('greeting'), closing: g('closing'), q: {}, svc: {} };
+  QS.forEach(function(x){ v.q[x.k] = g('q:' + x.k); });
+  Object.keys(CO_L).forEach(function(c){ v.svc[c] = lines('svc:' + c); });
+  v.routing = pairs('routing').map(function(p, i){ var old = cur.routing[i]; return [old && s(old[1]) === p[0] ? old[0] : (old ? old[0] : ''), p[0], p[1]]; });
+  v.faq = pairs('faq'); v.dont = lines('dont');
+  return v;
+}
+function answers(box){
+  var g = function(k){ var e = box.querySelector('[data-cs-a="' + k + '"]'); return e ? s(e.value) : ''; };
+  var h = g('heard'), o = { name: g('name'), phone: g('phone'), address: g('address'), need: g('need'), service: g('service'), emergency: g('emergency') === 'yes', insurance: g('insurance'), carrier: g('carrier'), claim: g('claim'), timeline: g('timeline') };
+  if (h !== '__pick__') { o.howHeard = h === '__none__' ? '' : h; o.howHeardDetail = g('heardDetail'); if (h === 'site') { var d = g('heardDetail'), m = SITES.filter(function(x){ return low(x) === low(d); })[0]; o.howHeard = m || 'Other site'; o.howHeardDetail = m ? '' : d; } }
+  if (o.emergency && !o.timeline) o.timeline = 'Emergency — now';
+  return o;
+}
+function openScript(){
+  if (!canScript()) { toast('The call script is for the office and admins.'); return null; }
+  var old = D.getElementById('gc-cs-ov'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-cs-ov'; ov.className = 'mko-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="mko-box" role="dialog" aria-label="Call script"><div class="mko-hd"><b>📋 Call script — screening a phone call</b><span class="mko-noprint" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
+    + '<button type="button" class="mko-btn" data-cs-print>🖨 Print</button>' + (canEditScript() ? '<button type="button" class="mko-btn" data-cs-edit>✏ Edit</button>' : '') + '<button type="button" class="mko-x" data-cs-x aria-label="Close">✕</button></span></div><div data-cs-body>Loading…</div></div>';
+  D.body.appendChild(ov);
+  var body = ov.querySelector('[data-cs-body]'), ED = { on: false, v: null };
+  function paint(){ getScript().then(function(v){ ED.v = v; if (!ov.isConnected) return; body.innerHTML = ED.on ? editorHtml(v) : scriptHtml(v); }); }
+  ov.addEventListener('click', function(e){
+    var t = e.target, c = function(sel){ return t.closest && t.closest(sel); };
+    if (t === ov || c('[data-cs-x]')) { ov.remove(); return; }
+    if (c('[data-cs-print]')) { printScript(); return; }
+    if (c('[data-cs-edit]')) { if (!canEditScript()) return; ED.on = !ED.on; paint(); return; }
+    if (c('[data-cs-reset]')) { if (!W.confirm('Put the standard call script back? Your edits are replaced.')) return; saveScript({}).then(function(r){ if (r.ok) { ED.on = false; paint(); toast('The standard call script is back.'); } else body.querySelector('[data-cs-msg]').textContent = r.error; }); return; }
+    if (c('[data-cs-save]')) { var v = readEditor(body, ED.v || cleanScript(null)); saveScript(v).then(function(r){ if (r.ok) { ED.on = false; paint(); toast('Call script saved — the office sees it now.'); } else { var m = body.querySelector('[data-cs-msg]'); if (m) m.textContent = r.error; } }); return; }
+    if (c('[data-cs-lead]')) { var a = answers(body); a.onSaved = function(){ try { body.querySelectorAll('[data-cs-a]').forEach(function(i){ i.value = i.tagName === 'SELECT' ? (i.getAttribute('data-cs-a') === 'heard' ? '__pick__' : '') : ''; }); } catch (x) {} }; openForm(a); return; }
+  });
+  paint();
+  return ov;
+}
+function printScript(){
+  var ov = D.getElementById('gc-cs-ov'); if (!ov) { ov = openScript(); }
+  D.body.classList.add('mko-printing');
+  var done = function(){ D.body.classList.remove('mko-printing'); W.removeEventListener('afterprint', done); };
+  W.addEventListener('afterprint', done);
+  later(function(){ try { W.print(); } catch (e) {} later(done, 1500); }, 60);
+  return true;
+}
+
+/* ══ 3. 💬 MESSAGES WITH MARKETING ══ */
+var MS = { threads: [], unread: 0, at: 0, p: null, last: null, open: '' };
+function canMsg(){ return isAdmin() || isMM(); }
+function soc(body){
+  return W.fetch('/.netlify/functions/soc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); }, function(e){ return { ok: false, error: s(e && e.message) || 'offline' }; });
+}
+function listMsgs(thread){
+  if (!canMsg()) return Promise.resolve(null);
+  return soc({ op: 'mmmsg_list', thread: thread || MS.open || '' }).then(function(j){
+    if (!j || !j.ok) return j;
+    MS.at = Date.now(); MS.last = j;
+    if (isMM()) MS.unread = +j.unread || 0; else { MS.threads = arr(j.threads); MS.unread = MS.threads.reduce(function(a, t){ return a + (+t.unread || 0); }, 0); if (!MS.open && j.thread) MS.open = j.thread; }
+    paintBadges(); return j;
+  });
+}
+function sendMsg(text, thread){
+  var id = 'MM' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return soc({ op: 'mmmsg_send', text: text, thread: thread || MS.open || '', id: id }).then(function(j){ W.__gcMMMsgLast = j; return j; });
+}
+function sentLine(j){
+  var l = arr(j && j.to); if (!l.length) return '✓ Sent.';
+  return '🔔 ' + l.map(function(x){ var how = x.throttled ? 'told a moment ago' : x.optout ? 'replied STOP to texts — in the CRM only' : x.held ? 'text at 7 AM (quiet hours)' : x.pushed && x.texted ? 'text + phone' : x.texted ? 'text to the cell' : x.pushed ? 'phone' : x.noPhone ? 'no cell on file — in the CRM only' : 'in the CRM'; return s(x.name) + ': ' + how; }).join(' · ');
+}
+function threadHtml(j){
+  var l = arr(j && j.msgs);
+  if (!l.length) return '<div class="mko-note" style="text-align:center;padding:14px">No messages yet.</div>';
+  return l.map(function(m){ return '<div class="mko-m' + (m.mine ? ' mine' : '') + '" data-mko-m="' + esc(m.id) + '"><div class="w">' + esc(m.fromName || '') + ' · ' + esc(new Date(m.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + (m.mine && m.seen ? ' · seen' : '') + '</div>' + esc(m.text) + '</div>'; }).join('');
+}
+function openMsgs(thread){
+  if (!canMsg()) { toast('Messages with marketing are for admins and the Marketing Manager.'); return null; }
+  if (thread) MS.open = low(thread);
+  var old = D.getElementById('gc-mmmsg-ov'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-mmmsg-ov'; ov.className = 'mko-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="mko-box" role="dialog" aria-label="Messages with marketing"><div class="mko-hd"><b>' + (isMM() ? '💬 Messages with the owners' : '💬 Message marketing') + '</b><button type="button" class="mko-x" data-mm-x aria-label="Close">✕</button></div>'
+    + (isMM() ? '' : '<div data-mm-pick></div>') + '<div class="mko-th" data-mm-th><div class="mko-note">Loading…</div></div>'
+    + '<textarea data-mm-text rows="3" placeholder="' + (isMM() ? 'Reply to the owners…' : 'Message the Marketing Manager… (start with 🚨 for something urgent at night)') + '"></textarea>'
+    + '<button type="button" class="mko-btn pri" data-mm-send style="background:#1d4ed8;border-color:#1d4ed8">Send</button><div class="mko-note" data-mm-out></div></div>';
+  D.body.appendChild(ov);
+  var th = ov.querySelector('[data-mm-th]'), sig = '';
+  function paint(j){
+    if (!ov.isConnected) return;
+    if (!j || !j.ok) { th.innerHTML = '<div class="mko-msg">' + esc(s(j && j.error) || 'Could not load the messages.') + '</div>'; return; }
+    var pk = ov.querySelector('[data-mm-pick]');
+    if (pk) { var T = arr(j.threads); pk.innerHTML = T.length > 1 ? '<label>To<select data-mm-to>' + T.map(function(t){ return '<option value="' + esc(t.email) + '"' + (t.email === MS.open ? ' selected' : '') + '>' + esc(t.name) + (t.unread ? ' (' + t.unread + ' new)' : '') + '</option>'; }).join('') + '</select></label>'
+      : T.length ? '<div class="mko-note">To: <b>' + esc(T[0].name) + '</b> (Marketing Manager)' + (T[0].cell ? ' — texted on the cell in his CRM record' : ' — no cell on his CRM record: he sees it in the CRM') + '</div>' : '<div class="mko-msg">No Marketing Manager is set up yet (the marketing profile).</div>'; }
+    var h = threadHtml(j); if (h !== sig) { sig = h; th.innerHTML = h; th.scrollTop = th.scrollHeight; }
+    var unread = isMM() ? +j.unread : arr(j.msgs).filter(function(m){ return !m.mine && !m.read; }).length;
+    if (unread) soc({ op: 'mmmsg_read', thread: MS.open }).then(function(){ listMsgs(); });
+  }
+  listMsgs(MS.open).then(paint);
+  var iv = every(function(){ if (!ov.isConnected) { clearInterval(iv); return; } if (D.hidden) return; listMsgs(MS.open).then(paint); }, 15000);
+  ov.addEventListener('change', function(e){ if (e.target.hasAttribute('data-mm-to')) { MS.open = e.target.value; sig = ''; listMsgs(MS.open).then(paint); } });
+  ov.addEventListener('click', function(e){
+    var t = e.target;
+    if (t === ov || (t.closest && t.closest('[data-mm-x]'))) { ov.remove(); return; }
+    var b = t.closest && t.closest('[data-mm-send]'); if (!b) return;
+    var ta = ov.querySelector('[data-mm-text]'), out = ov.querySelector('[data-mm-out]'), text = s(ta.value);
+    if (!text) { out.textContent = 'Type a message first.'; return; }
+    b.disabled = true; b.textContent = 'Sending…';
+    sendMsg(text, MS.open).then(function(j){
+      b.disabled = false; b.textContent = 'Send';
+      if (!j || !j.ok) { out.textContent = s(j && j.error) || 'Not sent — try again.'; return; }
+      ta.value = ''; out.textContent = sentLine(j); listMsgs(MS.open).then(paint);
+    });
+  });
+  return ov;
+}
+function paintBadges(){
+  Array.prototype.forEach.call(D.querySelectorAll('[data-mko-n]'), function(e){ e.textContent = MS.unread ? String(MS.unread) : ''; e.style.display = MS.unread ? '' : 'none'; });
+}
+/* 💬 Messages (desk page + the Field picker): the row for admins */
+function wrapForYou(){
+  var f = W._gcJobMsgForYouHtml; if (typeof f !== 'function' || f.__mko) return;
+  var w = function(){ var h = ''; try { h = f.apply(this, arguments) || ''; } catch (e) { h = ''; }
+    if (!isAdmin() || !MS.threads.length) return h;
+    return MS.threads.map(function(t){ return '<button type="button" class="row" data-mmmsg-open="' + esc(t.email) + '" style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:9px 12px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;margin-bottom:6px;cursor:pointer;font:600 14px Inter,Arial,sans-serif;color:#0f2440"><span>💬 Marketing — ' + esc(t.name) + '</span>' + (t.unread ? '<span class="mko-badge">' + t.unread + '</span>' : '') + '</button>'; }).join('') + h; };
+  w.__mko = true; W._gcJobMsgForYouHtml = w;
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest && e.target.closest('[data-mmmsg-open],[data-mko-act]'); if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  if (t.hasAttribute('data-mmmsg-open')) { try { var fx = t.closest('div[style*="position:fixed"]'); if (fx && !fx.id) fx.remove(); } catch (x) {} openMsgs(t.getAttribute('data-mmmsg-open')); return; }
+  var a = t.getAttribute('data-mko-act');
+  if (a === 'msg') openMsgs(); else if (a === 'call') openForm({}); else if (a === 'script') openScript();
+}, true);
+
+/* ══ hooks ══ */
+/* 📣 Marketing home: a small card under the accounts panel */
+function badge(){ return '<span class="mko-badge" data-mko-n' + (MS.unread ? '>' + MS.unread : ' style="display:none">') + '</span>'; }
+function cardHtml(){
+  var r = ''; try { r = W._gcMktExt && W._gcMktExt.role ? W._gcMktExt.role() : ''; } catch (e) {}
+  if (isMM()) return '<!--mko--><div class="mko-card" data-mko="mm"><b>💬 / 📞</b><button type="button" class="mko-btn blue" data-mko-act="msg">💬 Messages with the owners' + badge() + '</button><button type="button" class="mko-btn" data-mko-act="call">📞 Log a phone call lead</button></div><!--/mko-->';
+  if (isAdmin() && r === 'admin') return '<!--mko--><div class="mko-card" data-mko="admin"><b>Marketing</b><button type="button" class="mko-btn blue" data-mko-act="msg">💬 Message marketing' + badge() + '</button><button type="button" class="mko-btn" data-mko-act="call">📞 Log a phone call lead</button><button type="button" class="mko-btn" data-mko-act="script">📋 Call script</button></div><!--/mko-->';
+  if (isOffice() && r === 'office') return '<!--mko--><div class="mko-card" data-mko="office"><b>Phone calls</b><button type="button" class="mko-btn" data-mko-act="call">📞 Log a phone call lead</button><button type="button" class="mko-btn" data-mko-act="script">📋 Call script</button></div><!--/mko-->';
+  return '';
+}
+function wrapHome(){
+  var X = W._gcMktExt; if (!X || !X.VIEWS || typeof X.VIEWS.home !== 'function' || X.VIEWS.home.__mko) return false;
+  var f = X.VIEWS.home;
+  var w = function(){
+    var h = String(f.apply(this, arguments) || '').replace(/<!--mko-->[\s\S]*?<!--\/mko-->/g, '');
+    if (h.indexOf('<!--gql-->') < 0) { try { if (W._gcGQL && W._gcGQL.html) h = W._gcGQL.html('mkt') + h; } catch (e) {} }   /* the accounts panel stays on top */
+    var c = ''; try { c = cardHtml(); } catch (e) { warn(e); }
+    if (!c) return h;
+    var i = h.indexOf('<!--/gql-->'); if (i >= 0) { i += 11; return h.slice(0, i) + c + h.slice(i); }
+    return c + h;
+  };
+  w.__mko = true; w.__gql = true; X.VIEWS.home = w;
+  try { if (X.UI && X.UI.root && X.UI.root.isConnected && X.UI.sec === 'home') X.redrawSoon(); } catch (e) {}
+  later(paintBadges, 300);
+  return true;
+}
+/* Leads: 📞 Log a phone call · 📋 Call script, next to 📞 Google calls */
+function leadsBtns(){
+  var hub = D.getElementById('gc-leads-hub'), views = hub && hub.getClientRects().length ? hub.querySelector('.gclu-views') : null;
+  var ids = [['gc-cl-btn', '📞 Log a phone call', 'call', canLog()], ['gc-cs-btn', '📋 Call script', 'script', canScript()]];
+  ids.forEach(function(x){ var b = D.getElementById(x[0]);
+    if (!views || !x[3]) { if (b) b.remove(); return; }
+    if (!b || b.parentElement !== views) { if (b) b.remove(); b = D.createElement('button'); b.type = 'button'; b.id = x[0]; b.setAttribute('data-gc-keep', '1'); b.setAttribute('data-mko-act', x[2]); b.textContent = x[1]; views.appendChild(b); } });
+}
+/* 🏢 Office Manager: 📋 Call script at the end of its tab bar */
+function officeBtn(){
+  var tb = D.querySelector('.om-tabs'), b = D.getElementById('gc-cs-omtab');
+  if (!tb || !canScript()) { if (b) b.remove(); return; }
+  if (!b || b.parentElement !== tb) { if (b) b.remove(); b = D.createElement('button'); b.type = 'button'; b.id = 'gc-cs-omtab'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('data-mko-act', 'script'); b.textContent = '📋 Call script'; tb.appendChild(b); }
+}
+/* the lead page (Leads → a lead): 🗣 How did you hear? under 📡 Came in */
+function drawerRow(){
+  var dr = D.getElementById('gcl-drawer'); if (!dr || dr.querySelector('[data-mko-heard]')) return;
+  var id = ''; try { id = s(W._gcLeadsHub.ui().open); } catch (e) {}
+  var l = arr(W._crm && W._crm.leads).filter(function(x){ return x && x.id === id; })[0]; if (!l) return;
+  var kv = Array.prototype.filter.call(dr.querySelectorAll('.kv'), function(k){ return /📡 Came in/.test(k.textContent || ''); })[0];
+  var host = kv || dr.querySelector('section .kv'); if (!host) return;
+  var cur = s(l.howHeard), inList = HEARD.some(function(h){ return h.v && h.v === cur; }) || SITES.indexOf(cur) >= 0;
+  var row = D.createElement('div'); row.className = 'kv mko-heard'; row.setAttribute('data-mko-heard', id);
+  row.innerHTML = '<span>🗣 How did you hear:</span> <select data-mko-heard-sel aria-label="How did you hear about us?"><option value="__pick__">' + (cur ? esc(cur) + (inList ? '' : ' (as recorded)') : '— not asked yet —') + '</option>' + HEARD.filter(function(h){ return h.v && !h.site; }).map(function(h){ return '<option value="' + esc(h.v) + '"' + (cur === h.v ? ' selected' : '') + '>' + esc(h.l) + '</option>'; }).join('') + SITES.map(function(x){ return '<option value="' + esc(x) + '"' + (cur === x ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>'
+    + ' <span class="note">counts under <b data-mko-ch>' + esc(cur ? channelOf(cur) : (/^phone/i.test(s(l.source)) ? 'Phone call (source not asked)' : '—')) + '</b></span>';
+  host.parentNode.insertBefore(row, host.nextSibling);
+  row.querySelector('select').addEventListener('change', function(){
+    var v = this.value; if (v === '__pick__') return;
+    var det = '';
+    if (v === 'Referral' || v === 'Other' || v === 'Other site') { det = s(W.prompt(v === 'Referral' ? 'Who referred them?' : 'What did they say?', s(l.howHeardDetail))); if (v !== 'Referral' && det) v = det; }
+    setHeard(id, v, det); row.querySelector('[data-mko-ch]').textContent = channelOf(v); toast('🗣 How did you hear: ' + v + ' — counts under ' + channelOf(v));
+  });
+}
+/* the office's Google LSA intake (patch LSALEADS): the answer goes on the lead too */
+W._gcMkoIntakeHeard = function(leadInboxId, heard){ if (!s(heard)) return; var lid = 'LEADIN-' + s(leadInboxId).replace(/^LI-/, ''); later(function(){ setHeard(lid, heard, ''); }, 400); };
+W._gcMkoHeardSelect = function(){ return '<label style="display:block;margin-top:8px;font-size:13px;font-weight:700">How did you hear about us?<select data-in-heard style="width:100%;box-sizing:border-box;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif;margin-top:3px">' + HEARD.filter(function(h){ return !h.site; }).map(function(h){ return '<option value="' + esc(h.v) + '"' + (h.v === 'Google LSA' ? ' selected' : '') + '>' + esc(h.l) + '</option>'; }).join('') + SITES.map(function(x){ return '<option>' + esc(x) + '</option>'; }).join('') + '</select></label>'; };
+
+/* the deep link of the marketing text (?mmmsg=1 / ?mmmsg=<thread>) */
+function deepLink(){
+  var q = ''; try { q = new URLSearchParams(location.search).get('mmmsg') || ''; } catch (e) {}
+  if (!q) return;
+  var n = 0; (function tryOpen(){ if (canMsg()) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {} openMsgs(/@/.test(q) ? q : ''); return; } if (n++ < 40) later(tryOpen, 1000); })();
+}
+var tick = 0;
+every(function(){
+  tick++;
+  try { wrapHome(); } catch (e) { warn(e); }
+  try { wrapForYou(); } catch (e) {}
+  try { leadsBtns(); } catch (e) {}
+  try { officeBtn(); } catch (e) {}
+  try { drawerRow(); } catch (e) {}
+  if (canMsg() && !D.hidden && (Date.now() - MS.at > (isMM() ? 60e3 : 120e3)) && myEmail()) { MS.at = Date.now(); listMsgs().then(function(){ try { var m = D.getElementById('gc-rp-msg'); if (m && W._gcJobMsgForYouHtml) { /* the Messages page redraws on its own tick */ } } catch (e) {} }); }
+}, 1500);
+later(deepLink, 2500);
+later(function(){ if (canScript()) getScript(); }, 8000);
+
+W._gcCallLead = { open: openForm, save: saveCall, lead: leadOf, can: canLog, HEARD: HEARD, SITES: SITES, SERVICES: SERVICES, channelOf: channelOf, setHeard: setHeard, route: routeFor };
+W._gcCallScript = { open: openScript, get: getScript, save: saveScript, defaults: function(){ return cleanScript(null); }, routes: routes, print: printScript, can: canScript, canEdit: canEditScript, answers: answers };
+W._gcMMMsg = { open: openMsgs, list: listMsgs, send: sendMsg, can: canMsg, state: function(){ return { threads: MS.threads.slice(), unread: MS.unread, open: MS.open, at: MS.at }; } };
+try { console.log('[GC] 📞 phone call leads · 📋 call script · 💬 message marketing (patch MKTOFFICE) — _gcCallLead, _gcCallScript, _gcMMMsg'); } catch (e) {}
+})(window, document);
+</script>

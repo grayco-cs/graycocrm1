@@ -95,6 +95,7 @@ try {
   const pi = POSTS.find(p => p.q === 'lsaintake');
   ok('➡ Send to PM → ?lsaintake { rating: good, the description, the address, action pm, Nick }', pi && pi.body.leadId === 'LI-lsa1' && pi.body.rating === 'good' && pi.body.action === 'pm' && pi.body.pmEmail === 'nthomas@grayco-cs.com' && /roof leak/.test(pi.body.desc) && /12 Oak/.test(pi.body.address), pi);
   ok('the form closes', await O.ev(() => !document.getElementById('gc-in-ov')));
+  ok('patch MKTOFFICE: the intake asks "How did you hear about us?" (Google LSA preselected) and sends it', pi && pi.body.howHeard === 'Google LSA', pi && pi.body);
   /* send to admin */
   POSTS.length = 0; await O.ev(() => window._gcLsaCalls.intake('LI-lsa0')); await sleep(500);
   await O.page().click('#gc-in-ov [data-in-r="unsure"]'); await O.page().click('#gc-in-ov [data-in-go="admin"]'); await sleep(1000);

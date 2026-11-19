@@ -253,7 +253,7 @@ try {
   /* ☰ More → 🔗 Google quick links */
   await fp.ev(() => { document.querySelectorAll('body > div').forEach(o => { if (o.style && o.style.position === 'fixed' && /My Approvals/.test((o.textContent || '').slice(0, 200))) o.remove(); }); document.querySelectorAll('.gc-fh-sheet,.gc-ra-sheet').forEach(o => o.remove()); const b = document.querySelector('#gc-fh-tabs [data-t="more"]'); if (b) b.click(); });
   const more = await H.waitFor(fp, () => { const b = document.querySelector('.gc-fh-sheet[data-ra-more] [data-ra-a="gql"]'); return b ? b.textContent.trim() : null; }, null, 10000);
-  ok(!!more && /Google quick links/.test(more), 'Field ☰ More → Office: 🔗 Google quick links', more);
+  ok(!!more && /Marketing accounts|Google quick links/.test(more), 'Field ☰ More → Office: 🔗 Marketing accounts (was Google quick links; patch MKTOFFICE)', more);
   if (more) {
     await fp.ev(() => document.querySelector('.gc-fh-sheet[data-ra-more] [data-ra-a="gql"]').click());
     const sh = await H.waitFor(fp, () => { const o = document.getElementById('gc-gql-ov'); return o ? { n: o.querySelectorAll('a.gql-a').length, lsa: (o.querySelector('a[data-gql-k="lsa"]') || {}).href, kwp: (o.querySelector('a[data-gql-k="kwp"]') || {}).href, cid: (o.querySelector('[data-gql-cid]') || {}).textContent, w: o.querySelector('.gql').getBoundingClientRect().width } : null; }, null, 8000);

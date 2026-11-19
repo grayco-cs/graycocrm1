@@ -1227,12 +1227,14 @@ async function lsaIntake(d, who){
   const code = lsaCode(leadId), rating = /^(good|bad|unsure)$/.test(s(d.rating)) ? s(d.rating) : 'unsure', desc = clip(d.desc, 400), byName = s(who.name) || s(who.email) || 'Office', byEmail = low(who.email);
   const ph = phone10(d.phone).length === 10 ? phone10(d.phone) : phone10(obj(x.contact).phone), name = clip(s(d.name) || s(obj(x.contact).name), 60), addr = clip(d.address, 160);
   let pm = null; if (s(d.action) === 'pm' && rating !== 'bad') { pm = await pmByEmail(d.pmEmail); if (!pm) return { ok: false, error: 'Pick the PM first.' }; }
+  const heard = clip(d.howHeard, 60);   /* patch MKTOFFICE: "How did you hear about us?" asked on the call (documented; an LSA call still counts as Google LSA) */
   const at = new Date(now()).toISOString(), intake = { rating, desc, by: byName, byEmail, at, action: s(d.action) === 'pm' && pm ? 'pm' : 'admin', pm: pm ? pm.name : '' };
+  if (heard) intake.howHeard = heard;
   try { await _D.kvCas('gc_lead_inbox', v => { const l = arr(v), y = l.find(z => z && s(z.id) === leadId); if (!y) return undefined;
     const c = Object.assign({}, obj(y.contact)); if (name && (!s(c.name) || /^Google LSA caller/i.test(s(c.name)))) c.name = name; if (ph.length === 10 && phone10(c.phone).length !== 10) c.phone = tidy(ph); y.contact = c;
     if (addr && !s(y.address)) y.address = addr;
-    y.leadExtra = Object.assign({}, obj(y.leadExtra), { intake }); const dt = new Date(now());
-    const line = '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + byName + '] 📞 Office intake: ' + (rating === 'good' ? '👍 Good' : rating === 'bad' ? '👎 Bad' : '❓ Not sure') + (desc ? ' — ' + desc : '') + (addr ? ' (' + addr + ')' : '');
+    y.leadExtra = Object.assign({}, obj(y.leadExtra), { intake }, heard ? { howHeard: heard } : {}); if (heard) y.howHeard = heard; const dt = new Date(now());
+    const line = '[' + (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + byName + '] 📞 Office intake: ' + (rating === 'good' ? '👍 Good' : rating === 'bad' ? '👎 Bad' : '❓ Not sure') + (desc ? ' — ' + desc : '') + (addr ? ' (' + addr + ')' : '') + (heard ? ' · heard about us: ' + heard : '');
     if (Array.isArray(y.notes)) y.notes = y.notes.concat([line]).slice(-60); else y.notes = (s(y.notes) ? s(y.notes) + '\n' : '') + line;
     y.rev = (y.rev || 1) + 1; y.updatedAt = at; return l; }); } catch (e) {}
   const out = { ok: true, code, rating, action: intake.action };

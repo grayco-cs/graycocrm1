@@ -85,6 +85,8 @@ async function gcStaffAuth(event){
 //   mm_approvals, mm_approve, mm_queue, mm_review_reply, mm_website. Every answer to him is redacted (no customer e-mail / phone / address).
 //   patch MKTFEAT (_lib/mktfeat.js): mf_reviews / mf_review_mark (review tracker), mf_rank / mf_rank_terms / mf_rank_run (Google rankings) — him,
 //   the office, admins; mf_ba_run (office / admin); mf_report_cfg / mf_report_preview / mf_report_send (the owner's monthly report, admins).
+//   patch MKTOFFICE: mmmsg_list / mmmsg_send / mmmsg_read (_lib/mmmsg.js — admins ⇄ the Marketing Manager, his own thread only),
+//   mm_call_lead (_lib/calllead.js — the Marketing Manager's 📞 phone call lead → the Lead Inbox).
 // Signed-in GrayCo staff only (the two GETs are signed links). Nothing goes public from here: posts wait on ✅ Approvals.
 'use strict';
 const S = require('./_lib/soc.js');
@@ -224,6 +226,8 @@ async function mmOps(op, body, who, headers){
     return R(200, { ok: true, changed: n, value: Object.assign({}, cur, { offers: offers }) });
   }
   if (/^mf_/.test(op)) { const a = await require('./_lib/mktfeat.js').op(op, body, who, { marketing: true }); return R(a.status, a.out); }   /* patch MKTFEAT: review tracker, rankings (redacted again by R) */
+  if (/^mmmsg_/.test(op)) { const a = await require('./_lib/mmmsg.js').op(op, body, who, { marketing: true }); return R(a.status, a.out); }   /* patch MKTOFFICE: his messages with the admins (redacted by R) */
+  if (op === 'mm_call_lead') { const a = await require('./_lib/calllead.js').add(body, who); return R(a.ok ? 200 : 400, a); }   /* patch MKTOFFICE: 📞 a phone call lead → the Lead Inbox */
   return R(403, { ok: false, error: 'Not part of the Marketing Manager profile.' });
 }
 exports.handler = async function(event){
@@ -270,6 +274,7 @@ exports.handler = async function(event){
       return reply(200, headers, { ok: true, rows: rows, funnel: MM.funnel(rows, M._recs(doc, 'adcamps'), M._cfg(doc).socFocus, { soldValues: true }), soldValues: true });
     }
     if (/^mf_/.test(op)) { const a = await require('./_lib/mktfeat.js').op(op, body, who, { admin: admin, office: office }); return reply(a.status, headers, a.out); }   /* patch MKTFEAT */
+    if (/^mmmsg_/.test(op)) { if (!admin) return reply(403, headers, { ok: false, error: 'Messages to marketing: admins.' }); const a = await require('./_lib/mmmsg.js').op(op, body, who, { admin: true }); return reply(a.status, headers, a.out); }   /* patch MKTOFFICE: 💬 admin ⇄ Marketing Manager */
     if (!office) return reply(403, headers, { ok: false, error: 'The office or an admin does that.' });
     if (op === 'plan_week') return reply(200, headers, await S.planWeek({ week: body.week || 'next', replace: body.replace === true, by: who.name || who.email }));
     if (op === 'swap') return reply(200, headers, await S.swapPost(String(body.id || ''), String(body.type || ''), String(body.service || ''), who.email));
