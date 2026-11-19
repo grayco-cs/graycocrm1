@@ -105,7 +105,7 @@ try {
     drop: L.todoDrop({ src: 'tab', thing: 'ar|IVOLD', pid: 'POLD', title: 'Overdue invoice' }) }; });
   ok(kp.ar && kp.roll && kp.coll && kp.drop === false, 'money owed is always kept: an overdue invoice on an older job, the 30+ days roll-up, the collections call', kp);
   ok(!has(/Update progress: Older Job/) && !has(/Emergency — call now: Sample Old/) && !has(/demo board/) && !has(/Fix and resend/), 'not shown: the older job\'s, the old lead\'s, the old setup seed, the old "↩ Fix and resend"', td.titles);
-  ok(td.hidden.n >= 4, 'the count of what is not shown', td.hidden);
+  ok(td.hidden.n >= 3, 'the count of what is not shown (the old lead\'s, the setup seed, the Fix and resend; the older job\'s is PAPERS\')', td.hidden);
   const note = await sev(A, () => { window._setView('todo'); return new Promise(r => setTimeout(() => { const n = document.querySelector('.lw-old'); r(n ? n.innerText : ''); }, 2500)); });
   ok(/automatic To-Dos? about records from before 11\/19 (is|are) not shown/.test(note), 'the desk note says how many are not shown', note);
   await sev(A, () => window._gcLeadWatch.showOld(true)); await sleep(800);
