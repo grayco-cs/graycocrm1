@@ -204128,6 +204128,7 @@ try { console.log('[GC] 👁 Every left-menu tab can be turned off (patch TABVIS
 })();
 </script>
 <script id="gc-patch-perfclick-saves">
+function _gcSaveNoteDev(){ try { return /iPhone|iPod|Android.+Mobile/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer'; } catch (e) { return 'computer'; } }   /* owner 11/19: a phone says "phone" */
 /* patch PERFCLICK: the save note — what this computer still has to send to the cloud, in plain words. Reads the save
    queue (window._gcSyncQ.state / .waiting) every 1.5 s on the browser's own timer; draws only when the words change. */
 (function(){
@@ -204153,15 +204154,15 @@ function tick(){
   try {
     var q = W._gcSyncQ; if (!q || typeof q.state !== 'function') return;
     var lf = W.__gcLiveFail;   /* patch SCHEDQUIET: the live push could not send a list: say so (it retries on its own) */
-    if (lf && Date.now() - lf.at < 120000) { show('\u26a0 A save is kept on this computer \u2014 not sent yet, trying again' + (lf.why ? ' (' + lf.why + ')' : ''), 'warn'); prevWaiting = prevWaiting || 1; return; }
+    if (lf && Date.now() - lf.at < 120000) { show('\u26a0 A save is kept on this ' + _gcSaveNoteDev() + ' \u2014 not sent yet, trying again' + (lf.why ? ' (' + lf.why + ')' : ''), 'warn'); prevWaiting = prevWaiting || 1; return; }
     var st = q.state(), n = st.waiting || 0, now = Date.now();
     if (n > 0) {
       if (!prevWaiting) since = now;
       var tries = 0; try { (q.waiting() || []).forEach(function(w){ if ((w.tries || 0) > tries) tries = w.tries || 0; }); } catch (e) {}
       /* patch SAVEWHY: which list and the cloud's own answer */
       var why = ''; try { why = String(st.lastError || '').slice(0, 140); var wk = (q.waiting() || []).map(function(w){ return w.key; }).slice(0, 3).join(', '); if (!why && wk) why = wk; if (why && why !== W.__gcSaveWhyLast) { W.__gcSaveWhyLast = why; try { console.warn('[GC] save not sent yet: ' + why + ' (waiting: ' + wk + ')'); } catch (e2) {} } } catch (e) {}
-      if (tries >= 2 || (!navigator.onLine)) { show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this computer \u2014 not sent yet, trying again' + (why ? ' (' + why + ')' : ''), 'warn'); try { box().title = why; } catch (e) {} }
-      else if (now - since > 1200) show('\u2601 Saved on this computer \u2014 sending\u2026', 'info');
+      if (tries >= 2 || (!navigator.onLine)) { show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this ' + _gcSaveNoteDev() + ' \u2014 not sent yet, trying again' + (why ? ' (' + why + ')' : ''), 'warn'); try { box().title = why; } catch (e) {} }
+      else if (now - since > 1200) show('\u2601 Saved on this ' + _gcSaveNoteDev() + ' \u2014 sending\u2026', 'info');
       prevWaiting = n; return;
     }
     if (prevWaiting) { prevWaiting = 0; sentUntil = now + 2500; show('\u2601 Sent \u2713', 'ok'); return; }
@@ -249522,6 +249523,10 @@ try {
     'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
     'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
     'html.gc-pu-app #_gcMicBtn,html._fieldmode.gc-pu #_gcMicBtn{display:none!important}' +
+    'html.gc-pu-app [data-gc-appr-other]{background:#fff!important;border-color:#e2e8f0!important}html.gc-pu-app [data-gc-appr-other]>div>div:first-child{color:#0f172a!important}html.gc-pu-app [data-gc-appr-other]>div>div+div{color:#475569!important}' +
+    'html.gc-pu-app [data-gc-appr-total]{background:#f0fdf4!important;border-color:#bbf7d0!important;color:#166534!important}html.gc-pu-app [data-gc-appr-other-box]>div:first-child{color:#b45309!important}' +
+    'html.gc-pu-app [style*="background:#0a1628"]:not(button),html.gc-pu-app [style*="background: rgb(10, 22, 40)"]:not(button),html.gc-pu-app [style*="background:#0f2440"]:not(button),html.gc-pu-app [style*="background: rgb(15, 36, 64)"]:not(button){background:#fff!important;border-color:#e2e8f0!important}' +
+    'html.gc-pu-app [style*="background:#0a1628"] :not(button)[style*="color:#fff"],html.gc-pu-app [style*="background: rgb(15, 36, 64)"] :not(button)[style*="color:#fff"],html.gc-pu-app [style*="background: rgb(15, 36, 64)"] :not(button)[style*="color: rgb(255, 255, 255)"]{color:#0f172a!important}html.gc-pu-app [style*="background: rgb(15, 36, 64)"] [style*="color:#8fa8c4"]{color:#475569!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
