@@ -38,8 +38,7 @@ function leadsList(){
 }
 function invsList(){ var c = crm(); var a = arr(c.invoices); return a.length ? a : arr(c.invs); }
 function data(){
-  var MK = X.MK, sp = MK.all('spend');
-  try { if (typeof W._gcMoneyMkSpend === 'function') sp = W._gcMoneyMkSpend(sp); } catch (e) {}
+  var MK = X.MK, sp = MM.withExpenseSpend(MK.all('spend'), crm().expenses, X.M && X.M.normSource);   /* the same rule as the monthly e-mails */
   var fix = {}; MK.all('srcfix').forEach(function(r){ if (r.key && r.channel) fix[r.key] = r.channel; });
   return { leads: leadsList(), projects: arr(crm().projects), invs: invsList(), expenses: arr(crm().expenses), spend: sp, srcfix: fix, users: arr(crm().users),
     now: MM.ctDay(Date.now()), basis: basis(), normSource: X.M && X.M.normSource,

@@ -5,16 +5,17 @@ copies of imported jobs and unmarked / bad Google LSA leads left out and listed)
 close rate = won ÷ decided; revenue = contract value of won jobs (invoiced / paid switch); "no spend data" instead of $0 / ∞;
 a "?" with the source and formula on every number; 🏗 Bid invitations, 📍 Google LSA and 🧹 Left out cards; ⭐ Review tracker
 shows "—" for asked → received when nothing was asked.
-  tools/mktmath_core.js — the pure math (window.__gcMktMath; node: tools/tests/test_MKTMATH.mjs)
+  netlify/functions/_lib/mktmath.js — the pure math, ONE copy: window.__gcMktMath here, require()d by the server's monthly
+                          marketing e-mails (_lib/agency.js) — node: tools/tests/test_MKTMATH.mjs
   tools/mktmath_tail.js — the Dashboard view
 Idempotent. Usage: python3 tools/patch_MKTMATH.py [repo-root]"""
 import os, sys
 here = os.path.dirname(os.path.abspath(__file__))
 R = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(here)
 P = os.path.join(R, 'index.html')
-for tag, fn in [('mktmath-core', 'mktmath_core.js'), ('mktmath', 'mktmath_tail.js')]:
+for tag, fn in [('mktmath-core', os.path.join(R, 'netlify', 'functions', '_lib', 'mktmath.js')), ('mktmath', os.path.join(here, 'mktmath_tail.js'))]:
     TAG = '<script id="gc-patch-' + tag + '">'
-    js = open(os.path.join(here, fn), encoding='utf-8').read(); assert '</script' not in js.lower()
+    js = open(fn, encoding='utf-8').read(); assert '</script' not in js.lower()
     src = open(P, encoding='utf-8').read()
     if TAG in src:
         i = src.index(TAG) + len(TAG); j = src.index('</script>', i); src = src[:i] + '\n' + js + src[j:]

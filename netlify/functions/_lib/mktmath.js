@@ -1,4 +1,7 @@
-/* GrayCo marketing numbers, done right (patch MKTMATH, owner 11/19: "I need all this marketing profile to work. It's not doing
+/* netlify/functions/_lib/mktmath.js — ONE copy: the CRM's 📣 Marketing → 📊 Dashboard (pasted into index.html by
+   tools/patch_MKTMATH.py, window.__gcMktMath) and the server's monthly marketing e-mails (_lib/agency.js summary / monthTable,
+   used by the owner's report in _lib/mktfeat.js and the agency report) — so the e-mail and the Dashboard agree.
+   GrayCo marketing numbers, done right (patch MKTMATH, owner 11/19: "I need all this marketing profile to work. It's not doing
    the right math … I don't feel my data is right."). Pure functions, no network, no DOM: window.__gcMktMath in the CRM,
    module.exports in node (tools/tests/test_MKTMATH.mjs). Every figure says where it comes from (src) and how it is worked out
    (how); a figure that cannot be worked out is null with the reason (why), never 0 or Infinity.
@@ -283,7 +286,46 @@ function compute(D){
 
   var exByKind = {}; excluded.forEach(function(x){ (exByKind[x.kind] = exByKind[x.kind] || []).push(x); });
   return { now: now, thisMonth: tm, lastMonth: lm, months: months, from: from, basis: basis, channels: channels, totals: tot, bids: bids, lsa: lsa, other: other, tagged: Object.keys(tagged).map(function(k){ return tagged[k]; }),
-    spend: { any: anySpend, rows: spend }, excluded: exN, excludedList: exByKind, leads: leadsOut };
+    spend: { any: anySpend, rows: spend }, excluded: exN, excludedList: exByKind, leads: leadsOut, marketing: mk };
+}
+
+/* advertising charges in Expenses → spend lines (the Dashboard's rule, patch MONEY's mkSpend): one line per channel per month,
+   skipped where a hand-entered Ad spend line already covers that channel and month */
+var AD_RE = /facebk|facebook|meta ?ads|instagram|google ?ads|adwords|google \*ads|angi|homeadvisor|thumbtack|nextdoor|yelp|roof ?ignite|porch|modernize|networx|bark\.com|tiktok|linkedin ads|bing ads|microsoft ads|valpak|mailchimp|constant contact/;
+var AD_CH = [[/local services|\blsa\b/i, 'Google LSA'], [/facebk|facebook|\bmeta\b|instagram|\bfb\b/i, 'Facebook/Instagram Ads'], [/google ?\*? ?ads|adwords|google ads/i, 'Google Ads'], [/angi|homeadvisor/i, 'Angi/HomeAdvisor'],
+  [/thumbtack/i, 'Thumbtack'], [/nextdoor/i, 'Nextdoor'], [/roof ?ignite/i, 'Roof Ignite'], [/tiktok/i, 'TikTok'], [/porch/i, 'Porch'], [/modernize/i, 'Modernize'], [/networx/i, 'Networx'], [/bark\.com/i, 'Bark']];
+function withExpenseSpend(spend, expenses, norm){
+  var base = arr(spend).filter(function(x){ return !x.del; }), have = {};
+  base.forEach(function(x){ var ch = channelOf(x.channel, norm) || s(x.channel); have[ch + '|' + s(x.month || x.date).slice(0, 7)] = 1; });
+  var add = {};
+  arr(expenses).forEach(function(e){
+    if (deleted(e) || /reject|void/i.test(s(e.status))) return;
+    var vendor = s(e.vendor || e.payee || e.desc), isAd = /advertis|marketing|lead\s*gen|leads?\b/i.test(s(e.category)) || AD_RE.test(low(vendor));
+    if (!isAd) return;
+    var amt = num(e.amt != null ? e.amt : e.amount); if (!(amt > 0)) return;
+    var t = vendor + ' ' + s(e.desc), ch = ''; for (var i = 0; i < AD_CH.length; i++) if (AD_CH[i][0].test(t)) { ch = AD_CH[i][1]; break; }
+    ch = ch || channelOf(vendor, norm) || 'Other';
+    var mo = s(e.date).slice(0, 7); if (!/^\d{4}-\d{2}$/.test(mo) || have[ch + '|' + mo]) return;
+    var k = ch + '|' + mo; add[k] = add[k] || { channel: ch, month: mo, amount: 0, origin: 'expenses', note: 'from Expenses / card charges' }; add[k].amount = r2(add[k].amount + amt);
+  });
+  return base.concat(Object.keys(add).map(function(k){ return add[k]; }));
+}
+
+/* one month of a compute() result, for the monthly e-mails: the marketing leads that ARRIVED that month by source, how many
+   are won so far and their value, that month's spend, cost per lead / per job won (null + why without spend), and the bids */
+function monthTable(r, m){
+  var by = {};
+  function row(ch){ return by[ch] || (by[ch] = { channel: ch, leads: 0, won: 0, lost: 0, revenue: 0, spend: 0 }); }
+  arr(r && r.marketing).forEach(function(o){ if (o.month !== m) return; var x = row(o.channel); x.leads++; if (o.won) { x.won++; x.revenue += o.value; } else if (o.lost) x.lost++; });
+  arr(r && r.spend && r.spend.rows).forEach(function(x){ if (x.month === m) row(x.channel).spend += x.amount; });
+  function fin(x){ x.revenue = r2(x.revenue); x.spend = r2(x.spend);
+    x.cpl = x.spend && x.leads ? r2(x.spend / x.leads) : null; x.cplWhy = x.cpl != null ? '' : (x.spend ? 'spend but no leads' : 'no spend data');
+    x.costPerWon = x.spend && x.won ? r2(x.spend / x.won) : null; x.costPerWonWhy = x.costPerWon != null ? '' : (x.spend ? 'spend but no won jobs' : 'no spend data');
+    x.roas = x.spend && x.revenue ? r2(x.revenue / x.spend) : null; return x; }
+  var rows = Object.keys(by).map(function(k){ return fin(by[k]); }).sort(function(a, b){ var ia = CHANNEL_ORDER.indexOf(a.channel), ib = CHANNEL_ORDER.indexOf(b.channel); return (ia < 0 ? 90 : ia) - (ib < 0 ? 90 : ib) || (a.channel < b.channel ? -1 : 1); });
+  var t = fin(rows.reduce(function(a, x){ a.leads += x.leads; a.won += x.won; a.lost += x.lost; a.spend += x.spend; a.revenue += x.revenue; return a; }, { channel: 'Total', leads: 0, won: 0, lost: 0, spend: 0, revenue: 0 }));
+  var bids = arr(r && r.leads).filter(function(o){ return o.bid && o.month === m; }).length;
+  return { month: m, rows: rows, totals: t, bids: bids, basis: r ? r.basis : 'contract' };
 }
 
 /* reviews / referrers / newsletter — the same "no data yet" rules */
@@ -294,5 +336,5 @@ function reviews(list){
 }
 function pctOrNull(a, b){ return b ? Math.round(a / b * 100) : null; }
 
-return { compute: compute, reviews: reviews, pctOrNull: pctOrNull, channelOf: channelOf, isBidDefault: isBidDefault, bidPlatform: bidPlatform, testWhy: testWhy, isImportJob: isImportJob, isImportLead: isImportLead, ctDay: ctDay, monthAdd: monthAdd, CHANNEL_ORDER: CHANNEL_ORDER };
+return { compute: compute, monthTable: monthTable, withExpenseSpend: withExpenseSpend, reviews: reviews, pctOrNull: pctOrNull, channelOf: channelOf, isBidDefault: isBidDefault, bidPlatform: bidPlatform, testWhy: testWhy, isImportJob: isImportJob, isImportLead: isImportLead, ctDay: ctDay, monthAdd: monthAdd, CHANNEL_ORDER: CHANNEL_ORDER };
 });

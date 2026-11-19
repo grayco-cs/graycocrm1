@@ -1,5 +1,5 @@
 // test_MKTMATH.mjs <build-dir> — patch MKTMATH: 📣 Marketing → 📊 Dashboard numbers (owner 11/19: "It's not doing the right math").
-//   A. node: tools/mktmath_core.js on made-up data asserts every formula — what is a marketing lead (bids, tests, merged,
+//   A. node: netlify/functions/_lib/mktmath.js (the one copy: the Dashboard and the monthly e-mails) on made-up data asserts every formula — what is a marketing lead (bids, tests, merged,
 //      deleted, cleaned-up, imported copies, LSA bad / not marked left out), the arrival day in Memphis time, close rate =
 //      won ÷ decided, revenue by contract / invoiced / paid, cost per lead / per job only with spend ("no spend data" otherwise),
 //      LSA good / bad / waiting + cost per good lead, bids by platform, imported duplicates, won work outside marketing.
@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const build = path.resolve(process.argv[2] || '.');
 const PARTS = process.env.PARTS || 'A,B';
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 700) : '')); } };
-const MM = require(path.join(build, 'tools/mktmath_core.js'));
+const MM = require(path.join(build, 'netlify/functions/_lib/mktmath.js'));
 
 /* ── the made-up data, dated around the current month (Memphis) ── */
 const NOW = MM.ctDay(Date.now()), TM = NOW.slice(0, 7), LM = MM.monthAdd(TM, -1), M3 = MM.monthAdd(TM, -3), OLD = MM.monthAdd(TM, -14);
@@ -96,8 +96,15 @@ if (PARTS.includes('A')) {
   ok(c2('Referral').costPerJob === 100 && c2('Referral').roas === 200 && c2('Referral').roi === 19900, 'cost per job won = 100 ÷ 1; revenue ÷ spend = 20,000 ÷ 100 = 200×', c2('Referral'));
   ok(c2('Nextdoor').cpl === null && c2('Nextdoor').cplWhy === 'spend but no leads', 'spend with no leads: "spend but no leads", not Infinity', c2('Nextdoor'));
   ok(s2.totals.cplThisMonth === Math.round(550 / 3 * 100) / 100, 'all marketing, this month: 550 ÷ 3 leads', s2.totals.cplThisMonth);
-  const html = fs.readFileSync(path.join(build, 'index.html'), 'utf8'), core = fs.readFileSync(path.join(build, 'tools/mktmath_core.js'), 'utf8'), tail = fs.readFileSync(path.join(build, 'tools/mktmath_tail.js'), 'utf8');
-  ok(html.includes('<script id="gc-patch-mktmath-core">\n' + core + '</script>') && html.includes('<script id="gc-patch-mktmath">\n' + tail + '</script>'), 'index.html carries the same core and Dashboard blocks as tools/');
+  const html = fs.readFileSync(path.join(build, 'index.html'), 'utf8'), core = fs.readFileSync(path.join(build, 'netlify/functions/_lib/mktmath.js'), 'utf8'), tail = fs.readFileSync(path.join(build, 'tools/mktmath_tail.js'), 'utf8');
+  ok(html.includes('<script id="gc-patch-mktmath-core">\n' + core + '</script>') && html.includes('<script id="gc-patch-mktmath">\n' + tail + '</script>'), 'index.html carries the same core (netlify/functions/_lib/mktmath.js) and Dashboard block (tools/mktmath_tail.js)');
+  const ag = fs.readFileSync(path.join(build, 'netlify/functions/_lib/agency.js'), 'utf8');
+  ok(/require\('\.\/mktmath\.js'\)/.test(ag) && /MM\(\)\.monthTable\(sum\.math, m\)/.test(ag) && /MM\(\)\.compute\(/.test(ag), 'the monthly e-mails (agency.js summary / monthTable) use the same module, not a copy');
+  const mtT = MM.monthTable(s2, TM), mtL = MM.monthTable(r, LM), mw = mtT.rows.find(x => x.channel === 'Website');
+  ok(mtT.totals.leads === 3 && mtT.totals.spend === 550 && mtT.totals.cpl === Math.round(550 / 3 * 100) / 100 && mw && mw.cpl === 200 && mtT.bids === 1, 'monthly e-mail table, this month: 3 marketing leads, $550 spend, Website $200 per lead, 1 bid counted apart', mtT);
+  ok(mtL.totals.leads === 2 && mtL.totals.won === 1 && mtL.totals.revenue === 20000 && mtL.totals.cpl === null && mtL.totals.cplWhy === 'no spend data' && mtL.bids === 2, 'last month, no spend: 2 leads, 1 won $20,000, cost per lead "no spend data", 2 bids apart', mtL);
+  const ws = MM.withExpenseSpend([{ channel: 'Google Ads', month: TM, amount: 100 }], [{ vendor: 'GOOGLE *ADS123', amt: 80, date: TM + '-03' }, { vendor: 'FACEBK ADS', amt: 40, date: LM + '-03' }, { vendor: 'Home Depot', amt: 500, date: TM + '-03' }, { vendor: 'Google LSA local services', category: 'Advertising', amt: 60, date: TM + '-04' }]);
+  ok(ws.length === 3 && ws.some(x => x.channel === 'Facebook/Instagram Ads' && x.amount === 40 && x.origin === 'expenses') && ws.some(x => x.channel === 'Google LSA' && x.amount === 60) && !ws.some(x => x.origin === 'expenses' && x.channel === 'Google Ads'), 'spend from Expenses: ad charges added (LSA its own channel), skipped where a hand-entered line covers the month, Home Depot not an ad', ws);
   const rv = MM.reviews([{ id: 'a', rating: 5, source: 'Google' }, { id: 'b', rating: 4, source: 'added by Wesley' }, { id: 'c', del: true, rating: 1 }]), r0 = MM.reviews([]);
   ok(rv.n === 2 && rv.google === 1 && rv.avg === 4.5 && r0.avg === null && r0.avgWhy === 'no reviews in the CRM yet', 'reviews: count, from Google vs by hand, average; none → "no reviews in the CRM yet"', [rv, r0]);
 }
