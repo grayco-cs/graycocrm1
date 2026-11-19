@@ -228456,7 +228456,7 @@ function bodyHtml(){
   var h = '<div class="hd"><h2>🏗️ Permitted jobs</h2><span class="mut">Building permits that look like GrayCo work · Nashville / Davidson Co. (free, every morning) · nobody is alerted</span><span class="sp"></span>'
     + '<button type="button" class="pm" data-pj-a="run">↻ Run now</button>' + (shOn() && canEdit() ? '<button type="button" class="pm" data-pj-a="shovels">🔌 Shovels…</button>' : '') + (canEdit() ? '<button type="button" class="pm" data-pj-a="import">📥 Import a permit list (Excel/CSV)</button><button type="button" class="pm" data-pj-a="filters">⚙ Filters</button>' : '') + '</div>';
   h += '<div class="stat">' + srcLine('Nashville / Davidson Co. (free)', st.nashville, 'nashville') + srcLine('Memphis / Shelby Co. (Develop 901, free)', st.memphis, 'memphis') + srcLine('Little Rock (city file, free)', st.littlerock, 'littlerock') + srcLine('Collierville (planning, free)', st.collierville, 'collierville') + (shOn() ? srcLine('Shovels', st.shovels, 'shovels') : '') + '</div>';   /* patch PERMITS3 */
-  if (!shOn()) h += '<div class="mut" data-pj-more="1" style="margin:-4px 0 8px">More areas: DeSoto, Jonesboro, Bartlett and the other counties have no free permit feed — available later through ⚙ Admin settings → Integrations (Shovels). Areas: 🔧 Owner setup → 🏗️ Permit areas.</div>';
+  if (!shOn()) h += '<div class="mut" data-pj-more="1" style="margin:-4px 0 8px">More areas: DeSoto, Jonesboro, Bartlett and the other counties have no free permit feed — available later through ⚙ Admin settings → Integrations. Areas: 🔧 Owner setup → 🏗️ Permit areas.</div>';
   if (S.err) h += '<div class="err">' + esc(S.err) + '</div>';
   if (S.setOpen) h += settingsHtml();
   var jobs = shown(), cos = companies();

@@ -1,5 +1,6 @@
 // netlify/functions/permit-records-scheduled.js — patch PERMITS2 (netlify.toml, daily ~8:41 AM Central in winter / 9:41 in summer):
-//   · Mondays: the weekly 🏢 Office To-Do "Download new Shelby County permits from Develop 901 … import them" (once a week);
+//   · Mondays: the weekly 🏢 Office To-Do "Download new Shelby County permits from Develop 901 … import them" (once a week) —
+//     patch PERMITS3: only when Develop 901's public feed (read daily by permit-watch.js) is off, failing or stale;
 //   · the 1st–10th: the MSCCE public-records request for last month's permit list — only when it is switched on and has an
 //     address (Owner setup → MSCCE permit list request; OFF by default). Once a month.
 // Nothing here answers the web. PERMITS_OFF=1 stops it. (_lib/permit-records.js)
