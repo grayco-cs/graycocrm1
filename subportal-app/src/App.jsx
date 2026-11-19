@@ -2186,7 +2186,8 @@ async function refreshPo(setJobs, ids) {
 }
 function poNote(t, job) {
   const info = job._po || {}, src = job.poSource || info.source;
-  if (src === 'crm') return t.poFromCrm + (job.crmProjectName ? ' · ' + job.crmProjectName : '') + (info.how && t.poHow && t.poHow[info.how] ? ' (' + t.poHow[info.how] + ')' : '');
+  const nm = String(job.crmProjectName || '').replace(job.poNumber ? job.poNumber + ' · ' : /^$/, '');   /* the label is "PO · name" — the PO is already in the box */
+  if (src === 'crm') return t.poFromCrm + (nm ? ' · ' + nm : '') + (info.how && t.poHow && t.poHow[info.how] ? ' (' + t.poHow[info.how] + ')' : '');
   if (src === 'assigned') return t.poAssigned;
   if (src === 'bid-site') return t.poBidSite;
   return job.poNumber ? t.poFromCrm : t.poPending;
