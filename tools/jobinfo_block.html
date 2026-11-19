@@ -385,6 +385,7 @@ function saveInfo(p, box){
 }
 function bindInfo(o, pid){
   var box = o.querySelector('.gcji-form'); if (!box) return;
+  ['input', 'change'].forEach(function(t){ box.addEventListener(t, function(){ var e2 = box.querySelector('[data-ji-err][data-ji-ok]'); if (e2) { e2.textContent = ''; e2.removeAttribute('data-ji-ok'); } }); });   /* patch BTNFIX: "✓ Saved" goes once something is changed again */
   box.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-ji-a],[data-ji-st],[data-ji-copy]'); if (!b || !box.contains(b)) return;
     var p = proj(pid); if (!p) return;
@@ -409,9 +410,12 @@ function bindInfo(o, pid){
       var er = box.querySelector('[data-ji-err]'); b.disabled = true; b.textContent = 'Saving…';
       saveInfo(p, box).then(function(r){
         b.disabled = false; b.textContent = '💾 Save job info';
-        if (!r.ok) { if (er) er.textContent = r.why; toast(r.why); return; }
-        if (er) er.textContent = '';
-        toast(r.none ? 'Nothing changed.' : '✓ Saved — the office sees it on the desk.');
+        if (!r.ok) { if (er) { er.textContent = r.why; er.removeAttribute('data-ji-ok'); } toast(r.why); return; }
+        /* patch BTNFIX: the answer also shows right above the button (a note at the bottom can sit behind other bars); with no
+           change it still says Saved — what is on the page is what the office has */
+        var okT = r.none ? '✓ Saved — nothing had changed.' : '✓ Saved — the office sees it on the desk.';
+        if (er) { er.textContent = okT; er.setAttribute('data-ji-ok', '1'); }
+        toast(okT);
         later(function(){ var q = proj(pid); if (!q || !D.body.contains(o)) return; var hd = o.querySelector('.gcji-hd b'); if (hd) hd.textContent = 'Job info · ' + s(q.name); var lk = box.querySelector('[data-ji-linked]'); var c = custOf(q); if (lk && c) lk.textContent = '🔗 Linked to the customer record "' + s(c.name) + '"'; try { paintCard(pid); } catch (x) {} }, 700);
       });
     }
@@ -778,7 +782,7 @@ function css(){
     '.gcji-cur{font-size:20px;font-weight:800;margin-bottom:8px}.gcji-ok{color:#166534;font-weight:800;margin:4px 0 10px}',
     '.gcji-chips{display:flex;flex-wrap:wrap;gap:6px}.gcji-chips button{min-height:40px;padding:6px 12px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#111827;font:700 13.5px Inter,sans-serif;cursor:pointer}.gcji-chips button.on{background:#111827;border-color:#111827;color:#fff}',
     '.gcji-note{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:14px}',
-    '.gcji-hint{color:#6b7280;font-size:12.5px;margin:4px 0 10px}.gcji-err{color:#b91c1c;font-weight:700;font-size:14px;min-height:0}.gcji-mut{color:#6b7280;font-size:13px}',
+    '.gcji-hint{color:#6b7280;font-size:12.5px;margin:4px 0 10px}.gcji-err{color:#b91c1c;font-weight:700;font-size:14px;min-height:0}.gcji-err[data-ji-ok]{color:#166534}.gcji-mut{color:#6b7280;font-size:13px}',
     '.gcji-link-st{font-size:13px;color:#374151;background:#f8fafc;border-radius:10px;padding:8px 10px}',
     '.gcji-sec{font-size:12.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#374151;margin:16px 0 8px}.gcji-sec small{text-transform:none;letter-spacing:0;font-weight:500;color:#6b7280;margin-left:4px}',
     '.gcji-ev{display:flex;gap:10px;align-items:center;width:100%;box-sizing:border-box;min-height:56px;margin:0 0 8px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#111827;text-align:left;font:600 14px Inter,sans-serif;cursor:pointer}',

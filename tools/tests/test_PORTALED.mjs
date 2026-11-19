@@ -223,7 +223,7 @@ try {
   console.log('2. a job with no portal');
   const n0 = CALLS.length;
   await custBtn(A, 'PNOPORT');
-  const mk = await A.ev(() => { const o = document.getElementById('gcpe'); return o ? { pid: o.getAttribute('data-pid'), make: !!o.querySelector('[data-pe="make"]'), cust: o.querySelector('[data-m="cust"]').disabled } : null; });
+  const mk = await A.ev(() => { const o = document.getElementById('gcpe'); return o ? { pid: o.getAttribute('data-pid'), make: !!o.querySelector('[data-pe="make"]'), cust: (b => b.disabled || b.getAttribute('aria-disabled') === 'true')(o.querySelector('[data-m="cust"]')) } : null; });   /* BTNFIX: off = aria-disabled (it stays tappable and says why) */
   ok(mk && mk.pid === 'PNOPORT' && mk.make && mk.cust, 'no portal → the "🏠 Make the portal" prompt (Customer view is off)', mk);
   await tap(A, '#gcpe [data-pe="make"]');
   const mtx = await A.ev(() => (document.querySelector('#gcpe [data-pe-makeok]') || {}).innerText || '');

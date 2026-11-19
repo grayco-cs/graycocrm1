@@ -178,7 +178,7 @@ function css(){
     '#gcpe .pe-seg{flex:0 0 auto;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px;background:#0F1D2F}',
     '#gcpe .pe-seg button{min-height:44px;border-radius:10px;border:1px solid #2B4466;background:transparent;color:#C9D3DF;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer}',
     '#gcpe .pe-seg button[aria-pressed="true"]{background:#D4A017;border-color:#D4A017;color:#0F1D2F}',
-    '#gcpe .pe-seg button:disabled{opacity:.45}',
+    '#gcpe .pe-seg button:disabled,#gcpe .pe-seg button[aria-disabled="true"]{opacity:.45}',
     '#gcpe .pe-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 10px calc(28px + env(safe-area-inset-bottom,0px))}',
     '#gcpe .pe-frame{flex:1 1 auto;border:0;width:100%;background:#fff}',
     '#gcpe .pe-card{background:#fff;border:1px solid #E2DCCD;border-radius:14px;padding:12px;margin:0 0 10px}',
@@ -303,7 +303,8 @@ function head(){
   o.querySelector('.pe-tt b').textContent = '👤 ' + (s(p.client) ? s(p.client) + '’s portal' : 'Customer portal');
   o.querySelector('.pe-tt small').textContent = [s(p.name), s(p.autoPO || p.po)].filter(Boolean).join(' · ');
   var has = !!linkOf(p);
-  Array.prototype.forEach.call(o.querySelectorAll('[data-pe="mode"]'), function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-m') === CUR.mode ? 'true' : 'false'); if (b.getAttribute('data-m') === 'cust') b.disabled = !has; });
+  /* patch BTNFIX: with no portal yet 👁 Customer view stays tappable (it says why there is nothing to see) — a disabled button was dead */
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pe="mode"]'), function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-m') === CUR.mode ? 'true' : 'false'); if (b.getAttribute('data-m') === 'cust') { b.disabled = false; if (has) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true'); } });
 }
 function paint(){
   var o = ov(), p = proj(CUR.pid); if (!o || !p) return;
@@ -527,7 +528,15 @@ function onClick(e){
   var a = b.getAttribute('data-pe'), pid = CUR.pid, p = proj(pid); if (!p) return;
   var who = first(p.client) || 'the customer';
   if (a === 'close') { close(); return; }
-  if (a === 'mode') { CUR.mode = b.getAttribute('data-m'); if (CUR.mode === 'cust') CUR.frameT = Date.now(); paint(); return; }
+  if (a === 'mode') {
+    if (b.getAttribute('data-m') === 'cust' && !linkOf(proj(CUR.pid))) {   /* patch BTNFIX: no portal yet — say so, next to 🏠 Make the portal */
+      var mk = body() && body().querySelector('[data-pe-make]'), nt = mk && mk.querySelector('[data-pe-nocust]');
+      if (mk && !nt) { nt = D.createElement('p'); nt.className = 'pe-sub'; nt.setAttribute('data-pe-nocust', '1'); nt.setAttribute('role', 'status'); nt.style.cssText = 'font-weight:800;color:#b45309'; mk.insertBefore(nt, mk.firstChild); }
+      var why = proj(CUR.pid) && proj(CUR.pid).portalOff ? '👁 There is nothing for the customer to see: the portal link is turned off for this job.' : '👁 The customer sees nothing yet — this job has no portal. 🏠 Make the portal first, then 👁 Customer view shows it as they see it.';
+      if (nt) nt.textContent = why; else toast(why, true);
+      return;
+    }
+    CUR.mode = b.getAttribute('data-m'); if (CUR.mode === 'cust') CUR.frameT = Date.now(); paint(); return; }
   if (a === 'view') { CUR.mode = 'cust'; CUR.frameT = Date.now(); paint(); return; }
   if (a === 'make') { var c0 = b.closest('.pe-make'); if (c0 && !c0.querySelector('[data-pe-makeok]')) c0.insertAdjacentHTML('beforeend', makeConfirmHtml(p)); return; }
   if (a === 'make-no') { var x0 = b.closest('[data-pe-makeok]'); if (x0) x0.remove(); return; }
