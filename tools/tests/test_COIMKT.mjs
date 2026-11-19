@@ -136,6 +136,7 @@ try {
   st = await coiState(ad);
   ok(st.q.length === 2 && st.rows.length === 2, '"Not now" leaves the item waiting', st);
   /* the sub list reached the cloud with the file marked read: another computer does not list it */
+  const cloudRead0 = v => { if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } const sb = (v || []).find(x => x && x.id === 'S1'); const f = sb && (sb.files || []).find(z => z.ref === REF_A); return !!(f && f.aiRead); };
   const cloudRead = k => { let v = H.cget(k); if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } const sb = (v || []).find(x => x && x.id === 'S1'); const f = sb && (sb.files || []).find(z => z.ref === REF_A); return !!(f && f.aiRead); };
   const cloudOk = await (async () => { for (let i = 0; i < 60; i++) { if (cloudRead('vendors')) return true; await sleep(500); } return false; })();
   console.log('    cloud: vendors ' + cloudRead('vendors') + ', subs ' + cloudRead('subs') + '; writes ' + JSON.stringify(H.writes.filter(w => w.key === 'vendors' || w.key === 'subs').map(w => w.key)));
@@ -191,6 +192,7 @@ try {
 
   /* ══ D. a PM ══ */
   console.log('D. a PM on a computer');
+  const w0 = H.writes.length;
   const pm = await launch('PM', PM);
   await H.waitFor(pm, () => !!window._gcAUTAI && !!window._gcCoiAppr, null, 30000);
   await sleep(17000);
@@ -201,6 +203,11 @@ try {
   ok(pmM && !pmM.gql && !pmM.can, 'PM: Marketing has no Google quick links strip', pmM);
   ok(!pm.errs.length, 'no page errors (PM)', pm.errs.slice(0, 5));
   await pm.close();
+  /* a PM's computer re-saves the sub list it folded from subs + vendors (stamped new): the union merge keeps the read mark */
+  const pmW = H.writes.slice(w0).filter(w => w.key === 'vendors' || w.key === 'subs');
+  const lost = pmW.filter(w => w.key === 'vendors' && !w.same && !cloudRead0(w.value));
+  console.log('    PM sub-list writes: ' + JSON.stringify(pmW.map(w => w.key + (w.same ? '=' : '*') + (cloudRead0(w.value) ? 'R' : '-'))));
+  ok(!lost.length && cloudRead('vendors'), 'the PM\'s computer does not take the read mark off the confirmed COI in the cloud (vendors / subs)', pmW.map(w => w.key));
 
   /* ══ E. the Marketing Manager ══ */
   console.log('E. the Marketing Manager (Malcolm\'s role) on a computer');

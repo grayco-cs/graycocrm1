@@ -108,6 +108,44 @@ function watch(){
   wrapSet();
   try { var n = items().map(function(x){ return x.id + (x.pending ? 'p' : 'r'); }).join('|'); if (n !== sig) { sig = n; fresh(); } } catch (e) { warn(e); }
 }
+/* ── 3. a confirmed COI / W-9 stays confirmed through every sync merge. The union merge keeps the newer copy of a sub whole: a
+   computer that never confirmed anything (a PM opening the CRM re-saves the sub list it folded from `subs` + `vendors`, freshly
+   stamped) pushed its copy without the file's read mark over the cloud's, and the item came back on every computer. Here, when
+   two copies of a sub meet (subs / vendors), a file either copy marks read (r36q) keeps that mark in the merged copy. ── */
+function fileKey(f){ return f && typeof f === 'object' ? (s(f.ref) || s(f.data).slice(0, 200) || ('n:' + low(f.name))) : ''; }
+function readMarks(lists){
+  var m = {};
+  lists.forEach(function(l){ arr(l).forEach(function(r){
+    if (!r || typeof r !== 'object' || r.id == null) return;
+    arr(r.files).forEach(function(f){ var k = fileKey(f); if (k && f.aiRead) { var id = s(r.id); (m[id] = m[id] || {})[k] = f; } });
+  }); });
+  return m;
+}
+function keepRead(out, marks){
+  if (!Array.isArray(out)) return out;
+  var res = null;
+  for (var i = 0; i < out.length; i++) {
+    var r = out[i]; if (!r || typeof r !== 'object' || r.id == null) continue;
+    var mk = marks[s(r.id)]; if (!mk || !Array.isArray(r.files)) continue;
+    var ch = false, files = r.files.map(function(f){ var k = fileKey(f), g = k && mk[k]; if (!g || !f || f.aiRead) return f; ch = true; return Object.assign({}, f, { aiRead: g.aiRead, readBy: g.readBy, readAt: g.readAt }); });
+    if (ch) { res = res || out.slice(); res[i] = Object.assign({}, r, { files: files }); }
+  }
+  return res || out;
+}
+var SUBKEYS = { subs: 1, vendors: 1 };
+function wrapUnion(){
+  var f = W._gcUnionMerge; if (typeof f !== 'function' || f.__gcCoiRead) return;
+  var w = function(key, a, b){
+    var out = f.apply(this, arguments);
+    if (!SUBKEYS[key]) return out;
+    try { return keepRead(out, readMarks([a, b])); } catch (e) { warn(e); return out; }
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcCoiRead = true; W._gcUnionMerge = w;
+}
+wrapUnion(); SI.call(W, wrapUnion, 3000);
+W._gcCoiKeepRead = function(list, others){ return keepRead(list, readMarks([list].concat(arr(others)))); };
+
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 wrapSet(); SI.call(W, watch, 2000);
 D.addEventListener('gc:subdocs-changed', function(){ later(watch, 50); });
