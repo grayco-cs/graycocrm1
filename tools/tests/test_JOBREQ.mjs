@@ -153,11 +153,11 @@ await B.close();
 const C = await computer('wjohnson@grayco-cs.com', { build: BUILD });
 await signIn(C, 'wjohnson@grayco-cs.com', 20000);
 ok('C0 the admin\'s computer is up', !!await waitOn(C, () => window._gcJobReq && window._gcEpaHud && (window._crm.projects || []).length >= 3 && (window._crm.projects.find(p => p.id === 'PJ').jobDocs || {}).extra, null, 60000));
-const ovk = await C.ev(d => window._gcJobReq.add('POV', { kind: 'fill', label: 'Roof deck inspection photos', note: 'photos of the deck before dry-in', party: 'pm', act: 'fill', due: 'date', dueDate: d, why: 'insurance asks' }).k, day(-3));
+const ovk = await C.ev(d => window._gcJobReq.add('POV', { kind: 'fill', label: 'Roof deck inspection photos', note: 'photos of the deck before dry-in', party: 'pm', act: 'fill', due: 'date', dueDate: d, why: 'insurance asks' }).k, day(-7));   /* PAPERS: 7 calendar days = 5 business days → the office (and the admins) */
 await sleep(1200);
 await C.ev(() => window._gcEpaHud.sweep());
 const tk = await waitOn(C, k => { const l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); const a = l.find(t => t.id === 'EPAHUD_POV_' + k), b = l.find(t => t.id === 'EPAHUD_ESC_POV_' + k); return a && b && { a, b }; }, ovk, 10000);
-ok('C1 overdue → a To-Do for the job\'s PM (OVERDUE) and, 3 days late, the office + admins (high)', tk && tk.a.assignee === 'Demo PM' && /OVERDUE/.test(tk.a.label) && /Roof deck inspection photos/.test(tk.a.label) && tk.b.assignee === 'Office' && tk.b.prio === 'high' && /3 days late/.test(tk.b.label), tk);
+ok('C1 past its date → a To-Do for the job\'s PM ("suggested by … not sent yet") and, 5 business days later, the office (+ admins) (PAPERS)', tk && tk.a.assignee === 'Demo PM' && /(OVERDUE|suggested by .* not sent yet)/.test(tk.a.label) && /Roof deck inspection photos/.test(tk.a.label) && tk.b.assignee === 'Office' && /(days late|business days)/.test(tk.b.label), tk);
 await C.ev(() => { if (window._navToJob) window._navToJob('PJ'); });
 await waitOn(C, () => { const c = document.getElementById('gc-jd'); return c && c.getAttribute('data-pid') === 'PJ'; }, null, 15000) || await C.ev(() => { window._gcOpenProject = { id: 'PJ' }; });
 await waitOn(C, k => document.querySelector('#gc-jd [data-jk="' + k + '"] [data-jd="xrm"]'), up.k, 15000);
