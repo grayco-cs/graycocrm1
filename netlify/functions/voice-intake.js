@@ -286,3 +286,4 @@ exports.handler = async function(event){
   } catch (e) { return J(500, { ok: false, error: 'The voice note hit a problem: ' + clip(e && e.message || e, 120) }, cors); }
 };
 exports._test = { route: route, normalize: normalize, fuzzyJob: fuzzyJob, inbound: inbound, svixOk: svixOk, transcriber: transcriber };
+exports._transcribe = transcribe; exports._transcriber = transcriber;   /* LSAREC: call recordings / voicemails are transcribed the same way (_lib/lsarec.js) */

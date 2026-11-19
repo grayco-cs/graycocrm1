@@ -574,7 +574,8 @@ async function leads(list, raw, isEm){
     if (lsaL || (!em && !only && !bidLike(r, x))) {   /* LSATEXT: owner 11/10 — Google LSA leads to Wesley's and Nick's cells; they text back GOOD or BAD */
       const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
-      const lt = (more, g) => { const head = (em ? '🚨 ' : '') + 'GrayCo: ' + label + ' ' + code + (more ? ' (+' + more + ' more)' : '') + ' from ' + (callPh.length === 10 ? tidy(callPh) + ' ' : '') + clip(name, 40),
+      const det = lsaL ? lsaDetails(r, x) : '';   /* LSAREC: Google's call length + job type (Google Ads API), when known */
+      const lt = (more, g) => { const head = (em ? '🚨 ' : '') + 'GrayCo: ' + label + ' ' + code + (more ? ' (+' + more + ' more)' : '') + ' from ' + (callPh.length === 10 ? tidy(callPh) + ' ' : '') + clip(name, 40) + det,
           tail = lsaHint(code) + ((!g || g.newbie !== false) ? lsaHowto(code) : ''),   /* HOWTO (owner 11/10): the how-to only in a person's first month · LEADTXT: the short GOOD / BAD + code hint always */ said = s(msg).replace(/\s+/g, ' '), room = MAX - head.length - tail.length - link.length - 10;
         const callNote = /call to the office/.test(label) ? (callPh.length === 10 ? ' Missed it? Call them back from your cell.' : ' Google did not send the number: open the LSA app → Leads to call back.') : '';   /* LSACALL (owner 11/10) */   /* LSACALL2 */
         return head + (said && !callNote && room > 12 ? ' says "' + clip(said, room) + '".' : '.') + callNote + ' ' + link + tail; };   /* LEADLINK */
@@ -607,6 +608,9 @@ async function leads(list, raw, isEm){
 const LSA_MS = 72 * 3600 * 1000;
 const HOWTO_MS = 30 * 864e5;   /* HOWTO: the reply how-to shows for a person's first 30 days of lead texts */
 const LSA_LEADS_URL = 'https://ads.google.com/localservices/leads';   /* LSALINK: Google's LSA leads page (dispute a lead there) */
+/* LSAREC: " (2m 14s call, Roofer — roof repair)" from the Google LSA details on the lead; '' when none */
+function lsaDetails(r, x){ const ex = Object.assign({}, obj(obj(x).leadExtra), obj(obj(r).leadExtra)), sec = Math.round(+ex.lsaDurSec || 0), job = clip(s(ex.lsaJob), 34);
+  const d = sec ? (sec < 60 ? sec + 's' : Math.floor(sec / 60) + 'm ' + String(sec % 60).padStart(2, '0') + 's') + ' call' : ''; const p = [d, job].filter(Boolean); return p.length ? ' (' + p.join(', ') + ')' : ''; }
 function isLsaLead(r, x){ const it = Object.assign({}, r || {}, x || {}), ex = obj(it.leadExtra); return it.lsaCheck === 'pending' || ex.lsaCheck === 'pending' || /google\s*lsa|local\s*services/i.test([it.source, it.leadSource, ex.leadSource].map(s).join(' ')); }
 function lsaCode(id){ const h = require('crypto').createHash('sha256').update(s(id)).digest('hex'), A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 4; i++) c += A[parseInt(h.slice(i * 2, i * 2 + 2), 16) % A.length]; return c; }
 function lsaAdmins(){ return (env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(Boolean); }
