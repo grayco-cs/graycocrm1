@@ -16,6 +16,7 @@ function order(list, now){
   if (!AO) return list;
   return AO.sort(list.map(function(it){ return Object.assign({}, it.raw || {}, { __it: it }); }), now).map(function(x){ const it = x.__it; it.tier = AO.tierOf(x, now).label; return it; });
 }
+function pingsOn(){ return s(process.env.APPR_PING_OFF) !== '1'; }   /* APPRONCE */
 function line(it){ return '<li style="margin:4px 0">' + (it.tier ? '<span style="font-size:12px">' + esc(it.tier) + '</span> ' : '') + '<a href="' + esc(it.link) + '" style="color:#0F1D2F;font-weight:bold">' + esc(clip(it.title, 140)) + '</a>' + (it.sub ? ' <span style="color:#55626F">— ' + esc(it.sub) + '</span>' : '') + '</li>'; }
 /* patch SUBPHOTOS: who has what waiting (the digest's own rule) — also used by the 12 PM reminder (_lib/appr-noon.js) */
 async function collect(now){
@@ -92,8 +93,11 @@ async function run(opts){
       (list.length > MAX ? '<p>+' + (list.length - MAX) + ' more in the CRM.</p>' : '') +
       '<p style="font-size:13px;color:#55626F">Routine ones (payment reminders, appointment reminders, waiver requests to known subs) can be approved together in the CRM: ✅ Approvals → <b>Approve all routine</b>.</p>' +
       '<p><a href="' + esc(base + '/#todo') + '">Open my approvals</a></p>');
-    let tx = 0; try { const c = await require('./smsalert.js').approvals(email, list.length); tx = c.sent || 0; rep.texted = (rep.texted || 0) + tx; } catch (e) {}   /* patch SMSALERT: one text a day at most */
-    if (tx) continue;   /* TEXTFIRST (owner 11/10: "one or the other … text, not e-mails"): texted → no e-mail / push too */
+    /* APPRONCE (owner 11/19: "I don't need 3 reminders"): while the 5-minute approval pings are on, the morning reminder is their ONE 8 AM
+       "Still waiting on you" text (_lib/apprping.js) — this digest no longer texts; someone who gets texts gets nothing more from it */
+    if (pingsOn()) { let tb = false; try { tb = await require('./smsalert.js').textable(email); } catch (e) { tb = false; } if (tb) { rep.leftToPing = (rep.leftToPing || 0) + 1; continue; } }
+    else { let tx = 0; try { const c = await require('./smsalert.js').approvals(email, list.length); tx = c.sent || 0; rep.texted = (rep.texted || 0) + tx; } catch (e) {}   /* patch SMSALERT: one text a day at most */
+      if (tx) continue; }   /* TEXTFIRST (owner 11/10: "one or the other … text, not e-mails"): texted → no e-mail / push too */
     const m = await A.staffMail(email, subject, html, { now: now }); if (m.ok) rep.mailed++;   /* QUIET: the run's clock */
     try { const p = await C.pushTo([email], { title: subject.replace(' — GrayCo CRM', ''), body: list.slice(0, 3).map(function(x){ return clip(x.title, 60); }).join(' · '), tag: 'gc-digest' }); rep.pushed += p.sent || 0; } catch (e) {}
   }
