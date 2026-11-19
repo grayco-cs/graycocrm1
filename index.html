@@ -133267,6 +133267,7 @@ function fromItem(it, prev){
   l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
   l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin); if (it.envScope) { l.envScope = true; l.envWords = arr(it.envWords).slice(0, 8); }   /* patch LEADBOTH: the server's ☢️ tag (asbestos / lead / mold) */ if (window._gcBidMerge) { try { window._gcBidMerge.fromItem(l, it, prev); } catch (e) {} }   /* patch BIDMERGE */
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
+  if (it.planRoom || it.questionsDue || it.preBidLocation) { try { if (window._gcPlanRoom) window._gcPlanRoom.fromItem(l, it, prev); } catch (e) {} }   /* patch PLANROOM: the server's 📐 plan room details → leadExtra.planRoom, the pre-bid place / mandatory, questions due */
   if (it.hold && window._gcLeadHold) { try { window._gcLeadHold.fromItem(l, it, fresh); } catch (e) {} }   /* patch LEADHOLD: the server's hold / its 5 PM release */
   if (fresh && it.leadExtra && typeof it.leadExtra === 'object') Object.keys(it.leadExtra).forEach(function(k){ if (/^[a-zA-Z][a-zA-Z0-9]{0,40}$/.test(k)) l[k] = it.leadExtra[k]; });   /* patch WEB: a new website / Brain lead's own fields (owner GrayCo, commission source…), set once */
   try { if (window._gcLeadKeep) window._gcLeadKeep.apply(l); } catch (e) {}   /* patch LEADKEEP: an import never drops what a person set (priority, stage, PM / estimator …) */
@@ -182487,7 +182488,7 @@ function onClick(ev){
   if (a === 'resend') return post({ op: 'notice', what: t.getAttribute('data-w'), ref: t.getAttribute('data-ref') }, t, function(r){ toast(r.notice && r.notice.status === 'waiting' ? '✉️ The e-mail waits on ✅ Approvals' : 'Still held'); });
 }
 
-W._gcSys2 = { open: open, close: close, reload: load, state: function(){ return { jobId: M.jobId, tab: M.tab, loaded: !!M.data, err: M.err, files: AF.length }; } };
+W._gcSys2 = { job: function(){ return M.data && M.data.job ? M.data.job : null; } /* patch PLANROOM */, open: open, close: close, reload: load, state: function(){ return { jobId: M.jobId, tab: M.tab, loaded: !!M.data, err: M.err, files: AF.length }; } };
 try { console.log('[GC] patch SYS2: 📂 Manage a bid job — plans, scopes, addenda, updates, Q&A, activity; 🗑 Delete / ↩ Restore on the Bid portal tab — _gcSys2.state()'); } catch (e) {}
 })();
 </script>
@@ -250137,4 +250138,371 @@ try {
   try { console.log('[GC] PHONEUI: phone safe area, app pages, no desk top bar in Field, bigger Leads views — __gcPhoneUI.state()'); } catch (e) {}
 } catch (e) { try { console.warn('[GC] PHONEUI', e); } catch (x) {} }
 })();
+</script>
+<script id="gc-patch-planroom">
+/* PLANROOM (owner 11/19): "All the info from plan rooms: if they can open up the page in the CRM and read scope of works, pre-bids, any
+   required insurances, meetings etc, and make sure it's in the CRM too. I'm on MR Plan Room as a public bid for them for Jackson State."
+   - 📐 Plan room details: a card on the lead (Leads → the lead's panel) and on the bid job (🏗 Bid portal → 📂 Manage → 📝 Details), staff only:
+     project, owner, designer, location, bid #, bid due, delivery, pre-bid / site walk (date, time, place, mandatory?), questions due, scope + trades,
+     insurance, bonds, licensing, prevailing wage, certified payroll, MBE / DBE / Section 3, addenda, the contact, the plan room's documents, and
+     the words each came from. "↻ Re-read plan room", "✏️ Edit" (staff fix anything), "📋 Paste PDF / text" (an invitation the plan room keeps
+     behind a sign-in: forwarded / downloaded by staff).
+   - The server reads it (bid-inbox ?planroom=1 → _lib/planroom.js): only PUBLIC pages, never a sign-in or a captcha; a site that asks not to be fed
+     to AI tools (MR plan room, RKA, Barge: robots.txt Content-Signal ai-input=no) is read with the plain reader. A new lead from a public plan room
+     is read once by itself (rate-limited).
+   - Into the CRM: the pre-bid / site walk → the lead's pre-bid and the bid job's site walk (→ the CRM schedule through BIDPO once the bid job is
+     linked to a CRM job); the bid due → the lead's bid due (its reminders follow); questions due → the lead (+ a To-Do 3 days before for the
+     estimator / PM); insurance / bonds / licensing / wage / MBE → a checklist on the lead. A date a person typed is never changed. Nothing is
+     texted or e-mailed to anyone outside.
+   Console: _gcPlanRoom.state()  _gcPlanRoom.read({ leadId | jobId })  _gcPlanRoom.of(lead) */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_PLANROOM__) return; W.__GC_PATCH_PLANROOM__ = true;
+var D = W.document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function warn(e){ try { console.warn('[GC PLANROOM]', e && e.message || e); } catch (x) {} }
+function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(m, bad); if (W._gcToast) W._gcToast(m); } catch (e) {} }
+function crm(){ return W._crm || {}; }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function myName(){ try { var m = W._gcMeNow; if (m && m.name) return s(m.name); } catch (e) {} var u = arr(crm().users).filter(function(x){ return x && low(x.email) === myEmail(); })[0]; return s(u && u.name) || myEmail(); }
+function api(q, body){
+  return W.fetch('/.netlify/functions/bid-inbox?planroom=1' + (q || ''), { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.__status = r.status; if (!r.ok && !j.error) j.error = 'The server answered ' + r.status; return j; }); },
+      function(e){ return { error: 'Cannot reach the server (' + s(e && e.message) + ').', __status: 0 }; });
+}
+
+/* ── the leads ── */
+function allLeads(){ var a = arr(crm().leads); try { var k = W._gcLeadsHubKit && W._gcLeadsHubKit.all && W._gcLeadsHubKit.all(); if (arr(k).length) a = arr(k).concat(a); } catch (e) {} return a; }
+function lead(id){ id = s(id); return id ? allLeads().filter(function(l){ return l && s(l.id) === id; })[0] || null : null; }
+function setLead(id, mut){
+  var K = W._gcLeadsHubKit;
+  var apply = function(list){ list = arr(list).slice(); var i = -1; list.forEach(function(l, k){ if (l && s(l.id) === s(id)) i = k; }); if (i < 0) return null;
+    var l = Object.assign({}, list[i]); if (mut(l) === false) return null; l.updatedAt = nowIso(); list[i] = l;
+    try { var cl = W._crm && W._crm.leads; if (Array.isArray(cl)) W._crm.leads = cl.map(function(x){ return x && x.id === id ? l : x; }); } catch (e) {}
+    return list; };
+  try { if (K && K.setLeads) return Promise.resolve(K.setLeads(apply)).then(function(){ return true; }, function(e){ warn(e); return false; }); } catch (e) { warn(e); }
+  try { if (typeof W._setLeads === 'function') { W._setLeads(function(list){ return apply(list) || list; }); return Promise.resolve(true); } } catch (e) { warn(e); }
+  return Promise.resolve(false);
+}
+function prOf(l){ return (l && l.leadExtra && l.leadExtra.planRoom) || (l && l.planRoom) || null; }
+/* the boxes a person ticked stay ticked when the plan room is read again */
+function keepChecks(pr, old){
+  if (!pr) return pr; var done = {}; arr(old && old.checklist).forEach(function(x){ if (x && x.id) done[x.id] = x; });
+  var list = arr(pr.checklist).map(function(x){ var o = done[x.id]; return o && (o.done || o.manual) ? Object.assign({}, x, { done: !!o.done, doneBy: s(o.doneBy), doneAt: s(o.doneAt) }) : x; });
+  arr(old && old.checklist).forEach(function(x){ if (x && x.manual && !list.some(function(y){ return y.id === x.id; })) list.push(x); });
+  return Object.assign({}, pr, { checklist: list });
+}
+function pbOf(F){ var p = F && F.preBid; return p && /^\d{4}-\d{2}-\d{2}$/.test(s(p.date)) ? p.date + (/^\d{2}:\d{2}$/.test(s(p.time)) ? 'T' + p.time : '') : ''; }
+/* the plan room's dates onto a lead: a blank, or a value the plan room set before (planRoomSet) — never a date a person typed; byPerson = the card's ✏️ Edit */
+function applyLead(l, pr, byPerson){
+  var F = (pr && pr.fields) || {}, set = Object.assign({}, l.planRoomSet || {}), ch = [];
+  var own = function(k, v, label){ var cur = l[k]; if (JSON.stringify(cur == null ? '' : cur) === JSON.stringify(v == null ? '' : v)) return; if (!byPerson && s(cur) !== '' && JSON.stringify(set[k]) !== JSON.stringify(cur)) return; l[k] = v; set[k] = v; ch.push(label); };
+  l.leadExtra = Object.assign({}, l.leadExtra || {}, { planRoom: keepChecks(pr, prOf(l)) });
+  var pb = pbOf(F);
+  if (pb) { own('preBid', pb, 'pre-bid ' + fmt(pb)); if (s(F.preBid.place)) own('preBidLocation', s(F.preBid.place).slice(0, 240), 'pre-bid place'); if (typeof F.preBid.mandatory === 'boolean') own('preBidMandatory', F.preBid.mandatory, F.preBid.mandatory ? 'MANDATORY pre-bid' : 'pre-bid not mandatory'); }
+  var bd = s(F.bidDue);
+  if (/^\d{4}-\d{2}-\d{2}/.test(bd) && !(l.bidDueManual && !byPerson)) {
+    if (s(l.bidDue).length === 10 && s(l.bidDue) === bd.slice(0, 10) && bd.length > 10) { l.bidDue = bd; set.bidDue = bd; ch.push('bid due time'); }
+    else own('bidDue', bd.slice(0, 16), 'bid due ' + fmt(bd));
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s(F.questionsDue))) own('questionsDue', s(F.questionsDue).slice(0, 16), 'questions due ' + fmt(F.questionsDue));
+  if (!s(l.bidNumber) && s(F.bidNumber)) { l.bidNumber = s(F.bidNumber).slice(0, 80); ch.push('bid #'); }
+  l.planRoomSet = set;
+  var a = arr(l.activity).slice(); a.push({ type: 'note', text: ('📐 Plan room ' + (byPerson ? 'details edited' : 'read' + (pr && pr.reader === 'ai' ? ' (AI read)' : ' (plain reader)')) + (ch.length ? ': ' + ch.join(' · ') : '')).slice(0, 500), at: nowIso(), by: myName() }); l.activity = a.slice(-200);
+  return ch;
+}
+
+/* ── words ── */
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function fmt(v){ v = s(v); var m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(v); if (!m) return v; var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  var out = DOW[d.getUTCDay()] + ' ' + MON[+m[2] - 1] + ' ' + (+m[3]) + ', ' + m[1]; if (m[4]) { var h = +m[4], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; out += ' ' + h + ':' + m[5] + ' ' + ap; } return out; }
+function when(t){ try { return t ? new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; } catch (e) { return ''; } }
+function list(v){ return arr(v).filter(function(x){ return s(x); }); }
+
+/* ── the card ── */
+var CSS = '.gcpr{border:1px solid #d9d4ee;border-radius:12px;background:#fbfaff;color:#1b1640;padding:10px 12px;margin:8px 0 12px;font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow-wrap:anywhere}'
+  + '.gcpr .gcpr-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.gcpr .gcpr-h b{font-size:14px;color:#241968}.gcpr .mut{color:#5f5a80;font-size:12px}'
+  + '.gcpr .tag{border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800;background:#ede9fe;color:#4c1d95}.gcpr .tag.plain{background:#e0f2fe;color:#075985}'
+  + '.gcpr .acts{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.gcpr button{border:1px solid #cfc8ea;background:#fff;color:#241968;border-radius:8px;padding:6px 10px;font:700 12.5px system-ui,Arial,sans-serif;cursor:pointer;min-height:34px}'
+  + '.gcpr button.pri{background:#241968;color:#fff;border-color:#241968}.gcpr button:disabled{opacity:.6;cursor:default}'
+  + '.gcpr .r{display:grid;grid-template-columns:150px 1fr;gap:8px;padding:5px 0;border-bottom:1px solid #eeeaf8}.gcpr .r .k{color:#57527a;font-weight:700;font-size:12px}.gcpr .r ul{margin:0;padding-left:18px}'
+  + '.gcpr details.src{margin-top:2px}.gcpr details.src summary{cursor:pointer;color:#6b6591;font-size:11px}.gcpr details.src div{font-size:11.5px;color:#4b4670;background:#fff;border-left:3px solid #c9c1ea;padding:3px 8px;margin-top:2px}'
+  + '.gcpr .why{background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;border-radius:8px;padding:7px 9px;margin:6px 0}.gcpr .note{background:#f0f9ff;border:1px solid #bae6fd;color:#0c4a6e;border-radius:8px;padding:6px 9px;margin:6px 0;font-size:12px}'
+  + '.gcpr .ck label{display:flex;gap:8px;align-items:flex-start;padding:3px 0}.gcpr .ck input{margin-top:3px;min-width:16px;min-height:16px}.gcpr .ck .done{text-decoration:line-through;color:#6b6591}'
+  + '.gcpr .docs a{display:inline-block;margin:2px 8px 2px 0}.gcpr .chip{display:inline-block;background:#efeaff;color:#241968;border-radius:999px;padding:1px 8px;margin:1px 3px 1px 0;font-size:11.5px;font-weight:700}'
+  + '.gcpr input[type=text],.gcpr input[type=date],.gcpr input[type=time],.gcpr input[type=url],.gcpr textarea,.gcpr select{border:1px solid #cfc8ea;border-radius:7px;padding:6px 8px;font:13px system-ui,Arial,sans-serif;max-width:100%;box-sizing:border-box}'
+  + '.gcpr textarea{width:100%;min-height:54px}.gcpr .ed .r .v{display:flex;gap:6px;flex-wrap:wrap}.gcpr .ed .r .v>input[type=text],.gcpr .ed .r .v>textarea{flex:1 1 220px}'
+  + '.gcpr .mand{font-weight:800;color:#b91c1c}.gcpr .notmand{font-weight:700;color:#166534}'
+  + '@media (max-width:520px){.gcpr .r{grid-template-columns:1fr;gap:2px}}';
+function css(){ if (D.getElementById('gcpr-css')) return; var st = D.createElement('style'); st.id = 'gcpr-css'; st.setAttribute('data-gc-keep', '1'); st.textContent = CSS; D.head.appendChild(st); }
+var UI = {};   /* per card key: { busy, msg, err, edit, paste, fields } */
+function ui(key){ return UI[key] || (UI[key] = {}); }
+function srcLine(pr, k){ var x = pr && pr.sourceSnippets && pr.sourceSnippets[k]; if (!x || !s(x.text)) return ''; return '<details class="src"><summary>where it says so</summary><div>“' + esc(x.text) + '” — ' + esc(x.from || 'page') + '</div></details>'; }
+function row(label, valHtml, pr, k){ return valHtml ? '<div class="r" data-prf="' + esc(k) + '"><span class="k">' + esc(label) + '</span><span class="v">' + valHtml + srcLine(pr, k) + '</span></div>' : ''; }
+function ul(v){ v = list(v); return v.length ? '<ul>' + v.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : ''; }
+function preBidHtml(p){
+  if (!p || !(p.date || p.place || p.text)) return '';
+  var m = p.mandatory === true ? ' · <span class="mand">MANDATORY</span>' : p.mandatory === false ? ' · <span class="notmand">not mandatory</span>' : ' · <span class="mut">mandatory? not stated</span>';
+  return esc(p.date ? fmt(p.date + (p.time ? 'T' + p.time : '')) : 'date not given') + (p.place ? ' — ' + esc(p.place) : '') + m;
+}
+function fieldsHtml(pr){
+  var F = (pr && pr.fields) || {}, c = F.contact || {};
+  return row('Project', esc(F.projectName), pr, 'projectName')
+    + row('Owner', esc(F.owner), pr, 'owner') + row('Designer', esc(F.designer), pr, 'designer') + row('Location', esc(F.location), pr, 'location') + row('Bid #', esc(F.bidNumber), pr, 'bidNumber')
+    + row('Bid due', F.bidDue ? esc(fmt(F.bidDue)) + (/time (TBD|not given)/.test(s(F.bidDueText)) ? ' <span class="mut">(' + esc(s(F.bidDueText).replace(/^.*—\s*/, '')) + ')</span>' : '') : '', pr, 'bidDue')
+    + row('Delivery', esc(F.delivery), pr, 'delivery')
+    + row('Pre-bid / site walk', preBidHtml(F.preBid), pr, 'preBid') + row('Site visits', esc(F.siteVisit), pr, 'siteVisit')
+    + row('Questions due', F.questionsDue ? esc(fmt(F.questionsDue)) : (F.questionsDueText ? esc(F.questionsDueText) : ''), pr, 'questionsDue')
+    + row('Scope of work', (F.scope ? '<div data-scope>' + esc(F.scope) + '</div>' : '') + (list(F.trades).length ? '<div style="margin-top:4px">' + list(F.trades).map(function(t){ return '<span class="chip">' + esc(t) + '</span>'; }).join('') + '</div>' : ''), pr, 'scope')
+    + row('Insurance', ul(F.insurance) || (pr && !pr.why ? '<span class="mut">none on the public pages — usually in the project manual / general conditions</span>' : ''), pr, 'insurance')
+    + row('Bonds', (F.bidBond ? '<b>Bid bond / security ' + esc(F.bidBond) + '</b>' : '') + ul(F.bonds), pr, 'bonds')
+    + row('Licensing', ul(F.licensing), pr, 'licensing') + row('Prevailing wage', ul(F.prevailingWage), pr, 'prevailingWage') + row('Certified payroll', ul(F.certifiedPayroll), pr, 'certifiedPayroll')
+    + row('MBE / DBE / Section 3', ul(F.mbeDbe), pr, 'mbeDbe') + row('Addenda', ul(F.addenda), pr, 'addenda')
+    + row('Contact', esc([c.company, c.name, c.phone, c.email].filter(Boolean).join(' · ')), pr, 'contact') + row('Plan room status', esc(F.status), pr, 'status');
+}
+function editHtml(pr, U){
+  var F = U.fields || ((pr && pr.fields) || {}), p = F.preBid || {}, c = F.contact || {}, inp = function(k, v, ph){ return '<input type="text" data-pre="' + k + '" value="' + esc(v) + '" placeholder="' + esc(ph || '') + '">'; };
+  var ta = function(k, v){ return '<textarea data-pre="' + k + '" placeholder="one per line">' + esc(list(v).join('\n')) + '</textarea>'; };
+  var dtv = function(v){ return s(v).slice(0, 10); }, tmv = function(v){ return /T(\d{2}:\d{2})/.test(s(v)) ? /T(\d{2}:\d{2})/.exec(s(v))[1] : ''; };
+  return '<div class="ed">'
+    + row('Project', inp('projectName', F.projectName), null, '') + row('Owner', inp('owner', F.owner), null, '') + row('Location', inp('location', F.location), null, '') + row('Bid #', inp('bidNumber', F.bidNumber), null, '')
+    + row('Bid due', '<input type="date" data-pre="bidDueD" value="' + esc(dtv(F.bidDue)) + '"><input type="time" data-pre="bidDueT" value="' + esc(tmv(F.bidDue)) + '">', null, '')
+    + row('Delivery', inp('delivery', F.delivery), null, '')
+    + row('Pre-bid / site walk', '<input type="date" data-pre="pbD" value="' + esc(p.date) + '"><input type="time" data-pre="pbT" value="' + esc(p.time) + '">' + inp('pbPlace', p.place, 'where') + '<select data-pre="pbM"><option value=""' + (p.mandatory == null ? ' selected' : '') + '>mandatory? not stated</option><option value="yes"' + (p.mandatory === true ? ' selected' : '') + '>MANDATORY</option><option value="no"' + (p.mandatory === false ? ' selected' : '') + '>not mandatory</option></select>', null, '')
+    + row('Questions due', '<input type="date" data-pre="qD" value="' + esc(dtv(F.questionsDue)) + '"><input type="time" data-pre="qT" value="' + esc(tmv(F.questionsDue)) + '">', null, '')
+    + row('Scope of work', '<textarea data-pre="scope">' + esc(F.scope) + '</textarea>', null, '') + row('Trades', ta('trades', F.trades), null, '')
+    + row('Insurance', ta('insurance', F.insurance), null, '') + row('Bonds', inp('bidBond', F.bidBond, 'bid bond %') + ta('bonds', F.bonds), null, '') + row('Licensing', ta('licensing', F.licensing), null, '')
+    + row('Prevailing wage', ta('prevailingWage', F.prevailingWage), null, '') + row('Certified payroll', ta('certifiedPayroll', F.certifiedPayroll), null, '') + row('MBE / DBE', ta('mbeDbe', F.mbeDbe), null, '') + row('Addenda', ta('addenda', F.addenda), null, '')
+    + row('Contact', inp('cCompany', c.company, 'company') + inp('cName', c.name, 'name') + inp('cPhone', c.phone, 'phone') + inp('cEmail', c.email, 'e-mail'), null, '')
+    + '<div class="acts"><button type="button" class="pri" data-pr="save">💾 Save</button><button type="button" data-pr="cancel">Cancel</button></div></div>';
+}
+function readEdit(box){
+  var v = function(k){ var x = box.querySelector('[data-pre="' + k + '"]'); return x ? s(x.value) : ''; }, lines = function(k){ return v(k).split(/\n/).map(s).filter(Boolean); };
+  var dt = function(d, t){ return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d + (/^\d{2}:\d{2}$/.test(t) ? 'T' + t : '') : ''; };
+  return { projectName: v('projectName'), owner: v('owner'), location: v('location'), bidNumber: v('bidNumber'), bidDue: dt(v('bidDueD'), v('bidDueT')), delivery: v('delivery'),
+    preBid: { date: v('pbD'), time: v('pbT'), place: v('pbPlace'), mandatory: v('pbM') === 'yes' ? true : v('pbM') === 'no' ? false : null }, questionsDue: dt(v('qD'), v('qT')),
+    scope: v('scope'), trades: lines('trades'), insurance: lines('insurance'), bidBond: v('bidBond'), bonds: lines('bonds'), licensing: lines('licensing'), prevailingWage: lines('prevailingWage'),
+    certifiedPayroll: lines('certifiedPayroll'), mbeDbe: lines('mbeDbe'), addenda: lines('addenda'), contact: { company: v('cCompany'), name: v('cName'), phone: v('cPhone'), email: v('cEmail') } };
+}
+function checkHtml(pr){
+  var L = arr(pr && pr.checklist); if (!L.length) return '';
+  var n = L.filter(function(x){ return x.done; }).length;
+  return '<div class="ck" data-prck><div class="mut" style="margin:8px 0 2px"><b style="color:#241968">✅ Bid requirements checklist</b> — ' + n + ' of ' + L.length + ' done</div>'
+    + L.map(function(x){ return '<label><input type="checkbox" data-prck="' + esc(x.id) + '"' + (x.done ? ' checked' : '') + '><span class="' + (x.done ? 'done' : '') + '">' + esc(({ insurance: '🛡 ', bond: '💵 ', license: '🪪 ', wage: '⚖️ ', payroll: '🧾 ', mbe: '🤝 ', prebid: '🚶 ' }[x.kind] || '• ') + x.label) + (x.done && x.doneBy ? ' <i class="mut">(' + esc(x.doneBy) + ')</i>' : '') + '</span></label>'; }).join('')
+    + '<div class="acts"><input type="text" data-prck-new placeholder="Add a requirement (e.g. Builder\'s risk $2M)" style="flex:1;min-width:180px"><button type="button" data-pr="ckadd">+ Add</button></div></div>';
+}
+function docsHtml(pr){
+  var docs = arr(pr && pr.docs), links = arr(pr && pr.sourceLinks);
+  var refs = docs.filter(function(d){ return /Reference|Linked|Pasted/.test(s(d.section)); }), rest = docs.filter(function(d){ return refs.indexOf(d) < 0; });
+  var a = function(d){ return (d.url ? '<a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(d.name) + ' ↗</a>' : esc(d.name)) + (d.size ? ' <span class="mut">' + esc(typeof d.size === 'number' ? Math.round(d.size / 1024) + ' KB' : d.size) + '</span>' : '') + (d.read ? ' <span class="mut">· read</span>' : d.why ? ' <span class="mut">· ' + esc(d.why) + '</span>' : ''); };
+  var h = '';
+  if (links.length) h += '<div class="docs" data-prlinks><span class="mut">Source: </span>' + links.map(function(l){ return '<a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || 'Link') + ' ↗</a>'; }).join('') + '</div>';
+  if (refs.length) h += '<div class="docs"><span class="mut">Bid notice: </span>' + refs.map(function(d){ return '<span>' + a(d) + '</span>'; }).join(' · ') + '</div>';
+  if (rest.length) { var by = {}; rest.forEach(function(d){ var k = s(d.section).split(' — ')[0] || 'Files'; (by[k] = by[k] || []).push(d); });
+    h += '<details data-prdocs><summary class="mut" style="cursor:pointer">📄 Plan room documents (' + rest.length + ') — names and sizes; downloads need the plan room\'s free sign-in</summary>'
+      + Object.keys(by).map(function(k){ return '<div style="margin-top:4px"><b>' + esc(k) + ' (' + by[k].length + ')</b><div class="docs">' + by[k].slice(0, 120).map(function(d){ return '<span>' + a(d) + '</span>'; }).join(' · ') + '</div></div>'; }).join('') + '</details>'; }
+  return h;
+}
+function cardHtml(key, pr, ctx){
+  var U = ui(key), body = '';
+  var head = '<div class="gcpr-h"><b>📐 Plan room details</b>' + (pr && !pr.why ? '<span class="tag' + (pr.reader === 'ai' ? '' : ' plain') + '">' + (pr.reader === 'ai' ? 'AI read' : 'Plain reader') + '</span>' : '')
+    + '<span class="mut">' + esc([pr && pr.board, pr && (pr.editedAt ? 'edited ' + when(pr.editedAt) + (pr.editedBy ? ' by ' + pr.editedBy : '') : pr.fetchedAt ? 'read ' + when(pr.fetchedAt) : '')].filter(Boolean).join(' · ')) + '</span></div>';
+  var acts = '<div class="acts"><button type="button" class="pri" data-pr="read"' + (U.busy ? ' disabled' : '') + '>' + (U.busy ? '⏳ Reading the plan room…' : pr ? '↻ Re-read plan room' : '📐 Read plan room') + '</button>'
+    + (pr ? '<button type="button" data-pr="edit">✏️ Edit</button>' : '') + '<button type="button" data-pr="paste">📋 Paste PDF / text</button></div>';
+  var urlRow = (!pr || U.url) ? '<div class="acts"><input type="url" data-pr-url placeholder="https://… the plan room project page" value="' + esc(U.urlVal != null ? U.urlVal : ctx.url || '') + '" style="flex:1;min-width:220px"></div>' : '';
+  if (U.err) body += '<div class="why" data-prerr>' + esc(U.err) + '</div>';
+  if (U.msg) body += '<div class="note" data-prmsg>' + esc(U.msg) + '</div>';
+  if (U.paste) body += '<div class="note" data-prpaste><b>Paste the invitation / bid notice</b> — the text, or its PDF (an invitation the plan room keeps behind a sign-in, a forwarded e-mail). Staff\'s own copy: it can be AI read.'
+    + '<textarea data-pr-text placeholder="Paste the invitation to bid / instructions to bidders here"></textarea><div class="acts"><input type="file" accept="application/pdf,.pdf" data-pr-file><button type="button" class="pri" data-pr="pasteread">Read it</button><button type="button" data-pr="pastex">Cancel</button></div></div>';
+  if (pr && pr.why) body += '<div class="why" data-prwhy><b>' + esc(pr.login ? '🔒 Needs a sign-in — not read' : 'Not read') + ':</b> ' + esc(pr.why) + (pr.todo ? '<div style="margin-top:4px"><b>What to do:</b> ' + esc(pr.todo) + '</div>' : '') + '</div>';
+  if (pr && pr.aiNote) body += '<div class="note" data-prainote>' + esc(pr.aiNote) + '</div>';
+  arr(pr && pr.warnings).filter(function(w){ return !/AI read not used: the AI reader is not set up/.test(w); }).forEach(function(w){ body += '<div class="note">' + esc(w) + '</div>'; });
+  if (pr && !pr.why || (pr && Object.keys(pr.fields || {}).length)) body += U.edit ? editHtml(pr, U) : '<div data-prfields>' + fieldsHtml(pr) + '</div>' + checkHtml(pr) + docsHtml(pr);
+  else if (!pr && !U.busy) body += '<div class="mut" data-prnone>Not read yet. ' + (ctx.url ? 'The plan room link on this ' + ctx.what + ' is filled in — press 📐 Read plan room.' : 'Paste the plan room project link (MR plan room, RKA, a public bid page…), or 📋 paste the invitation.') + '</div>';
+  return head + acts + urlRow + body;
+}
+
+/* ── reading ── */
+function jobIdsFor(l){
+  var ids = [];
+  [l && l.subPortal && l.subPortal.jobId, l && l.bidPortalJob].forEach(function(x){ if (s(x) && ids.indexOf(s(x)) < 0) ids.push(s(x)); });
+  var jobs = []; try { jobs = arr(W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs && W._gcSys.bp.jobs()); } catch (e) {}
+  jobs.forEach(function(j){ if (j && !j.deleted && l && s(j.crmLeadId) === s(l.id) && ids.indexOf(s(j.id)) < 0) ids.push(s(j.id)); });
+  return ids.slice(0, 3);
+}
+function bestLink(l){
+  var ls = arr(l && l.plansLinks).map(function(x){ return s(x && x.url); }).concat(arr(l && l.gcs).map(function(g){ return s(g && g.link); })).concat([s(l && l.plansLink)]).filter(function(u){ return /^https?:\/\//.test(u); });
+  var rank = function(u){ return /\/projects\/\d+\/(details|plans|specs|addenda)\//.test(u) ? 0 : /buildingconnected|planhub|isqft|constructconnect|procore/i.test(u) ? 2 : 1; };
+  ls.sort(function(a, b){ return rank(a) - rank(b); });
+  return ls[0] || '';
+}
+function done(key, ctx, j){
+  var U = ui(key); U.busy = false; U.paste = false; U.url = false;
+  var pr = j && j.planRoom; if (!pr) { U.err = s(j && j.error) || 'No answer.'; paint(); return; }
+  U.err = ''; U.msg = pr.why ? '' : '📐 Read — ' + summary(pr);
+  if (ctx.leadId) setLead(ctx.leadId, function(l){ applyLead(l, pr, false); }).then(function(){ paint(); });
+  if (ctx.jobId && W._gcSys2 && W._gcSys2.state && W._gcSys2.state().jobId === ctx.jobId) { later(function(){ try { W._gcSys2.open(ctx.jobId, 'details'); } catch (e) { warn(e); } }, 50); }
+  JOBPR[ctx.jobId || ''] = pr;
+  toast(pr.why ? '📐 ' + pr.why : '📐 Plan room read — ' + summary(pr), !!pr.why);
+  paint();
+}
+function summary(pr){ var F = pr.fields || {}, out = [];
+  if (pbOf(F)) out.push('pre-bid ' + fmt(pbOf(F)) + (F.preBid.mandatory ? ' (MANDATORY)' : ''));
+  if (F.questionsDue) out.push('questions due ' + fmt(F.questionsDue)); if (F.bidDue) out.push('bid due ' + fmt(F.bidDue));
+  if (arr(pr.checklist).length) out.push(arr(pr.checklist).length + ' requirement' + (arr(pr.checklist).length === 1 ? '' : 's'));
+  return out.join(' · ') || 'nothing dated found'; }
+function poll(key, ctx, k, t0, n){
+  if (n > 45) { var U = ui(key); U.busy = false; U.err = 'Still reading — look again in a minute (↻).'; paint(); return; }
+  later(function(){ api('&key=' + encodeURIComponent(k)).then(function(j){ var r = j && j.read;
+    if (r && r.state === 'done' && Date.parse(r.at) >= t0 - 2000) return done(key, ctx, { planRoom: r.planRoom });
+    if (r && r.state === 'error' && Date.parse(r.at) >= t0 - 2000) { var U = ui(key); U.busy = false; U.err = s(r.why) || 'The read failed.'; paint(); return; }
+    poll(key, ctx, k, t0, n + 1); }); }, n < 4 ? 2500 : 4000);
+}
+function read(ctx, extra){
+  var key = ctx.key, U = ui(key); if (U.busy) return Promise.resolve(null);
+  U.busy = true; U.err = ''; U.msg = ''; paint();
+  var body = Object.assign({ op: 'read', id: ctx.inboxId || '', leadId: ctx.leadId || '', jobId: ctx.jobId || '', jobIds: ctx.jobIds || [], url: ctx.url || '' }, extra || {});
+  var t0 = Date.now();
+  return api('', body).then(function(j){
+    if (j.__status === 202 && j.started) { poll(key, ctx, j.key, t0, 0); return j; }
+    if (j.error) { U.busy = false; U.err = j.error; paint(); return j; }
+    done(key, ctx, j); return j;
+  });
+}
+function save(ctx, fields, checklist){
+  var key = ctx.key, U = ui(key), l = ctx.leadId ? lead(ctx.leadId) : null, pr0 = ctx.pr || {};
+  var edited = Object.assign({}, pr0.edited || {}); Object.keys(fields || {}).forEach(function(k){ edited[k] = 1; });
+  var pr = Object.assign({}, pr0, { fields: Object.assign({}, pr0.fields || {}, fields || {}), edited: edited, editedBy: myName(), editedAt: nowIso() });
+  if (checklist) pr.checklist = checklist;
+  var jobs = ctx.jobId ? [ctx.jobId] : (ctx.jobIds || []);
+  var p1 = l ? setLead(l.id, function(x){ if (fields) applyLead(x, pr, true); else x.leadExtra = Object.assign({}, x.leadExtra || {}, { planRoom: pr }); }) : Promise.resolve(true);
+  var p2 = (ctx.inboxId || jobs.length) ? api('', { op: 'save', id: ctx.inboxId || '', leadId: ctx.leadId || '', jobIds: jobs, fields: fields || {}, checklist: pr.checklist, planRoom: pr }) : Promise.resolve({ ok: true });
+  JOBPR[ctx.jobId || ''] = pr;
+  return Promise.all([p1, p2]).then(function(r){ var j = r[1] || {}; if (j.error) { U.err = j.error; toast('📐 ' + j.error, true); } else if (fields) { U.edit = false; U.fields = null; toast('📐 Plan room details saved'); if (ctx.jobId && W._gcSys2 && W._gcSys2.state().jobId === ctx.jobId) later(function(){ try { W._gcSys2.open(ctx.jobId, 'details'); } catch (e) {} }, 50); } paint(); });
+}
+function fileB64(f){ return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(String(r.result).replace(/^data:[^,]*,/, '')); }; r.onerror = function(){ rej(new Error('Could not read the file')); }; r.readAsDataURL(f); }); }
+
+/* ── one handler for both cards ── */
+function onClick(ev, ctxOf){
+  var t = ev.target.closest ? ev.target.closest('[data-pr]') : null; if (!t) return;
+  var box = t.closest('.gcpr'); if (!box) return; var ctx = ctxOf(); if (!ctx) return;
+  var k = t.getAttribute('data-pr'), U = ui(ctx.key);
+  ev.preventDefault(); ev.stopPropagation();
+  if (k === 'read') { var ui0 = box.querySelector('[data-pr-url]'), u = s(ui0 && ui0.value) || ctx.url; if (!u) { U.url = true; U.err = 'Paste the plan room project link first.'; paint(); return; } ctx.url = u; return read(ctx); }
+  if (k === 'edit') { U.edit = true; U.fields = null; return paint(); }
+  if (k === 'cancel') { U.edit = false; return paint(); }
+  if (k === 'save') { var f = readEdit(box); return save(ctx, f); }
+  if (k === 'paste') { U.paste = true; return paint(); }
+  if (k === 'pastex') { U.paste = false; return paint(); }
+  if (k === 'pasteread') {
+    var tx = s((box.querySelector('[data-pr-text]') || {}).value), fi = box.querySelector('[data-pr-file]'), file = fi && fi.files && fi.files[0];
+    if (!tx && !file) { U.err = 'Paste the invitation text or pick its PDF.'; return paint(); }
+    if (file && file.size > 4.3 * 1024 * 1024) { U.err = 'That PDF is over 4 MB — paste the invitation pages only, or forward the e-mail to bids@grayco-cs.com.'; return paint(); }
+    return (file ? fileB64(file) : Promise.resolve('')).then(function(b64){ return read(ctx, { text: tx, file: file ? { name: file.name, data: b64 } : undefined }); }, function(e){ U.err = e.message; paint(); });
+  }
+  if (k === 'ckadd') { var inp = box.querySelector('[data-prck-new]'), lab = s(inp && inp.value); if (!lab) return; var cl = arr(ctx.pr && ctx.pr.checklist).slice(); cl.push({ id: 'manual:' + Date.now().toString(36), kind: 'manual', label: lab.slice(0, 220), done: false, manual: true }); return save(ctx, null, cl); }
+}
+function onChange(ev, ctxOf){
+  var t = ev.target; if (!t || !t.getAttribute || !t.hasAttribute('data-prck') || t.type !== 'checkbox') return;
+  var ctx = ctxOf(); if (!ctx || !ctx.pr) return; var id = t.getAttribute('data-prck');
+  var cl = arr(ctx.pr.checklist).map(function(x){ return x.id === id ? Object.assign({}, x, { done: !!t.checked, doneBy: t.checked ? myName() : '', doneAt: t.checked ? nowIso() : '' }) : x; });
+  save(ctx, null, cl);
+}
+
+/* ── the lead's card (Leads → the lead's panel) ── */
+function openLeadId(){ try { var u = W._gcLeadsHub && W._gcLeadsHub.ui && W._gcLeadsHub.ui(); return s(u && u.open); } catch (e) { return ''; } }
+function isBidish(l){ return !!(prOf(l) || s(l.inboxId) || bestLink(l) || s(l.bidDue) || /commercial|government|industrial/i.test(s(l.leadKind) + ' ' + s(l.type)) || /plan ?room|bid|government/i.test(s(l.source))); }
+function leadCtx(){
+  var id = openLeadId(), l = lead(id); if (!l) return null;
+  var ib = ''; try { ib = typeof W._gcOwnInboxId === 'function' ? s(W._gcOwnInboxId(l)) : s(l.inboxId); } catch (e) { ib = s(l.inboxId); }
+  var pr = prOf(l);
+  return { key: 'lead:' + id, leadId: id, inboxId: ib, jobIds: jobIdsFor(l), url: s(pr && pr.url) || bestLink(l), pr: pr, what: 'lead', l: l };
+}
+var LSIG = '';
+function paintLead(){
+  var d = D.getElementById('gcl-drawer'), old = D.getElementById('gcpr-lead');
+  var c = d && d.isConnected && getComputedStyle(d).display !== 'none' ? leadCtx() : null;
+  if (!c || !isBidish(c.l)) { if (old) old.remove(); return; }
+  var U = ui(c.key);
+  if (U.edit && old && d.contains(old) && old.__key === c.key && old.querySelector('.ed')) return;   /* typing: leave it */
+  var h = cardHtml(c.key, c.pr, c);
+  if (old && old.__h === h && d.contains(old)) return;
+  css();
+  if (!old) { old = D.createElement('section'); old.id = 'gcpr-lead'; old.className = 'gcpr'; old.setAttribute('data-gc-keep', '1');
+    old.addEventListener('click', function(ev){ onClick(ev, leadCtx); }); old.addEventListener('change', function(ev){ onChange(ev, leadCtx); }); }
+  old.__h = h; old.__key = c.key; old.innerHTML = h;
+  if (!d.contains(old)) { var bp = d.querySelector('#gcbp-lead'), body = d.querySelector('.gcl-body, [data-gcl-body]') || d; if (bp && bp.parentNode) bp.parentNode.insertBefore(old, bp.nextSibling); else { var hd = body.querySelector('.hd'); body.insertBefore(old, hd ? hd.nextSibling : body.firstChild); } }
+}
+
+/* ── the bid job's card (🏗 Bid portal → 📂 Manage → 📝 Details) ── */
+var JOBPR = {};
+function jobCtx(){
+  var st = null; try { st = W._gcSys2 && W._gcSys2.state && W._gcSys2.state(); } catch (e) {} if (!st || !st.jobId) return null;
+  var j = null; try { j = W._gcSys2.job && W._gcSys2.job(); } catch (e) {} if (!j || s(j.id) !== s(st.jobId)) return null;
+  var pr = JOBPR[j.id] || j.planRoom || null, l = s(j.crmLeadId) ? lead(j.crmLeadId) : null;
+  if (!pr && l) pr = prOf(l);
+  var url = s(pr && pr.url) || (l ? bestLink(l) : '') || arr(j.plansLinks).map(function(x){ return s(x && x.url); }).filter(function(u){ return /^https?:/.test(u); })[0] || s(j.sourceLink);
+  return { key: 'job:' + j.id, jobId: s(j.id), inboxId: s(j.leadId), leadId: s(j.crmLeadId), url: url, pr: pr, what: 'bid job', j: j };
+}
+function paintJob(){
+  var host = D.querySelector('#gcsys2 [data-details]'), old = D.getElementById('gcpr-job');
+  var c = host ? jobCtx() : null;
+  if (!c) { if (old) old.remove(); return; }
+  var U = ui(c.key);
+  if (U.edit && old && host.contains(old) && old.__key === c.key && old.querySelector('.ed')) return;
+  var h = cardHtml(c.key, c.pr, c);
+  if (old && old.__h === h && host.contains(old)) return;
+  css();
+  if (!old) { old = D.createElement('div'); old.id = 'gcpr-job'; old.className = 'gcpr'; old.setAttribute('data-gc-keep', '1');
+    old.addEventListener('click', function(ev){ onClick(ev, jobCtx); }); old.addEventListener('change', function(ev){ ev.stopPropagation(); onChange(ev, jobCtx); }); old.addEventListener('input', function(ev){ ev.stopPropagation(); }); }
+  old.__h = h; old.__key = c.key; old.innerHTML = h;
+  if (!host.contains(old)) host.insertBefore(old, host.firstChild);
+}
+function paint(){ try { paintLead(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } }
+RI.call(W, function(){ if (!D.hidden) paint(); }, 900);
+/* the drawer redraws itself often: paint right after it does */
+var MO = null; RI.call(W, function(){ var d = D.getElementById('gcl-drawer'), g = D.getElementById('gcsys2'); [d, g].forEach(function(x){ if (x && !x.__gcprMo && typeof MutationObserver === 'function') { x.__gcprMo = 1; try { new MutationObserver(function(){ later(paint, 30); }).observe(x, { childList: true, subtree: x === g }); } catch (e) {} } }); }, 700);
+
+/* ── To-Do: questions due and the pre-bid / site walk, 3 days before (staff: the lead's estimator / PM, else everyone who works leads) ── */
+var TD = { at: 0, v: [] };
+function todoItems(){
+  if (Date.now() - TD.at < 20000) return TD.v;
+  var out = [], t0 = new Date(), today = t0.toISOString().slice(0, 10), soon = new Date(t0.getTime() + 3 * 864e5).toISOString().slice(0, 10);
+  allLeads().forEach(function(l){
+    if (!l || !l.id || l.deleted || l.archived || l.mergedInto || /won|lost|dead|declined|spam/i.test(s(l.stage) + ' ' + s(l.status))) return;
+    var pr = prOf(l); if (!pr) return;
+    var who = [s(l.estimator), s(l.pm)].filter(Boolean), F = pr.fields || {};
+    var q = s(l.questionsDue || F.questionsDue).slice(0, 10), pb = s(l.preBid || pbOf(F)).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(q) && q >= today && q <= soon && !out.some(function(x){ return x.key === 'planroom:q:' + l.id; })) out.push({ key: 'planroom:q:' + l.id, cat: 'leads', prio: q <= today ? 'high' : 'med', due: q, pid: '', title: '❓ Questions / RFIs due ' + fmt(s(l.questionsDue || F.questionsDue)) + ' — ' + s(l.name || l.title),
+      sub: '📐 From the plan room · send questions before the deadline', who: who, vis: who.length ? 'who' : 'company', act: { l: 'Open lead', f: function(){ try { W._gcOpenLead(l.id); } catch (e) {} } } });
+    if (/^\d{4}-\d{2}-\d{2}$/.test(pb) && pb >= today && pb <= soon) { var m = (l.preBidMandatory === true || (F.preBid && F.preBid.mandatory === true)); out.push({ key: 'planroom:pb:' + l.id, cat: 'leads', prio: m ? 'high' : 'med', due: pb, pid: '', title: '🚶 ' + (m ? 'MANDATORY ' : '') + 'pre-bid / site walk ' + fmt(s(l.preBid || pbOf(F))) + ' — ' + s(l.name || l.title),
+      sub: s(l.preBidLocation || (F.preBid && F.preBid.place)), who: who, vis: who.length ? 'who' : 'company', act: { l: 'Open lead', f: function(){ try { W._gcOpenLead(l.id); } catch (e) {} } } }); }
+  });
+  TD = { at: Date.now(), v: out };
+  return out;
+}
+W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
+
+W._gcPlanRoom = {
+  of: prOf, applyLead: applyLead, paint: paint, todo: function(){ TD.at = 0; return todoItems(); },
+  /* the Lead Inbox import (fromItem): the server's plan room details onto the lead, keeping what a person ticked or typed on the lead */
+  fromItem: function(l, it, prev){
+    if (!l || !it) return;
+    var cur = prOf(prev || l), pr = it.planRoom;
+    if (pr && !(cur && s(cur.editedAt) && s(cur.editedAt) > s(pr.editedAt) && s(cur.editedAt) > s(pr.fetchedAt))) l.leadExtra = Object.assign({}, l.leadExtra || {}, { planRoom: keepChecks(pr, cur) });
+    if (!s(l.preBidLocation) && s(it.preBidLocation)) l.preBidLocation = s(it.preBidLocation);
+    if (l.preBidMandatory == null && typeof it.preBidMandatory === 'boolean') l.preBidMandatory = it.preBidMandatory;
+    if (!s(l.questionsDue) && s(it.questionsDue)) l.questionsDue = s(it.questionsDue);
+  },
+  read: function(o){ o = o || {}; var c = o.jobId ? jobCtx() : leadCtx(); if (!c && o.leadId) { var l = lead(o.leadId); if (l) c = { key: 'lead:' + l.id, leadId: l.id, inboxId: s(l.inboxId), jobIds: jobIdsFor(l), url: s(o.url) || bestLink(l), pr: prOf(l), what: 'lead' }; } if (!c) return Promise.resolve(null); if (o.url) c.url = o.url; return read(c); },
+  state: function(){ return { lead: openLeadId(), card: !!D.getElementById('gcpr-lead'), jobCard: !!D.getElementById('gcpr-job'), ui: UI }; }
+};
+try { console.log('[GC] patch PLANROOM: 📐 Plan room details on the lead and the bid job — _gcPlanRoom.state()'); } catch (e) {}
+})(window);
 </script>

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="csrf-token" content="P05WKH9iBd7dCUsohIjJLRXvEM0cYDvK0wDgHyNW">
+
+    <title>Jackson State Community College - Student Center Updates :: Specs :: Memphis Reprographics Online Planroom</title>
+
+    
+    
+
+            
+    
+    
+
+    
+    
+
+    
+    
+    
+    
+    
+
+            
+        
+                <style></style>    
+    
+    <script></script>
+    <script></script>
+    <script></script>
+    <script></script>
+    <script></script>
+    <script></script>
+
+            <script></script>
+    
+        <script></script>
+    <script></script>
+    
+    <script></script>
+
+        
+    <script></script>
+    <script></script>
+    <script></script>
+    <script></script>
+
+    
+    <script></script>
+</head>
+
+<body class=" page-project-files page-project-specs page-project project-allows-ordering project-allows-downloading is-guest  nav-main">
+<a href="#content" class="tw-sr-only focus:tw-not-sr-only focus:tw-absolute focus:tw-top-2 focus:tw-left-2 focus:tw-z-[9999] focus:tw-bg-white focus:tw-text-black focus:tw-px-4 focus:tw-py-2 focus:tw-rounded focus:tw-shadow-lg focus:tw-text-base">Skip to main content</a>
+<div class="wrapper" id="app">
+        <div id="container" class="header-main-wrapper">
+                <div class="header-wrapper !tw-hidden lg:!tw-block print:!tw-hidden">
+            <header id="header" class="topLogo header container">
+                                    <nav class="header__social">
+    <a href="https://www.facebook.com/pages/Memphis-Reprographics/261751420509621" target="_blank"><i class="fa fa-facebook-square"></i></a>
+    <a href="https://twitter.com/MemphisRepro" target="_blank"><i class="fa fa-twitter-square"></i></a>
+    <a href="https://www.linkedin.com/company/memphis-reprographics" target="_blank"><i class="fa fa-linkedin-square"></i></a>
+    <a href="https://www.youtube.com/channel/UCIdROhromT7nq85CMVSOU5g"><i class="fa fa-youtube-square"></i></a>
+    <a href="https://www.instagram.com/memphisrepro/" target="_blank"><i class="fa fa-instagram"></i></a>
+</nav>
+
+<nav class="header__quicklinks">
+    <a href="/">Planroom Login</a>
+    &nbsp; l  &nbsp;
+    <a href="/upload">File Upload</a>
+</nav>
+
+<div class="logo__wrapper"><a href="https://www.memphisreprographics.com/"><img src="/templates/masthead.png?id=1769204364VuDV" class="header__logo"/></a></div>
+
+<nav class="header__nav">
+	<a href="https://www.memphisreprographics.com/">Home</a>
+    <a href="https://www.memphisreprographics.com/meet-the-team/">Meet The Team</a>
+    <a href="https://www.memphisreprographics.com/services/">Services</a>
+    <a href="https://www.memphisreprographics.com/testimonials/">Testimonials</a>
+    <a href="https://blog.memphisreprographics.com/">Our Blog</a>
+    <a href="https://www.memphisreprographics.com/get-in-touch/">Get In Touch</a>
+</nav>
+
+    <div class="header__contact"></div>
+                                            </header>
+        </div>
+        
+                <header class="mobile-header container lg:tw-hidden">
+            <a href='/'><img class='mobile-header__logo' src='/templates/logo.png?id=1769204364VuDV' alt='Memphis Reprographics Online Planroom'></a>
+<div class="tw-flex tw-justify-between tw-items-center tw-gap-4">
+        <button type="button" class="tw-bg-transparent tw-border-0 tw-p-0 tw-cursor-pointer" onclick="$('body').addClass('mobile-nav-open'); this.setAttribute('aria-expanded','true'); $('.mobile-header__nav .close').focus();" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mobile-nav-panel"><svg></svg></button>
+</div>
+
+<div class="mobile-header__nav" id="mobile-nav-panel" role="dialog" aria-modal="true" aria-label="Navigation menu"
+     onkeydown="if(event.key==='Escape'){$('body').removeClass('mobile-nav-open');$('[aria-controls=mobile-nav-panel]').attr('aria-expanded','false').focus();return;}if(event.key!=='Tab')return;var f=this.querySelectorAll('button,a,[tabindex]');var first=f[0],last=f[f.length-1];if(event.shiftKey){if(document.activeElement===first){event.preventDefault();last.focus();}}else{if(document.activeElement===last){event.preventDefault();first.focus();}}">
+    <button type="button" class="close tw-bg-transparent tw-border-0 tw-cursor-pointer" onclick="$('body').removeClass('mobile-nav-open'); $('[aria-controls=mobile-nav-panel]').attr('aria-expanded','false').focus();" aria-label="Close navigation menu"><span aria-hidden="true">&times;</span></button>
+
+            <nav aria-label="Mobile navigation">
+<ul class="mobile-nav__list">
+    <li><a href="/" class="icon-only">Home</a></li>
+    <li><a href="/projects/public">Public Projects</a></li>
+    <li><a href="/projects/private">Private Projects</a></li>
+    <li><a href="/projects/calendar">Project Calendar</a></li>
+    <li><a href="/upload">Send Us Files</a></li>
+
+    <li><a href="/auth/login">Login</a></li>
+</ul>
+</nav>
+    </div>        </header>
+        
+        <nav class="mobile-subheader container lg:tw-hidden" aria-label="Account navigation">
+            <a class="tw-py-4" href="/auth/login">
+        <svg></svg>        Login
+    </a>
+
+<div class="tw-flex tw-justify-end">
+    <mobile-queue v-on:checkout="queueCheckout = true"></mobile-queue>
+    <a class="cart tw-ml-4 is-empty" href="/cart" aria-label="Shopping cart, 0 items, $0.00">
+        <svg></svg><span class="count bubble" aria-hidden="true">0</span>
+    </a>
+</div>
+        </nav>
+
+        <div id="mainWrapper" class="main-wrapper">
+                        <nav class="navbar tw-hidden lg:tw-block expand light underline container sticky" aria-label="Main navigation" >
+    <div class="inner container">
+        <div class="navbar__menu">
+            <ul class="navbar__list">
+    <li class="menu-item ">
+        <a href="/" class="icon-only">
+        <svg></svg>        
+        <span class="tw-sr-only">Home</span>        </a>
+
+            </li>
+    <li class="menu-item ">
+        <a href="/projects/public">
+                Public Projects
+                </a>
+
+            </li>
+    <li class="menu-item ">
+        <a href="/projects/private">
+                Private Projects
+                </a>
+
+            </li>
+    <li class="menu-item ">
+        <a href="/projects/calendar">
+                Project Calendar
+                </a>
+
+            </li>
+    <li class="menu-item ">
+        <a href="/upload">
+                Send Us Files
+                </a>
+
+            </li>
+</ul>
+        </div>
+
+        <div class="navbar__actions">
+            <tiny-queue v-cloak v-on:checkout="queueCheckout = true" ref="queue"></tiny-queue>
+
+
+<div class="order-wrapper cart is-empty">
+    <span class="tw-sr-only" role="status" id="cart-live-status"></span>
+    <a href="/cart" aria-label="Shopping cart, 0 items">
+        <svg></svg>        <span class="count bubble" aria-hidden="true">0</span>
+        Cart
+    </a>
+    <div class="navbar-notice" hidden>
+        <div class="navbar-notice__arrow" aria-hidden="true"></div>
+        <div class="navbar-notice__body">
+            <div class="navbar-notice__text">Added to your cart</div>
+            <a href="/cart">View cart</a>
+        </div>
+    </div>
+</div>
+
+<div class="account dropdown ">
+            <a href="/auth/login?redirect=https%3A%2F%2Fwww.mrplanroom.com%2Fprojects%2F11447%2Fspecs%2Fjackson-state-community-college-student-center-updates">
+            <svg></svg> Register / Login
+        </a>
+    </div>
+        </div>
+    </div>
+</nav>
+
+        <main id="mainTable" class="main container">
+        
+        <div id="content" class="main__content ">
+            
+                
+    <h1 class="project-name">
+    
+    <span>Jackson State Community College - Student Center Updates</span>
+
+    
+    </h1>
+<div class="project-meta">
+    </div>
+<div class="project-description">SBC Number 166/019-02-2025: Renovation of Jackson State Community College’s existing Student Center, including a new accessible entry vestibule, new masonry and metal panel cladding, storefront, and TPO roof, along with interior updates to offices, student supply spaces, and finishes. Mechanical, electrical, and fire protection systems will be reworked to fit the new layout, and the GC is responsible for all utility connections, including tap fees, meters, and transformer work.</div>
+
+
+    
+    <div class="project__buttons u-hide-empty print-hide">
+
+    
+            <div class="sectionLine orderGroup orderJob order-group button-price">
+            <button id="buttonJob11447" class="button-order left button" onClick="toggleOrder(11447, 11447, &#039;jobs&#039;, &#039;project&#039;, &#039;&#039;, &#039;buttonJob11447&#039;);"><span class='off'><svg></svg>Order</span><span class='on'><svg></svg>Remove</span></button>
+            <span class="button-price__label price-description">Order this entire project, price will be calculated by SQFT</span>
+        </div>
+    
+    
+            <a href="https://www.mrplanroom.com/auth/login?redirect=https%3A%2F%2Fwww.mrplanroom.com%2Fprojects%2F11447%2Fspecs%2Fjackson-state-community-college-student-center-updates" class="project-alert tw-relative tw-mb-4 tw-border tw-border-amber-200 tw-bg-amber-100 tw-px-5 tw-py-3 tw-text-yellow-800 tw-block tw-no-underline">
+            This is available for download &amp; digital takeoff to registered users            <strong>Log in now</strong>
+        </a>
+    
+    
+    
+</div>
+
+    
+    
+    
+    <div class="tabs">
+    <div class="tw-flex public-tabs">
+                    <div class="tab">
+
+<a href="https://www.mrplanroom.com/projects/11447/details/jackson-state-community-college-student-center-updates">
+    <span class="">Details</span>
+</a>
+</div>                    <div class="tab">
+
+<a href="/projects/11447/plans/jackson-state-community-college-student-center-updates">
+    <span class="">Plans</span>
+</a>
+</div>                    <div class="tab selected">
+
+<a href="/projects/11447/specs/jackson-state-community-college-student-center-updates" class="selected">
+    <span class="">Specs</span>
+</a>
+</div>                    <div class="tab">
+
+<a href="/projects/11447/addenda/jackson-state-community-college-student-center-updates">
+    <span class="">Addenda</span>
+</a>
+</div>                    <div class="tab">
+
+<a href="https://www.mrplanroom.com/projects/11447/plan-holders/jackson-state-community-college-student-center-updates">
+    <span class="tw-hidden md:tw-inline">Plan Holders</span>
+    <span class="md:tw-hidden" aria-hidden="true"><svg></svg></span>
+    <span class="tw-sr-only md:tw-hidden">Plan Holders</span>
+</a>
+</div>            </div>
+    <div class="tw-flex private-tabs">
+            </div>
+</div>
+
+    
+            <section class="literally section section--open section-34071">
+            <button type="button" class="tblHeader sectionHeader section__heading t-primary-bgcolor" onclick="$(this).parent().toggleClass('section--open')" aria-expanded="false">
+                <svg></svg>                <svg></svg>                Bid Documents
+                <span class='clickExpand'><img src='/images/click.png' style="vertical-align: middle" alt=""/> (click to expand/collapse)</span>
+            </button>
+
+            <div class="section__content">
+
+                                    <div class="section__notes">Entities obtaining Bidding Documents become Bidders of Record for notifications. Bidders of Record may purchase hard copies of Bidding Documents from the same source (nonrefundable).<br />
+</div>
+                
+                <div class="section__buttons u-hide-empty">
+
+    
+    
+            
+        
+        
+        
+        
+        
+        
+            
+</div>
+
+                                    <table class="striped files" width="100%" border="0" cellpadding="0" cellspacing="0">
+                        <thead>
+                        <tr>
+                            <th width="20px"><span class="tw-sr-only">Filetype Icon</span></th>
+                            <th width="80%">Name</th>
+                                                        <th class="tw-hidden md:tw-table-cell">Size</th>
+                                                                                                            </tr>
+                        </thead>
+                        <tbody>
+                                                    <tr class="file-568568">
+                                <td>
+                                    <svg></svg>
+                                </td>
+                                <td>
+                                                                                                                        <button type="button" class="tw-bg-transparent tw-border-0 tw-p-0 tw-cursor-pointer tw-text-accent-700 hover:tw-underline tw-font-[inherit] tw-text-left viewer-trigger" onclick="Livewire.dispatch('wvopen', { section: 34071, file: 568568})">Project Manual</button>
+                                                                                                            </td>
+                                                                <td class="tw-hidden md:tw-table-cell">66.8&nbsp;MB</td>
+                                                                                                                            </tr>
+                                                </tbody>
+                    </table>
+                            </div>
+        </section>
+        <div
+    x-cloak
+    id="WebViewer"
+    ref="webviewer"
+    x-data="{
+        open: false,
+        frameUrl: null,
+        pageUrl: self.location.pathname,
+        fileId: null,
+        trigger: null,
+        view: function(sectionId, fileId) {
+            this.trigger = document.activeElement;
+            this.fileId = fileId;
+            this.frameUrl = '/webviewer/11447/' + sectionId + '/' + this.fileId;
+
+            let frame = document.createElement('iframe');
+            frame.src = this.frameUrl;
+            frame.title = 'Document preview';
+            frame.addEventListener('load', () => frame.focus());
+            document.getElementById('wv-wrapper').appendChild(frame);
+
+            this.open = true;
+            let node = this.$el;
+            while (node.parentElement) {
+                Array.from(node.parentElement.children).forEach(sibling => {
+                    if (sibling !== node && !sibling.contains(this.$el)) {
+                        sibling.inert = true;
+                        sibling.dataset.wvInert = '';
+                    }
+                });
+                node = node.parentElement;
+            }
+            History.pushState({state:1}, '', this.pageUrl + '?wv=' + this.fileId);
+        },
+        close: function() {
+            this.open = false;
+            this.frameUrl = null;
+            this.fileId = null;
+            document.getElementById('wv-wrapper').innerHTML = '';
+            document.querySelectorAll('[data-wv-inert]').forEach(el => { el.inert = false; delete el.dataset.wvInert; });
+
+            if (this.trigger) {
+                this.trigger.focus();
+                this.trigger = null;
+            }
+
+            History.replaceState({state:1}, '', this.pageUrl);
+        },
+        update: function(fileId) {
+            if(this.fileId == fileId) return;
+
+            this.fileId = fileId;
+            History.replaceState({state:1}, '', this.pageUrl + '?wv=' + this.fileId);
+        },
+    }"
+    x-on:popstate.window="close()"
+    x-on:wvclose.window="close()"
+    x-on:wvopen.window="view($event.detail.section, $event.detail.file)"
+    x-on:wvswitch.window="update($event.detail.file)"
+    x-on:keydown.window.escape="close()"
+    x-show="open"
+    x-bind:class="{ 'modal-open': open }"
+    class="tw-relative tw-z-[1000]"
+    aria-label="Document preview"
+    role="dialog"
+    aria-modal="true"
+>
+    <div
+        x-show="open"
+        x-transition:enter="tw-ease-out tw-duration-300"
+        x-transition:enter-start="tw-opacity-0"
+        x-transition:enter-end="tw-opacity-100"
+        x-transition:leave="tw-ease-in tw-duration-200"
+        x-transition:leave-start="tw-opacity-100"
+        x-transition:leave-end="tw-opacity-0"
+        class="tw-fixed tw-inset-0 tw-bg-gray-500 tw-bg-opacity-75 tw-transition-opacity"
+    ></div>
+
+    <div
+        class="tw-fixed tw-inset-0 tw-p-3 sm:tw-p-6 tw-z-10 tw-overflow-y-auto">
+        <div
+            id="wv-wrapper"
+            x-transition:enter="tw-ease-out tw-duration-300"
+            x-transition:enter-start="tw-opacity-0 tw-translate-y-4 tw-sm:translate-y-0 tw-sm:scale-95"
+            x-transition:enter-end="tw-opacity-100 tw-translate-y-0 tw-sm:scale-100"
+            x-transition:leave="tw-ease-in tw-duration-200"
+            x-transition:leave-start="tw-opacity-100 tw-translate-y-0 tw-sm:scale-100"
+            x-transition:leave-end="tw-opacity-0 tw-translate-y-4 tw-sm:translate-y-0 tw-sm:scale-95"
+            class="tw-flex tw-flex-col tw-relative tw-transform tw-overflow-hidden tw-md:tw-rounded-lg tw-text-left tw-shadow-xl tw-transition-all tw-w-full tw-h-full"
+        >
+
+        </div>
+    </div>
+</div>
+            </div>
+
+        
+        <footer class="bottomBar copyright">
+        <nav class="footer-nav" aria-label="Footer navigation">
+                            <a href="/">Home</a>
+                    <span class="sep" aria-hidden="true">&middot;</span><a href="/projects/public">Public Projects</a>
+                    <span class="sep" aria-hidden="true">&middot;</span><a href="/projects/private">Private Projects</a>
+                    <span class="sep" aria-hidden="true">&middot;</span><a href="/projects/calendar">Project Calendar</a>
+                    <span class="sep" aria-hidden="true">&middot;</span><a href="/upload">Send Us Files</a>
+            </nav>
+    
+    <div>
+        <a href="/more/privacy">Privacy</a>&nbsp;  |&nbsp;  <a href="/more/disclaimer">Disclaimer</a>&nbsp;  |&nbsp;  <a href="/more/shipping-refund">Shipping &amp; Refund Policy</a><br/>
+<a style="text-decoration: none" href="http://www.signaturetechstudio.com" target="_blank">Copyright &copy; 2026</a>&nbsp;  |&nbsp;  <a style="text-decoration: none" href="http://www.reproconnect.com" target="_blank">Online planroom powered by <u>ReproConnect</u></a>
+            </div>
+</footer>
+    </main>
+
+        </div>
+    </div>
+    </div>
+
+<div class="footer-wrapper">
+    <footer class="container footer">
+            </footer>
+</div>
+
+<div id="modals">
+    <download-checkout v-if="queueCheckout" v-on:close="queueCheckout = false" class="hidden download-checkout"></download-checkout>
+</div>
+
+<script></script>
+
+    <div id="modal-bkg"
+        class="tw-fixed tw-inset-0 tw-overflow-hidden tw-bg-black tw-bg-opacity-50 tw-transition-opacity tw-z-[1040]"
+        x-data="{}"
+        x-cloak
+        x-show="$store.modals.showBkg"
+        x-transition:enter="tw-ease-in-out tw-duration-200"
+        x-transition:enter-start="tw-opacity-0"
+        x-transition:enter-end="tw-opacity-100"
+        x-transition:leave="tw-ease-in-out tw-duration-200"
+        x-transition:leave-start="tw-opacity-100"
+        x-transition:leave-end="tw-opacity-0"
+    >
+            </div>
+
+    <script></script>
+
+
+    <script></script>
+    <script></script>
+    <script></script>
+        <script></script>
+                    <script></script>
+    </body>
+</html>

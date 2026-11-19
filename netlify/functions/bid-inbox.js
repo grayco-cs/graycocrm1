@@ -279,7 +279,7 @@ function liteItem(x){
   ['id', 'status', 'rev', 'title', 'source', 'sourceKind', 'type', 'origin', 'websiteLead', 'websiteForm', 'address', 'city', 'state', 'zip', 'bidDue', 'bidDueWas', 'preBid', 'preBidLocation', 'preBidMandatory',
    'bidNumber', 'gc', 'owner', 'scope', 'estValue', 'contact', 'pm', 'pmEmail', 'estimator', 'estimatorEmail', 'pid', 'leadId', 'hold', 'flag', 'addendumCount', 'needsReview', 'rawRef', 'portal',
    'bidRole', 'bidRoleWhy', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere', 'dueSnippet', 'receivedAt', 'updatedAt', 'importedAt', 'assignedBy', 'assignedAt',
-   'autoAssignedAt', 'leadExtra', 'alsoOn'].forEach(k => { if (x[k] !== undefined && x[k] !== null && x[k] !== '') o[k] = x[k]; });
+   'autoAssignedAt', 'leadExtra', 'alsoOn', 'questionsDue', 'planRoom'].forEach(k => { if (x[k] !== undefined && x[k] !== null && x[k] !== '') o[k] = x[k]; });
   o.trades = arr(x.trades).slice(0, 40); o.notes = arr(x.notes).slice(-8);   /* patch BIDMERGE: 40 trades (was 12) */
   if (arr(x.gcs).length) o.gcs = arr(x.gcs).slice(0, 40);   /* patch BIDMERGE: every GC on the project */
   if (arr(x.history).length) o.history = arr(x.history).slice(-20);   /* patch BIDMERGE: the quiet "+1 GC" lines */
@@ -1152,6 +1152,9 @@ async function afterStore(results, items, opt){
   /* patch LEADS: plans that are a plain public file link (a PDF / ZIP / drawing) are stored in the CRM too;
      a link that needs a login or is a web page stays a link (always kept on the lead) */
   try { await fetchPlans(touched.map(t => t.it)); } catch (e) {}
+  /* patch PLANROOM: a new lead from a PUBLIC plan room (MR plan room, RKA, Barge — ReproConnect) gets its project page read once
+     (the pre-bid, questions deadline, scope, bonds / insurance …), rate-limited; anything else waits for a person's ↻ */
+  try { out.planRoom = await planRoomAuto(touched.filter(t => t.action === 'added').map(t => t.it)); } catch (e) { out.planRoom = { error: s(e && e.message) }; }
   /* patch BIDPOST (owner 11/12: "make it where I have to put jobs into the bid portal, nothing goes automatic"): a new lead no
      longer becomes a bid portal draft by itself. A person posts it (CRM: 📢 Put on bid portal). BID_PORTAL_AUTO=1 brings the old way back. */
   const BP = portalApi();
@@ -1362,6 +1365,98 @@ async function flushPortal(){
     }
     return r;
   } catch (e) { return { created: 0, error: s(e && e.message) }; }
+}
+
+/* ── patch PLANROOM: 📐 plan room details (_lib/planroom.js) ─────────────────────────────────────────────────────
+   Reads a lead's PUBLIC plan-room page (+ its public bid notice / invitation PDF): scope, pre-bid / site walk, questions
+   deadline, bid due, insurance / bonds / licensing / wage / MBE, addenda, contact, the document list. Stored on the Lead
+   Inbox item (item.planRoom; the CRM copies it to the lead's leadExtra.planRoom) and on the lead's bid job (job.planRoom +
+   the site walk, questions deadline, our bid due and the requirements, blanks only; the BIDPO site-walk → CRM schedule push
+   when the bid job is linked to a CRM job). Nobody outside is told anything: no sub notice, no text, no e-mail.
+   Rate limits (gc_planroom_reads.runs, the last hour): automatic reads PLANROOM_AUTO_HOURLY (default 12), by hand 60;
+   one page at a time with a pause between requests (_lib/planroom.js). PLANROOM_AUTO=0 turns the automatic read off. */
+const KV_PR = 'gc_planroom_reads';
+function PRL(){ return require('./_lib/planroom.js'); }
+function prDeps(extra){ return Object.assign({ fetch: exports._fetch || fetch, ai: exports._ai || require('./_lib/ai.js'), now: exports._now }, extra || {}); }
+function prKey(b){ return s(b.id) ? 'item:' + s(b.id) : s(b.leadId) ? 'lead:' + s(b.leadId).slice(0, 80) : s(b.jobId) ? 'job:' + s(b.jobId).slice(0, 80) : ''; }
+/* one more run, if the hour allows → true; kind 'auto' | 'hand' */
+async function prBudget(kind){
+  const lim = kind === 'auto' ? Math.max(0, parseInt(env('PLANROOM_AUTO_HOURLY') || '12', 10)) : 60;
+  let ok = false; const now = Date.now();
+  await kvCas(KV_PR, v => { v = v && typeof v === 'object' ? v : {}; const runs = arr(v.runs).filter(r => r && now - r.t < 3600000);
+    if (runs.filter(r => r.k === kind).length >= lim) { ok = false; return undefined; }
+    ok = true; runs.push({ t: now, k: kind }); v.runs = runs.slice(-200); return v; });
+  return ok;
+}
+async function prRemember(keys, rec){
+  keys = keys.filter(Boolean); if (!keys.length) return;
+  try { await kvCas(KV_PR, v => { v = v && typeof v === 'object' ? v : {}; const r = v.reads && typeof v.reads === 'object' ? v.reads : {};
+    keys.forEach(k => { r[k] = Object.assign({ at: nowIso() }, rec); });
+    const ks = Object.keys(r).sort((a, b) => s(r[b].at).localeCompare(s(r[a].at))); ks.slice(150).forEach(k => { delete r[k]; });
+    v.reads = r; return v; }); } catch (e) {}
+}
+/* the bid job: planRoom + blanks; the CRM schedule (BIDPO) when the site walk changed and the job is linked to a CRM job */
+async function prJob(jobId, pr, by, opt){
+  jobId = s(jobId); if (!jobId) return null;
+  const SP = exports._sp || require('./subportal.js')._hub;
+  const row = await SP.getRow('jobs', jobId); if (!row || !row.data) return { jobId, missing: true };
+  const job = Object.assign({}, row.data);
+  if (/^(deleted|archived)$/i.test(s(job.status))) return { jobId, gone: true };
+  const r = PRL().applyToJob(job, pr, by, opt);
+  job.updatedAt = nowIso();
+  await SP.upsertRows([SP.rowFor('jobs', job)], s(by) || 'plan room');
+  let sched = null;
+  if (r.walk && s(job.crmProjectId)) { try { sched = await SP.crmSiteWalkPush(jobId, s(by) || 'Plan room'); } catch (e) { sched = { ok: false, why: s(e && e.message) }; } }
+  return { jobId, changed: r.changed, walk: r.walk, schedule: sched };
+}
+function prJobIds(b, it){ const ids = []; [it && it.portal && it.portal.jobId].concat(arr(b.jobIds)).concat([b.jobId]).forEach(x => { x = s(x).slice(0, 80); if (/^[A-Za-z0-9_.:-]{3,80}$/.test(x) && ids.indexOf(x) < 0) ids.push(x); }); return ids.slice(0, 3); }
+/* read (or a person's edit) → stored everywhere it belongs; → { ok, planRoom, applied } */
+async function planRoomRun(b, by, opt){
+  opt = opt || {}; b = b || {};
+  const items = arr(await kvGet(KV)); let it = s(b.id) ? items.find(x => x && x.id === s(b.id)) : null; if (it) it = liveTarget(items, it);
+  let pr;
+  if (opt.edit) {
+    const base = (it && it.planRoom) || b.planRoom || {};
+    const f = PRL().cleanEdit(b.fields || {}), edited = Object.assign({}, base.edited || {}); Object.keys(f).forEach(k => { edited[k] = 1; });
+    const fields = Object.assign({}, base.fields || {}, f);
+    pr = Object.assign({ v: 1, fetchedAt: s(base.fetchedAt), url: s(base.url), host: s(base.host), board: s(base.board), kind: s(base.kind) || 'edited', reader: s(base.reader) || 'plain', docs: arr(base.docs), sourceLinks: arr(base.sourceLinks), sourceSnippets: base.sourceSnippets || {}, warnings: arr(base.warnings) }, { fields, edited, editedBy: by, editedAt: nowIso() });
+    pr.checklist = Array.isArray(b.checklist) ? b.checklist.slice(0, 40).map(x => ({ id: s(x && x.id).slice(0, 120), kind: s(x && x.kind).slice(0, 20), label: s(x && x.label).slice(0, 240), done: !!(x && x.done), doneBy: s(x && x.doneBy).slice(0, 80), doneAt: s(x && x.doneAt).slice(0, 40), manual: !!(x && x.manual) })).filter(x => x.id && x.label) : PRL().checklist(fields, base.checklist);
+  } else {
+    const old = (it && it.planRoom) || null;
+    const deps = prDeps({ oldChecklist: arr(old && old.checklist), budgetMs: opt.budgetMs || 25000, pauseMs: opt.pauseMs, aiTimeoutMs: opt.aiTimeoutMs || 40000 });
+    if (s(b.text) || (b.file && b.file.data)) pr = await PRL().readPasted({ text: s(b.text).slice(0, 60000), file: b.file && { name: s(b.file.name), data: s(b.file.data) }, url: s(b.url) || (old && old.url) || '' }, deps);
+    else {
+      const url = s(b.url) || (old && old.url) || (it ? PRL().bestUrl(it) : '') || s(b.leadUrl);
+      if (!url) return { ok: false, code: 400, error: 'No plan-room link on this lead yet — paste the project page link (or the invitation text / PDF).' };
+      pr = await PRL().read(url, deps);
+    }
+  }
+  const applied = { item: null, jobs: [] };
+  if (it && !(pr.why && !Object.keys(pr.fields || {}).length && it.planRoom && Object.keys((it.planRoom || {}).fields || {}).length)) {
+    let ch = [];
+    try { await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === it.id); if (!x) return undefined; ch = PRL().applyToItem(x, pr, { byPerson: !!opt.edit }); x.rev = (x.rev || 1) + 1; x.updatedAt = nowIso(); it = x; return list; }); } catch (e) { ch = ['error: ' + s(e && e.message)]; }
+    applied.item = { id: it.id, changed: ch };
+  }
+  if (!pr.why || Object.keys(pr.fields || {}).length) {
+    for (const jid of prJobIds(b, it)) { try { const r = await prJob(jid, it ? it.planRoom : pr, by, { byPerson: !!opt.edit }); if (r) applied.jobs.push(r); } catch (e) { applied.jobs.push({ jobId: jid, error: s(e && e.message) }); } }
+  }
+  const out = it ? it.planRoom : pr;
+  await prRemember([prKey(b), it ? 'item:' + it.id : '', s(b.leadId) ? 'lead:' + s(b.leadId) : ''].concat(applied.jobs.map(j => 'job:' + j.jobId)), { state: 'done', planRoom: out, applied });
+  return { ok: true, planRoom: out, applied, item: it ? { id: it.id, preBid: s(it.preBid), preBidLocation: s(it.preBidLocation), preBidMandatory: it.preBidMandatory, bidDue: s(it.bidDue), questionsDue: s(it.questionsDue) } : null };
+}
+/* new leads from a public plan room: read once, a few per run, inside the hourly budget */
+async function planRoomAuto(added, opt){
+  if (env('PLANROOM_AUTO') === '0') return { off: true };
+  const want = arr(added).filter(it => it && it.id && !it.planRoom && it.status !== 'dismissed' && PRL().autoUrl(it)).slice(0, 2);
+  const out = { read: 0, skipped: 0 };
+  if (!want.length) return out;
+  /* the watcher / the e-mail path keep their own time: the reading is handed to the background function when there is one */
+  if (!(opt && opt.inline) && await handOff(JSON.stringify({ type: 'planroom.auto', ids: want.map(x => x.id) }))) return { handedOff: want.length };
+  for (const it of want) {
+    if (!(await prBudget('auto'))) { out.skipped++; out.why = 'hourly limit'; continue; }
+    try { const r = await planRoomRun({ id: it.id, url: PRL().autoUrl(it) }, 'Plan room (automatic)', { budgetMs: 20000 }); if (r && r.ok) out.read++; } catch (e) { out.error = s(e && e.message); }
+  }
+  return out;
 }
 
 /* ── staff sign-in (same check as every CRM function) ──────────────────────── */
@@ -1802,6 +1897,30 @@ exports.handler = async function(event){
       out = x; return l; });
     return err ? J(400, { error: err }, C) : J(200, { ok: true, item: out }, C);
   }
+  /* patch PLANROOM: 📐 plan room details — GET ?planroom=1&key=item:<id>|lead:<id>|job:<id> (the last read) ·
+     POST ?planroom=1 { op: 'read', id | leadId | jobId(s), url?, text?, file?: { name, data (base64 PDF) } } · { op: 'save', …, fields, checklist } ·
+     { op: 'check', url } (public or sign-in only, nothing fetched). Staff only. */
+  if (qs.planroom && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await (exports._test.staffAuth || staffAuth)(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    if (event.httpMethod === 'GET') { const k = s(qs.key).slice(0, 120); const v = await kvGet(KV_PR); const r = v && v.reads && typeof v.reads === 'object' ? v.reads[k] : null; return J(200, { ok: true, key: k, read: r || null }, C); }
+    let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    const op = s(b.op) || 'read', by = s(who.name) || who.email;
+    if (op === 'check') { const c = PRL().classify(s(b.url)); return J(200, { ok: true, kind: c.kind, public: !!c.ok, board: s(c.board), why: s(c.why), todo: s(c.todo) }, C); }
+    if (op === 'save') { try { const r = await planRoomRun(b, by, { edit: true }); return J(r.ok ? 200 : (r.code || 400), r.ok ? r : { error: r.error }, C); } catch (e) { return J(502, { error: 'Could not save: ' + s(e && e.message).slice(0, 160) }, C); } }
+    if (op !== 'read') return J(400, { error: 'Unknown action.' }, C);
+    if (b.file && s(b.file.data).length > 6 * 1024 * 1024) return J(413, { error: 'That PDF is too big to send here (over about 4 MB) — paste the invitation pages only, or forward the e-mail to bids@grayco-cs.com.' }, C);
+    if (!(await prBudget('hand'))) return J(429, { error: 'Plan rooms were read 60 times in the last hour — try again in a while.' }, C);
+    const pasted = !!(s(b.text) || (b.file && b.file.data));
+    /* the slow part in the background function (15 minutes) when it can take the body; the CRM polls GET ?planroom=1&key=… */
+    if (b.inline !== true) {
+      const body = JSON.stringify({ type: 'planroom.read', b: { id: s(b.id), leadId: s(b.leadId), jobId: s(b.jobId), jobIds: arr(b.jobIds).slice(0, 3), url: s(b.url), text: s(b.text).slice(0, 60000), file: b.file && s(b.file.data) ? { name: s(b.file.name).slice(0, 120), data: s(b.file.data) } : undefined }, by });
+      if (body.length < 380000 && await handOff(body)) { await prRemember([prKey(b)], { state: 'running', by }); return J(202, { ok: true, started: true, key: prKey(b) }, C); }
+    }
+    /* here and now (no background function, or a big PDF): a short time budget; an AI read that does not answer in time leaves the plain reader's answer */
+    try { const r = await planRoomRun(b, by, { budgetMs: 7000, pauseMs: 300, aiTimeoutMs: 7000 }); return J(r.ok ? 200 : (r.code || 400), r.ok ? r : { error: r.error }, C); }
+    catch (e) { return J(502, { error: 'Could not read it just now (' + s(e && e.message).slice(0, 120) + ') — try again.' }, C); }
+  }
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' }, C);
 
   /* LA: a lead assigned to someone in the CRM (or entered by hand for them): tell that person now (once) */
@@ -1922,6 +2041,8 @@ exports.backgroundHandler = async function(event){
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
   if (evt && evt.type === 'sentpdf.pull') { try { const out = await require('./_lib/sent-pdf.js').drain({ budgetMs: 780000 }); console.log('[bid-inbox] ' + JSON.stringify({ sentPdfs: out })); return { statusCode: 202 }; } catch (e) { console.error('[bid-inbox] sent pdfs: ' + s(e && e.message)); return { statusCode: 202 }; } }   /* patch SENTPDF */
   if (evt && evt.type === 'money.pull') { try { const out = await require('./_lib/money-box.js').drain({ budgetMs: 780000 }); console.log('[bid-inbox] ' + JSON.stringify({ inbox: 'office@ mailbox', read: out.read || 0, filed: (out.filed || []).map(f => f.ignored ? 'ignored: ' + f.ignored : f.error ? 'error: ' + f.error : (f.kind || '?') + (f.route ? ' ' + f.route : '')).slice(0, 20), skipped: out.skipped || '' })); return J(200, out); } catch (e) { console.error('[bid-inbox] office@ mailbox read failed: ' + (e && e.message)); return J(500, { error: 'mailbox read failed' }); } }   /* patch SUBINV */
+  if (evt && evt.type === 'planroom.auto') { try { const ids = arr(evt.ids).map(s).slice(0, 5), items = arr(await kvGet(KV)).filter(x => x && ids.indexOf(x.id) >= 0); const r = await planRoomAuto(items, { inline: true }); console.log('[bid-inbox] ' + JSON.stringify({ planRoomAuto: r })); return J(200, r); } catch (e) { console.error('[bid-inbox] plan room auto read failed: ' + s(e && e.message)); return J(500, { error: 'plan room auto read failed' }); } }   /* patch PLANROOM */
+  if (evt && evt.type === 'planroom.read') { try { const r = await planRoomRun(evt.b || {}, s(evt.by) || 'staff', { budgetMs: 120000 }); if (!r.ok) await prRemember([prKey(evt.b || {})], { state: 'error', why: s(r.error) }); console.log('[bid-inbox] ' + JSON.stringify({ planRoom: prKey(evt.b || {}), ok: !!r.ok })); return J(200, { ok: !!r.ok }); } catch (e) { await prRemember([prKey(evt.b || {})], { state: 'error', why: s(e && e.message).slice(0, 160) }); console.error('[bid-inbox] plan room read failed: ' + s(e && e.message)); return J(500, { error: 'plan room read failed' }); } }   /* patch PLANROOM */
   if (evt && evt.type === 'watch.run') { try { const out = await require('./bid-watch.js').runAll({ only: s(evt.source), by: s(evt.by) }); console.log('[bid-inbox] ' + JSON.stringify({ inbox: 'bid watcher', source: s(evt.source) || 'all', ok: !!(out && out.ok !== false) })); return J(200, out); } catch (e) { console.error('[bid-inbox] watcher failed: ' + (e && e.message)); return J(500, { error: 'watcher failed' }); } }
   const t0 = Date.now(), r = await processEvent(evt, { rerun: !!(evt && evt.rerun) });
   (r.status >= 500 ? console.error : console.log)(logLine(evt, r, Date.now() - t0));   /* patch MAILFIX: ONE line per e-mail, always — the outcome and why */
@@ -1936,5 +2057,6 @@ exports._test = { radiusGate, miles, bidPath, noticeGate, cleanupPick, CLEANUP_R
 exports._lib.storeFile = storeFile;
 exports._lib.handOffJson = function(obj){ return handOff(JSON.stringify(obj)); };   /* patch SUBINV: mail-all-sync → the office@ mailbox reader in the background */
 exports._test.processEvent = processEvent;
+exports._test.planRoomRun = planRoomRun; exports._test.planRoomAuto = planRoomAuto; exports._test.prBudget = prBudget; exports._test.KV_PR = KV_PR;   /* patch PLANROOM */
 exports._test.outcomeOf = outcomeOf; exports._test.logLine = logLine; exports._test.KV_RECV = KV_RECV;   /* patch MAILFIX */
 exports._test.estimateMail = estimateMail; exports._test.forEstimates = forEstimates;   /* patch ESTIN: tests */   /* patch MAILC: tests */
