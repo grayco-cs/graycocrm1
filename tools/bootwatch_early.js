@@ -218,7 +218,8 @@ try {
   /* the home-screen app comes back from the background (not a new open): look again, at most every 10 minutes */
   var lastResume = 0;
   var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
-  try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = 0; resume(); } }); } catch (e) {}
+  /* a page Safari hands back from its back / forward cache (persisted): always looked at, even in its first minute */
+  try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = Date.now(); checkVersion(true); } }); } catch (e) {}
 
   /* ── sending ── */
   var isProblem = function(){ for (var k in B.p) return true; return false; };

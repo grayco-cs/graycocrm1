@@ -837,6 +837,24 @@ try {
       .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
     return checking;
   };
+  var autoT = null, lastAct = 0, autoN = 0;
+  var autoUpdate = function(){
+    if (autoT || autoN) return;
+    try { ['keydown', 'input', 'pointerdown', 'touchstart', 'wheel'].forEach(function(t){ D.addEventListener(t, function(){ lastAct = Date.now(); }, true); }); } catch (e) {}
+    var tick = function(){
+      autoT = null; if (++autoN > 600) return;
+      var busy = '';
+      try {
+        if (D.visibilityState === 'hidden') busy = 'hidden';
+        else if (Date.now() - lastAct < 15000) busy = 'in use';
+        else { var a = D.activeElement; if (a && a !== D.body && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable)) busy = 'typing'; }
+        if (!busy && W._gcSending && W._gcSending().length) busy = 'sending';
+      } catch (e) {}
+      if (!busy) { B.autoUpd = ms(); dirty = true; if (update()) return; }
+      autoT = NST.call(W, tick, 3000);
+    };
+    autoT = NST.call(W, tick, 1500);
+  };
   checkImpl = function(resumed){
     return fetchLive().then(function(live){
       var mine = B.build = s(W.__GC_BUILD_ID__ || B.build).slice(0, 40);
@@ -846,7 +864,7 @@ try {
       B.old = { mine: mine, live: live, src: src || (resumed ? 'resumed' : 'network'), t: ms() };
       if (recent) B.old.afterUpdate = Math.round((Date.now() - healed) / 1000) + ' s after Tap to update';
       problem('old');
-      if (!recent && (src || resumed || gateUp() || !authed())) banner(live);
+      if (!recent && (src || resumed || gateUp() || !authed())) { banner(live); autoUpdate(); }
       return true;
     });
   };
@@ -1043,7 +1061,7 @@ try {
   function checkVersion(resumed){ L(); return checkImpl ? checkImpl(resumed) : Promise.resolve(false); }
   var lastResume = 0;
   var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
-  try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = 0; resume(); } }); } catch (e) {}
+  try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = Date.now(); checkVersion(true); } }); } catch (e) {}
 
   var isProblem = function(){ for (var k in B.p) return true; return false; };
   function heartbeat(){ if (get(HB_K) === day()) return; hbDue = true; var t0 = Date.now();

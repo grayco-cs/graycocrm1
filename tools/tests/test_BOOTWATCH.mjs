@@ -5,6 +5,7 @@
 //   2 phone, a wrong password: the error text is recorded, the e-mail only as domain + hash, never the password; then the right
 //     password: signed in → the signed-in e-mail is recorded (from the sign-in token)
 //   3 old build (version.txt newer) served by a service worker: "A newer version is ready — Tap to update" over the sign-in
+//     screen (while a person is using the phone it waits for the tap; 3b: nobody touching it, it updates by itself, once)
 //     screen; the tap removes the old worker (never /crm-push-sw.js) and reloads EXACTLY once; no second banner / reload within
 //     10 min; the CRM's own "Yes, update" bar (signed in, fresh page) goes through the same one update
 //   4 desk, a normal signed-in open: the daily heartbeat (with the e-mail) and NOTHING else; the next open sends nothing
@@ -133,7 +134,9 @@ if (want(2)) {
 if (want(3)) {
   console.log('3 · an old build served by a service worker: Tap to update — exactly one reload');
   VER = '33.999-2026-12-31-r99z';
-  const A = await computer('phone3', { build, mobile: true, init: [IPHONE, OLDSW] }); const p = A.page();
+  /* a person is using the phone (a touch every half second): the update waits for the tap, it does not run by itself */
+  const BUSY = `(() => { setInterval(() => { try { document.dispatchEvent(new Event('pointerdown')); } catch (e) {} }, 500); })()`;
+  const A = await computer('phone3', { build, mobile: true, init: [IPHONE, OLDSW, BUSY] }); const p = A.page();
   let navs = 0; p.on('domcontentloaded', () => { navs++; });   /* a new document (framenavigated also counts same-page address changes) */
   ok(!!(await waitFor(A, () => { const b = document.getElementById('gc-bw-update'); return b && b.getClientRects().length && document.getElementById('gc-auth-email'); }, null, 30000)), 'the banner shows (with the sign-in screen up)');
   const top = await A.ev(() => { const b = document.getElementById('gc-bw-update').getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { txt: document.getElementById('gc-bw-update').textContent, onTop: !!(e && e.closest('#gc-bw-update')) }; });
@@ -152,6 +155,20 @@ if (want(3)) {
   const sent = await until(() => ((rowOf(d) || {}).boots || []).find(x => x.old && x.old.afterUpdate), 40000);
   ok(!!sent && rowOf(d).boots.some(x => x.heal >= 0), 'both opens reach the report (the tap, and "still old after the update")', rowOf(d) && rowOf(d).boots.map(x => ({ old: x.old, heal: x.heal })));
   await A.close();
+  /* 3b · the same old copy on a phone nobody is touching (Safari's back / forward cache or tab restore): it updates BY ITSELF
+     at the first quiet moment — once, never a loop */
+  {
+    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW] }); const pc = C.page();
+    let nc = 0; pc.on('domcontentloaded', () => { nc++; });
+    ok(!!(await waitFor(C, () => !!(window._gcBootWatch && window._gcBootWatch.state().boot.old), null, 30000)), '3b: the old copy is seen');
+    const c0 = nc; await sleep(15000);
+    const st = await C.ev(() => ({ unreg: JSON.parse(sessionStorage.getItem('__unreg') || '[]'), heal: +localStorage.getItem('gc_bw_heal_at') || 0, banner: !!document.getElementById('gc-bw-update') })).catch(() => ({}));
+    ok(nc - c0 === 1 && st.heal > 0, '3b: nobody tapping — the update ran by itself, exactly one reload', { navs: nc - c0, st });
+    ok(st.unreg && st.unreg.includes('/sw-old.js') && !st.unreg.includes('/crm-push-sw.js') && !st.banner, '3b: the old worker removed (the notifications one kept), no second banner', st);
+    await sleep(8000);
+    ok(nc - c0 === 1, '3b: still exactly one reload 8 s later (never a loop)', { navs: nc - c0 });
+    await C.close();
+  }
   /* the CRM's own update bar (signed in, a fresh page from the network) uses the same update */
   /* who reloads: every location.reload() call is written down with its stack (for the report) */
   const RLOG = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl') || '[]'); a.push(String(new Error().stack).split('\\n').slice(1, 6).join(' | ').slice(0, 600)); sessionStorage.setItem('__rl', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
