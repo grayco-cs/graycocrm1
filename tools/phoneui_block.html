@@ -72,9 +72,11 @@ try {
     'html.gc-pu-app .gc-pu-page .gc-pu-hide{display:none!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-top:0!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet .gc-pu-bar{margin:0 -16px 10px}' +
-    'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;transform:none!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
+    'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
+    /* (display is the panel's own: code that hides a panel with style.display = "none" still does) */
+    'html.gc-pu-app .gc-pu-page.gc-pu-flex{flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important}' +
     'html.gc-pu-app .gc-pu-page > .gc-pu-bar{order:-1;flex:0 0 auto}' +
-    'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;transform:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
     'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .bd{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu-app #_gcJobPick,html.gc-pu-app #_gcJobDash{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
@@ -278,6 +280,7 @@ try {
   }
   function genericPage(L){
     if (!L.classList.contains('gc-pu-page')) {
+      if (/flex/.test(cs(L).display)) L.classList.add('gc-pu-flex');
       L.classList.add('gc-pu-page'); PU.pages++;
       if (L.hasAttribute('data-gc-sa')) { L.style.removeProperty('padding-top'); L.removeAttribute('data-gc-sa'); }
       var card = mainCard(L); if (card) card.classList.add('gc-pu-card');
@@ -288,7 +291,10 @@ try {
       var mine = /My Approvals/.test(String((L.firstElementChild && L.firstElementChild.textContent) || '').slice(0, 200));
       if (mine || !ownBackAtTop(L)) {
         var te = mine ? null : titleEl(L);
-        L.appendChild(bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); })); L.setAttribute('data-gc-pu-bar', '1');
+        var br = bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); });
+        /* a flex panel: at the end, drawn first (order:-1), so code that reads the panel's first child still finds its own */
+        if (L.classList.contains('gc-pu-flex')) L.appendChild(br); else L.insertBefore(br, L.firstChild);
+        L.setAttribute('data-gc-pu-bar', '1');
         if (te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input')) te.classList.add('gc-pu-hide');
       }
     }

@@ -1493,8 +1493,6 @@ var ROWS = [
   ['emergency_line', 'safety', 'B', 1, 1, 'server', 'Emergency line', 'Emergency words or "press 1" phone and text staff until someone answers.'],
   ['oncall_paging', 'safety', 'B', 1, 1, 'server', 'On-call paging + escalation', 'An after-hours emergency pages the on-call person; nobody accepts → the next person, then all admins.'],
   ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
-  ['call_recording', 'cust', 'A', 0, 0, 'server', 'Record office-line calls', 'Calls through the GrayCo Twilio number are recorded once someone answers (the caller first hears “This call may be recorded”). Staff play them on the lead. Never part of “turn on everything”.', 0, 1],
-  ['call_voicemail', 'cust', 'A', 0, 0, 'server', 'Voicemail on missed calls', 'When nobody answers, the caller can leave a message (2 min). It is saved on the lead, staff only. Never part of “turn on everything”.', 0, 1],
   /* ── lead intake, sync, backups ── */
   ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
   ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (lead companies)', 'Leads posted by lead partners come into the CRM.'],
@@ -1511,8 +1509,6 @@ var ROWS = [
   ['gdocs_sync', 'sync', 'D', 0, 1, 'server', 'Google Docs list', 'The team’s new Google Docs show in the CRM (no e-mail).'],
   ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
   ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
-  ['lsa_sync', 'sync', 'C', 1, 1, 'server', 'Google LSA calls → leads', 'Every 10 min: Google Local Services calls get the caller’s number, job type, length and recording (Google Ads API, the office call log, Wesley’s mailbox); a call that is not a lead yet becomes one.'],
-  ['call_transcribe', 'sync', 'D', 0, 1, 'server', 'Transcribe call recordings', 'A new call recording or voicemail is turned into text with a short summary on the lead (needs a transcription key).'],
   ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
   /* ── staff alerts ── */
   ['bid_alerts_staff', 'staff', 'B', 0, 1, 'server', 'Bid-due and speed-to-lead alerts', '"Bid due in 1 h / today / tomorrow", "assign this lead", "reach out", RoofScout lead mail.'],
@@ -1596,7 +1592,7 @@ var ROWS = [
   ['dup_invoice_delete', 'rec', 'C', 0, 0, 'page', 'Duplicate sub invoice / $0 row delete', 'Deletes duplicate sub invoices and $0 rows. OFF: they are only flagged.'],
   ['ms_tax_add', 'rec', 'C', 0, 0, 'page', 'Mississippi tax auto-add', 'Adds 3.5 % MS contractor’s tax to Mississippi estimates.']
 ];
-var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8], optIn: !!r[9] }; });   /* LSAREC: optIn — only ever turned on by hand (call recording / voicemail) */
+var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8] }; });
 var BY = {}; LIST.forEach(function(a){ BY[a.key] = a; });
 
 function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
@@ -1610,7 +1606,7 @@ function valueOf(row, key){
 }
 function defaults(){ var o = {}; LIST.forEach(function(a){ o[a.key] = a.defaultOn; }); return o; }
 /* "Turn on everything I had before": every automation ran before the panel existed */
-function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = !a.optIn; }); return o; }
+function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = true; }); return o; }
 function all(row){ var o = {}; LIST.forEach(function(a){ o[a.key] = valueOf(row, a.key); }); return o; }
 /* a held record, merged into the gc_auto_held row: { n: times held, since, last, would: last count, sample } */
 function heldMerge(heldRow, key, n, sample, nowIso){
@@ -6626,7 +6622,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.276-2026-11-19-r36p -->
+<!-- GrayCo CRM Build: 33.274-2026-11-19-r36n -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -7598,7 +7594,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.276-2026-11-19-r36p");
+  console.log("[GC] Build 33.274-2026-11-19-r36n");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -7646,7 +7642,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.276-2026-11-19-r36p"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.274-2026-11-19-r36n"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -221945,7 +221941,7 @@ function vetHtml(L){
       + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"><input data-vet-ph type="tel" inputmode="tel" value="' + esc(s(l.phone || (l.contact && l.contact.phone))) + '" placeholder="Their number (901) 555-1234" style="flex:1 1 170px;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif">'
       + '<input data-vet-note placeholder="What they need (optional)" style="flex:2 1 200px;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif"></div>'
       + '<div style="display:flex;gap:8px;margin-top:6px"><button type="button" data-vet-b="real" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #166534;background:#166534;color:#fff;font:700 14px Inter,Arial,sans-serif;cursor:pointer">✅ Real lead — text Wesley &amp; Nick</button>'
-      + '<button type="button" data-vet-b="junk" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #fca5a5;background:#fee2e2;color:#991b1b;font:700 14px Inter,Arial,sans-serif;cursor:pointer">🚫 Junk — no text</button></div><div data-vet-msg style="font-size:12.5px;color:#b91c1c"></div><div data-vet-rec="' + esc(s(l.inboxId || l.leadInboxId || l.fromInbox || l.id)) + '"></div></div>'; });   /* LSAREC: 🎧 the call box (number, length, ▶ Play) */
+      + '<button type="button" data-vet-b="junk" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #fca5a5;background:#fee2e2;color:#991b1b;font:700 14px Inter,Arial,sans-serif;cursor:pointer">🚫 Junk — no text</button></div><div data-vet-msg style="font-size:12.5px;color:#b91c1c"></div></div>'; });
   return h;
 }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -221970,7 +221966,7 @@ function vetPaint(){
     if (cur && cur.getAttribute('data-sig') === sig && cur.parentElement === hub && (!spot || cur.previousElementSibling === spot)) return;
     if (cur && cur.contains(D.activeElement)) return;   /* do not wipe what they are typing */
     if (!cur) { cur = D.createElement('div'); cur.id = 'gc-lsa-vet'; cur.setAttribute('data-gc-keep', '1'); cur.style.cssText = 'position:relative;background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:10px 12px;margin:8px 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a'; }
-    cur.setAttribute('data-sig', sig); cur.innerHTML = '<button type="button" data-vet-x aria-label="Close" style="position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#475569">✕</button>' + vetHtml(L); vetRecFill(cur);   /* LSAREC */
+    cur.setAttribute('data-sig', sig); cur.innerHTML = '<button type="button" data-vet-x aria-label="Close" style="position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#475569">✕</button>' + vetHtml(L);
     if (spot) spot.insertAdjacentElement('afterend', cur); else if (cur.parentElement !== hub) hub.insertBefore(cur, hub.firstChild);
   } catch (e) {}
 }
@@ -222025,97 +222021,6 @@ function disputeBar(){
   } catch (e) {}
 }
 SI.call(W, disputeBar, 700);
-/* LSAREC (owner 11/19: "can you transcribe these Google LSA leads to get the info from them, phone numbers etc so we know what the leads
-   are, can you also have the recording for us, the voicemail or phone recording from Brittany"): an open Google LSA / missed-call lead
-   shows "🎧 Call" under the LSA bar — the caller's number (from Google or the office call log), Google's call time, the call length, the
-   job type, ▶ Play (a Twilio recording or voicemail, fetched through the signed-in staff-only call-recording function), 🔗 Listen in Google
-   (Google's own LSA recording), 📝 Transcribe, and the transcript's short summary (full text under "Full transcript"). Staff only: the
-   CRM page and that function are for signed-in staff; nothing here reaches a customer. The office's "📞 LSA calls" check card gets the
-   same box, and the number Google / the call log found is filled in for them. */
-var REC_C = {}, REC_URL = {};
-var REC_BTN = 'display:inline-flex;align-items:center;min-height:38px;padding:0 12px;border-radius:9px;font:700 13.5px Inter,Arial,sans-serif;cursor:pointer;text-decoration:none;';
-function recLeadOk(l){ var ex = (l && l.leadExtra) || {}; return !!l && (lsaAny(l) || !!(l.missedCall || ex.missedCall || l.callSid || ex.callSid) || /missed call/i.test(s(l.source))); }
-function recSrv(l){ return s(l.inboxId || l.leadInboxId || l.fromInbox || l.id); }
-function recTidy(p){ p = s(p).replace(/\D/g, ''); return p.length === 10 ? '(' + p.slice(0, 3) + ') ' + p.slice(3, 6) + '-' + p.slice(6) : p; }
-function recGet(id, fresh){
-  var c = REC_C[id]; if (c && !fresh) { if (c.p) return c.p; if (Date.now() - c.at < 60000) return Promise.resolve(c.v); }
-  var p = W.fetch('/.netlify/functions/call-recording?lead=' + encodeURIComponent(id), { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { ok: false, error: 'No signal' }; })
-    .then(function(o){ REC_C[id] = { at: Date.now(), v: o }; return o; });
-  REC_C[id] = { at: Date.now(), p: p }; return p;
-}
-function recHtml(o){
-  if (!o || !o.ok || !o.info) return '';
-  var i = o.info, st = o.status || {}, bits = [], acts = '', recs = i.recs || [];
-  if (i.phone) bits.push('📞 <a href="tel:' + esc(i.phone) + '" style="color:#1d4ed8;font-weight:700">' + esc(recTidy(i.phone)) + '</a>' + (i.phoneFrom ? ' <span style="color:#64748b">(' + esc(i.phoneFrom === 'google' ? 'from Google' : i.phoneFrom) + ')</span>' : ''));
-  if (i.callAtLabel) bits.push('🕒 ' + esc(i.callAtLabel));
-  if (i.dur) bits.push('⏱ ' + esc(i.dur) + ' call');
-  if (i.job) bits.push('🔧 ' + esc(i.job));
-  if (i.outcome) bits.push(esc(i.outcome));
-  if (i.googleId) bits.push('Google lead ' + esc(i.googleId) + (i.charged ? ' · charged' : ''));
-  recs.forEach(function(r){ acts += '<button type="button" data-rec-play="' + esc(r.id) + '" style="' + REC_BTN + 'border:1px solid #1d4ed8;background:#1d4ed8;color:#fff">▶ Play ' + (r.kind === 'voicemail' ? 'voicemail' : 'call') + (r.durLabel ? ' (' + esc(r.durLabel) + ')' : '') + '</button>'; });
-  if (i.google && i.google.url) acts += '<a href="' + esc(i.google.url) + '" target="_blank" rel="noopener noreferrer" data-rec-google style="' + REC_BTN + 'border:1px solid #1d4ed8;background:#fff;color:#1d4ed8">🔗 Listen in Google ↗</a>';
-  if (st.transcribe && (recs.length || i.google) && !i.transcript) acts += '<button type="button" data-rec-tx style="' + REC_BTN + 'border:1px solid #166534;background:#f0fdf4;color:#166534">📝 Transcribe</button>';
-  var tx = i.transcript ? '<div data-rec-sum style="margin-top:6px;font-size:13.5px;color:#0f172a">📝 ' + esc(i.transcript.summary || '') + '<details style="margin-top:4px"><summary style="cursor:pointer;color:#1d4ed8;font-size:13px">Full transcript</summary><div style="white-space:pre-wrap;font-size:13px;color:#334155;margin-top:4px">' + esc(i.transcript.text) + '</div></details></div>' : '';
-  var miss = [];
-  if (!recs.length && !(i.google && i.google.url)) { if (!st.recording) miss.push('office-line recording is off (⚡ Automations → Record office-line calls)'); if (i.lsa && !(st.googleApi && st.googleApi.connected)) miss.push('the Google Ads API is not connected (Marketing → 📈 Ads hub), so Google\'s LSA recording is only in the LSA app'); }
-  if ((recs.length || i.google) && !st.transcribe) miss.push('no transcription key on Netlify (OPENAI_API_KEY or DEEPGRAM_API_KEY)');
-  var hint = miss.length && admin() ? '<div style="font-size:12px;color:#64748b;margin-top:4px">Not set up yet: ' + esc(miss.join('; ')) + '.</div>' : '';
-  if (!bits.length && !acts && !tx && !hint) return '';
-  return '<b>🎧 Call</b>' + (bits.length ? '<div data-rec-bits style="font-size:13.5px;color:#0f172a;margin:4px 0;line-height:1.5">' + bits.join(' · ') + '</div>' : '')
-    + (acts ? '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">' + acts + '</div>' : '') + '<div data-rec-audio style="margin-top:6px"></div>' + tx
-    + (i.txError && !i.transcript ? '<div style="font-size:12.5px;color:#b91c1c">Transcript: ' + esc(i.txError) + '</div>' : '') + '<div data-rec-msg style="font-size:12.5px;color:#b91c1c"></div>' + hint;
-}
-function recFill(b, srv, fresh){
-  b.setAttribute('data-rec-id', srv);
-  recGet(srv, fresh).then(function(o){
-    if (!b.isConnected || b.getAttribute('data-rec-id') !== srv) return;
-    var h = recHtml(o); if (!h) { b.style.display = 'none'; b.innerHTML = ''; return; }
-    b.innerHTML = h; b.style.display = '';
-    var row = b.closest('[data-vet]'), inp = row && row.querySelector('[data-vet-ph]');   /* the office check: the number Google / the call log found */
-    if (inp && !s(inp.value) && o.info && o.info.phone && D.activeElement !== inp) inp.value = recTidy(o.info.phone);
-  });
-}
-function callBox(){
-  try {
-    var d = D.getElementById('gcl-drawer'); if (!d || !d.getClientRects().length) return;
-    var H = W._gcLeadsHub, id = H && H.ui && H.ui().open, l = id && lead(id), have = d.querySelector('#gc-call-rec');
-    if (!l || !recLeadOk(l)) { if (have) have.remove(); return; }
-    var srv = recSrv(l);
-    if (have && have.getAttribute('data-id') === srv) return; if (have) have.remove();
-    var b = D.createElement('div'); b.id = 'gc-call-rec'; b.setAttribute('data-id', srv);
-    b.style.cssText = 'display:none;margin:0 0 10px;padding:10px 12px;border-radius:10px;border:1px solid #c7d2fe;background:#f8fafc;font:14px Inter,Arial,sans-serif;color:#0f172a';
-    var dis = d.querySelector('#gc-lsa-dispute'); if (dis && dis.parentElement === d) dis.insertAdjacentElement('afterend', b); else d.insertBefore(b, d.firstChild);
-    recFill(b, srv, false);
-  } catch (e) {}
-}
-SI.call(W, callBox, 700);
-function vetRecFill(cur){
-  try { Array.prototype.forEach.call(cur.querySelectorAll('[data-vet-rec]'), function(b){ b.style.cssText = 'display:none;margin-top:6px;padding:8px 10px;border-radius:9px;border:1px solid #c7d2fe;background:#fff'; recFill(b, b.getAttribute('data-vet-rec'), false); }); } catch (e) {}
-}
-D.addEventListener('click', function(e){
-  var t = e.target && e.target.closest ? e.target.closest('[data-rec-play],[data-rec-tx]') : null; if (!t) return;
-  var box = t.closest('[data-rec-id]'); if (!box) return;
-  e.preventDefault(); e.stopPropagation();
-  var srv = box.getAttribute('data-rec-id'), msg = box.querySelector('[data-rec-msg]'), au = box.querySelector('[data-rec-audio]'); if (msg) msg.textContent = '';
-  if (t.hasAttribute('data-rec-play')) {
-    var rid = t.getAttribute('data-rec-play');
-    var show = function(u){ if (au) au.innerHTML = '<audio controls autoplay preload="auto" src="' + esc(u) + '" style="width:100%;max-width:420px"></audio>'; };
-    if (REC_URL[rid]) { show(REC_URL[rid]); return; }
-    t.disabled = true; var was = t.textContent; t.textContent = 'Loading…';
-    W.fetch('/.netlify/functions/call-recording?lead=' + encodeURIComponent(srv) + '&play=' + encodeURIComponent(rid), { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { error: 'No signal — try again.' }; }).then(function(o){
-      t.disabled = false; t.textContent = was;
-      if (!o || !o.ok || !o.b64) { if (msg) msg.textContent = s(o && o.error) || 'Could not load the recording.'; return; }
-      try { var bin = atob(o.b64), u8 = new Uint8Array(bin.length); for (var k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k); REC_URL[rid] = URL.createObjectURL(new Blob([u8], { type: s(o.mime) || 'audio/mpeg' })); show(REC_URL[rid]); } catch (x) { if (msg) msg.textContent = 'Could not play it here.'; }
-    });
-    return;
-  }
-  t.disabled = true; t.textContent = '📝 Transcribing…';
-  W.fetch('/.netlify/functions/call-recording?transcribe=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: srv }) }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { error: 'No signal — try again.' }; }).then(function(o){
-    if (!o || !o.ok) { t.disabled = false; t.textContent = '📝 Transcribe'; if (msg) msg.textContent = s(o && o.error) || 'Could not transcribe it.'; return; }
-    delete REC_C[srv]; recFill(box, srv, true);
-  });
-}, true);
-W._gcCallRec = { info: function(id){ return recGet(id, true); }, html: recHtml };
 /* patch LSATEXT (owner 11/10): GOOD / BAD texted back from Wesley's or Nick's cell (server: _lib/smsalert.js → gc_kv "gc_lsa_decisions")
    → the same mark on the CRM lead; the office To-Do "Dispute … in Google Ads" was already added by the server */
 function textMarks(){
@@ -244396,9 +244301,11 @@ try {
     'html.gc-pu-app .gc-pu-page .gc-pu-hide{display:none!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-top:0!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet .gc-pu-bar{margin:0 -16px 10px}' +
-    'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;transform:none!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
+    'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
+    /* (display is the panel's own: code that hides a panel with style.display = "none" still does) */
+    'html.gc-pu-app .gc-pu-page.gc-pu-flex{flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important}' +
     'html.gc-pu-app .gc-pu-page > .gc-pu-bar{order:-1;flex:0 0 auto}' +
-    'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;transform:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
     'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .bd{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu-app #_gcJobPick,html.gc-pu-app #_gcJobDash{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
@@ -244602,6 +244509,7 @@ try {
   }
   function genericPage(L){
     if (!L.classList.contains('gc-pu-page')) {
+      if (/flex/.test(cs(L).display)) L.classList.add('gc-pu-flex');
       L.classList.add('gc-pu-page'); PU.pages++;
       if (L.hasAttribute('data-gc-sa')) { L.style.removeProperty('padding-top'); L.removeAttribute('data-gc-sa'); }
       var card = mainCard(L); if (card) card.classList.add('gc-pu-card');
@@ -244612,7 +244520,10 @@ try {
       var mine = /My Approvals/.test(String((L.firstElementChild && L.firstElementChild.textContent) || '').slice(0, 200));
       if (mine || !ownBackAtTop(L)) {
         var te = mine ? null : titleEl(L);
-        L.appendChild(bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); })); L.setAttribute('data-gc-pu-bar', '1');
+        var br = bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); });
+        /* a flex panel: at the end, drawn first (order:-1), so code that reads the panel's first child still finds its own */
+        if (L.classList.contains('gc-pu-flex')) L.appendChild(br); else L.insertBefore(br, L.firstChild);
+        L.setAttribute('data-gc-pu-bar', '1');
         if (te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input')) te.classList.add('gc-pu-hide');
       }
     }
