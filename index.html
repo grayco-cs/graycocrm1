@@ -248382,3 +248382,648 @@ W._gcPapers = { older: older, basic: basic, dropped: dropped, required: required
 try { console.log('[GC] 📑 papers: older jobs keep the basics · suggested · PM → office → admins (patch PAPERS) — _gcPapers'); } catch (e) {}
 })(window);
 </script>
+</script>
+<script id="gc-patch-phoneui">
+/* __GC_PATCH_PHONEUI__ — GrayCo Field on a phone looks and works like an app (tools/patch_PHONEUI.py).
+   Owner 11/19 (iPhone, Field): "Top search bar and changing companies shouldn't be in there, it needs to look like an app,
+   and those buttons list calendar etc need to be a little bigger so I know what they are"; panels sit under the status bar
+   (🆘 Problem reports: title under the clock, ✕ under the battery, not tappable); Approvals "should open like a page, not
+   a pop up, and it should be white"; the "Get your approvals on this phone" card under the clock; notes stacked over the
+   bottom bar.
+   The page uses viewport-fit=cover, so anything fixed at top:0 starts under the iPhone status bar unless it pads itself.
+   Everything here is for a phone (iPhone / Android phone, or a window under 820 px); a computer's desk does not change.
+   1. SAFE AREA (any person, Field or not): --gc-sat = env(safe-area-inset-top). Each second (and when something is added
+      to the page) the strip under the status bar is sampled; text or a button of a fixed / sticky panel found there gets
+      that panel a padding-top of max(its own, --gc-sat) (or, for a button placed absolutely, its top moved down by it).
+      Close / Back buttons of the open panels are at least 44 x 44. NAV's floating Back sits under the inset too.
+   2. NOTES (Field): toasts, the amber "Saved on this phone" note, "☁ Saved…" and the COI / W-9 pill stack up from just
+      above the bottom bar instead of piling on each other; the Field home's 🔔 notifications card sits under the
+      GrayCo Field header (not above it, under the clock).
+   3. APP PAGES (Field): ✅ My Approvals, 📅 My Schedule, ☰ More and the Field sheets the Home tiles open are full-screen
+      white pages: no dimmed backdrop or card edge, an app header (‹ Back + title, under the status bar), the bottom bar
+      stays. My Approvals' dark card is turned light (dark text, contrast ≥ 4.5:1); the green Approve / red Don't approve
+      buttons keep their colors.
+   4. DESK BAR (Field): the desk top bar (🏢 company switcher + global search) and the red 💬 bubble (Messages is on every
+      Field job page) are hidden. The Field page header is kept (the two-second notice sweep removed it every 2 s, which
+      let NAV's floating "‹ Back" sit on the title) and is a native header: ‹ Back, the title next to it; main starts
+      under it; the COI / payments pills ride at its right end.
+   5. LEADS (any phone-width screen): the views (Board · List · Calendar · Map · Outreach · RoofScout · LSA …) are a
+      3-across grid of 48 px buttons with the whole label; the filter chips wrap; the chosen one stays dark.
+   Console: __gcPhoneUI.state()   Off: localStorage gc_phoneui_off = '1'. */
+(function(){
+'use strict';
+var W = window, D = document;
+try {
+  if (W.__gcPhoneUI) return;
+  try { if (W.localStorage && W.localStorage.getItem('gc_phoneui_off') === '1') return; } catch (e) {}
+  var H = D.documentElement;
+  /* the window's size, read once and again on resize (on a phone, reading it can make the browser lay the page out) */
+  var VW = W.innerWidth || 0, VH = W.innerHeight || 0;
+  W.addEventListener('resize', function(){ VW = W.innerWidth || 0; VH = W.innerHeight || 0; });
+  W.addEventListener('orientationchange', function(){ VW = W.innerWidth || 0; VH = W.innerHeight || 0; });
+  var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+  var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+  /* the browser's own MutationObserver: the page's governors (index.html "PERFORMANCE GOVERNOR" / "MutationObserver
+     governor") hold every observer's news for 120–250 ms and while the person touches the screen, which is how a panel
+     stayed dark and a note sat on the bottom bar; this one is cheap (it only queues), so it reports at once */
+  var MO = (function(){
+    try { var g = new W.MutationObserver(function(){}); var n = g && g._n ? g._n : g, C = n && n.constructor;
+      for (var i = 0; i < 6 && C; i++) { if (/\[native code\]/.test(Function.prototype.toString.call(C))) return C; C = Object.getPrototypeOf(C); }
+    } catch (e) {}
+    return W.MutationObserver;
+  })();
+  var PU = W.__gcPhoneUI = { moves: 0, kept: 0, pads: [], tops: 0, x44: 0, pages: 0, lit: 0, stacked: 0 };
+
+  function phoneDev(){
+    var ua = String((W.navigator && W.navigator.userAgent) || ''), w = VW || 0;
+    return /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(ua) || (/iPad|Android/i.test(ua) && w < 900) || (w > 0 && w < 820);
+  }
+  function tog(c, on){ if (H.classList.contains(c) !== !!on) H.classList.toggle(c, !!on); }
+  function field(){ return H.classList.contains('_fieldmode'); }
+  function cs(e){ return W.getComputedStyle(e); }
+  function shown(e){ if (!e || !e.isConnected) return false; var s = cs(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0; }
+  function txt(e){ return String((e && e.textContent) || '').replace(/\s+/g, ' ').trim(); }   /* textContent: no layout */
+
+  var BACKBTN = '<span class="gc-pu-chev" aria-hidden="true">‹</span><span>Back</span>';
+  var CSS =
+    ':root{--gc-sat:env(safe-area-inset-top,0px)}' +
+    /* 1. NAV's floating Back under the status bar; close buttons 44 px */
+    'html.gc-pu #_gcNavBk{top:calc(8px + var(--gc-sat))!important}' +
+    'html.gc-pu #gc-update-bar{padding-top:max(10px,var(--gc-sat))!important;flex-wrap:wrap}' +
+    'html.gc-pu #gc-bw-update{padding-top:calc(10px + var(--gc-sat))!important}' +
+    'html.gc-pu-ownback #_gcNavBk{display:none!important}' +
+    /* in the Field on a phone every page has its own ‹ Back now (the app header, a panel's bar, the job page's ‹ Jobs, the
+       Site Book's ‹ All jobs): NAV's floating one only stacked on top of them */
+    'html.gc-pu-app #_gcNavBk{display:none!important}' +
+    /* the 🎤 voice note and 💎 menu: docked in a strip just above the bottom bar, never floating over the page */
+    '#gc-pu-dock{position:fixed;left:0;right:0;bottom:var(--gc-pu-tabsonly,0px);height:52px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;background:#fff;border-top:1px solid #e5e7eb;z-index:100049;box-sizing:border-box;font:600 13px -apple-system,Inter,Arial,sans-serif;color:#334155}' +
+    'html:not(.gc-pu-app) #gc-pu-dock{display:none!important}' +
+    '#gc-pu-dock > .gc-pu-dk{display:flex;align-items:center;gap:8px}' +
+    'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:0!important;padding:0!important;border-radius:22px!important;font-size:20px!important;line-height:44px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto}' +
+    'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
+    /* desk: the "Connect Google / Use my Gmail" bar sat on the top bar's buttons (✅ 💎 💬 🎤 📷): at the bottom of the
+       screen instead; its green button readable (4.5:1) */
+    'html:not(._fieldmode) #_gConnBar{top:auto!important;bottom:0!important}' +
+    '#_gConnBar #_gConnGo{background:#15803d!important;color:#fff!important}' +
+    'html.gc-pu .gc-pu-page .gc-pu-fab,html.gc-pu .gc-pu-sheet .gc-pu-fab{bottom:calc(12px + env(safe-area-inset-bottom,0px))!important}' +
+    'html.gc-pu .gc-pu-fab{width:max-content!important;max-width:calc(100% - 32px)!important;position:sticky!important;left:auto!important;right:auto!important;top:auto!important;transform:none!important;bottom:calc(var(--gc-pu-tabs,0px) + 12px + env(safe-area-inset-bottom,0px))!important;display:block!important;margin:auto auto 12px!important;z-index:6!important}' +
+    'html.gc-pu .gc-rpb-x,html.gc-pu [aria-label="Close"]{min-width:44px!important;min-height:44px!important}' +
+    'html.gc-pu .gc-pu-x44{min-width:44px!important;min-height:44px!important;display:inline-flex!important;align-items:center;justify-content:center;box-sizing:border-box}' +
+    /* the app back button (pages, sheets) */
+    '.gc-pu-back{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px 0 4px;margin:0;border:0;border-radius:22px;background:transparent;color:#1d4ed8;font:600 17px/1 -apple-system,Inter,Arial,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent}' +
+    '.gc-pu-back .gc-pu-chev{font-size:30px;line-height:1;margin-top:-3px}.gc-pu-back:active{background:rgba(29,78,216,.1)}' +
+    '.gc-pu-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;padding:calc(6px + var(--gc-sat)) 12px 6px 4px;background:#fff;border-bottom:1px solid #e5e7eb;box-sizing:border-box}' +
+    '.gc-pu-bar .gc-pu-t{font:800 18px/1.2 -apple-system,Inter,Arial,sans-serif;color:#0f172a;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    /* 3. app pages: full screen, white, the bottom bar stays */
+    'html.gc-pu-app .gc-pu-sheet{background:#f3f5f8!important;align-items:stretch!important;justify-content:stretch!important;bottom:var(--gc-pu-tabs,0px)!important;top:0!important}' +
+    'html.gc-pu-app .gc-pu-sheet > .in{max-width:none!important;max-height:none!important;width:100%!important;height:100%!important;border-radius:0!important;box-shadow:none!important;margin:0!important}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .hd{justify-content:flex-start!important;gap:6px;padding:calc(6px + var(--gc-sat)) 12px 6px 4px!important;border-bottom:1px solid #e5e7eb!important}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .hd .gc-pu-back{width:auto!important;height:auto!important;min-height:44px!important;background:transparent!important;border-radius:22px!important;font-size:17px!important}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .hd > b{font-size:18px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    'html.gc-pu-app .gc-pu-sheet .gc-pu-hide{display:none!important}' +
+    'html.gc-pu-app .gc-pu-page .gc-pu-hide{display:none!important}' +
+    'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-top:0!important}' +
+    'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet .gc-pu-bar{margin:0 -16px 10px}' +
+    'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
+    /* (display is the panel's own: code that hides a panel with style.display = "none" still does) */
+    'html.gc-pu-app .gc-pu-page.gc-pu-flex{flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-bar{order:-1;flex:0 0 auto}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .bd{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
+    'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
+    'html.gc-pu-app #_gcJobPick,html.gc-pu-app #_gcJobDash{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
+    /* 4. the app: no desk top bar, no 💬 bubble up there; the Field header as a native app header */
+    'html.gc-pu-app #_masterSearch{display:none!important}' +
+    'html.gc-pu-app #_gcJobMsgFab{display:none!important}' +
+    'html.gc-pu-app #_gcAppHead{background:#fff!important;border-bottom:1px solid #e5e7eb!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}' +
+    'html.gc-pu-app #_gcAppTitle{color:#0f172a!important}' +
+    'html.gc-pu-app.gc-pu-head main{background:#f5f7fa!important}' +
+    'html.gc-pu-app #gc-est-notes-panel{box-shadow:none!important}' +
+    'html.gc-pu-app #_gcAppHead{gap:6px!important;padding:calc(6px + var(--gc-sat)) 10px 6px 4px!important;min-height:0!important;box-sizing:border-box!important}' +
+    'html.gc-pu-app #_gcAppBack{display:inline-flex!important;align-items:center;gap:2px;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px 0 6px!important;border-radius:22px!important;color:#1d4ed8!important;font-size:30px!important;line-height:1!important;-webkit-tap-highlight-color:transparent}' +
+    'html.gc-pu-app #_gcAppBack::after{content:"Back";font:600 17px/1 -apple-system,Inter,Arial,sans-serif;margin-left:3px;position:relative;top:1px}' +
+    'html.gc-pu-app #_gcAppBack:active{background:rgba(96,165,250,.15)!important}' +
+    'html.gc-pu-app #_gcAppTitle{flex:0 0 auto;white-space:nowrap;font-size:19px!important;line-height:1.2}' +
+    'html.gc-pu-head:not(._gcNavLayer) #_gcNavBk{display:none!important}' +
+    'html.gc-pu-app.gc-pu-head main{padding-top:calc(var(--gc-pu-hh,56px) + 8px)!important}' +
+    'html.gc-pu-app #_gcAppHead .gcautai-pill{position:static!important;margin:0 0 0 auto!important;flex:0 1 auto;min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 11px!important;font-size:12px!important;box-shadow:none!important;min-height:32px}' +
+    'html.gc-pu-app #_gcAppHead .gcautai-pill ~ .gcautai-pill{margin-left:6px!important}' +
+    'html.gc-pu-app body > .gcautai-pill{padding:6px 10px!important;font-size:12px!important}' +
+    '#gc-pu-pills{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0}' +
+    'html.gc-pu-app #gc-pu-pills .gcautai-pill{position:static!important;margin:0!important;padding:7px 12px!important;font-size:13px!important;box-shadow:none!important;min-height:36px;max-width:100%;white-space:normal;text-align:left}' +
+    /* 5. Leads on a phone: views = a grid of real buttons, chips wrap */
+    'html.gc-pu #gc-leads-hub .gclu-views{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%!important;overflow:visible!important;border:0!important;border-radius:0!important;background:transparent!important;box-sizing:border-box}' +
+    'html.gc-pu #gc-leads-hub .gclu-views > button{display:flex!important;align-items:center;justify-content:center;text-align:center;min-width:0;min-height:48px!important;height:auto!important;margin:0!important;padding:6px 4px!important;border:1px solid #d6d3ea!important;border-radius:12px!important;background:#fff;color:#241968;font:700 14px/1.2 -apple-system,Inter,Arial,sans-serif!important;white-space:normal!important;overflow-wrap:anywhere;word-break:normal;box-sizing:border-box;flex:none!important}' +
+    'html.gc-pu #gc-leads-hub .gclu-views > button.on{background:#241968!important;color:#fff!important;border-color:#241968!important;box-shadow:0 0 0 2px #fff inset,0 2px 6px rgba(36,25,104,.35)}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips{flex-wrap:wrap!important;overflow:visible!important;gap:6px!important;padding-bottom:0!important}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips > *{flex:1 1 auto!important;min-width:0;max-width:100%;min-height:44px!important;box-sizing:border-box}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips > .gclu-chip,html.gc-pu #gc-leads-hub .gclu-chips > .gclu-within{display:inline-flex;align-items:center;justify-content:center;white-space:normal;font-size:14px!important;padding:6px 12px!important}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips > .gclu-chip.on{box-shadow:0 2px 6px rgba(36,25,104,.35)}';
+  var st = D.createElement('style'); st.id = 'gc-phoneui-css'; st.textContent = CSS; (D.head || H).appendChild(st);
+
+  /* ── the inset, measured (a probe at top: var(--gc-sat)) ── */
+  var probe = null;
+  /* (measured once, and again when the window turns: reading a position makes the browser lay the page out) */
+  var satV = -1, satW = -1, satAt = 0;
+  function sat(){
+    if (!D.body) return 0;
+    /* (0 is measured again every 5 s: the inset can arrive after the first layout, e.g. on opening from the Home Screen) */
+    if (satV >= 0 && satW === VW + 'x' + VH && (satV > 0 || Date.now() - satAt < 5000)) return satV;
+    satAt = Date.now();
+    if (!probe || !probe.isConnected) { probe = D.createElement('div'); probe.id = 'gc-pu-sat'; probe.setAttribute('aria-hidden', 'true'); probe.setAttribute('data-gc-keep', '1'); probe.setAttribute('data-gcnav-ignore', '1'); probe.style.cssText = 'position:fixed;left:0;top:var(--gc-sat);width:0;height:0;pointer-events:none;visibility:hidden'; D.body.appendChild(probe); }
+    satW = VW + 'x' + VH; satV = Math.round(probe.getBoundingClientRect().top) || 0;
+    return satV;
+  }
+
+  /* ── 1. safe area ── */
+  var CLOSE_T = /^(✕|✖|×|⨯|x|close|done|‹|‹ ?back|back|← ?back)$/i;
+  function closeish(b){ var t = txt(b), al = b.getAttribute('aria-label') || ''; return CLOSE_T.test(t) || /^(close|back)$/i.test(al) || b.hasAttribute('data-x') || b.classList.contains('gc-pu-back'); }
+  function contentish(e){
+    if (!e || e === D.body || e === H) return false;
+    if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|IMG|SVG|LABEL|H1|H2|H3|H4|B|STRONG)$/i.test(e.tagName)) return true;
+    if (e.closest && e.closest('button,a,[role=button]')) return true;
+    for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) return true;
+    return false;
+  }
+  function holder(e){
+    for (var x = e; x && x !== D.body && x !== H; x = x.parentElement) { var p = cs(x).position; if (p === 'fixed' || p === 'sticky') return x; }
+    return null;
+  }
+  var SKIP = /^(_gcAppHead|_gcNavBk|gc-pu-sat|gc-co-strip|_masterSearch)$/;
+  function padTop(t){
+    if (t.hasAttribute('data-gc-sa')) return false;
+    var p = parseFloat(cs(t).paddingTop) || 0;
+    t.setAttribute('data-gc-sa', String(p));
+    t.style.setProperty('padding-top', 'max(' + p + 'px, var(--gc-sat))', 'important');
+    PU.pads.push(t.id || String(t.className || t.tagName).slice(0, 40)); if (PU.pads.length > 40) PU.pads.shift();
+    return true;
+  }
+  function moveDown(e, t, S){
+    /* a button placed absolutely (or fixed) inside the panel: padding does not move it */
+    for (var x = e; x && x !== t; x = x.parentElement) {
+      var p = cs(x).position;
+      if ((p === 'absolute' || p === 'fixed') && !x.hasAttribute('data-gc-sat-top')) {
+        var top = parseFloat(cs(x).top) || 0; x.setAttribute('data-gc-sat-top', String(top));
+        x.style.setProperty('top', 'calc(' + top + 'px + var(--gc-sat))', 'important'); PU.tops++; return true;
+      }
+    }
+    return false;
+  }
+  var safeUntil = 0, allSafe = true;
+  function safeSweep(){
+    if (Date.now() > safeUntil && !allSafe) return; allSafe = false;   /* only while something is new (3 s), and on the slow look */
+    var S = sat(); if (S < 4) return;
+    var w = VW || 0; if (!w) return;
+    var xs = [14, w * 0.3, w * 0.6, w - 40, w - 14], ys = [Math.max(1, Math.round(S * 0.35)), S - 2];
+    for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
+      var e = D.elementFromPoint(xs[i], ys[j]); if (!contentish(e)) continue;
+      var t = holder(e); if (!t || (t.id && SKIP.test(t.id)) || (t.closest && t.closest('#_gcAppHead'))) continue;
+      if (t.scrollTop > 0) continue;   /* a page scrolled under the status bar is not a panel under it */
+      if (!padTop(t)) moveDown(e, t, S);
+      else if (e.getBoundingClientRect().top < S - 1) moveDown(e, t, S);
+    }
+  }
+  function closeSweep(){
+    var layers = Array.prototype.filter.call(D.body.children, function(e){ return !/^(SCRIPT|STYLE|LINK)$/.test(e.tagName) && cs(e).position === 'fixed' && shown(e) && e.getBoundingClientRect().height > 120; });
+    layers.forEach(function(L){
+      Array.prototype.forEach.call(L.querySelectorAll('button,[role=button],[data-x]'), function(b){
+        if (b.classList.contains('gc-pu-x44') || !closeish(b) || !shown(b)) return;
+        var r = b.getBoundingClientRect(); if (r.width < 44 || r.height < 44) { b.classList.add('gc-pu-x44'); PU.x44++; }
+      });
+    });
+  }
+
+  /* ── 2. notes stack above the bottom bar; the 🔔 card under the Field header ── */
+  var NOTES = '#gc-unsent-note,#gc-save-note,.gc-away-toast,#gc-ra-toast,#gc-fd-toast,#_gcNavToast,#gc-rpb-toast,body > .gcautai-pill';
+  var tabsC = { el: null, k: '', v: 0 };
+  function tabsH(){
+    var t = D.getElementById('gc-fh-tabs'), k = VW + 'x' + VH + '|' + (t ? t.childElementCount + t.className : '');
+    if (t === tabsC.el && k === tabsC.k) return tabsC.v;
+    var v = 0; if (t && shown(t)) { var r = t.getBoundingClientRect(); v = Math.max(0, Math.round((VH || 0) - r.top)); }
+    tabsC = { el: t, k: k, v: v }; return v;
+  }
+  var lastTabs = -1;
+  function stackSweep(){
+    var only = tabsH(), dk = D.getElementById('gc-pu-dock'), base = only + (dk && dk.firstElementChild && dk.style.display !== 'none' && H.classList.contains('gc-pu-app') ? 52 : 0);
+    if (base !== lastTabs) { lastTabs = base; H.style.setProperty('--gc-pu-tabs', base + 'px'); H.style.setProperty('--gc-pu-tabsonly', only + 'px'); }
+    var all = D.querySelectorAll(NOTES); if (!all.length) return;
+    var list = Array.prototype.filter.call(all, function(n){ if (n.parentNode !== D.body) return false; var s = cs(n); return s.display !== 'none' && s.visibility !== 'hidden' && s.position === 'fixed'; });
+    if (!list.length) return;
+    var hs = list.map(function(n){ return Math.round(n.getBoundingClientRect().height); });   /* all reads first, then the writes */
+    var y = (base || 12) + 8;
+    list.forEach(function(n, i){
+      var want = y + 'px';
+      if (n.style.getPropertyValue('bottom') !== want || n.style.getPropertyPriority('bottom') !== 'important') { n.style.setProperty('bottom', want, 'important'); n.style.setProperty('top', 'auto', 'important'); n.style.setProperty('margin-bottom', '0', 'important'); PU.stacked++; }
+      y += hs[i] + 6;
+    });
+  }
+  /* a floating action button inside a page that is mid-screen (over the list) or under the bottom bar: it sits at the
+     bottom of its page, just above the bottom bar (sticky), never over content */
+  function fabSweep(){
+    var S = sat(), vh = VH || 0; if (!vh) return;
+    /* (inside the open panels only: the rest of the page is not searched) */
+    Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page button[style*="fixed"], body > .gc-pu-page a[style*="fixed"], body > .gc-pu-sheet button[style*="fixed"], body > .gc-pu-page .gc-fab'), function(b){
+      if (b.classList.contains('gc-pu-fab') || b.parentNode === D.body || closeish(b)) return;
+      if (b.closest('#gc-fh-tabs,#_gcAppHead,.gc-pu-bar,#gc-update-bar,#gc-bw-update')) return;
+      var s = cs(b); if (s.position !== 'fixed' || !shown(b)) return;
+      var r = b.getBoundingClientRect(); if (r.width < 90 || r.top < S + 70) return;
+      /* (a fixed button inside a panel scrolls with it when the panel is its containing block, and sits mid-screen) */
+      b.classList.add('gc-pu-fab'); PU.fabs = (PU.fabs || 0) + 1;
+    });
+  }
+  function homeCard(){
+    var home = D.querySelector('#_gcJobPick.gc-fh');
+    if (home && !home.__puMo) { try { home.__puMo = new MO(function(){ try { homeCard(); head(); } catch (e) {} }); home.__puMo.observe(home, { childList: true }); } catch (e) {} }
+    var c = D.getElementById('gc-away-pushcard'); if (!c || !home) return;
+    var top = home.querySelector('.fh-top'); if (top && top.nextElementSibling !== c && !(top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills' && top.nextElementSibling.nextElementSibling === c)) top.parentNode.insertBefore(c, (top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills') ? top.nextElementSibling.nextSibling : top.nextSibling);
+    if (!c.__gcPu) { c.__gcPu = 1; c.style.margin = '8px 12px'; }
+  }
+  /* Close / Back buttons of a panel: at least 44 x 44 (checked when the panel appears, and twice more as it fills) */
+  function closeCheck(L){
+    var small = Array.prototype.filter.call(L.querySelectorAll('button,[role=button],[data-x]'), function(b){
+      if (b.classList.contains('gc-pu-x44') || !closeish(b) || !shown(b)) return false;
+      var r = b.getBoundingClientRect(); return r.width < 44 || r.height < 44;
+    });
+    small.forEach(function(b){ b.classList.add('gc-pu-x44'); PU.x44++; });
+  }
+
+  /* ── 3. app pages ── */
+  function bar(title, onBack){
+    var b = D.createElement('div'); b.className = 'gc-pu-bar';
+    b.innerHTML = '<button type="button" class="gc-pu-back" aria-label="Back">' + BACKBTN + '</button><span class="gc-pu-t"></span>';
+    b.querySelector('.gc-pu-t').textContent = title || '';
+    b.querySelector('.gc-pu-back').addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); onBack(); });
+    return b;
+  }
+  function backHome(){ ST.call(W, function(){ try { if (field() && W._gcNavSync) W._gcNavSync(); if (field() && !D.querySelector('#_gcJobPick,#_gcJobDash') && !(W._gcNavLayers && W._gcNavLayers().length) && W._gcJobPicker) W._gcJobPicker(); } catch (e) {} }, 150); }
+  function sheetPage(o){
+    if (o.classList.contains('gc-pu-sheet')) return;
+    var inn = o.querySelector(':scope > .in'); if (!inn) return;
+    o.classList.add('gc-pu-sheet'); PU.pages++;
+    if (o.classList.contains('gc-ra-sheet')) {
+      var hd = inn.querySelector(':scope > .hd'), x = hd && hd.querySelector('[data-x]');
+      if (hd && !hd.querySelector('.gc-pu-back')) {
+        var b = D.createElement('button'); b.type = 'button'; b.className = 'gc-pu-back'; b.setAttribute('data-x', ''); b.setAttribute('aria-label', 'Back'); b.innerHTML = BACKBTN;
+        hd.insertBefore(b, hd.firstChild); if (x) x.classList.add('gc-pu-hide');
+      }
+    } else {
+      var h3 = inn.querySelector('h3'), title = h3 ? txt(h3) : '';
+      if (!inn.querySelector(':scope > .gc-pu-bar')) {
+        var br = bar(title, function(){ o.remove(); backHome(); });
+        br.querySelector('.gc-pu-back').setAttribute('data-x', '');
+        inn.insertBefore(br, inn.firstChild);
+        if (h3 && h3.parentNode === inn) h3.classList.add('gc-pu-hide');
+      }
+    }
+    watch(o); pend(o, true);
+  }
+  /* any other panel opened over the Field (Approvals, Job Info, Documents, the Schedule page, lead details, Away, …):
+     a full-screen white page (no dim backdrop, no card edge), its dark colors made light, an app header ‹ Back · title
+     unless it has its own back / close at the top, the bottom bar visible, the end scrolls clear of it */
+  var NOT_PAGE = /^(_gcJobPick|_gcJobDash|gcuOv|gc-fh-tabs|root|gc-pu-sat|_gcNavBk|_gcAppHead|_masterSearch|gc-update-bar|gc-bw-update)$/;
+  function pageable(L){
+    if (!L || L.parentNode !== D.body || L.nodeType !== 1 || /^(SCRIPT|STYLE|LINK)$/.test(L.tagName)) return false;
+    if (L.classList.contains('gc-pu-page')) return true;
+    if ((L.id && (NOT_PAGE.test(L.id) || /^gc-auth|gate$|splash|^_gcLock|toast/i.test(L.id))) || /toast|gc-ra-sheet|gc-fh-sheet|gcautai-pill/.test(String(L.className || ''))) return false;
+    /* cheap first: big enough to be a screen (offset sizes are kept by the browser), only then its computed style */
+    var vw = VW, vh = VH;
+    var s = cs(L); if (s.position !== 'fixed' || s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.05 || s.pointerEvents === 'none') return false;
+    if (L.offsetWidth * L.offsetHeight < 0.5 * vw * vh) return false;
+    var r = L.getBoundingClientRect();
+    if ((Math.min(r.right, vw) - Math.max(r.left, 0)) * (Math.min(r.bottom, vh) - Math.max(r.top, 0)) < 0.55 * vw * vh) return false;
+    if (L.querySelector('#gc-auth-email,#gc-auth-password')) return false;
+    return true;
+  }
+  /* the panel's card: the child holding most of its content (counted in elements: no layout needed) */
+  function mainCard(L){
+    var best = null, ba = -1;
+    Array.prototype.forEach.call(L.children, function(c){ if (c.classList.contains('gc-pu-bar') || /^(SCRIPT|STYLE|LINK)$/.test(c.tagName) || c.style.display === 'none') return; var a = c.getElementsByTagName('*').length + 1; if (a > ba) { ba = a; best = c; } });
+    return best;
+  }
+  function titleEl(L){
+    var all = Array.prototype.slice.call(L.querySelectorAll('h1,h2,h3,b,strong'), 0, 40).concat(Array.prototype.slice.call(L.querySelectorAll('div,span'), 0, 80));
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i]; if (e.closest('.gc-pu-bar,button')) continue;
+      var direct = ''; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3) direct += n.nodeValue;
+      direct = direct.replace(/\s+/g, ' ').trim(); if (!direct) continue;
+      if (parseFloat(cs(e).fontSize) >= 17 && shown(e)) return e;
+    }
+    return null;
+  }
+  function ownBackAtTop(L){
+    var S = sat();
+    return Array.prototype.some.call(L.querySelectorAll('button,a,[role=button]'), function(b){
+      if (b.closest('.gc-pu-bar') || !closeish(b) || !shown(b)) return false;
+      var r = b.getBoundingClientRect(); return r.top < S + 130 && r.bottom > 0 && r.left < VW && r.right > 0;
+    });
+  }
+  function closeLayer(L){
+    var own = Array.prototype.filter.call(L.querySelectorAll('button,[role=button]'), function(b){ return !b.closest('.gc-pu-bar') && /^(close|✕|×|done|‹|back|‹ ?back|cancel)$/i.test(txt(b)); })[0];
+    if (own) { try { own.click(); } catch (e) {} }
+    if (L.isConnected) ST.call(W, function(){ if (L.isConnected) L.remove(); backHome(); }, 60); else backHome();
+  }
+  /* (each pass reads first and writes after, and the passes run after a frame is drawn: no layout is forced) */
+  function genericPage(L){
+    if (!L.classList.contains('gc-pu-page')) {
+      var flex = /flex/.test(cs(L).display), card = mainCard(L);
+      if (flex) L.classList.add('gc-pu-flex');
+      L.classList.add('gc-pu-page'); PU.pages++; L.__puChecks = 3;
+      if (L.hasAttribute('data-gc-sa')) { L.style.removeProperty('padding-top'); L.removeAttribute('data-gc-sa'); }
+      if (card) card.classList.add('gc-pu-card');
+      watch(L); pend(L, true); soon();   /* its header: the next pass, once it is drawn as a page */
+      return;
+    }
+    /* a panel that redraws itself (innerHTML) loses our card mark and header bar: put them back */
+    if (!L.querySelector(':scope > .gc-pu-card')) { var c2 = mainCard(L); if (c2) c2.classList.add('gc-pu-card'); }
+    if (L.hasAttribute('data-gc-pu-bar') && !L.querySelector(':scope > .gc-pu-bar')) { L.removeAttribute('data-gc-pu-bar'); }
+    /* the header and the 44 px close: when it opens, and the next two passes (its content can come a moment later) */
+    if (!shown(L) || (!(L.__puChecks > 0) && L.hasAttribute('data-gc-pu-bar'))) return;
+    if (L.__puChecks > 0) { L.__puChecks--; closeCheck(L); }
+    if (!L.hasAttribute('data-gc-pu-bar')) {
+      var mine = /My Approvals/.test(String((L.firstElementChild && L.firstElementChild.textContent) || '').slice(0, 200));
+      if (mine || !ownBackAtTop(L)) {
+        var te = mine ? null : titleEl(L), hide = te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input');
+        var br = bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); });
+        /* a flex panel: at the end, drawn first (order:-1), so code that reads the panel's first child still finds its own */
+        if (L.classList.contains('gc-pu-flex')) L.appendChild(br); else L.insertBefore(br, L.firstChild);
+        L.setAttribute('data-gc-pu-bar', '1');
+        if (hide) te.classList.add('gc-pu-hide');
+      }
+    }
+  }
+  function apprTitle(L){ var c0 = L.querySelector(':scope > .gc-pu-card'); if (c0 && L.hasAttribute('data-gc-pu-bar')) { var t0 = c0.firstElementChild; if (t0 && !t0.classList.contains('gc-pu-hide') && txt(t0) === 'My Approvals') t0.classList.add('gc-pu-hide'); } }
+  /* what to look at: on a change, the body's new children (for 3 s: a panel can take a moment to show) and the open
+     pages; on the slow look, every child (a panel shown again with a class adds nothing to the page) */
+  var FRESH = [];
+  function fresh(n){ if (n.nodeType === 1 && n.parentNode === D.body && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) { n.__puAt = Date.now(); if (FRESH.indexOf(n) < 0) FRESH.push(n); } }
+  var allNext = true;
+  function pageSweep(){
+    Array.prototype.forEach.call(D.querySelectorAll('body > .gc-ra-sheet, body > .gc-fh-sheet'), sheetPage);
+    var now = Date.now(); FRESH = FRESH.filter(function(n){ return n.isConnected && now - n.__puAt < 3000; });
+    var look = allNext ? Array.prototype.slice.call(D.body.children) : FRESH.concat(Array.prototype.slice.call(D.querySelectorAll('body > .gc-pu-page'))); allNext = false;
+    look.forEach(function(L){ if (pageable(L)) { genericPage(L); apprTitle(L); } });
+    /* GrayCo Photos: its screens light too (its own ‹ and sheets stay); the camera itself is left dark */
+    var g = D.getElementById('gcuOv');
+    if (g && shown(g)) { var cam = false; try { cam = !!(W._gcPhotos && W._gcPhotos.state && /^(camera|photo)$/.test(String(W._gcPhotos.state.screen || ''))) || !!g.querySelector('video'); } catch (e) {}
+      g.classList.toggle('gc-pu-cam', cam); if (!cam) { if (!g.__puW) { watch(g); g.__puW = 1; } if (g.__puCam !== false) pend(g, true); } g.__puCam = cam; }
+    /* a desk page opened from the Field (Leads, Schedule, Customers…): its page background and header are light from the
+       stylesheet; a card drawn dark with an inline background is made light with its contents (found from the style
+       attribute alone; looked at again only when the page's size in elements changes). Dark buttons are actions: kept. */
+    part("desk", deskLight);
+  }
+
+  /* ── dark → light, in small slices (never a long task): backgrounds that are dark become a light tint of the same
+     hue; text then gets ≥ 4.5:1 against what is under it (same hue, darker). Saturated mid-tone buttons (green Approve,
+     red, blue) are left as they are. Each panel is walked once when it opens; after that only what is added or restyled. ── */
+  function rgb(s){ var m = String(s || '').match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?/); if (!m) return null; var a = m[4] == null ? 1 : (/%$/.test(m[4]) ? parseFloat(m[4]) / 100 : +m[4]); return [+m[1], +m[2], +m[3], a]; }
+  function lum(c){ var f = function(v){ v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); }
+  function ratio(a, b){ var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function hsl(c){ var r = c[0] / 255, g = c[1] / 255, b = c[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, h = 0, s = 0; if (mx !== mn) { var d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
+  function fromHsl(h, s, l){ var k = function(n){ return (n + h / 30) % 12; }, a = s * Math.min(l, 1 - l), f = function(n){ return Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))); }; return [f(0), f(8), f(4), 1]; }
+  function css3(c){ return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+  function keepColor(c){ var q = hsl(c); return q[1] > 0.35 && q[2] > 0.28 && q[2] < 0.72; }
+  var WHITE = [255, 255, 255, 1], BG = new WeakMap(), OBS = [], Q = [], qT = 0, ROOTS = [];
+  var NOWALK = /^(SCRIPT|STYLE|LINK|VIDEO|CANVAS|IMG|svg|SVG|IFRAME|OBJECT|TEMPLATE|NOSCRIPT)$/;
+  function rootOf(e){ for (var i = 0; i < ROOTS.length; i++) if (ROOTS[i] === e || ROOTS[i].contains(e)) return ROOTS[i]; return null; }
+  function watch(root){
+    if (ROOTS.indexOf(root) >= 0) return; ROOTS.push(root);
+    try {
+      var o = new MO(function(ms){
+        if (!root.isConnected) { o.disconnect(); ROOTS.splice(ROOTS.indexOf(root), 1); return; }
+        for (var i = 0; i < ms.length; i++) {
+          var m = ms[i];
+          if (m.type === 'childList' && m.target === root && root.classList.contains('gc-pu-page')) soon();   /* redrawn: its card / bar again */
+          if (m.type === 'childList') { for (var k = 0; k < m.addedNodes.length; k++) { var n = m.addedNodes[k]; if (n.nodeType === 1) pend(n, true); else if (n.nodeType === 3 && m.target.nodeType === 1) pend(m.target, false); } }
+          else if (m.target.nodeType === 1) { if (m.attributeName === 'class') unlight(m.target); pend(m.target, m.attributeName === 'class'); }
+        }
+      });
+      o.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      OBS.push(o); root.__puMo = o;
+    } catch (e) {}
+  }
+  /* its class changed (picked / not picked, a state): our colors come off and it is looked at again as it is now */
+  function unlight(e){
+    if (e.hasAttribute('data-gc-lit')) { e.style.removeProperty('background-color'); e.removeAttribute('data-gc-lit'); }
+    if (e.hasAttribute('data-gc-col')) { e.style.removeProperty('color'); e.removeAttribute('data-gc-col'); }
+    BG.delete(e);
+  }
+  function pend(e, deep){
+    if (!e || e.nodeType !== 1 || NOWALK.test(e.tagName)) return;
+    if (e.closest && e.closest('.gc-pu-bar')) return;
+    var r = rootOf(e); if (!r || (r.id === 'gcuOv' && r.classList.contains('gc-pu-cam'))) return;
+    Q.push(deep ? D.createTreeWalker(e, 1, { acceptNode: function(x){ return (NOWALK.test(x.tagName) || (x.classList && x.classList.contains('gc-pu-bar'))) ? 2 : 1; } }) : e);
+    kickQ();
+  }
+  var qAt = 0;
+  function kickQ(){ if (qT && Date.now() - qAt < 500) return; qAt = Date.now(); qT = ST.call(W, slice, 16); }
+  var cur = null, curFirst = false;
+  function next(){
+    for (;;) {
+      if (cur) { var n = curFirst ? cur.currentNode : cur.nextNode(); curFirst = false; if (n) return n; cur = null; }
+      if (!Q.length) return null;
+      var t = Q.shift();
+      if (t.nodeType === 1) return t.isConnected ? t : null;
+      cur = t; curFirst = true;
+    }
+  }
+  function effBg(e){
+    for (var x = e.parentElement; x; x = x.parentElement) {
+      var b = BG.get(x); if (b) return b;
+      var c = rgb(cs(x).backgroundColor); if (c && c[3] > 0.5) { BG.set(x, c); return c; }
+      if (x === D.body) break;
+    }
+    return WHITE;
+  }
+  function slice(){
+    qT = 0; var t0 = performance.now(), n0 = 0;
+    try {
+      for (var round = 0; round < 1; round++) {
+        /* read first (one style pass for the whole slice, 4 ms at most), then write */
+        var batch = [], e;
+        var R = [];
+        while (performance.now() - t0 < 2.5 && R.length < 40 && (e = next())) { var s = cs(e); R.push({ e: e, bg: s.backgroundColor, gi: s.backgroundImage, color: s.color, bw: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth], bc: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor] }); }
+        if (!R.length) break;
+        batch = R;
+        R.forEach(function(r){
+          var e = r.e, isPage = e.classList.contains('gc-pu-page') || e.classList.contains('gc-pu-card'), c = rgb(r.bg), mine = null;
+          /* the chosen tab / chip / view keeps its dark fill (so the choice stays obvious) */
+          var picked = /(^|\s)(on|active|selected|sel|is-active|current)(\s|$)/.test(typeof e.className === 'string' ? e.className : '') || e.getAttribute('aria-selected') === 'true' || e.getAttribute('aria-pressed') === 'true';
+          if (picked && (e.hasAttribute('data-gc-lit') || e.hasAttribute('data-gc-col'))) { unlight(e); pend(e, false); return; }
+          if (!isPage && !picked) {
+            if (String(r.gi).indexOf('gradient') >= 0) { var g = rgb(r.gi); if (g && hsl(g)[2] < 0.3) { e.style.setProperty('background-image', 'none', 'important'); c = g; c[3] = 1; } }
+            if (c && c[3] > 0.3 && !keepColor(c)) { var q = hsl(c); if (q[2] < 0.3) { mine = fromHsl(q[0], Math.min(q[1], 0.25), 0.97); e.style.setProperty('background-color', css3(mine), 'important'); PU.lit++; e.setAttribute('data-gc-lit', '1'); } }
+            for (var i = 0; i < 4; i++) { var bc = rgb(r.bc[i]); if (bc && parseFloat(r.bw[i]) > 0 && bc[3] > 0.3 && hsl(bc)[2] < 0.3 && !keepColor(bc)) { var bq = hsl(bc); e.style.setProperty('border-' + ['top', 'right', 'bottom', 'left'][i] + '-color', css3(fromHsl(bq[0], Math.min(bq[1], 0.2), 0.86)), 'important'); } }
+            if (mine && e.tagName === 'BUTTON' && !(parseFloat(r.bw[0]) > 0)) e.style.setProperty('border', '1px solid #cbd5e1', 'important');
+          } else mine = e.classList.contains('gc-pu-card') ? WHITE : [245, 247, 250, 1];
+          var own = mine || (c && c[3] > 0.5 ? c : null), bg = own || effBg(e); BG.set(e, bg);
+          if (picked) return;
+          var direct = false; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) { direct = true; break; }
+          if (!direct && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return;
+          var fg = rgb(r.color); if (!fg || keepColor(bg) || ratio(fg, bg) >= 4.6) return;
+          var qq = hsl(fg), l = qq[1] < 0.2 ? 0.16 : Math.min(qq[2], 0.5), c2 = fromHsl(qq[0], qq[1], l), lb = lum(bg) > 0.4;
+          for (var k = 0; k < 14 && ratio(c2, bg) < 4.6; k++) { l = lb ? Math.max(0, l - 0.05) : Math.min(1, l + 0.05); c2 = fromHsl(qq[0], qq[1], l); }
+          e.style.setProperty('color', css3(c2), 'important'); e.setAttribute('data-gc-col', '1');
+        });
+        n0 += batch.length;
+        OBS.forEach(function(o){ o.takeRecords(); });   /* our own changes are not news */
+      }
+    } catch (e) {}
+    var dt = performance.now() - t0; cost(dt); PU.cost.light += dt; PU.cost.els += n0;
+    if (cur || Q.length) kickQ();   /* the rest after the browser has had a frame */
+  }
+  function light(root){ watch(root); pend(root, true); }
+  var deskSig = '|', deskN = 0;
+  function deskLight(){
+    var m = H.classList.contains('gc-pu-head') && !H.classList.contains('_gcNavLayer') ? D.querySelector('main') : null; if (!m) return;
+    /* when the page changes, and on every third full look (counting its elements is not free on a big page) */
+    var view = (function(){ try { return W.localStorage.getItem('grayco_view'); } catch (e) { return ''; } })();
+    if (view === deskSig.split('|')[1] && (deskN++ % 3)) return;
+    var sig = m.childElementCount + '|' + view + '|' + m.getElementsByTagName('*').length;
+    if (sig === deskSig) return; deskSig = sig;
+    if (ROOTS.indexOf(m) < 0) ROOTS.push(m);   /* (no observer on the desk page: it changes all the time) */
+    var list = m.querySelectorAll('[style*="background"]');
+    for (var i = 0; i < list.length && i < 600; i++) {
+      var e = list[i]; if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|IMG|SVG|svg)$/.test(e.tagName) || e.hasAttribute('data-gc-lit')) continue;
+      var c = rgb(e.style.backgroundColor) || rgb(e.style.background); if (!c || c[3] < 0.3 || keepColor(c) || hsl(c)[2] >= 0.3) continue;
+      pend(e, true);
+    }
+  }
+
+  /* ── 4. the header: never swept as a notice; the pills ride in it; main follows its real height ── */
+  var lastH = -1;
+  /* a desk page in the Field without its header yet (the Field app draws it on a 1 s loop, which the CRM slows to 30 s
+     when nobody has touched the phone for a minute): the same header, drawn now */
+  var TITLES = { projects: 'Jobs', schedule: 'Schedule', documents: 'Documents', subs: 'Subcontractors', scopes: 'Scopes', estbuilder: 'Estimates', insurance: 'Insurance', mitigation: 'Mitigation', messages: 'Messages', approvals: 'Approvals', bidportal: 'Bid portal', systems: 'GrayCo Systems', sitebook: 'Site Book', leads: 'Leads', estimates: 'Estimates', todo: 'To-Do', customers: 'Customers', docs: 'Docs', products: 'Products' };
+  function makeHead(){
+    if (!H.classList.contains('gc-pu-app') || D.getElementById('_gcAppHead') || D.getElementById('_gcFieldHomeOv') || D.getElementById('_gcJobPick') || D.getElementById('_gcJobDash') || typeof W._gcFieldHome !== 'function') return null;
+    var view = ''; try { view = W.localStorage.getItem('grayco_view') || ''; } catch (e) {}
+    var hd = D.createElement('div'); hd.id = '_gcAppHead'; hd.setAttribute('data-gc-keep', '1');
+    hd.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99985;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;background:rgba(12,24,44,0.97);border-bottom:1px solid rgba(255,255,255,0.06);';
+    hd.innerHTML = '<button id="_gcAppBack" style="background:transparent;border:none;color:#3b82f6;font-size:26px;cursor:pointer;padding:0 4px;line-height:1;">\u2039</button><span id="_gcAppTitle" style="color:#fff;font-size:18px;font-weight:800;"></span>';
+    hd.querySelector('#_gcAppTitle').textContent = TITLES[view] || 'GrayCo';
+    hd.querySelector('#_gcAppBack').onclick = function(){ W._gcFieldHome(); };
+    D.body.appendChild(hd);
+    if (!D.getElementById('_gcAppHeadPad')) { var st = D.createElement('style'); st.id = '_gcAppHeadPad'; st.textContent = 'html._fieldmode main{padding-top:64px!important;}'; D.head.appendChild(st); }
+    PU.made = (PU.made || 0) + 1; return hd;
+  }
+  function dock(){
+    var app = H.classList.contains('gc-pu-app'), d = D.getElementById('gc-pu-dock');
+    var mic = D.getElementById('_gcMicBtn'), hub = D.getElementById('_gcFieldHubBtn');
+    if (!app) { if (d) { if (mic && mic.parentNode !== D.body && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } return; }
+    if (!mic && !hub) { if (d) d.style.display = 'none'; return; }
+    if (!d) { d = D.createElement('div'); d.id = 'gc-pu-dock'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('data-gcnav-ignore', '1'); d.innerHTML = '<span class="gc-pu-dk" data-k="mic"></span><span class="gc-pu-dk" data-k="hub"></span>'; D.body.appendChild(d); }
+    d.style.display = '';
+    var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
+    if (mic && mic.parentNode !== sm) { sm.appendChild(mic); var l1 = D.createElement('span'); l1.textContent = 'Voice note'; if (!sm.querySelector('.gc-pu-l')) { l1.className = 'gc-pu-l'; sm.appendChild(l1); } }
+    if (hub && hub.parentNode !== sh) { var l2 = D.createElement('span'); if (!sh.querySelector('.gc-pu-l')) { l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
+    if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
+    if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
+  }
+  function head(){
+    try { dock(); } catch (e) {}
+    var hd = D.getElementById('_gcAppHead');
+    /* the same rules as the Field app's own header loop: not over the Field home / job page, only in the Field */
+    if (hd && H.classList.contains('gc-pu-app') && (D.getElementById('_gcFieldHomeOv') || D.getElementById('_gcJobPick') || D.getElementById('_gcJobDash'))) { hd.remove(); hd = null; }
+    if (!hd) hd = makeHead();
+    if (hd && H.classList.contains('gc-pu-app')) { var ti = D.getElementById('_gcAppTitle'), v = ''; try { v = W.localStorage.getItem('grayco_view') || ''; } catch (e) {} if (ti && TITLES[v] && ti.textContent !== TITLES[v]) ti.textContent = TITLES[v]; }
+    if (hd && hd.getAttribute('data-gc-keep') !== '1') { hd.setAttribute('data-gc-keep', '1'); PU.kept++; }
+    var app = H.classList.contains('gc-pu-app');
+    tog('gc-pu-head', app && !!hd);
+    if (!app) return;
+    /* the pills: in the page header (desk pages), or in the flow right under the Field home / job page header */
+    var host = hd || null, row = null;
+    var pills = ['_gcSubDocPill', '_gcPayPill'].map(function(id){ return D.getElementById(id); }).filter(Boolean);
+    if (!host && pills.length) {
+      /* the Field home: right under its header; the job page: at the top of its scrolling body (its header stays first) */
+      var jd = D.getElementById('_gcJobDash'), jp = D.querySelector('#_gcJobPick.gc-fh');
+      var where = null, before = null;
+      if (jd && shown(jd)) { where = jd.children[1] || jd; before = where.firstChild; }
+      else if (jp && shown(jp)) { var anc = jp.querySelector(':scope > .fh-top'); where = jp; before = anc ? anc.nextSibling : jp.firstChild; }
+      if (where) {
+        row = where.querySelector(':scope > #gc-pu-pills');
+        if (!row) { row = D.createElement('div'); row.id = 'gc-pu-pills'; where.insertBefore(row, before); }
+        host = row;
+      }
+    }
+    if (host) pills.forEach(function(p){ if (p.parentNode !== host) { host.appendChild(p); PU.moves++; } });
+    if (!hd) return;
+    var hk = VW + '|' + D.getElementsByClassName('gcautai-pill').length;
+    if (hd.__puHk === hk) return; hd.__puHk = hk;
+    var h = hd.offsetHeight || 0;
+    if (h && h !== lastH) { lastH = h; H.style.setProperty('--gc-pu-hh', h + 'px'); }
+  }
+
+  function cost(dt){ PU.cost.ms += dt; PU.cost.n++; if (dt > PU.cost.max) PU.cost.max = dt; }
+  PU.cost = { ms: 0, n: 0, max: 0, light: 0, els: 0, runMax: 0 };
+  /* (how long each part took at most: __gcPhoneUI.state().cost.parts) */
+  var cur_ = null;
+  function part(name, f){ var t = performance.now(); try { f(); } catch (e) {} var d = performance.now() - t, P = PU.cost.parts || (PU.cost.parts = {}); if (!(P[name] >= d)) P[name] = Math.round(d * 10) / 10; if (cur_) cur_[name] = Math.round(d * 10) / 10; }
+  function run(full){
+    var t0 = performance.now(); cur_ = { full: !!full };
+    try {
+      var ph = phoneDev();
+      tog('gc-pu', ph || (VW || 0) <= 640);
+      tog('gc-pu-app', ph && field());
+      part('head', head);
+      if (!ph || !D.body) return;
+      if (full) PU.full = (PU.full || 0) + 1;
+      if (field()) {
+        if (full) part('pages', pageSweep);
+        try { var tl = null; Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet'), function(x){ if (x.style.display !== 'none') tl = x; });   /* (inline style only: no style pass) */
+          tog('gc-pu-ownback', !!tl && (tl.hasAttribute('data-gc-pu-bar') || tl.classList.contains('gc-pu-sheet') || tl.classList.contains('gc-pu-page'))); } catch (e) {}
+        if (full) part('home', homeCard);
+        part('stack', stackSweep);
+      }
+      if (full) { part('safe', safeSweep); part('fab', fabSweep); }
+    } catch (e) {} finally { var dt = performance.now() - t0; cost(dt); if (dt > PU.cost.runMax) { PU.cost.runMax = dt; cur_.total = Math.round(dt); PU.cost.slowest = cur_; } }
+  }
+  /* when: something is added to the page, the page's class changes, the window turns — one pass per frame at most; and a
+     slow look every 2 s for what changes without either (a panel shown again with a class, a note that lights up) */
+  /* (a timer can be held or cleared by the page's own timer governors: one older than half a second is not waited for) */
+  var soonT = 0, soonAt = 0;
+  function soon(){
+    PU.soon = (PU.soon || 0) + 1;
+    if (soonT && Date.now() - soonAt < 500) return; soonAt = Date.now(); soonT = 1;
+    var tok = soonAt;
+    afterFrame(function(){ if (soonT !== 1 || soonAt !== tok) return; soonT = 0; run(true); });
+  }
+  /* run f right after the next frame is drawn: the page's style and layout are then up to date, so reading them makes
+     the browser do nothing extra (a read before that would make it do the frame's work early, inside this task) */
+  function afterFrame(f){
+    var done = false, go = function(){ if (done) return; done = true; f(); };
+    if (W.requestAnimationFrame && !D.hidden) { W.requestAnimationFrame(function(){ ST.call(W, go, 0); }); ST.call(W, go, 1000); }
+    else ST.call(W, go, 50);
+  }
+  run(true);
+  /* (the observers are kept on __gcPhoneUI: an observer nobody holds can be collected and then sees nothing) */
+  PU.mo = [];
+  try {
+    /* a panel already in the page shown again (a class or a style on the body's own child): the same as a new one */
+    var ma = new MO(function(ms){
+      var hit = false;
+      for (var i = 0; i < ms.length; i++) { var t = ms[i].target; if (t.parentNode === D.body && !/^(gc-pu-sat|_gcAppHead|_gcNavBk|gc-fh-tabs)$/.test(t.id) && !/toast|gcautai-pill/.test(String(t.className || ''))) { fresh(t); hit = true; } }
+      if (hit) { safeUntil = Date.now() + 3000; soon(); }
+    });
+    var watchKid = function(n){ if (n.nodeType === 1 && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) try { ma.observe(n, { attributes: true, attributeFilter: ['class', 'style'] }); } catch (e) {} };
+    Array.prototype.forEach.call((D.body || H).children, watchKid); PU.mo.push(ma);
+    var mb = new MO(function(ms){
+      var hit = false;
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); fresh(a[k]); watchKid(a[k]); hit = true; } }
+      if (hit) { safeUntil = Date.now() + 3000; soon(); }
+    });
+    mb.observe(D.body || H, { childList: true }); PU.mo.push(mb);
+    var mh = new MO(function(){ head(); soon(); });
+    mh.observe(H, { attributes: true, attributeFilter: ['class'] }); PU.mo.push(mh);
+  } catch (e) {}
+  W.addEventListener('resize', soon);
+  /* the light look every 2 s (classes, header, notes); the full look (panels, the status bar strip, buttons) every 6 s —
+     anything added to the page gets the full look at once, above */
+  var tick = 0;
+  SI.call(W, function(){ if (D.hidden) return; var full = ++tick % 3 === 0; afterFrame(function(){ run(full); }); }, 2000);
+  SI.call(W, function(){ if (!D.hidden && H.classList.contains('gc-pu-app')) afterFrame(function(){ var t0 = performance.now(); try { stackSweep(); } catch (e) {} cost(performance.now() - t0); }); }, 700);
+  PU.run = function(){ run(true); }; PU.light = light; PU.sat = sat; PU.ratio = function(a, b){ return ratio(rgb(a), rgb(b)); };
+  PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), sat: sat(), hh: lastH, moves: PU.moves, kept: PU.kept, pads: PU.pads.slice(), tops: PU.tops, x44: PU.x44, pages: PU.pages, lit: PU.lit, stacked: PU.stacked, fabs: PU.fabs || 0, roots: ROOTS.length, soon: PU.soon, full: PU.full, err: PU.err, soonT: soonT, soonAge: Date.now() - soonAt, cost: PU.cost }; };
+  try { console.log('[GC] PHONEUI: phone safe area, app pages, no desk top bar in Field, bigger Leads views — __gcPhoneUI.state()'); } catch (e) {}
+} catch (e) { try { console.warn('[GC] PHONEUI', e); } catch (x) {} }
+})();
+</script>
