@@ -6,7 +6,7 @@
    one item opens straight to its read / confirm (openSubDoc(ref)); tapping an item no longer hides it for the session
    ("Not now" leaves it waiting); "Not a COI or W-9" → Close takes it off this computer's list for good; a confirmed one
    does not come back from a slow server list; a change of the list tells the approvals (event gc:subdocs-changed).
-2. patch APX: a row another module adds may say which plain set row it replaces (drop: key) — no double row / count.
+2. patch APX (and ONELIST: when two copies of a sub's file meet, the one marked read keeps its mark): a row another module adds may say which plain set row it replaces (drop: key) — no double row / count.
 3. tools/coiappr_block.html becomes a script right after patch BPAPPR: the items join the ONE approval set (badge, To-Do
    chip, GrayCo Field's My Approvals → Other approvals) and the desk ✅ Approvals tab (rich rows), admins and the office.
 Usage: python3 tools/patch_COIAPPR.py [index.html]
@@ -79,6 +79,11 @@ src = once(src, """  if (!sc.preview) arr(W._gcApxExtra).forEach(function(f){ tr
     xs.forEach(add); } catch (e) { warn(e); } });""")
 
 src = once(src, "r.src !== 'bp' && denyTo(r) !== null", "r.src !== 'bp' && r.src !== 'coi' && denyTo(r) !== null")   # no ✕ Deny on a COI row (Read & confirm has Not now / Close)
+
+# ── 4. ONELIST: two copies of a sub's file (vendors / subs / the screen) — the "read" mark of either copy is kept ──
+src = once(src, "        if(seen[fk]) return; seen[fk] = 1; files.push(f);",
+  "        if(seen[fk]){ var i0 = seen[fk] - 1, f0 = files[i0]; if(f && f.aiRead && f0 && !f0.aiRead) files[i0] = Object.assign({}, f0, { aiRead: f.aiRead, readBy: f.readBy, readAt: f.readAt }); return; }   /* patch COIAPPR: a confirmed COI / W-9 stays confirmed */\n"
+  "        seen[fk] = files.length + 1; files.push(f);")
 
 # ── 3. the block, right after patch BPAPPR ──
 BLOCK = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'coiappr_block.html'), encoding='utf-8').read().rstrip('\n')

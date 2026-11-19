@@ -122,7 +122,7 @@ try {
   const filled = await H.waitFor(ad, () => { const sb = (window._crm.subs || []).find(x => x.id === 'S1'); const f = sb && (sb.files || []).find(z => z.ref && /aaaa/.test(z.ref)); return sb && f && f.aiRead && sb.insCarrier === 'Demo Casualty' ? { files: sb.files.length, aiRead: f.aiRead, coiExp: sb.coiExp } : null; }, null, 15000);
   ok(!!filled && filled.files === 1, 'Fill the sub record: S1 has the insurer, the COI expiry, and its file (already attached: not added twice) is marked read (r36q)', filled);
   ok(SRV.done.some(d => d.id === 'RA' && !d.dismiss), 'the server read is closed (act done)', SRV.done);
-  st = await H.waitFor(ad, () => window._gcAPX.rows().filter(r => r.src === 'coi').length === 2 ? 1 : 0, null, 10000);
+  st = await H.waitFor(ad, () => { const s = window._gcApprovalSet(); return window._gcAPX.rows().filter(r => r.src === 'coi').length === 2 && (s.groups.other || []).filter(x => /^subdoc_/.test(x.id)).length === 2 ? 1 : 0; }, null, 6000);
   st = await coiState(ad);
   ok(st.rows.length === 2 && st.set === 2 && st.q.length === 2, 'the confirmed COI left the list at once: 2 rows, 2 in the set', st);
   await ad.ev(() => window._gcAUTAI.scanSubDocs()); await sleep(2500);

@@ -117174,7 +117174,8 @@ function blend(keep, add){
       var seen = {}, files = [];
       fa.concat(fb).forEach(function(f){
         var fk = norm(f && (f.name||'')) + '|' + s(f && f.size);
-        if(seen[fk]) return; seen[fk] = 1; files.push(f);
+        if(seen[fk]){ var i0 = seen[fk] - 1, f0 = files[i0]; if(f && f.aiRead && f0 && !f0.aiRead) files[i0] = Object.assign({}, f0, { aiRead: f.aiRead, readBy: f.readBy, readAt: f.readAt }); return; }   /* patch COIAPPR: a confirmed COI / W-9 stays confirmed */
+        seen[fk] = files.length + 1; files.push(f);
       });
       out.files = files;
     }
