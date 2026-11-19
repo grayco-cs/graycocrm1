@@ -195315,6 +195315,7 @@ var ITEMS = [
   { id: 'vapid', g: 'later', t: 'Phone notifications for PMs', how: 'Ask Claude for the one-line command that makes the VAPID keys, then add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT in Netlify → Trigger deploy. Each PM then taps 🔔 Turn on phone alerts.', auto: 'vapid' },
   { id: 'resend_pro', g: 'later', t: 'Resend Pro before the first newsletter', how: 'The free plan sends 100 e-mails a day. Pro is about $20 a month (resend.com → Billing).' },
   { id: 'website', g: 'later', t: 'Decide on the website update', how: 'The website update (restoration pages, contact form into the CRM) is ready. Tell Claude "push the website live" when you want it.' },
+  { id: 'qb_bcc_merge', g: 'later', t: 'Optional (~5 min): QuickBooks — Bcc new invoices to invoices@grayco-cs.com, and merge EAH Holdings into EAN Holdings', how: 'QuickBooks → ⚙ Account and settings → Sales → Messages → "Email me a copy" / Bcc: invoices@grayco-cs.com → Save (every new invoice e-mailed from QuickBooks then lands in the CRM too). Then Customers → EAH Holdings → Edit → change the name to exactly "EAN Holdings" → Save → Yes to merge (QuickBooks merges two customers with the same name). Tick Done here when finished.' },   /* LEADWATCH (owner 11/19): a manual check-off */
   { id: 'sql_storage', g: 'later', t: 'Run storage-usage.sql', how: 'Supabase → SQL Editor → paste docs/storage-usage.sql → Run. Read-only; it turns on the numbers in ⚙ Admin settings → 💾 Storage.', auto: 'sql_storage' }
 ];
 var OS = { done: {}, checks: {}, at: 0, loading: false, sig: '', open: false };
@@ -224241,12 +224242,15 @@ function textAppts(){
   if (!u || !k || D.hidden || !myEm || typeof W._setSchedule !== 'function') return;
   W.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_text_appts', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(rows){
     if (!Array.isArray(rows) || !rows[0]) return; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
-    var mine = (Array.isArray(v) ? v : []).filter(function(a){ return a && a.id && low(a.byEmail) === myEm && !APPT_DONE[a.id] && Date.now() - Date.parse(a.at || 0) < 30 * 864e5; }); if (!mine.length) return;
+    /* LEADWATCH (owner 11/19): a PM's appointment texted in reply to his lead text (a.lw) goes on that JOB's schedule — any admin / office computer adds it too */
+    var coPc = false; try { coPc = !!((W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || (W._gcIsOfficeFull && W._gcIsOfficeFull())); } catch (e) {}
+    var mine = (Array.isArray(v) ? v : []).filter(function(a){ return a && a.id && (low(a.byEmail) === myEm || (a.lw && coPc)) && !APPT_DONE[a.id] && Date.now() - Date.parse(a.at || 0) < 30 * 864e5; }); if (!mine.length) return;
     var sched = (W._crm && W._crm.schedule) || [], have = {}; (Array.isArray(sched) ? sched : []).forEach(function(x){ if (x && x.textId) have[x.textId] = 1; });
     var add = mine.filter(function(a){ return !have[a.id]; }); mine.forEach(function(a){ APPT_DONE[a.id] = 1; }); if (!add.length) return;
     var rowsS = add.map(function(a){ var type = a.kind === 'meeting' ? 'meeting' : 'appointment';
       return { id: 'SCH' + a.id, textId: a.id, pid: s(a.pid), leadId: s(a.leadId) || (s(a.pid) ? '' : 'LTXT_' + a.id),   /* JOBFIND: the job the text named */ title: s(a.title), date: s(a.date), time: s(a.time), endTime: s(a.endTime), assignee: s(a.by), vendor: '', type: type,
         address: s(a.address), phone: s(a.phone), notes: '📱 ' + s(a.text), scope: 'personal', private: true, internal: true, by: s(a.by), source: 'text', addedAt: s(a.at) }; });
+    rowsS = rowsS.map(function(x, i){ var a = add[i]; if (!a || !a.lw) return x; return Object.assign({}, x, { leadId: s(a.leadId), scope: 'job', private: false, internal: false, type: a.kind === 'estimate' ? 'estimate' : 'site visit', apptKind: a.kind, assignee: s(a.by), assigneeEmail: s(a.byEmail) }); });   /* LEADWATCH: the job's schedule, the PM's */
     W._setSchedule(function(prev){ var p0 = Array.isArray(prev) ? prev : [], h2 = {}; p0.forEach(function(x){ if (x && x.textId) h2[x.textId] = 1; }); var nx = p0.concat(rowsS.filter(function(x){ return !h2[x.textId]; }));
       try { if (W._supaUpsert) W._supaUpsert('schedule', nx); } catch (er) {} try { if (W._gcRecIDBput) W._gcRecIDBput('schedule', nx); } catch (er2) {} return nx; });
     var jobs = add.filter(function(a){ return a.kind === 'newjob' && !s(a.leadId) && !s(a.pid); });
@@ -249801,6 +249805,19 @@ function openJobHash(){
   })();
 }
 W.addEventListener('hashchange', openJobHash); ST.call(W, openJobHash, 600);
+/* the tap link in the GOOD-lead texts (#leads&lead=<id>&gq=1): "marked qualified in Google" for everyone (texts.js ?lsamark verdict qualified) */
+function gqHash(){
+  var h = s(W.location.hash), m = /[#&]lead=([^&]+)&gq=1/.exec(h); if (!m) return; var id = decodeURIComponent(m[1]);
+  try { W.history.replaceState(W.history.state, '', h.replace(/&gq=1/, '')); } catch (e) {}
+  W.fetch('/.netlify/functions/texts?lsamark=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: id, verdict: 'qualified' }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return {}; }).then(function(j){
+      W.__gcLwQualified = { id: id, ok: !!(j && j.ok), already: !!(j && j.already) };
+      if (j && j.ok) patchLead(id, { lsaGoogleOkAt: new Date().toISOString(), lsaGoogleOkBy: myName() || myEmail() });
+      try { var t = D.createElement('div'); t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = j && j.ok ? (j.already ? 'Already marked qualified in Google (' + s(j.by) + ').' : '✓ Marked qualified in Google — closed for everyone.') : (s(j && j.error) || 'Could not save — try again.');
+        t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Inter,Arial,sans-serif;z-index:2147483600;max-width:90vw'; D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {}
+    });
+}
+W.addEventListener('hashchange', gqHash); ST.call(W, gqHash, 1500);
 
 /* ── GOOD → a job in Projects ("bidding"); BAD → never a job (one made already is archived as "bad lead", not deleted) ──
    owner 11/19: "a lead that's GOOD (explicitly, or assigned with no BAD) becomes a job in Projects with status bidding". The CRM's own
@@ -249832,7 +249849,11 @@ function jobSweep(){
   if (!cl.by || (t - Date.parse(cl.at || 0) > 120000 && cl.by !== myId())) { patchLead(next.id, { lwJobClaim: { by: myId(), at: new Date(t).toISOString() } }); return; }   /* claim; the next round makes it */
   if (cl.by !== myId()) return;
   JOBQ.busy = true;
-  Promise.resolve().then(function(){ return W._gcLeadInbox.createJob(next.id); }).then(function(r){ JOBQ.busy = false; if (r && r.pid) { JOBQ.made.push({ lead: next.id, pid: r.pid }); patchLead(next.id, { lwJob: { pid: r.pid, at: new Date().toISOString(), why: chk(next) === 'good' || chk(next) === 'pm_good' ? 'good' : 'assigned, no BAD' } }); } },
+  Promise.resolve().then(function(){ return W._gcLeadInbox.createJob(next.id); }).then(function(r){ JOBQ.busy = false; if (r && r.pid) { JOBQ.made.push({ lead: next.id, pid: r.pid }); patchLead(next.id, { lwJob: { pid: r.pid, at: new Date().toISOString(), why: chk(next) === 'good' || chk(next) === 'pm_good' ? 'good' : 'assigned, no BAD' } });
+      /* the PM's appointments texted before the job existed → on the job now; the PM gets the job link + the customer portal link (server, once) */
+      try { if (typeof W._setSchedule === 'function') W._setSchedule(function(prev){ return arr(prev).map(function(x){ return x && !s(x.pid) && s(x.leadId) === s(next.id) ? Object.assign({}, x, { pid: r.pid }) : x; }); }); } catch (e) {}
+      try { W.fetch('/.netlify/functions/texts?lwjob=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: next.id, pid: r.pid }) }).catch(function(){}); } catch (e) {}
+    } },
     function(e){ JOBQ.busy = false; JOBQ.err = s(e && e.message); patchLead(next.id, { lwJob: { err: JOBQ.err, at: new Date().toISOString() } }); });
 }
 SI.call(W, jobSweep, 6000);

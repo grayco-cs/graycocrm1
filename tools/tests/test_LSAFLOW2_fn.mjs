@@ -8,8 +8,10 @@
 //      <reason>. Dispute in Google: <link>", the office a To-Do "Bad lead per <PM> — confirm and dispute by <date>"
 //   4. "Disputed in Google ✓" (Pat in the app) closes it for everyone; an owner's "DISPUTED <code>" after that changes nothing
 //   5. assign in the CRM → Pat's text; Pat's 👎 in the app → the same three; the office's ✓ Disputed closes the To-Do
-//   6. silence = good: a lead with a PM and no reply — no nag, no day-25 alert
-//   7. day 25: unqualified leads (no PM / BAD not disputed) → the owners' text + the office To-Do, once; good / disputed / young → none
+//   6. LEADWATCH: the PM must reply — no reply → the reply ladder (office after 1 h …) and the 48-hour alert; his 👍 → "GOOD lead … mark it
+//      qualified in Google" to the PM + the owners (Google link + tap link); QUALIFIED <code> closes it
+//   7. LEADWATCH: Google's 48 hours — not qualified with < 8 h left (no PM / BAD not disputed / GOOD not marked in Google) → the owners at once
+//      (after hours too) + the office To-Do, once; disputed / good + qualified / young → none
 //   8. who may: another staff member cannot mark Pat's lead; Pat's ?lsamine lists his own leads only
 //   9. staff quiet hours: Pat's text at 10 PM waits for 7 AM; an emergency goes at once
 //  10. no text to a customer anywhere
@@ -178,14 +180,21 @@ const ALL_CUST = [];
   ok(!SMS.some(x => /DEMOLINK1/.test(x.Body)), 'disputed → the ladder stops (no more dispute texts)', SMS.map(x => [x.To, x.Body]));
   ok(custSms().every(x => /A project manager will reach out to you shortly\./.test(x.Body)), 'the customer only ever gets "a PM will reach out shortly"', custSms());
 
-  console.log('6. silence = good');
+  console.log('6. LEADWATCH (owner 11/19): the PM must reply — silence is not good any more');
   world(); T = DAY; SMS.length = 0;
   const L3 = lead('LI-f3', 2); await arrive(L3); await txt(O1, 'GOOD ' + SA._lsaCode('LI-f3') + ' Pat'); SMS.length = 0;
-  T = DAY + 26 * 864e5 + 3600e3;   /* 26 days later, a Saturday? — any time: nothing is due */
-  let a = await SA.lsaAgeCheck(); await SA.flushHeld();
-  ok(SMS.length === 0 && !a.alerted.length && !tasks().some(x => x.leadId === 'LI-f3' && !x.done && x.id !== 'LSAIN_LI-f3') && SA._lsaQualified(item('LI-f3')), 'Pat never answered → it is good: no nag, no day-25 alert', { a, sms: SMS, t: tasks() });
+  T = DAY + 61 * 60e3; let es6 = await SA.lsaEscTick();
+  ok(toPh(OFF).some(x => /Pat Miller has not answered the lead text for/.test(x.Body)) && !toPh(O1).length, 'no reply in 1 hour → the reply ladder: the office role is told', { es6, sms: SMS.map(x => [x.To, x.Body]) });
+  T = DAY + 41 * 3600e3; let a = await SA.lsaAgeCheck();
+  ok(a.alerted.some(x => x.id === 'LI-f3') && !SA._lsaQualified(item('LI-f3')), 'Pat never answered → NOT good: the 48-hour alert fires (8 h left)', a);
+  SMS.length = 0; T = DAY + 24 * 3600e3;   /* Fri 10 AM: in hours (the 48-hour check above ran at 2 AM Sat on the clock; the mocks keep no order) */
   r = await api('tok-pat', 'POST', { lsamark: '1' }, { leadId: 'LI-f3', verdict: 'good' });
-  ok(r.ok && item('LI-f3').lsaCheck === 'good' && item('LI-f3').pm === 'Pat Miller' && SMS.length === 0, 'Pat\'s 👍 Good in the app: saved, he stays the PM, no texts', { r, x: item('LI-f3'), sms: SMS });
+  ok(r.ok && item('LI-f3').lsaCheck === 'good' && item('LI-f3').pm === 'Pat Miller' && item('LI-f3').pmReplyAt, 'Pat\'s 👍 Good in the app: saved, he stays the PM, it counts as his reply', { r, x: item('LI-f3') });
+  ok([O1, O2].every(ph => toPh(ph).some(x => new RegExp('✅ GOOD lead: Cus Tomer2 .*mark it qualified in Google: https://c\\.gle/DEMOLINK2 .*&gq=1 or reply QUALIFIED ' + SA._lsaCode('LI-f3')).test(x.Body))) && toPh(PAT).some(x => /GOOD lead: Cus Tomer2/.test(x.Body)), 'GOOD → the owners and Pat get "GOOD lead … mark it qualified in Google" with the Google link and the tap link', SMS.map(x => [x.To, x.Body]));
+  SMS.length = 0; r = await txt(O2, 'QUALIFIED ' + SA._lsaCode('LI-f3'));
+  ok(r && r.qualified && item('LI-f3').lsaGoogleOkAt && SA._lsaQualified(item('LI-f3')), 'Owner 2 texts QUALIFIED <code> → marked qualified in Google (qualified now)', { r, x: item('LI-f3') });
+  SMS.length = 0; T += 2 * 3600e3; await SA.lsaEscTick();
+  ok(!SMS.some(x => /GOOD lead: Cus Tomer2/.test(x.Body)), 'qualified → the GOOD ladder stops', SMS.map(x => x.Body));
 
   console.log('7. Google\'s 48 hours (LEADWATCH: replaces day 25 / 30)');
   world(); SMS.length = 0;
@@ -193,11 +202,11 @@ const ALL_CUST = [];
   const D0 = Date.parse('2026-12-15T04:00:00Z');   /* Mon 10 PM Central — after hours */
   const H1 = 3600e3, old = (id, n, hours, o) => { T = D0 - hours * H1; const L = lead(id, n, o); return L; };
   const A = old('LI-a', 3, 41), B = old('LI-b', 4, 42, { lsaCheck: 'bad', lsaReason: 'spam' }),
-    C = old('LI-c', 5, 43, { lsaCheck: 'bad', lsaDisputedAt: iso(D0 - 20 * H1) }), Dd = old('LI-d', 6, 41, { lsaCheck: 'good' }), E = old('LI-e', 7, 20), F = old('LI-f', 0, 49);
+    C = old('LI-c', 5, 43, { lsaCheck: 'bad', lsaDisputedAt: iso(D0 - 20 * H1) }), Dd = old('LI-d', 6, 41, { lsaCheck: 'good', lsaGoogleOkAt: iso(D0 - 30 * H1) }), E = old('LI-e', 7, 20), F = old('LI-f', 0, 49);
   B.leadExtra.lsaCheck = 'bad'; C.leadExtra.lsaCheck = 'bad';
   setKv('gc_lead_inbox', [A, B, C, Dd, E, F]); T = D0;
   a = await SA.lsaAgeCheck();
-  ok(a.alerted.map(x => x.id).sort().join() === 'LI-a,LI-b', 'less than 8 h of the 48 left and not qualified: no PM (A), BAD not disputed (B); disputed (C), good (D), 20 h (E), past 48 h (F) → none', a);
+  ok(a.alerted.map(x => x.id).sort().join() === 'LI-a,LI-b', 'less than 8 h of the 48 left and not qualified: no PM (A), BAD not disputed (B); disputed (C), good + qualified in Google (D), 20 h (E), past 48 h (F) → none', a);
   ok([O1, O2].every(ph => toPh(ph).length === 2) && toPh(O1).some(x => new RegExp('⏰ URGENT — Google LSA lead ' + SA._lsaCode('LI-a') + ' Cus Tomer3 .*not qualified \\(no PM yet\\) and Google\'s 48-hour window ends in about 7 h').test(x.Body)) && toPh(O1).some(x => /BAD, not disputed yet.*Dispute it: https:\/\/c\.gle\/DEMOLINK4/.test(x.Body)), 'after hours (10 PM): the owners are texted at once anyway (the urgent exception to the 7 AM hold)', SMS.map(x => [x.To, x.Body]));
   ok(task('LSA25_LI-a') && task('LSA25_LI-b') && (task('LSA25_LI-a').assignees || []).includes('office') && /qualify by .*\(48 h\)/.test(task('LSA25_LI-a').label), 'the office To-Dos', tasks());
   SMS.length = 0; T += 600e3; a = await SA.lsaAgeCheck();

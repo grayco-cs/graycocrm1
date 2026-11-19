@@ -250,18 +250,46 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   setKv('gc_lead_inbox', [P1]);
   await A8.notifyAssigned(Object.assign({}, P1, { id: 'LEADIN-p1', name: P1.title }), { by: EM.o1 });
   ok(/^GrayCo: GrayCo website lead [A-Z0-9]{4} for you/.test((toPh(PAT)[0] || {}).Body || '') && /#leads&lead=LEADIN-p1/.test(toPh(PAT)[0].Body), 'Pat\'s lead text links the lead (no job yet)', toPh(PAT).map(x => x.Body));
-  SMS.length = 0; T += 2 * H;
+  SA._D.portalLink = async pid => pid === 'PRJp1' ? 'https://portal.test/#t=tokp1' : '';   /* the portal-link maker (gc_portal) — stubbed */
+  SMS.length = 0; T += 61 * 60e3; await SA.lsaEscTick();
+  ok(toPh(OFF).some(x => /Pat Miller has not answered the lead text for [A-Z0-9]{4} Hal Roof/.test(x.Body)), 'owner rule: the PM must reply — no reply in 1 hour → the office role is told (the reply ladder)', SMS.map(x => [x.To, x.Body]));
+  SMS.length = 0; T += 60 * 60e3;
   let pn = await SA.staffInbound(PAT, 'talked to her, wants a new roof, insurance claim w/ State Farm, meet Tue 2pm', 'SMp1');
-  const notes = getKv('gc_text_notes') || [], n0 = notes.find(x => x.leadId === 'LEADIN-p1'), it8 = getKv('gc_lead_inbox').find(x => x.id === 'LI-p1');
-  ok(pn && pn.note === 'saved' && n0 && n0.by === 'Pat Miller' && /State Farm, meet Tue 2pm/.test(n0.text) && !n0.pid, 'any other reply → the lead\'s notes (gc_text_notes, the CRM page adds it), dated and signed', { pn, n0 });
-  ok(it8 && /\[\d+\/\d+ Pat Miller, text\] talked to her/.test([].concat(it8.notes).join('\n')) && it8.contactedAt, 'the Lead Inbox item gets the note too (and counts as contacted)', it8);
-  ok(/^GrayCo: Saved to Hal Roof notes\. Open: crm\.grayco-cs\.com\/#leads&lead=LEADIN-p1$/.test((toPh(PAT)[0] || {}).Body || ''), 'Pat: "Saved to <name> notes. Open: <the lead>"', toPh(PAT).map(x => x.Body));
-  setKv('projects', [{ id: 'PRJp1', name: 'Hal Roof — reroof', leadId: 'LEADIN-p1', status: 'bidding' }]); SMS.length = 0;
-  pn = await SA.staffInbound(PAT, 'sent the estimate, follow up Friday', 'SMp2');
-  const n1b = (getKv('gc_text_notes') || []).find(x => /follow up Friday/.test(x.text));
-  ok(n1b && n1b.pid === 'PRJp1' && /^GrayCo: Saved to Hal Roof — reroof notes\. Open: crm\.grayco-cs\.com\/#job=PRJp1$/.test((toPh(PAT)[0] || {}).Body || ''), 'once it is a job: the job\'s notes and the link opens the job (#job=)', { n1b, sms: toPh(PAT).map(x => x.Body) });
-  SMS.length = 0; pn = await SA.staffInbound(PAT, 'not a good lead, they want a handyman', 'SMp3');
+  const it8 = getKv('gc_lead_inbox').find(x => x.id === 'LI-p1'), dec8 = (getKv('gc_lsa_decisions') || []).find(d => d.id === 'LI-p1');
+  ok(pn && pn.good && it8.lsaCheck === 'good' && it8.pmReplyAt && /\[\d+\/\d+ Pat Miller\] talked to her, wants a new roof/.test([].concat(it8.notes).join('\n')) && dec8 && dec8.good && /State Farm/.test(dec8.notes), 'his reply (not BAD) = a GOOD lead: the text goes on the lead\'s notes (the CRM page makes it a job, status bidding)', { pn, it8, dec8 });
+  const ap = (getKv('gc_text_appts') || []).find(a => a.lw && a.leadId === 'LEADIN-p1');
+  ok(ap && ap.date === '2026-11-24' && ap.time === '14:00' && ap.byEmail === EM.pat && ap.kind === 'sitevisit', '"meet Tue 2pm" → a site visit Tue 11/24 2:00 PM on the job\'s schedule, Pat\'s (America/Chicago)', ap);
+  ok(/^GrayCo: Saved to Hal Roof notes — GOOD lead \(the job is being made — its link and the customer portal link come next\)\. Lead: crm\.grayco-cs\.com\/#leads&lead=LEADIN-p1 · Added to schedule: Tue 11\/24 2:00 PM$/.test((toPh(PAT)[0] || {}).Body || ''), 'Pat: "Saved … GOOD lead … Added to schedule: Tue 11/24 2:00 PM"', toPh(PAT).map(x => x.Body));
+  SMS.length = 0; T += 61 * 60e3; await SA.lsaEscTick();
+  ok(!toPh(OFF).length && !toPh(O1).length, 'he replied → the reply ladder stops', SMS.map(x => [x.To, x.Body]));
+  /* the CRM made the job → Pat gets the job link + the customer's portal link (once; nothing to the customer) */
+  setKv('projects', [{ id: 'PRJp1', name: 'Hal Roof — reroof', leadId: 'LEADIN-p1', status: 'bidding', pm: 'Pat Miller' }]); SMS.length = 0;
+  await SA.jobReady('LEADIN-p1', 'PRJp1'); await SA.jobReady('LEADIN-p1', 'PRJp1');
+  ok(toPh(PAT).length === 1 && /^GrayCo: Hal Roof — reroof is a job now \(bidding\)\. Job: crm\.grayco-cs\.com\/#job=PRJp1 · Customer portal \(for you — nothing was sent to the customer\): https:\/\/portal\.test\/#t=tokp1$/.test(toPh(PAT)[0].Body) && !custSms().some(x => /portal\.test/.test(x.Body)), 'job made → Pat gets the job link + the customer portal link, once; nothing to the customer', toPh(PAT).map(x => x.Body));
+  SMS.length = 0;
+  pn = await SA.staffInbound(PAT, 'sent the estimate, going out thu at 10, will measure', 'SMp2');
+  const n1b = (getKv('gc_text_notes') || []).find(x => /sent the estimate/.test(x.text));
+  ok(n1b && n1b.pid === 'PRJp1' && /^GrayCo: Saved to Hal Roof — reroof notes — GOOD lead\. Job: crm\.grayco-cs\.com\/#job=PRJp1 · Customer portal \(for you — nothing was sent to the customer\): https:\/\/portal\.test\/#t=tokp1 · Did you mean Thu 11\/26 10:00 AM\? Reply YES to add it to the schedule\.$/.test((toPh(PAT)[0] || {}).Body || ''), 'a job now: the job\'s notes, the job link + portal link; "thu at 10" (no am / pm) → "Did you mean Thu 11/26 10:00 AM? Reply YES"', { n1b, sms: toPh(PAT).map(x => x.Body) });
+  ok(!(getKv('gc_text_appts') || []).some(a => a.date === '2026-11-26'), 'nothing on the schedule until he says YES');
+  SMS.length = 0; pn = await SA.staffInbound(PAT, 'yes', 'SMp3');
+  const ap2 = (getKv('gc_text_appts') || []).find(a => a.date === '2026-11-26');
+  ok(pn && pn.appt === 'added' && ap2 && ap2.time === '10:00' && ap2.pid === 'PRJp1' && ap2.kind === 'estimate' && /^GrayCo: Added to schedule: Thu 11\/26 10:00 AM — Estimate — Hal Roof · Customer portal \(for you\): https:\/\/portal\.test/.test((toPh(PAT)[0] || {}).Body || ''), 'YES → an estimate Thu 11/26 10:00 AM on the job\'s schedule; Pat gets the portal link + "Added to schedule"', { ap2, sms: toPh(PAT).map(x => x.Body) });
+  SMS.length = 0; pn = await SA.staffInbound(PAT, 'not a good lead, they want a handyman', 'SMp4');
   ok(pn && pn.byPm && pn.good === false && /handyman/.test(pn.pmBad || ''), '"not a good lead …" → the bad path (as built)', pn);
+
+  console.log('9. a GOOD Google lead: "mark it qualified in Google" (PM → office → marketing → owners)');
+  world(); T = THU10;
+  const G1 = { id: 'LI-g1', title: 'Google LSA call', source: 'Google LSA', status: 'imported', receivedAt: iso(T), contact: { name: 'Gus Good', phone: '(901) 555-7006' }, leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', lsaLink: 'https://c.gle/DEMOG1' }, pm: 'Pat Miller', pmEmail: EM.pat };
+  setKv('gc_lead_inbox', [G1]); await SA.pmAssignText({ name: 'Pat Miller', email: EM.pat }, { leadId: 'LI-g1', item: G1 }); SMS.length = 0;
+  pn = await SA.staffInbound(PAT, 'called him, real roof leak, he wants a quote', 'SMg1');
+  ok([O1, O2, PAT].every(ph => toPh(ph).some(x => /✅ GOOD lead: Gus Good .*mark it qualified in Google: https:\/\/c\.gle\/DEMOG1 Then tap crm\.grayco-cs\.com\/#leads&lead=LEADIN-g1&gq=1 or reply QUALIFIED/.test(x.Body))), 'his reply = GOOD → Pat and the owners get "GOOD lead … mark it qualified in Google" + the Google link + the tap link', SMS.map(x => [x.To, x.Body.slice(0, 90)]));
+  SMS.length = 0; T += 61 * 60e3; await SA.lsaEscTick();
+  ok(toPh(OFF).some(x => /✅ GOOD lead: Gus Good/.test(x.Body)), '1 hour later, not marked → the office role', SMS.map(x => [x.To, x.Body.slice(0, 80)]));
+  let q = await SA.lsaMark({ leadId: 'LI-g1', verdict: 'qualified' }, { name: 'Olive Office', email: EM.off, office: true });
+  ok(q && q.ok && getKv('gc_lead_inbox')[0].lsaGoogleOkAt && SA._lsaQualified(getKv('gc_lead_inbox')[0]), 'the tap link (?lsamark verdict qualified) → marked qualified in Google for everyone', q);
+  SMS.length = 0; T += 3 * 61 * 60e3; await SA.lsaEscTick(); await SA.lsaEscTick(); await SA.lsaEscTick();
+  ok(!SMS.some(x => /GOOD lead: Gus Good/.test(x.Body)), 'marked → the GOOD ladder stops', SMS.map(x => x.Body));
+  ok(/qb_bcc_merge/.test(require('fs').readFileSync(path.join(WT, 'index.html'), 'utf8')) && /Bcc new invoices to invoices@grayco-cs\.com, and merge EAH Holdings into EAN Holdings/.test(require('fs').readFileSync(path.join(WT, 'index.html'), 'utf8')), 'Owner setup: the optional QuickBooks Bcc / merge item (a manual Done tick)');
 
   console.log('6. nobody outside GrayCo');
   ok(!custOther().length, 'no other text to a customer, a GC or anyone outside the staff list (only the qualify ask / "a PM will reach out")', custOther());

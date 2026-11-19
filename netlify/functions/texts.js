@@ -158,6 +158,14 @@ exports.handler = async function(event){
       const r = await require('./_lib/smsalert.js').lsaMark(b, { name: s(who.name), email: low(who.email), admin: !!who.admin, office: !!who.office });
       return J(r.ok ? 200 : (r.code || 400), r, C);
     }
+    /* LEADWATCH (owner 11/19): the CRM (an admin's / the office's page) made the job from a GOOD lead → the PM gets the job link + the customer's
+       portal link by GrayCo text (once per lead; nothing goes to the customer) */
+    if (qs.lwjob && m === 'POST') {
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office.' }, C);
+      let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+      if (!s(b.leadId) || !s(b.pid)) return J(400, { ok: false, error: 'Which lead and job?' }, C);
+      const r = await require('./_lib/smsalert.js').jobReady(s(b.leadId), s(b.pid)); return J(200, Object.assign({ ok: true }, r || {}), C);
+    }
     if (qs.lsamine && m === 'GET') { const items = await require('./_lib/smsalert.js').lsaMine(who.email, who.name); return J(200, { ok: true, items }, C); }
     /* OWNERROLE: Admin → Team roles → Owner 1 / Owner 2 (admins; the server kv "gc_owner_roles", by user id) */
     if (qs.owners) {

@@ -193,6 +193,19 @@ function openJobHash(){
   })();
 }
 W.addEventListener('hashchange', openJobHash); ST.call(W, openJobHash, 600);
+/* the tap link in the GOOD-lead texts (#leads&lead=<id>&gq=1): "marked qualified in Google" for everyone (texts.js ?lsamark verdict qualified) */
+function gqHash(){
+  var h = s(W.location.hash), m = /[#&]lead=([^&]+)&gq=1/.exec(h); if (!m) return; var id = decodeURIComponent(m[1]);
+  try { W.history.replaceState(W.history.state, '', h.replace(/&gq=1/, '')); } catch (e) {}
+  W.fetch('/.netlify/functions/texts?lsamark=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: id, verdict: 'qualified' }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return {}; }).then(function(j){
+      W.__gcLwQualified = { id: id, ok: !!(j && j.ok), already: !!(j && j.already) };
+      if (j && j.ok) patchLead(id, { lsaGoogleOkAt: new Date().toISOString(), lsaGoogleOkBy: myName() || myEmail() });
+      try { var t = D.createElement('div'); t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = j && j.ok ? (j.already ? 'Already marked qualified in Google (' + s(j.by) + ').' : '✓ Marked qualified in Google — closed for everyone.') : (s(j && j.error) || 'Could not save — try again.');
+        t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Inter,Arial,sans-serif;z-index:2147483600;max-width:90vw'; D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {}
+    });
+}
+W.addEventListener('hashchange', gqHash); ST.call(W, gqHash, 1500);
 
 /* ── GOOD → a job in Projects ("bidding"); BAD → never a job (one made already is archived as "bad lead", not deleted) ──
    owner 11/19: "a lead that's GOOD (explicitly, or assigned with no BAD) becomes a job in Projects with status bidding". The CRM's own
@@ -224,7 +237,11 @@ function jobSweep(){
   if (!cl.by || (t - Date.parse(cl.at || 0) > 120000 && cl.by !== myId())) { patchLead(next.id, { lwJobClaim: { by: myId(), at: new Date(t).toISOString() } }); return; }   /* claim; the next round makes it */
   if (cl.by !== myId()) return;
   JOBQ.busy = true;
-  Promise.resolve().then(function(){ return W._gcLeadInbox.createJob(next.id); }).then(function(r){ JOBQ.busy = false; if (r && r.pid) { JOBQ.made.push({ lead: next.id, pid: r.pid }); patchLead(next.id, { lwJob: { pid: r.pid, at: new Date().toISOString(), why: chk(next) === 'good' || chk(next) === 'pm_good' ? 'good' : 'assigned, no BAD' } }); } },
+  Promise.resolve().then(function(){ return W._gcLeadInbox.createJob(next.id); }).then(function(r){ JOBQ.busy = false; if (r && r.pid) { JOBQ.made.push({ lead: next.id, pid: r.pid }); patchLead(next.id, { lwJob: { pid: r.pid, at: new Date().toISOString(), why: chk(next) === 'good' || chk(next) === 'pm_good' ? 'good' : 'assigned, no BAD' } });
+      /* the PM's appointments texted before the job existed → on the job now; the PM gets the job link + the customer portal link (server, once) */
+      try { if (typeof W._setSchedule === 'function') W._setSchedule(function(prev){ return arr(prev).map(function(x){ return x && !s(x.pid) && s(x.leadId) === s(next.id) ? Object.assign({}, x, { pid: r.pid }) : x; }); }); } catch (e) {}
+      try { W.fetch('/.netlify/functions/texts?lwjob=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: next.id, pid: r.pid }) }).catch(function(){}); } catch (e) {}
+    } },
     function(e){ JOBQ.busy = false; JOBQ.err = s(e && e.message); patchLead(next.id, { lwJob: { err: JOBQ.err, at: new Date().toISOString() } }); });
 }
 SI.call(W, jobSweep, 6000);
