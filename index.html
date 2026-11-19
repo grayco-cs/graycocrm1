@@ -249758,6 +249758,10 @@ function keep(r){
   if (/^appr_esc_|^COI_REQ_|^x10_call_/.test(id) || rec.kind === 'coi_request' || rec.kind === 'appr') return true;
   if ((s(rec.sub) || s(rec.subName) || s(rec.vendor) || s(rec.subId)) && /\b(COI|W-?9|workers'? ?comp|insurance)\b/i.test(t)) return true;   /* a sub's papers (not GrayCo's own W-9) */
   if (/overdue invoice|over \d+ days|collections?\b|30\+ days late/i.test(t)) return true;
+  /* PAPERS' own exception (owner 11/19): a missing customer phone / e-mail on an OPEN job stays */
+  if ((/^info\|/.test(th) && /phone|e-?mail|contact/i.test(t)) || /no customer (phone|e-?mail)|missing (customer )?(phone|e-?mail)/i.test(t)) {
+    var pid = pidOf(r), p = pid && arr(W._crm && W._crm.projects).find(function(x){ return x && s(x.id) === pid; });
+    if (p && !/complete|closed|warrant|close.?out|paid in full|lost|cancel|dead|archiv/i.test(s(p.status))) return true; }
   return false;
 }
 /* the day of the record the To-Do is about ('' = not known: kept) */

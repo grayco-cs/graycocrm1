@@ -2,7 +2,7 @@
 // seed. Offline harness (made-up people, numbers and companies; the server answers are fakes):
 //   1. admin, desk: a Google LSA call about water damage (Mitigation by its words) is on the Leads list while the page shows Construction
 //      leads, with its "📞 <code> ⏳" chip; "📞 Google calls" lists it with the number (tap to call), call time, length, job type, ▶ Play,
-//      the 📝 summary, the code + state, the PM picker preselected with the ⚙ default PM (Nick) → ➡ Send to PM posts ?lsaassign;
+//      the 📝 summary, the code + state, the PM picker preselected with the owner who opens it (LEADWATCH; the ⚙ default PM is the automatic fallback) → ➡ Send to PM posts ?lsaassign;
 //      the old LSAVET "real lead?" card is gone; a deleted Google call says so with ↩ Put back;
 //   2. the office, phone (390 px): the "📞 Google call — add notes (optional)" pop-up → the form (👍/👎/❓ optional, what they need, name /
 //      number / address, ONE "💾 Save notes for the owners" — LSAFLOW2 had no PM picker; LEADWATCH: the office assigns too) → ?lsaintake action
@@ -56,11 +56,11 @@ try {
     return { ov: !!ov, tel: row && (row.querySelector('a[href="tel:9015550421"]') || {}).textContent, txt: row ? row.textContent : '', play: !!(row && row.querySelector('[data-rec-play]')), sel: row && row.querySelector('[data-lc-pm]') ? row.querySelector('[data-lc-pm]').value : '', fill: !!(row && row.querySelector('[data-lc-in]')),
       def: ov && ov.querySelector('[data-lc-def]') ? ov.querySelector('[data-lc-def]').value : '', gone: r0 ? r0.textContent : '', who: ov ? (ov.querySelector('[data-lc-who]') || {}).textContent : '' }; });
   ok('the panel: the number (tap to call), call time, length, job type, ▶ Play, the 📝 summary, the code + state', pn.ov && /\(901\) 555-0421/.test(pn.tel || '') && /8:21 AM/.test(pn.txt) && /2m 14s/.test(pn.txt) && /Roofer — roof repair/.test(pn.txt) && pn.play && /roof leak over the kitchen/.test(pn.txt) && /K7Q2/.test(pn.txt) && /not marked yet/.test(pn.txt), pn);
-  ok('the PM picker is preselected with the ⚙ default PM (Owner 2 by role = Nick); admins see the ⚙ setting at "Owner 2 — default"', pn.sel === 'nthomas@grayco-cs.com' && pn.def === '@owner2' && pn.fill, pn);
+  ok('LEADWATCH (owner 11/19): the PM picker is preselected with the owner who opened it (Wesley, an admin by role); the ⚙ default (Owner 2) is the automatic fallback, shown at "Owner 2 — default"', pn.sel === 'wjohnson@grayco-cs.com' && pn.def === '@owner2' && pn.fill, pn);
   ok('OWNERROLE: the panel names the owners from the server (no names in the page code)', /^Wesley and Nick get each call by text/.test(pn.who || ''), pn.who);
   ok('a deleted Google call says it is not on the Leads list', /Not on the Leads list — it was deleted/.test(pn.gone), pn.gone);
   await A.page().click('#gc-lc-ov [data-lc-go="LI-lsa1"]'); await sleep(1200);
-  ok('➡ Send to PM → ?lsaassign { leadId, pmEmail: Nick } (= GOOD K7Q2 Nick)', POSTS.some(p => p.q === 'lsaassign' && p.body.leadId === 'LI-lsa1' && p.body.pmEmail === 'nthomas@grayco-cs.com'), POSTS);
+  ok('➡ Send to PM → ?lsaassign { leadId, pmEmail: the owner himself } (= his GOOD K7Q2)', POSTS.some(p => p.q === 'lsaassign' && p.body.leadId === 'LI-lsa1' && p.body.pmEmail === 'wjohnson@grayco-cs.com'), POSTS);
   ok('no page errors (desk)', !A.errs.length, A.errs);
   /* the open lead's page has the bar */
   await A.ev(() => { const o = document.getElementById('gc-lc-ov'); if (o) o.remove(); window._gcLeadsHub.open('LEADIN-lsa1'); }); await sleep(2500);
