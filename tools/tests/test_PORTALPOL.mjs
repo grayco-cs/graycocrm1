@@ -6,7 +6,7 @@
 //      job filed under GrayCo Mitigation still is (💧 + 🌀 on top).
 //   B. "Keep cons PMs using claim board": a Construction PM with Construction picked has 💧 Mitigation in the menu and the board
 //      lists his job's claim.
-//   C. Admin → ⚡ Automations: "🚀 Go-live: Jan 1, 2027 — these switch on" with the list (lead_customer_autotext …); an admin changes
+//   C. Admin → ⚡ Automations: "🚀 Go-live: Jan 1, 2027 — these switch on" with the list (lead_qualify_text …); an admin changes
 //      the date and cancels / plans it again (the server's state follows); the office sees it read-only; the portal links for the
 //      active jobs line with Undo.
 //   D. the 🏠 Portal card: a paper switched on there is marked live (portalLive) — no "⏳ Waiting for approval" for it.
@@ -109,7 +109,7 @@ try {
   await H.waitFor(A, () => !!document.querySelector('#gcap-ov [data-gl="card"]'), null, 20000);
   const card = await A.ev(() => { const c = document.querySelector('#gcap-ov [data-gl="card"]'); return c ? { head: c.querySelector('[data-gl="head"]').innerText, date: c.getAttribute('data-gl-date'), st: c.getAttribute('data-gl-state'), keys: [...c.querySelectorAll('[data-gl-key]')].map(x => x.getAttribute('data-gl-key')), text: c.innerText, ctl: !!c.querySelector('[data-gl="date"]') && !!c.querySelector('[data-gl-act="cancel"]'), undo: !!c.querySelector('[data-gl-act="undo-backfill"]'), first: c.closest('.gcap').firstElementChild.hasAttribute('data-gcap-golive') } : null; });
   ok(card && /Go-live: Jan 1, 2027 — these switch on/.test(card.head) && card.date === '2027-01-01' && card.st === 'planned' && card.first, '"🚀 Go-live: Jan 1, 2027 — these switch on" at the top of ⚡ Automations', card && { head: card.head, date: card.date });
-  ok(card && card.keys.includes('lead_customer_autotext') && card.keys.includes('final_invoice_reminders') && card.keys.length === require(path.join(W.FNDIR, '_lib/golive.js')).SWITCH.length, 'the list of what switches on (Automatic texts to new leads, …)', card && card.keys);
+  ok(card && card.keys.includes('lead_qualify_text') && card.keys.includes('final_invoice_reminders') && card.keys.length === require(path.join(W.FNDIR, '_lib/golive.js')).SWITCH.length, 'the list of what switches on (Automatic texts to new leads, …)', card && card.keys);
   ok(card && /data-entry mode OFF/i.test(card.text) && /portal link for every open job/i.test(card.text) && /announcement/i.test(card.text) && /Jan 3/.test(card.text), 'what happens: portals, data-entry mode off, the switches, the staff announcement; replaces the Jan 3 plan', card && card.text.slice(0, 500));
   ok(card && card.ctl && card.undo && /3 portal links made for active jobs/.test(card.text), 'admin: change date / cancel; the active-job portals line (3 made, nothing sent) with Undo', card && card.text.slice(-400));
   await A.page().screenshot({ path: SHOTS + 'C1_golive_card.png' });

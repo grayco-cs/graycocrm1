@@ -29,7 +29,8 @@ const BATCH = 100;
    credits), bid-result e-mails to GCs, adjuster follow-ups, maintenance-plan queueing, the proposal maker, the portal gate queue,
    call recording / voicemail (opt-in only). */
 const SWITCH = [
-  'lead_customer_autotext',   /* automatic texts to new leads (NOCUSTTEXT) */
+  'lead_qualify_text',        /* the new lead's qualify ask (CUSTTEXT2; replaced NOCUSTTEXT's lead_customer_autotext) */
+  'lead_good_text',           /* "a PM will reach out shortly" on GOOD (CUSTTEXT2) — lead_good_text_pm (name the PM) stays the owner's call */
   'text_auto_answers',        /* automatic replies to customers' texts */
   'appt_confirmations',       /* appointment confirmations + day-before reminders */
   'estimate_followups',       /* estimate nudges day 2 / 5 / 10 */

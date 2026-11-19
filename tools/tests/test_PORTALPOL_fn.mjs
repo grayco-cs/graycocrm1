@@ -140,7 +140,7 @@ console.log('5. the Jan 1 go-live');
 {
   ok(G.midnightUtc('2027-01-01') === '2027-01-01T06:00:00.000Z' && G.planOf({}).date === '2027-01-01' && G.planOf({}).at === '2027-01-01T06:00:00.000Z', 'default plan: 2027-01-01 00:00 America/Chicago (06:00 UTC)', G.planOf({}));
   let r = await W.handlerCall('automations', { op: 'golive', sub: 'view' }, PM);
-  ok(r.status === 200 && r.data.plan.date === '2027-01-01' && r.data.keys.length === G.SWITCH.length && r.data.keys.some(k => k.key === 'lead_customer_autotext') && r.data.admin === false, 'view (any staff): date, the switch list (lead_customer_autotext …), not admin', r.data.plan);
+  ok(r.status === 200 && r.data.plan.date === '2027-01-01' && r.data.keys.length === G.SWITCH.length && r.data.keys.some(k => k.key === 'lead_qualify_text') && r.data.admin === false, 'view (any staff): date, the switch list (lead_customer_autotext …), not admin', r.data.plan);
   ok(/Jan 3/.test(r.data.replaces), 'it says it replaces the Jan 3 plan', r.data.replaces);
   r = await W.handlerCall('automations', { op: 'golive', sub: 'date', date: '2027-01-05' }, PM);
   ok(r.status === 403, 'a PM cannot change the date', r.status);
@@ -171,7 +171,7 @@ console.log('5. the Jan 1 go-live');
   ok(gl.join() === 'A1,A3,B1,L1', '00:04 Jan 1: links for every OPEN job with none (incl. bidding / lead), not complete / history / deleted / lost / one with a link', { gl, out });
   ok(W.get('gc_automation_pause').on === false && (W.get('gc_automation_pause_log') || [])[0].by === 'go-live', 'data-entry mode OFF (logged "go-live")', W.get('gc_automation_pause'));
   const A = require(FN + '/_lib/automations.js'), row = W.get('gc_automations');
-  ok(G.SWITCH.every(k => A.valueOf(row, k) === true) && row._log.filter(x => x.op === 'golive').length === G.SWITCH.length, 'every SWITCH automation is ON, each logged', G.SWITCH.filter(k => !A.valueOf(row, k)));
+  ok(G.SWITCH.every(k => A.valueOf(row, k) === true) && row._log.filter(x => x.op === 'golive').length === G.SWITCH.filter(k => !A.defaults()[k]).length, 'every SWITCH automation is ON, each one it turned on logged (CUSTTEXT2\'s lead texts are ON by default)', G.SWITCH.filter(k => !A.valueOf(row, k)));
   ok(['call_recording', 'mkt_autopilot', 'social_drafts', 'bid_result_emails', 'portal_gate_queue'].every(k => A.valueOf(row, k) === false), 'the others stay as they were (recording, marketing, GC bid e-mails, the gate queue)');
   ok(W.RESEND.length === mails0, 'the go-live itself sends nothing');
   const st = W.get(G.KEY);
