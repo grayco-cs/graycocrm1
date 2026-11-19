@@ -165,6 +165,45 @@ ok('G3 🏆 award: the sub\'s bid carries the job\'s PO (H138) even when the CRM
 const m = Hb.awardMail({ job: stored('J_FIRE'), trade: 'Framing', amount: 1000, pm: {}, exclusions: [], po: 'H138' }, false);
 ok('G4 … and the award e-mail says "Job PO: H138"', /Job PO: <b>H138<\/b>/.test(m.html), m.html.slice(0, 300));
 
+/* ── I. decision 6: the site walk → the linked CRM job's schedule (ONE item, idempotent, nobody told, cleared → archived) ── */
+{
+  const sched = () => (W.H.cget ? W.H.cget('schedule') : null) || [];
+  const walks = () => sched().filter(x => x && String(x.id).startsWith('BIDWALK_J_FIRE'));
+  const it0 = walks();
+  ok('I1 ✎ Edit saved a site walk on a job linked to a CRM job → ONE schedule item on that CRM job: "Site walk / pre-bid (mandatory)", date, time, place, mandatory', it0.length === 1 && it0[0].pid === 'P_FIRE' && it0[0].date === DAY(6) && it0[0].time === '08:00' && it0[0].title === 'Site walk / pre-bid (mandatory)' && it0[0].mandatory === true && /leasing office/.test(it0[0].address) && it0[0].type === 'meeting', it0);
+  ok('I2 … nobody is texted / told from it: no sub, vendor or assignee on it, notify off, internal, never on a customer portal, not a template suggestion', !it0[0].vendor && !it0[0].assignee && !it0[0].subId && it0[0].notify === false && it0[0].internal === true && it0[0].customerVisible === false && it0[0].portal === false && it0[0].draft === false && it0[0].source === 'bid-site', it0[0]);
+  const FA = require(path.join(BUILD, 'netlify/functions/_lib/fa-core.js'));
+  const today = new Date().toISOString().slice(0, 10);
+  const disp = FA.dispatchFor ? FA.dispatchFor('Wesley Johnson', { projects: [{ id: 'P_FIRE', name: 'Demo Apartment Fire', status: 'estimating', superintendent: 'Wesley Johnson' }], schedule: [Object.assign({}, it0[0], { date: today })], customers: [], punch: [] }, today, {}) : [];
+  ok('I3 … and it is not in a superintendent\'s 7 AM dispatch (crew work only)', Array.isArray(disp) && disp.length === 0, disp);
+  const u0 = it0[0].updatedAt;
+  await call('t-adm', { action: 'save', key: 'jobs', upsert: [Object.assign({}, stored('J_FIRE'), { notes: 'same walk', _detailsSave: true })], del: [] });
+  ok('I4 saved again with the same site walk → the item is not written again (same updatedAt, still one)', walks().length === 1 && walks()[0].updatedAt === u0, walks());
+  await call('t-adm', { action: 'save', key: 'jobs', upsert: [Object.assign({}, stored('J_FIRE'), { siteWalk: { date: DAY(7), time: '13:00', location: '', mandatory: false }, _detailsSave: true })], del: [] });
+  const it1 = walks();
+  ok('I5 moved to another day, not mandatory → the SAME item changes (date, time, title, the job address as the place); still one', it1.length === 1 && it1[0].id === it0[0].id && it1[0].date === DAY(7) && it1[0].time === '13:00' && it1[0].title === 'Site walk / pre-bid' && it1[0].mandatory === false && it1[0].address === '2817 Los Gatos Ct', it1);
+  await call('t-adm', { action: 'save', key: 'jobs', upsert: [Object.assign({}, stored('J_FIRE'), { siteWalk: { date: '', time: '', location: '', mandatory: false }, _detailsSave: true })], del: [] });
+  const it2 = walks();
+  ok('I6 the date cleared → the item is archived (deleted + archived, kept on the list), not a second one', it2.length === 1 && it2[0].deleted === true && it2[0].archived === true && !!it2[0].archivedAt, it2);
+  await call('t-adm', { action: 'save', key: 'jobs', upsert: [Object.assign({}, stored('J_FIRE'), { siteWalk: { date: DAY(8), time: '', location: '', mandatory: true }, _detailsSave: true })], del: [] });
+  const it3 = walks();
+  ok('I7 set again → the same item comes back (not archived)', it3.length === 1 && it3[0].deleted !== true && it3[0].archived !== true && it3[0].date === DAY(8), it3);
+  const other = sched().filter(x => x && x.id === 'S1');
+  ok('I8 the rest of the CRM schedule is untouched', other.length === 1 && other[0].title === 'Mandatory site walk — Demo Linked Kitchen', other);
+  const nDraft = sched().filter(x => x && String(x.id) === 'BIDWALK_J_DRAFT').length;
+  ok('I9 a bid job with no CRM job (the draft at 1 Draft Rd) → nothing on the CRM schedule', nDraft === 0, nDraft);
+  /* a CRM schedule stored in pieces that are newer than the single copy → never written over */
+  const before9 = JSON.stringify(sched());
+  W.H.cset('schedule__manifest', { chunked: true, count: 1 });
+  await call('t-adm', { action: 'save', key: 'jobs', upsert: [Object.assign({}, stored('J_FIRE'), { siteWalk: { date: DAY(9), time: '', location: '', mandatory: true }, _detailsSave: true })], del: [] });
+  ok('I10 the CRM\'s schedule is in newer pieces → the bid site does not write it (no lost schedule)', JSON.stringify(sched()) === before9);
+  W.H.cset('schedule__manifest', null);
+  /* the pure rule: a new link moves the item; no link → archived */
+  const B2 = B, jj = { id: 'JX', title: 'Demo X', address: '1 X St', siteWalk: { date: DAY(5), time: '', location: '', mandatory: false } };
+  const m1 = B2.schedMutate([], jj, { id: 'PA', address: '1 X St' }, { by: 'T' }), m2 = B2.schedMutate(m1.list, jj, { id: 'PB' }, { by: 'T' }), m3 = B2.schedMutate(m2.list, jj, null, { by: 'T' });
+  ok('I11 relinked to another CRM job → the same item moves there; unlinked → archived; never two', m1.list.length === 1 && m2.list.length === 1 && m2.list[0].pid === 'PB' && m3.list.length === 1 && m3.list[0].deleted === true && B2.schedMutate(m3.list, jj, null, {}) === null);
+}
+
 /* ── H. no CRM → nothing handed out ── */
 W.H.cset('projects', []); job('J_NOCRM', { title: 'Demo While CRM Down', address: '5 Down St' });
 J = await loadJobs('t-adm');

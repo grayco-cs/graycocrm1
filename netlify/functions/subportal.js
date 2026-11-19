@@ -558,6 +558,8 @@ async function saveCollection(who, key, upsert, del, ctx){
             if (day10(old.questionsDue) !== day10(rec.questionsDue)) lines.push('Questions due by ' + (day10(rec.questionsDue) || '— (no deadline)'));
             if (lines.length) notes.push({ kind: 'details-changed', jobId: rec.id, lines: lines, who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });
           }
+          /* patch BIDPO (decision 6): ✎ Edit Job Details on a job linked to a CRM job → its ONE "Site walk / pre-bid" schedule item */
+          if (detailsSave && (s(rec.crmProjectId) || (old && old.siteWalk && day10(old.siteWalk.date)))) notes.push({ kind: 'crm-sitewalk', jobId: rec.id, by: s(who.profile && who.profile.name) || who.email });
           if (publish && (isDraft(old) || isDraft(rec))) {
             Object.assign(rec, { status: 'open', visibility: 'public', draft: false, publishedAt: new Date().toISOString(), publishedBy: who.email });
           } else if (isDraft(old) || (!old && isDraft(rec))) {
@@ -1310,6 +1312,7 @@ async function sweepPlanRequests(){
 function notifyApproved(n){ return notify(Object.assign({}, n, { kind: '__approved_inner' })); }   /* patch SIGNUPNOTE */
 async function notify(n){
   if (n.kind === 'plans-added') return notifyPlanRequests(n.jobId);   /* patch PLANREQ */
+  if (n.kind === 'crm-sitewalk') return crmSiteWalkPush(n.jobId, n.by);
   if (n.kind === 'details-changed') {   /* patch BIDPO: ✎ Edit Job Details changed the site walk / questions deadline → the same update as 📂 Manage → Details */
     const r = await getRow('jobs', n.jobId); if (!r) return;
     const H = require('./bid-hub.js')._test, job = Object.assign({}, r.data);
@@ -1547,6 +1550,37 @@ async function poLink(who, body){   /* 🔗 Link to CRM job / Change link — an
   job.updatedAt = at;
   await upsertRows([rowFor('jobs', job)], who.email);
   return { ok: true, job: poView(job, out.info, data) };
+}
+/* patch BIDPO (decision 6): the site walk → the linked CRM job's schedule (gc_kv "schedule", the CRM's own list; written as the
+   list it is, re-read before and after like every server write to a CRM list). Nothing is sent to anyone from here. */
+async function schedKvUpd(mutate){
+  const read = async function(){
+    const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=key,value,updated_at&key=in.("schedule","schedule__manifest")', { headers: H() });
+    if (!r.ok) return null; const rows = await r.json().catch(function(){ return null; }); if (!Array.isArray(rows)) return null;
+    const one = rows.find(function(x){ return x && x.key === 'schedule'; }), man = rows.find(function(x){ return x && x.key === 'schedule__manifest'; });
+    let mv = man && man.value; if (typeof mv === 'string') { try { mv = JSON.parse(mv); } catch (e) { mv = null; } }
+    if (mv && mv.chunked && mv.count > 0 && (!one || s(man.updated_at) >= s(one.updated_at))) return { chunked: true };   /* the pieces are the newer copy: never write over them */
+    let v = one ? one.value : []; if (v == null || v === '') v = []; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } }
+    return Array.isArray(v) ? { list: v, at: s(one && one.updated_at) } : null;
+  };
+  for (let tries = 0; tries < 5; tries++) {
+    const cur = await read(); if (!cur) return { ok: false, why: 'unreadable' }; if (cur.chunked) return { ok: false, why: 'chunked' };
+    const m = mutate(clone(cur.list)); if (!m || !m.list) return { ok: true, unchanged: true };
+    const again = await read(); if (!again || again.chunked || again.at !== cur.at || JSON.stringify(again.list) !== JSON.stringify(cur.list)) { await new Promise(function(r){ setTimeout(r, 150 + 200 * tries); }); continue; }
+    const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: 'schedule', value: m.list, updated_at: new Date().toISOString() }) });
+    if (!w.ok) return { ok: false, why: 'write ' + w.status };
+    const after = await read(); if (after && after.list && (!m.check || m.check(after.list))) return { ok: true };
+  }
+  return { ok: false, why: 'busy' };
+}
+async function crmSiteWalkPush(jobId, by){
+  const r = await getRow('jobs', jobId); if (!r) return { ok: false, why: 'no job' };
+  const job = r.data || {}; poCache = null;
+  const data = await poData(); if (!arr(data.projects).length) return { ok: false, why: 'no CRM jobs' };
+  const res = BPO().resolve(job, data), p = res.state === 'linked' ? res.project : null;
+  const out = await schedKvUpd(function(list){ return BPO().schedMutate(list, job, p, { by: by ? by + ' (bid site)' : 'Bid site' }); });
+  if (!out.ok) console.warn('[subportal] site walk → CRM schedule', out.why);
+  return out;
 }
 async function poCands(who, body){
   if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
@@ -1824,7 +1858,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

@@ -325,7 +325,7 @@ function isActiveJob(p){ return p && p.deleted !== true && !/complete|closed|los
 /* the superintendent's jobs today: the job names them (superintendent / super), or a schedule row today names them */
 function dispatchFor(name, data, today, extra){
   extra = extra || {}; var n = low(name); if (!n) return [];
-  var first = n.split(/\s+/)[0], sched = arr(data.schedule).filter(function(x){ return !x.deleted && ymd(x.date) <= today && ymd(x.endDateSch || x.endDate || x.date) >= today && !/cancel/i.test(s(x.status)); });
+  var first = n.split(/\s+/)[0], sched = arr(data.schedule).filter(function(x){ return !x.deleted && s(x.source) !== 'bid-site' /* patch BIDPO: a bid site's site walk is not crew work */ && ymd(x.date) <= today && ymd(x.endDateSch || x.endDate || x.date) >= today && !/cancel/i.test(s(x.status)); });
   var named = function(v){ v = low(v); return !!v && (v.indexOf(n) >= 0 || (first.length >= 3 && new RegExp('(^|[^a-z])' + first + '([^a-z]|$)').test(v))); };
   var out = [];
   arr(data.projects).filter(isActiveJob).forEach(function(p){

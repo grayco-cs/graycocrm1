@@ -232,4 +232,36 @@ function crmSiteWalk(job, data, res){
   return null;
 }
 
-module.exports = { poOf, poKey, street, sameStreet, cityOf, normTitle, resolve, apply, nextPO, search, crmSiteWalk, isOpen, label, cand };
+
+/* patch BIDPO (owner, 11/19 decision 6): the site walk set on the bid site's ✎ Edit Job Details goes on the linked CRM job's schedule —
+   ONE item per bid job (id BIDWALK_<bid job id>), the CRM's own schedule row shape: "Site walk / pre-bid", date, time, the place, a
+   mandatory flag. Nobody is texted or told from it: no sub / vendor / assignee on it, notify false, internal, never on a customer portal.
+   Same walk again → nothing written; the date cleared → the item archived (deleted: true, archived: true — the way every schedule reader
+   skips a row); a new link → the same item moves to that CRM job. → { list, check } or null (nothing to write) */
+const WALK_TITLE = 'Site walk / pre-bid';
+function walkId(job){ return 'BIDWALK_' + s(job && job.id); }
+function schedMutate(list, job, project, opts){
+  opts = opts || {};
+  list = arr(list).slice();
+  const at = opts.now || new Date().toISOString(), by = s(opts.by) || 'Bid site', id = walkId(job);
+  const i = list.findIndex(function(x){ return x && s(x.id) === id; }), prev = i > -1 ? list[i] : null;
+  const w = (job && job.siteWalk) || {}, date = /^\d{4}-\d{2}-\d{2}$/.test(s(w.date)) ? s(w.date) : '';
+  const has = function(l){ const x = arr(l).find(function(y){ return y && s(y.id) === id; }); return date ? !!(x && x.deleted !== true && s(x.date) === date && s(x.pid) === s(project && project.id)) : !(x && x.deleted !== true); };
+  if (!date || !project) {
+    if (!prev || prev.deleted === true) return null;
+    list[i] = Object.assign({}, prev, { deleted: true, archived: true, archivedAt: at, archivedBy: by, archivedWhy: project ? 'the site walk was taken off on the bid site' : 'the bid job is no longer linked to this CRM job', updatedAt: at, savedAt: at });
+    return { list: list, check: has };
+  }
+  const mandatory = w.mandatory === true, loc = s(w.location) || s(job.address) || s(project.address || project.jobAddress);
+  const want = { pid: s(project.id), date: date, time: /^\d{2}:\d{2}$/.test(s(w.time)) ? s(w.time) : '', type: 'meeting', title: WALK_TITLE + (mandatory ? ' (mandatory)' : ''), address: loc.slice(0, 240),
+    mandatory: mandatory, notes: 'From the bid site (' + s(job.title).slice(0, 120) + ')' + (mandatory ? ' — MANDATORY for bidders' : '') + '. Set on ✎ Edit Job Details.',
+    vendor: '', assignee: '', notify: false, portal: false, internal: true, customerVisible: false, draft: false, source: 'bid-site', bidJobId: s(job.id) };
+  const same = prev && prev.deleted !== true && Object.keys(want).every(function(k){ return JSON.stringify(prev[k] === undefined ? '' : prev[k]) === JSON.stringify(want[k]); });
+  if (same) return null;
+  const row = Object.assign({}, prev || { id: id, endTime: '', createdAt: at, createdBy: by }, want, { by: by, acceptedBy: by, updatedAt: at, savedAt: at });
+  delete row.deleted; delete row.archived; delete row.archivedAt; delete row.archivedBy; delete row.archivedWhy;
+  if (i > -1) list[i] = row; else list.push(row);
+  return { list: list, check: has };
+}
+
+module.exports = { schedMutate, walkId, WALK_TITLE, poOf, poKey, street, sameStreet, cityOf, normTitle, resolve, apply, nextPO, search, crmSiteWalk, isOpen, label, cand };
