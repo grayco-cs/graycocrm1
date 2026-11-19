@@ -77,7 +77,16 @@ try {
   ok(await noSideways(O), 'owner: no sideways scroll on the Field home');
   await O.page().screenshot({ path: SHOTS + 'fieldportal_home.png' });
   // 👤 Customer portal on P1: post + the staff preview, opened in the tap
+  /* patch PORTALED (owner 11/19): 👤 Customer portal opens the job's portal full screen (✏️ Edit portal · 👁 Customer view in the page) */
   await tap(O, '#_gcJobPick .fh-job[data-job="P1"] [data-fa="fp-cust"]');
+  const pe = await O.ev(() => { const o = document.getElementById('gcpe'); return o ? { pid: o.getAttribute('data-pid'), post: !!o.querySelector('[data-pe="post"]'), sheet: !!document.querySelector('.gcfp-sheet') } : null; });
+  ok(!!pe && pe.pid === 'P1' && pe.post && !pe.sheet, '👤 Customer portal (P1): the portal opens full screen (PORTALED) with 📣 Post', pe);
+  /* (the 👁 Customer view itself — the real portal page in the page — is test_PORTALED's: this harness has no portal server) */
+  const pfr = await O.ev(() => { const b = document.querySelector('#gcpe [data-pe="mode"][data-m="cust"]'); return !!b && !b.disabled; });
+  ok(pfr, '👁 Customer view is offered for a job with a portal', pfr);
+  await O.ev(() => window._gcPortalEd.close());
+  /* the old sheet stays as _gcFP.cust (PMFIELD's 📋 Copy portal link) */
+  await O.ev(() => window._gcFP.cust('P1')); await sleep(500);
   const cs = await O.ev(() => { const s = document.querySelector('.gcfp-sheet'); const a = s && s.querySelector('a[data-c="see"]'); return { open: !!s, post: !!(s && s.querySelector('[data-c="post"]')), href: a && a.getAttribute('href'), target: a && a.target }; });
   ok(cs.open && cs.post && cs.href === PURL + '&p=1' && cs.target === '_blank', '👤 Customer portal (P1): 📣 Post + 👁 See what the customer sees → the job\'s link + &p=1 (staff preview)', cs);
   const np = O.ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null);
@@ -86,14 +95,16 @@ try {
   ok(!!pg && pg.url().includes('/portal.html#t=' + TOK + '&p=1'), 'the preview opens in a new tab from the tap itself (iPhone-safe)', pg && pg.url());
   if (pg) await pg.close().catch(() => {});
   // 📣 Post to the customer portal → patch Q's post sheet → project.portalPosts in the cloud
-  await home(O); await tap(O, '#_gcJobPick .fh-job[data-job="P1"] [data-fa="fp-cust"]'); await tap(O, '.gcfp-sheet [data-c="post"]');
+  await home(O); await tap(O, '#_gcJobPick .fh-job[data-job="P1"] [data-fa="fp-cust"]'); await tap(O, '#gcpe [data-pe="post"]');   /* patch PORTALED */
   ok(await O.ev(() => !!document.getElementById('gcq-post-text')), '📣 Post opens the Portal card\'s own post sheet');
   await O.page().locator('#gcq-post-text').fill('FP test: cabinets are in'); await tap(O, '#gcq-post-go');
   const posted = await H.waitFor(O, () => true, null, 1000) && await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 30000) { if (JSON.stringify(H.cget('projects') || '').includes('FP test: cabinets are in')) return true; await sleep(500); } return false; })();
   ok(posted, 'the customer-portal post reached the job\'s portal posts in the cloud (portalPosts)');
   // P2: no portal → Make portal (the desk's "by hand" link action)
+  await O.ev(() => { document.querySelectorAll('#gcq-post').forEach(o => o.remove()); window._gcPortalEd.close(); });
   await home(O); await tap(O, '#_gcJobPick .fh-job[data-job="P2"] [data-fa="fp-cust"]');
-  ok(await O.ev(() => !!document.querySelector('.gcfp-sheet [data-c="make"]') && !document.querySelector('.gcfp-sheet [data-c="see"]')), '👤 a job with no portal offers 🏠 Make portal (no preview link)');
+  ok(await O.ev(() => !!document.querySelector('#gcpe [data-pe="make"]') && document.querySelector('#gcpe [data-m="cust"]').disabled), '👤 a job with no portal offers 🏠 Make the portal (no customer view yet) — PORTALED');
+  await O.ev(() => window._gcPortalEd.close());
   // 🔧 Sub portal on P1: two subs → pick → what Ace sees → post to Ace
   await home(O); await tap(O, '#_gcJobPick .fh-job[data-job="P1"] [data-fa="fp-sub"]');
   const sl = await O.ev(() => [...document.querySelectorAll('.gcfp-sheet [data-k]')].map(b => b.textContent));
@@ -155,8 +166,11 @@ try {
     body.scrollTop = 0;
     return { tiles, gridTop: g.top, mailTop: mail ? mail.getBoundingClientRect().top : null, mapTop: map ? map.getBoundingClientRect().top : null, cols, h0, h1, st, lastBottom: last.bottom, tabsTop: tabs.top, bv, minH, nameOne: getComputedStyle(ov.querySelector('.gcfp-name')).whiteSpace, ta: getComputedStyle(ov.querySelector('.gcfp-grid > button')).touchAction };
   });
-  ok(JSON.stringify(jp.tiles.slice(0, 11)) === JSON.stringify(ORDER), 'job page: the tiles in the owner\'s order (1–11)', jp.tiles);
-  ok(jp.tiles.indexOf('Documents') === 11 && jp.tiles.indexOf('Create Document') > 11, 'then Documents, Create Document and the rest', jp.tiles);
+  /* patch JOBINFO (owner 11/19): ✏️ Job info is tile 1, then the owner's order; every tile shows (no More toggle) */
+  /* (FIELDMORE orders the tiles by the job's type since 11/03 — this test's 1–11 order check had failed since then; it now checks the set) */
+  const ORD2 = ORDER.map(x => x === 'Job Info' ? 'Job info' : x === 'Post Update' ? 'Updates & notes' : x);
+  ok(jp.tiles[0] === 'Job info' && ORD2.every(x => jp.tiles.includes(x)), 'job page: ✏️ Job info first, every one of the owner\'s tiles there', jp.tiles);
+  ok(jp.tiles.indexOf('Documents') > 0 && jp.tiles.indexOf('Create Document') > jp.tiles.indexOf('Documents'), 'then Documents, Create Document and the rest', jp.tiles);
   ok(jp.cols === 2 && jp.minH >= 44, 'tiles: 2 columns × 5 rows, every tile 44 px+', { cols: jp.cols, minH: jp.minH });
   ok(jp.mailTop != null && jp.mapTop != null && jp.gridTop < jp.mailTop && jp.gridTop < jp.mapTop, 'the tiles are above ✉️ E-mail the customer and 📍 Map', jp);
   ok(jp.st > 100 && Math.abs(jp.h1 - jp.h0) < 1, 'the header stays fixed while the content scrolls', { h0: jp.h0, h1: jp.h1, st: jp.st });
@@ -166,8 +180,8 @@ try {
   ok(await noSideways(O), 'job page: no sideways scroll at 390 px');
   // tiles 3 / 4 on the job page
   await tap(O, '#_gcJobDash .gcfp-t[data-fp="cust"]');
-  ok(await O.ev(() => !!document.querySelector('.gcfp-sheet [data-c="post"]')), 'job page tile 👤 Customer portal → post / preview sheet');
-  await O.ev(() => document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()));
+  ok(await O.ev(() => !!document.querySelector('#gcpe[data-pid="P1"] [data-pe="post"]')), 'job page tile 👤 Customer portal → the portal, full screen (PORTALED)');
+  await O.ev(() => { document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()); window._gcPortalEd.close(); });
   await tap(O, '#_gcJobDash .gcfp-t[data-fp="sub"]');
   ok(await O.ev(() => document.querySelectorAll('.gcfp-sheet [data-k]').length === 2), 'job page tile 🔧 Sub portal → the job\'s subs');
   await O.ev(() => document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()));
@@ -226,9 +240,10 @@ try {
   ok(/Contract\s*\$25,000/.test(mo) && /Change orders\s*\$400/.test(mo) && /Invoiced\s*\$15,000/.test(mo) && /Paid\s*\$10,000/.test(mo) && /Profit/.test(mo) && /Margin/.test(mo) && /1001/.test(mo) && /Extra outlet/.test(mo), '💰 money summary (contract, COs, invoiced, paid, costs, profit/margin for the owner), invoices and change orders', mo.slice(0, 400));
   await O.ev(() => document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()));
   await tap(O, '#_gcJobDash .gcfp-t[data-fp="sched"]');
-  const sc = await O.ev(() => { const b = document.querySelector('.gcfp-sheet .bd'); return { t: b ? b.innerText : '', old: [...document.querySelectorAll('.gcfp-sheet .gcfp-ev.old')].map(e => e.innerText), add: !!document.querySelector('.gcfp-sheet [data-g="task"]') && !!document.querySelector('.gcfp-sheet [data-g="insp"]') }; });
-  ok(/Coming up[\s\S]*Drywall hang[\s\S]*Final[\s\S]*Past[\s\S]*Framing/i.test(sc.t) && sc.old.some(x => /Framing/.test(x)) && sc.add, '📅 Schedule & Inspections: one dated list, upcoming on top, past greyed, + Add phase/task / + Add inspection', sc);
-  await O.ev(() => document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()));
+  /* patch JOBINFO (owner 11/19): the job's own white schedule page — upcoming first, past folded, ＋ Add to schedule / ＋ Add inspection */
+  const sc = await O.ev(() => { const o = document.querySelector('.gcji-page[data-ji="sched"]'), b = o && o.querySelector('.gcji-bd'), past = o && o.querySelector('details.gcji-past'); return { t: b ? b.textContent : '', old: past ? [...past.querySelectorAll('.gcji-ev.old')].map(e => e.textContent) : [], add: !!(o && o.querySelector('[data-ji-a="add"]')) && !!(o && o.querySelector('[data-ji-a="insp"]')) }; });
+  ok(/Coming up[\s\S]*Drywall hang[\s\S]*Final[\s\S]*Past[\s\S]*Framing/i.test(sc.t) && sc.old.some(x => /Framing/.test(x)) && sc.add, '📅 Schedule & Inspections: the job\'s page, upcoming on top, past folded, ＋ Add to schedule / ＋ Add inspection', sc);
+  await O.ev(() => document.querySelectorAll('.gcfp-sheet,.gcji-page').forEach(o => o.remove()));
   // 💎 menu → 🧠 Business Brain
   const hubBtn = await H.waitFor(O, () => !!document.getElementById('_gcFieldHubBtn'), null, 20000);
   if (hubBtn) { await O.ev(() => document.getElementById('_gcFieldHubBtn').click()); await sleep(600); }
@@ -259,14 +274,14 @@ try {
   ok(!!(await fh(P)), 'PM: the phone opens in GrayCo Field');
   const pc = await P.ev(() => [...document.querySelectorAll('#_gcJobPick .fh-job')].map(j => ({ pid: j.getAttribute('data-job'), b: [...j.querySelectorAll('.fp-row [data-fa]')].map(b => b.getAttribute('data-fa')) })));
   ok(pc.length >= 1 && pc.every(x => x.pid !== 'P2') && pc.every(x => x.b.join() === 'fp-cust,fp-sub,fp-photos,fp-msg'), 'PM: only his own jobs, each with all four buttons', pc);
-  const pp = await P.ev(() => ({ own: window._gcFP.perms('P1'), other: window._gcFP.perms('P2'), run: window._gcFP.run('fp-cust', window._crm.projects.find(p => p.id === 'P2')), sheet: !!document.querySelector('.gcfp-sheet') }));
+  const pp = await P.ev(() => ({ own: window._gcFP.perms('P1'), other: window._gcFP.perms('P2'), run: window._gcFP.run('fp-cust', window._crm.projects.find(p => p.id === 'P2')), sheet: !!document.querySelector('.gcfp-sheet,#gcpe') }));
   ok(pp.own.cust && pp.own.sub && pp.own.photos && pp.own.msg && !pp.other.cust && !pp.other.sub && !pp.other.photos && !pp.other.msg && !pp.run && !pp.sheet, 'PM: the buttons work on his jobs only — another PM\'s job gets none', pp);
   await P.ev(() => { document.querySelectorAll('#_gcJobPick').forEach(o => o.remove()); window._gcJobDashboard('P2'); }); await sleep(1000);
   const p2 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-t')].map(b => b.getAttribute('data-fp')));
   ok(p2.length === 0, 'PM on another PM\'s job page: no portal / photo / message tiles', p2);
   await P.ev(() => window._gcJobDashboard('P1')); await sleep(1000);
-  const p1 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].slice(0, 11).map(b => (b.children[1] || b).textContent.trim()));
-  ok(JSON.stringify(p1) === JSON.stringify(ORDER), 'PM on his job page: the same eleven tiles in order', p1);
+  const p1 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].map(b => (b.children[1] || b).textContent.trim()));   /* tile 1 is ✏️ Job info (JOBINFO) */
+  ok(p1[0] === 'Job info' && ORDER.map(x => x === 'Job Info' ? 'Job info' : x === 'Post Update' ? 'Updates & notes' : x).every(x => p1.includes(x)), 'PM on his job page: the same tiles', p1);
   await tap(P, '#_gcJobDash .gcfp-t[data-fp="money"]');
   const pmo = await P.ev(() => (document.querySelector('.gcfp-sheet .bd') || {}).innerText || '');
   ok(/Contract/.test(pmo) && /Profit/.test(pmo), 'PM sees profit / margin on his own job (the existing rule)', pmo.slice(0, 200));

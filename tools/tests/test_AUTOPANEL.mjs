@@ -96,7 +96,7 @@ ok(L.filter(a => a.group === 'safety').every(a => a.critical && a.defaultOn), 's
 ok(/OFF/.test(AUTO.BY.companycam_new_jobs.desc) && /how PM jobs arrive/.test(AUTO.BY.companycam_new_jobs.desc), 'CompanyCam "make new jobs" says plainly it is how PM jobs arrive');
 ok(AUTO.valueOf({}, 'price_index_monthly') === false && AUTO.valueOf({ price_index_monthly: true }, 'price_index_monthly') === true && AUTO.valueOf({ backups: false }, 'backups') === false && AUTO.valueOf({}, 'nope') === false,
   'a missing key = its default; a stored key wins; an unknown key is OFF');
-ok(Object.values(AUTO.before()).every(v => v === true), '"Turn on everything I had before" = every automation ON');
+ok(Object.entries(AUTO.before()).every(([k, v]) => v === !AUTO.BY[k].optIn) && AUTO.before().call_recording === false && AUTO.before().call_voicemail === false, '"Turn on everything I had before" = every automation ON (LSAREC: not call recording / voicemail — those only by hand)');
 const html = fs.readFileSync(path.join(BUILD, 'index.html'), 'utf8');
 const mm = /\/\* AUTOREG-BEGIN \*\/\n([\s\S]*?)\/\* AUTOREG-END \*\//.exec(html);
 ok(!!mm && mm[1] === fs.readFileSync(path.join(FN, '_lib', 'automations.js'), 'utf8'), 'the page carries _lib/automations.js word for word');

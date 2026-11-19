@@ -62,6 +62,7 @@ async function run(opts){
     const p = pidOf(r) ? C.findProject(data, pidOf(r)) : null; if (!p) { rep.skipped++; continue; }
     if (/lost|dead|cancel/.test(low(p.status))) continue;
     if (p.portalRemindersPaused === true || historyJob(p)) { rep.paused++; continue; }
+    try { if (require('./invlink.js').notCounted(r, p)) { rep.skipped++; continue; } } catch (e) {}   /* INVLINK: a past job's CRM-made draw is not money owed — no reminder */
     if (!C.jaAllows(data, p, 'paymentReminders')) { rep.off++; continue; }
     const number = C.invNumber(r), amt = C.invAmount(r), pm = C.pmOf(data, p), client = s(p.client || p.customer || p.clientName);
     /* 45 days: the PM calls (once per invoice) */

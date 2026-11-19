@@ -149,7 +149,7 @@ const jobPage = async (c, pid) => {
   await c.ev(id => { try { if (window._gcClaims && window._gcClaims.close) window._gcClaims.close(); } catch (e) {} document.querySelectorAll('#_gcJobPick,._gcSheetOv,.gc-ra-sheet,.gcfp-sheet,#_gcJobDash,.gcbb-ov,#gc-mws-sheet').forEach(o => o.remove()); window._gcJobDashboard(id); }, pid);
   await H.waitFor(c, () => !!document.querySelector('#_gcJobDash .gcfp-grid[data-fm-kind]'), null, 10000); await sleep(1500);
   return c.ev(() => { const g = document.querySelector('#_gcJobDash .gcfp-grid'); const key = b => b.getAttribute('data-fm') || b.getAttribute('data-fp') || b.getAttribute('data-fn') || (b.classList.contains('gc-pmf-jt') ? 'pmf:' + (b.getAttribute('data-bid') || b.getAttribute('data-pmf-a')) : b.className);
-    return { kind: g.getAttribute('data-fm-kind'), top: [...g.children].filter(x => x.tagName === 'BUTTON' && !x.classList.contains('gcfm-ov') && !x.hasAttribute('data-fm-more')).map(key), label: (g.previousElementSibling || {}).textContent }; });
+    return { kind: g.getAttribute('data-fm-kind'), top: [...g.children].filter(x => x.tagName === 'BUTTON' && !x.classList.contains('gcfm-ov') && !x.hasAttribute('data-fm-more') && !x.hasAttribute('data-ji-rest') && x.getAttribute('data-fn') !== 'info').map(key), label:   /* patch JOBINFO: every tile shows (no More toggle); "top" = the type's own tiles, ✏️ Job info (tile 1) aside */ (g.previousElementSibling || {}).textContent }; });
 };
 async function tileOpens(c, pid, k){
   await jobPage(c, pid);

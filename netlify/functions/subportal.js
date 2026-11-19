@@ -21,6 +21,8 @@
 //   POST {action:'upload', name, type, size}        → a one-time upload link into the private bucket
 //   POST {action:'my-work'}                         → (sub) jobs, pay and 1099 / insurance info from the CRM
 //   POST {action:'crm-subs'}                        → (staff) the CRM's subcontractor list, for linking
+//   POST {action:'po-link', jobId, projectId}       → (staff) patch BIDPO: link the bid job to a CRM job (its PO); '__none' = own PO, '' = match again
+//   POST {action:'po-cands', jobId, q}              → (staff) the CRM jobs to pick from
 //   POST {action:'ai-plans', fileRef}               → (staff) read a plan PDF with Claude → title / scope …
 //
 // Data: table sp_rows (docs/subportal-setup.sql: RLS on, no rules — only this function, with the
@@ -82,6 +84,7 @@ function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedA
 function subJobView(j, trades){
   const v = Object.assign({}, j);
   delete v.log; delete v.archivedFrom;
+  delete v._po; delete v.poHistory; delete v.poNoMatch; delete v.poNoMatchBy; delete v.poNoMatchAt; delete v.crmProjectAuto; delete v.crmProjectAt; delete v.crmProjectBy; delete v.poAssignedAt;   /* patch BIDPO: staff only */
   delete v.internalNotes; delete v.crmFileRefs; delete v.ourDue; delete v.ourDueTime;   /* patch PLANREQ-F: subs see only the sub due date */ if (!v.showOwnerGc) delete v.ownerGc;   /* patch PLANREQ-E: internal notes never; the owner / GC only when GrayCo ticks "show it" */
   if (v.siteWalk && typeof v.siteWalk === 'object') v.siteWalk = pick(v.siteWalk, ['date', 'time', 'location', 'mandatory']);   /* never the RSVP list */
   const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
@@ -385,6 +388,11 @@ async function loadKey(who, key, ctx){
   if (COLLECTIONS.indexOf(key) > -1) {
     if (who.isAdmin) {
       if (key === 'users') return staffUsers();
+      if (key === 'jobs') {   /* patch BIDPO: the CRM's PO on every job (+ what an admin needs to link one) */
+        const list = (await listRows([eq('collection', 'jobs')])).map(function(r){ return r.data; });
+        const ps = await poSync(list, { by: who.email });
+        return ps.jobs.map(function(j){ return poView(j, j && ps.info[j.id], ps.data); });
+      }
       return (await listRows([eq('collection', key)])).map(function(r){ return r.data; });
     }
     const sc = ctx.scope || (ctx.scope = await subScope(who));
@@ -394,7 +402,13 @@ async function loadKey(who, key, ctx){
       return all.filter(function(r){ return r.id === sc.me || (r.data.role === 'admin' && staff.has(low(r.email))); })
         .map(function(r){ return r.id === sc.me ? r.data : pick(r.data, STAFF_PUBLIC_FIELDS); });
     }
-    if (key === 'jobs') { const tr = who.profile && Array.isArray(who.profile.trades) ? who.profile.trades : []; return Object.keys(sc.jobs).map(function(id){ return subJobView(sc.jobs[id].data, tr); }); }   /* patch SYS2 */
+    if (key === 'jobs') { const tr = who.profile && Array.isArray(who.profile.trades) ? who.profile.trades : [];   /* patch SYS2 */
+      const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });   /* patch BIDPO: the CRM's PO (never a new one from a sub's load) */
+      return ps.jobs.map(function(j){
+        const v = subJobView(j, tr);
+        if (ps.data && !(v.siteWalk && v.siteWalk.date)) { try { const w = BPO().crmSiteWalk(j, ps.data); if (w) v.siteWalk = { date: w.date, time: w.time, location: w.location, mandatory: w.mandatory }; } catch (e) {} }   /* the CRM's site walk when the bid site has none */
+        return v;
+      }); }
     if (key === 'acks') return (await listRows([eq('collection', 'acks'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
     if (key === 'bids') return bidsWithResults(sc);
     if (key === 'messages') {
@@ -505,6 +519,8 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (old.authUserId && !staff.has(low(old.email))) await deleteAuthUser(old.authUserId);
       }
     } else {
+      let poD = null, poAll = [];   /* patch BIDPO: the CRM's lists for the PO of the jobs being saved */
+      if (key === 'jobs' && upsert.length) { try { poD = await poData(); poAll = (await listRows([eq('collection', 'jobs')])).map(function(r){ return r.data || {}; }); } catch (e) { poD = null; } }
       if (key === 'questions') {
         const jobNums = {};
         for (const rec0 of upsert) {
@@ -528,6 +544,22 @@ async function saveCollection(who, key, upsert, del, ctx){
           const old = existing[rec.id] && existing[rec.id].data;
           const publish = rec._publish === true; delete rec._publish;
           if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });
+          /* patch BIDPO: nobody types a PO on the bid site — it and the CRM link are the server's (🔗 Link to CRM job is its own action) */
+          delete rec._po; const detailsSave = rec._detailsSave === true || typeof rec._detailsSave === 'number'; delete rec._detailsSave;
+          PO_FIELDS.forEach(function(k){ if (old && old[k] !== undefined) rec[k] = old[k]; else delete rec[k]; });
+          if (poD && arr(poD.projects).length && !isGone(rec)) { const pr = BPO().apply(rec, poD, { jobs: poAll.concat(rows.map(function(x){ return x.data; })), by: who.email }); Object.keys(rec).forEach(function(k){ if (!(k in pr.job)) delete rec[k]; }); Object.assign(rec, pr.job); }
+          /* the site walk / questions deadline set on ✎ Edit Job Details: kept clean; subs who can see the job hear through the same
+             automatic update as 📂 Manage → Details (on the bid site at once, the e-mail waits on ✅ Approvals) */
+          if (rec.siteWalk && typeof rec.siteWalk === 'object') { const w = rec.siteWalk; rec.siteWalk = { date: day10(w.date), time: /^\d{2}:\d{2}$/.test(s(w.time)) ? s(w.time) : '', location: s(w.location).slice(0, 240), mandatory: w.mandatory === true, rsvp: arr(w.rsvp).length ? arr(w.rsvp) : arr(old && old.siteWalk && old.siteWalk.rsvp) }; if (!rec.siteWalk.rsvp.length) delete rec.siteWalk.rsvp; }
+          if (rec.questionsDue !== undefined) rec.questionsDue = day10(rec.questionsDue);
+          if (detailsSave && old && !isDraft(old) && !isGone(old)) {
+            const pubW = function(x){ x = x || {}; return JSON.stringify([day10(x.date), s(x.time), s(x.location), x.mandatory === true]); }, lines = [];
+            if (pubW(old.siteWalk) !== pubW(rec.siteWalk)) { const w = rec.siteWalk || {}; lines.push(day10(w.date) ? 'Site walk / pre-bid meeting: ' + day10(w.date) + (w.time ? ' ' + w.time : '') + (w.location ? ' at ' + w.location : '') + (w.mandatory ? ' (mandatory)' : '') : 'The site walk was taken off'); }
+            if (day10(old.questionsDue) !== day10(rec.questionsDue)) lines.push('Questions due by ' + (day10(rec.questionsDue) || '— (no deadline)'));
+            if (lines.length) notes.push({ kind: 'details-changed', jobId: rec.id, lines: lines, who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });
+          }
+          /* patch BIDPO (decision 6): ✎ Edit Job Details on a job linked to a CRM job → its ONE "Site walk / pre-bid" schedule item */
+          if (detailsSave && (s(rec.crmProjectId) || (old && old.siteWalk && day10(old.siteWalk.date)))) notes.push({ kind: 'crm-sitewalk', jobId: rec.id, by: s(who.profile && who.profile.name) || who.email });
           if (publish && (isDraft(old) || isDraft(rec))) {
             Object.assign(rec, { status: 'open', visibility: 'public', draft: false, publishedAt: new Date().toISOString(), publishedBy: who.email });
           } else if (isDraft(old) || (!old && isDraft(rec))) {
@@ -1280,6 +1312,15 @@ async function sweepPlanRequests(){
 function notifyApproved(n){ return notify(Object.assign({}, n, { kind: '__approved_inner' })); }   /* patch SIGNUPNOTE */
 async function notify(n){
   if (n.kind === 'plans-added') return notifyPlanRequests(n.jobId);   /* patch PLANREQ */
+  if (n.kind === 'crm-sitewalk') return crmSiteWalkPush(n.jobId, n.by);
+  if (n.kind === 'details-changed') {   /* patch BIDPO: ✎ Edit Job Details changed the site walk / questions deadline → the same update as 📂 Manage → Details */
+    const r = await getRow('jobs', n.jobId); if (!r) return;
+    const H = require('./bid-hub.js')._test, job = Object.assign({}, r.data);
+    job.log = arr(job.log).concat([{ at: new Date().toISOString(), by: s(n.who.name || n.who.email), what: '📝 Details changed on the bid site: ' + n.lines.join(' · ') }]).slice(-300);
+    const notice = await H.subNotice(n.who, job, 'GrayCo updated this bid job:\n• ' + n.lines.join('\n• '));
+    job.updatedAt = new Date().toISOString(); await upsertRows([rowFor('jobs', job)], n.who.email);
+    return notice;
+  }
   if (n.kind === 'due-changed') {   /* patch PLANREQ-D: 🗂 Activity + the automatic "Bid due date changed" update (bid-hub.js, the same as 📂 Manage) */
     const r = await getRow('jobs', n.jobId); if (!r) return;
     const job = Object.assign({}, r.data);
@@ -1451,6 +1492,101 @@ async function crmData(){
   const data = await kvRead(CRM_KEYS);
   kvCache = { at: Date.now(), data: data };
   return data;
+}
+/* ── patch BIDPO (owner 11/19: "Should auto-fill in POs, match or use the job's PO. Always have the same PO throughout, but shouldn't
+   have to enter one here."): the bid job's PO is the CRM's — rules in _lib/bidpo.js. Read when jobs are loaded or saved (so a PO changed
+   in the CRM follows), matched / assigned on the server, never typed on the bid site; 🔗 Link to CRM job (admins) when it is not sure. */
+const BIDPO_KEYS = ['projects', 'leads', 'schedule', 'gc_tombstones', 'gc_deleted_projects'];
+let poCache = null;
+async function poData(){
+  if (poCache && Date.now() - poCache.at < 30e3) return poCache.data;
+  const data = await kvRead(BIDPO_KEYS);
+  poCache = { at: Date.now(), data: data };
+  return data;
+}
+function BPO(){ return require('./_lib/bidpo.js'); }
+const PO_FIELDS = ['poNumber', 'poSource', 'poHistory', 'poAssignedAt', 'poNoMatch', 'poNoMatchBy', 'poNoMatchAt', 'crmProjectId', 'crmProjectName', 'crmProjectAuto', 'crmProjectAt', 'crmProjectBy'];
+/* jobs (their data) → the same jobs with the CRM's PO; changed ones are saved. opts.noAssign: a sub's load never hands out a new PO.
+   A CRM that cannot be read changes nothing. → { jobs, info: { id: info } } */
+async function poSync(list, opts){
+  opts = opts || {};
+  let data; try { data = await poData(); } catch (e) { return { jobs: list, info: {}, data: null }; }
+  if (!arr(data.projects).length) return { jobs: list, info: {}, data: null };   /* the CRM's job list did not come back — never assign against nothing */
+  const all = opts.allJobs || list, info = {}, save = [];
+  const out = list.map(function(j){
+    if (!j || !j.id || isGone(j)) return j;
+    const r = BPO().apply(j, data, { jobs: all, noAssign: !!opts.noAssign, by: opts.by });
+    info[j.id] = r.info;
+    if (r.changed) { save.push(r.job); return r.job; }
+    return j;
+  });
+  if (save.length && !opts.dry) { try { await upsertRows(save.map(function(j){ return rowFor('jobs', j); }), opts.by || 'bidpo-sync'); } catch (e) { console.warn('[subportal] PO sync', e.message); } }
+  return { jobs: out, info: info, data: data };
+}
+/* what an admin's page gets with each job (never stored: storage.js leaves _po out of saves) */
+function poView(job, info, data){
+  if (!info) return job;
+  let walk = null; try { walk = data ? BPO().crmSiteWalk(job, data) : null; } catch (e) {}
+  return Object.assign({}, job, { _po: Object.assign({}, info, { crmSiteWalk: walk }) });
+}
+async function poLink(who, body){   /* 🔗 Link to CRM job / Change link — an admin's pick */
+  if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
+  const r = await getRow('jobs', s(body.jobId)); if (!r) throw Fail(404, 'No such bid job.');
+  let job = Object.assign({}, r.data);
+  const data = await poData(), pid = s(body.projectId), at = new Date().toISOString();
+  if (pid === '__none') {   /* none of those CRM jobs: its own PO (a PO that was another CRM job's is not kept) */
+    if (s(job.poSource) === 'crm' && s(job.poNumber)) { job.poHistory = arr(job.poHistory).concat([{ from: s(job.poNumber), to: '', at: at, why: 'not that CRM job (' + (who.email) + ')' }]).slice(-20); job.poNumber = ''; }
+    ['crmProjectId', 'crmProjectName', 'crmProjectAuto', 'crmProjectAt', 'crmProjectBy'].forEach(function(k){ delete job[k]; });
+    job.poNoMatch = true; job.poNoMatchBy = who.email; job.poNoMatchAt = at;
+  } else if (pid) {
+    const p = arr(data.projects).find(function(x){ return x && s(x.id) === pid; });
+    if (!p || !BPO().resolve({ id: job.id, crmProjectId: pid }, data).project) throw Fail(404, 'That CRM job is not there any more.');
+    Object.assign(job, { crmProjectId: pid, crmProjectAuto: 'admin', crmProjectAt: at, crmProjectBy: who.email }); delete job.poNoMatch;
+  } else { ['crmProjectId', 'crmProjectName', 'crmProjectAuto', 'crmProjectAt', 'crmProjectBy', 'poNoMatch'].forEach(function(k){ delete job[k]; }); }   /* "match again" */
+  const jobs = (await listRows([eq('collection', 'jobs')])).map(function(x){ return x.data || {}; });
+  const out = BPO().apply(job, data, { jobs: jobs, by: who.email });
+  job = out.job;
+  job.log = arr(job.log).concat([{ at: at, by: s(who.profile && who.profile.name) || who.email, what: (pid === '__none' ? '🧾 Not a CRM job — its own PO ' : pid ? '🔗 Linked to the CRM job ' + s(job.crmProjectName) + ' — PO ' : '🔗 CRM link matched again — PO ') + (s(job.poNumber) || '(none yet)') }]).slice(-300);
+  job.updatedAt = at;
+  await upsertRows([rowFor('jobs', job)], who.email);
+  return { ok: true, job: poView(job, out.info, data) };
+}
+/* patch BIDPO (decision 6): the site walk → the linked CRM job's schedule (gc_kv "schedule", the CRM's own list; written as the
+   list it is, re-read before and after like every server write to a CRM list). Nothing is sent to anyone from here. */
+async function schedKvUpd(mutate){
+  const read = async function(){
+    const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=key,value,updated_at&key=in.("schedule","schedule__manifest")', { headers: H() });
+    if (!r.ok) return null; const rows = await r.json().catch(function(){ return null; }); if (!Array.isArray(rows)) return null;
+    const one = rows.find(function(x){ return x && x.key === 'schedule'; }), man = rows.find(function(x){ return x && x.key === 'schedule__manifest'; });
+    let mv = man && man.value; if (typeof mv === 'string') { try { mv = JSON.parse(mv); } catch (e) { mv = null; } }
+    if (mv && mv.chunked && mv.count > 0 && (!one || s(man.updated_at) >= s(one.updated_at))) return { chunked: true };   /* the pieces are the newer copy: never write over them */
+    let v = one ? one.value : []; if (v == null || v === '') v = []; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } }
+    return Array.isArray(v) ? { list: v, at: s(one && one.updated_at) } : null;
+  };
+  for (let tries = 0; tries < 5; tries++) {
+    const cur = await read(); if (!cur) return { ok: false, why: 'unreadable' }; if (cur.chunked) return { ok: false, why: 'chunked' };
+    const m = mutate(clone(cur.list)); if (!m || !m.list) return { ok: true, unchanged: true };
+    const again = await read(); if (!again || again.chunked || again.at !== cur.at || JSON.stringify(again.list) !== JSON.stringify(cur.list)) { await new Promise(function(r){ setTimeout(r, 150 + 200 * tries); }); continue; }
+    const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: 'schedule', value: m.list, updated_at: new Date().toISOString() }) });
+    if (!w.ok) return { ok: false, why: 'write ' + w.status };
+    const after = await read(); if (after && after.list && (!m.check || m.check(after.list))) return { ok: true };
+  }
+  return { ok: false, why: 'busy' };
+}
+async function crmSiteWalkPush(jobId, by){
+  const r = await getRow('jobs', jobId); if (!r) return { ok: false, why: 'no job' };
+  const job = r.data || {}; poCache = null;
+  const data = await poData(); if (!arr(data.projects).length) return { ok: false, why: 'no CRM jobs' };
+  const res = BPO().resolve(job, data), p = res.state === 'linked' ? res.project : null;
+  const out = await schedKvUpd(function(list){ return BPO().schedMutate(list, job, p, { by: by ? by + ' (bid site)' : 'Bid site' }); });
+  if (!out.ok) console.warn('[subportal] site walk → CRM schedule', out.why);
+  return out;
+}
+async function poCands(who, body){
+  if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
+  const r = await getRow('jobs', s(body.jobId)); if (!r) throw Fail(404, 'No such bid job.');
+  const data = await poData(), jobs = (await listRows([eq('collection', 'jobs')])).map(function(x){ return x.data || {}; });
+  return { ok: true, cands: BPO().search(r.data, data, s(body.q).slice(0, 80), { jobs: jobs }) };
 }
 // Deleted in the CRM: the tombstone map ("<list>:<id>") or the older gc_deleted_<list> lists.
 function deletedTest(data){
@@ -1703,6 +1839,8 @@ exports.handler = async function (event) {
       if (!who.isAdmin && !who.approved) return J(403, { error: 'Your account is waiting for GrayCo to approve it.' });
       return J(200, await myWork(target));
     }
+    if (action === 'po-link') return J(200, await poLink(who, body));   /* patch BIDPO: 🔗 Link to CRM job / Change link */
+    if (action === 'po-cands') return J(200, await poCands(who, body));
     if (action === 'crm-subs') {
       if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
       return J(200, { subs: await crmSubs() });
@@ -1720,7 +1858,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

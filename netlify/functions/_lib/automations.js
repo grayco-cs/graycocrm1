@@ -44,6 +44,8 @@ var ROWS = [
   ['emergency_line', 'safety', 'B', 1, 1, 'server', 'Emergency line', 'Emergency words or "press 1" phone and text staff until someone answers.'],
   ['oncall_paging', 'safety', 'B', 1, 1, 'server', 'On-call paging + escalation', 'An after-hours emergency pages the on-call person; nobody accepts → the next person, then all admins.'],
   ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
+  ['call_recording', 'cust', 'A', 0, 0, 'server', 'Record office-line calls', 'Calls through the GrayCo Twilio number are recorded once someone answers (the caller first hears “This call may be recorded”). Staff play them on the lead. Never part of “turn on everything”.', 0, 1],
+  ['call_voicemail', 'cust', 'A', 0, 0, 'server', 'Voicemail on missed calls', 'When nobody answers, the caller can leave a message (2 min). It is saved on the lead, staff only. Never part of “turn on everything”.', 0, 1],
   /* ── lead intake, sync, backups ── */
   ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
   ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (lead companies)', 'Leads posted by lead partners come into the CRM.'],
@@ -60,6 +62,9 @@ var ROWS = [
   ['gdocs_sync', 'sync', 'D', 0, 1, 'server', 'Google Docs list', 'The team’s new Google Docs show in the CRM (no e-mail).'],
   ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
   ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
+  ['lsa_sync', 'sync', 'C', 1, 1, 'server', 'Google LSA calls → leads', 'Every 10 min: Google Local Services calls get the caller’s number, job type, length and recording (Google Ads API, the office call log, Wesley’s mailbox); a call that is not a lead yet becomes one.'],
+  ['lsa_hold_7am', 'sync', 'C', 0, 1, 'server', 'LSA after-hours: hold to 7 AM', 'Outside the 📞 Call order open hours a Google LSA text (and every other non-emergency lead text) to Wesley and Nick waits and goes out at 7:00 AM Central on the next open day — one bundled text when there are several. OFF: Google LSA texts go at once, day or night. Emergencies always go at once.'],
+  ['call_transcribe', 'sync', 'D', 0, 1, 'server', 'Transcribe call recordings', 'A new call recording or voicemail is turned into text with a short summary on the lead (needs a transcription key).'],
   ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
   /* ── staff alerts ── */
   ['bid_alerts_staff', 'staff', 'B', 0, 1, 'server', 'Bid-due and speed-to-lead alerts', '"Bid due in 1 h / today / tomorrow", "assign this lead", "reach out", RoofScout lead mail.'],
@@ -143,7 +148,7 @@ var ROWS = [
   ['dup_invoice_delete', 'rec', 'C', 0, 0, 'page', 'Duplicate sub invoice / $0 row delete', 'Deletes duplicate sub invoices and $0 rows. OFF: they are only flagged.'],
   ['ms_tax_add', 'rec', 'C', 0, 0, 'page', 'Mississippi tax auto-add', 'Adds 3.5 % MS contractor’s tax to Mississippi estimates.']
 ];
-var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8] }; });
+var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8], optIn: !!r[9] }; });   /* LSAREC: optIn — only ever turned on by hand (call recording / voicemail) */
 var BY = {}; LIST.forEach(function(a){ BY[a.key] = a; });
 
 function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
@@ -157,7 +162,7 @@ function valueOf(row, key){
 }
 function defaults(){ var o = {}; LIST.forEach(function(a){ o[a.key] = a.defaultOn; }); return o; }
 /* "Turn on everything I had before": every automation ran before the panel existed */
-function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = true; }); return o; }
+function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = !a.optIn; }); return o; }
 function all(row){ var o = {}; LIST.forEach(function(a){ o[a.key] = valueOf(row, a.key); }); return o; }
 /* a held record, merged into the gc_auto_held row: { n: times held, since, last, would: last count, sample } */
 function heldMerge(heldRow, key, n, sample, nowIso){

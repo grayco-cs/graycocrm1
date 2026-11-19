@@ -280,7 +280,12 @@ const T = {
     orTypeSpecs: 'Or type specifications below:',
     attachHint: 'Upload PDF, Word, or other reference documents.',
     // PO / project reference (for CRM handoff — see docs/CRM-INTEGRATION.md)
-    poNumber: 'PO Number', poNumberHint: 'Leave blank and one will be auto-generated (like PO-2026-0001). The CRM will use this same PO when the job is officially added there.',
+    poNumber: 'PO Number', poNumberHint: 'Filled in for you from the CRM when the job is saved: the CRM job\'s PO, or a new one the CRM\'s way. Nobody types one.',
+    /* patch BIDPO */ poFromCrm: 'from the CRM', poFromCrmJob: 'from the CRM job', poAssigned: 'assigned the CRM\'s way — no CRM job yet; the CRM job made from it keeps this PO', poBidSite: 'given on the bid site — not linked to a CRM job',
+    poPending: 'comes from the CRM when the job is saved', poAmbiguous: 'More than one CRM job could be this one — pick it so the PO is right:', poLinkTo: 'Link to CRM job', poChangeLink: 'Change link',
+    poNoneOfThese: 'None of these — give it its own PO', poMatchAgain: 'Match again', poSearch: 'Search CRM jobs (name, address, PO)', poLinked: 'Linked to the CRM job', poPick: 'Use this one',
+    poLinkedToast: 'Linked — PO', poHow: { link: 'linked', bidJobId: 'linked in the CRM', po: 'same PO', lead: 'made from its lead', address: 'same address', 'address+title': 'same address and title', 'title+city': 'same title and city' },
+    swTitle: 'Site walk / pre-bid', swDate: 'Date', swTime: 'Time', swMandatory: 'Mandatory', swLocation: 'Location / notes', swFromCrm: 'From the CRM — saved here when you save', swNotice: 'Subs who can see this job get an update on the bid site; the e-mail waits for approval in the CRM.',
     projectId: 'CRM Project ID', projectIdHint: 'Optional. Fill in only if this bid ties to a project that already exists in the CRM.',
     projectRef: 'Project Ref',
     pmContact: 'PM Contact',
@@ -558,7 +563,12 @@ const T = {
     orTypeScope: 'O escriba el alcance abajo:',
     orTypeSpecs: 'O escriba las especificaciones abajo:',
     attachHint: 'Suba PDF, Word u otros documentos de referencia.',
-    poNumber: 'Número de PO', poNumberHint: 'Deje en blanco y se generará automáticamente (ej. PO-2026-0001). El CRM usará este mismo PO al añadir el trabajo oficialmente.',
+    poNumber: 'Número de PO', poNumberHint: 'Se llena desde el CRM al guardar el trabajo: el PO del trabajo en el CRM, o uno nuevo como lo hace el CRM. Nadie lo escribe.',
+    /* patch BIDPO */ poFromCrm: 'del CRM', poFromCrmJob: 'del trabajo en el CRM', poAssigned: 'asignado como lo hace el CRM — aún no hay trabajo en el CRM; el trabajo que se cree conserva este PO', poBidSite: 'dado en el sitio de ofertas — sin vínculo a un trabajo del CRM',
+    poPending: 'viene del CRM al guardar el trabajo', poAmbiguous: 'Más de un trabajo del CRM podría ser este — escoja cuál para que el PO sea el correcto:', poLinkTo: 'Vincular a trabajo del CRM', poChangeLink: 'Cambiar vínculo',
+    poNoneOfThese: 'Ninguno — darle su propio PO', poMatchAgain: 'Buscar de nuevo', poSearch: 'Buscar trabajos del CRM (nombre, dirección, PO)', poLinked: 'Vinculado al trabajo del CRM', poPick: 'Usar este',
+    poLinkedToast: 'Vinculado — PO', poHow: { link: 'vinculado', bidJobId: 'vinculado en el CRM', po: 'mismo PO', lead: 'creado de su lead', address: 'misma dirección', 'address+title': 'misma dirección y título', 'title+city': 'mismo título y ciudad' },
+    swTitle: 'Visita al sitio / pre-oferta', swDate: 'Fecha', swTime: 'Hora', swMandatory: 'Obligatoria', swLocation: 'Lugar / notas', swFromCrm: 'Del CRM — se guarda aquí al guardar', swNotice: 'Los subcontratistas que ven este trabajo reciben un aviso en el sitio; el correo espera aprobación en el CRM.',
     projectId: 'ID de Proyecto CRM', projectIdHint: 'Opcional. Complete solo si esta oferta se vincula a un proyecto ya existente en el CRM.',
     projectRef: 'Ref Proyecto',
     pmContact: 'Contacto del Gerente',
@@ -660,10 +670,8 @@ function canSeeJob(job, user, invites) {
   return invites.some(inv => inv.jobId === job.id && (inv.email || '').toLowerCase() === email);
 }
 
-// Generate a new PO number for a job that doesn't have one yet.
-// Format: PO-YYYY-NNNN, where NNNN is the sequential count of jobs created this year.
-// Uniqueness: the CRM should treat this string as the canonical PO when the job is
-// later officially created there — they merge on this identifier.
+// patch BIDPO: no longer used — the PO is the CRM's (the server matches / assigns it the CRM's way). Kept for reference.
+// eslint-disable-next-line no-unused-vars
 function generatePO(jobs) {
   const year = new Date().getFullYear();
   const thisYearJobs = (jobs || []).filter(j => {
@@ -2161,6 +2169,83 @@ function JobTrades({ t, job, user, max }) {
       {max && list.length > max && <span style={{ fontSize: 11, color: styles.text2 }}>+{list.length - max}</span>}
     </div>);
 }
+/* patch BIDPO (owner 11/19: "Should auto-fill in POs, match or use the job's PO. Always have the same PO throughout, but shouldn't have to
+   enter one here."): the PO is the CRM's — the server matches / assigns it (netlify/functions/_lib/bidpo.js); here it is only shown, and an
+   admin can 🔗 link the job to a CRM job when the server is not sure (or change the link). */
+const PO_KEYS = ['poNumber', 'poSource', 'crmProjectId', 'crmProjectName', '_po'];
+function mergePo(setJobs, fresh) {
+  const by = {}; (fresh || []).forEach(f => { if (f && f.id) by[f.id] = f; });
+  setJobs(js => js.map(j => { const f = by[j.id]; if (!f) return j; const o = { ...j }; PO_KEYS.forEach(k => { if (f[k] === undefined) delete o[k]; else o[k] = f[k]; }); return o; }));
+}
+/* after a save: the server's PO for these jobs (it was matched / assigned when the save reached the server) */
+async function refreshPo(setJobs, ids) {
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  await wait(400);
+  for (let i = 0; i < 80 && savesPending(); i++) await wait(250);
+  try { const { data } = await api('load', { keys: ['jobs'] }); mergePo(setJobs, ((data && data.jobs) || []).filter(j => !ids || ids.includes(j.id))); } catch (e) { /* the next refresh brings it */ }
+}
+function poNote(t, job) {
+  const info = job._po || {}, src = job.poSource || info.source;
+  const nm = String(job.crmProjectName || '').replace(job.poNumber ? job.poNumber + ' · ' : /^$/, '');   /* the label is "PO · name" — the PO is already in the box */
+  if (src === 'crm') return t.poFromCrm + (nm ? ' · ' + nm : '') + (info.how && t.poHow && t.poHow[info.how] ? ' (' + t.poHow[info.how] + ')' : '');
+  if (src === 'assigned') return t.poAssigned;
+  if (src === 'bid-site') return t.poBidSite;
+  return job.poNumber ? t.poFromCrm : t.poPending;
+}
+function PoBox({ t, job, isAdmin, setJobs, showToast }) {
+  const info = job._po || {};
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [cands, setCands] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const amb = info.state === 'ambiguous';
+  const list = cands || (amb ? (info.cands || []) : []);
+  async function search(v) {
+    setBusy(true);
+    try { const r = await api('po-cands', { jobId: job.id, q: v }); setCands(r.cands || []); } catch (e) { showToast(e.message || 'Could not load the CRM jobs.', 'error'); }
+    setBusy(false);
+  }
+  async function link(pid) {
+    setBusy(true);
+    try {
+      const r = await api('po-link', { jobId: job.id, projectId: pid });
+      if (r && r.job) mergePo(setJobs, [r.job]);
+      setOpen(false); setCands(null);
+      showToast(`${t.poLinkedToast} ${(r && r.job && r.job.poNumber) || '—'}`);
+    } catch (e) { showToast(e.message || 'Could not link.', 'error'); }
+    setBusy(false);
+  }
+  const small = { fontSize: 11, color: styles.text3, marginTop: 4, lineHeight: 1.4 };
+  const linkBtn = { fontSize: 12, padding: '5px 10px', borderRadius: 6, border: `1px solid ${styles.border}`, background: '#fff', cursor: 'pointer', fontFamily: styles.fontBody };
+  return (
+    <div data-po-box="1">
+      <input style={{ ...inputStyle, background: styles.surface, color: styles.text, fontWeight: 700, cursor: 'default' }} readOnly aria-readonly="true" tabIndex={-1}
+        data-po-input="1" value={job.poNumber || ''} placeholder="—" />
+      <div data-po-note="1" style={small}>{poNote(t, job)}</div>
+      {isAdmin && amb && <div data-po-ambiguous="1" style={{ ...small, color: styles.accentDk, fontWeight: 700 }}>{t.poAmbiguous}</div>}
+      {isAdmin && (amb || open) && (
+        <div data-po-picker="1" style={{ marginTop: 6, display: 'grid', gap: 6 }}>
+          {list.map(c => (
+            <button type="button" key={c.pid} data-po-cand={c.pid} disabled={busy} onClick={() => link(c.pid)}
+              style={{ ...linkBtn, textAlign: 'left', display: 'flex', justifyContent: 'space-between', gap: 8, opacity: c.open === false ? 0.7 : 1 }}>
+              <span><b>{c.po ? 'PO ' + c.po : '—'}</b> · {c.name}{c.address ? ' — ' + c.address : ''}{c.status ? ' · ' + c.status : ''}</span>
+              <span style={{ color: styles.accentDk, fontWeight: 700, whiteSpace: 'nowrap' }}>{t.poPick}</span>
+            </button>))}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <input style={{ ...inputStyle, flex: 1, minWidth: 160, padding: '6px 8px' }} data-po-search="1" value={q} placeholder={t.poSearch}
+              onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); search(q); } }} />
+            <button type="button" style={linkBtn} disabled={busy} onClick={() => search(q)}>🔎</button>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button type="button" style={linkBtn} data-po-none="1" disabled={busy} onClick={() => link('__none')}>{t.poNoneOfThese}</button>
+            {(job.crmProjectId || job.poNoMatch) && <button type="button" style={linkBtn} data-po-again="1" disabled={busy} onClick={() => link('')}>{t.poMatchAgain}</button>}
+          </div>
+        </div>)}
+      {isAdmin && !amb && (
+        <button type="button" data-po-change="1" style={{ ...linkBtn, marginTop: 6 }} disabled={busy}
+          onClick={() => { const nx = !open; setOpen(nx); if (nx && !cands) search(''); }}>🔗 {job.crmProjectId ? t.poChangeLink : t.poLinkTo}</button>)}
+    </div>);
+}
 function BidDetails({ t, job }) {
   const w = job.siteWalk || {}, r = job.requirements || {}, c = job.contacts || {};
   const req = [r.bond && t.reqBond, r.prevailingWage && t.reqPrevailing, r.certifiedPayroll && t.reqPayroll, r.coi && (t.reqCoi + ([r.coiGl && 'GL ' + r.coiGl, r.coiWc && 'WC ' + r.coiWc, r.coiAuto && 'Auto ' + r.coiAuto].filter(Boolean).length ? ' (' + [r.coiGl && 'GL ' + r.coiGl, r.coiWc && 'WC ' + r.coiWc, r.coiAuto && 'Auto ' + r.coiAuto].filter(Boolean).join(', ') + ')' : '')),
@@ -2687,8 +2772,10 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       bidDueDate: job.bidDueDate || '',
       pmId: job.pmId || '',
       estimatorId: job.estimatorId || '',
-      poNumber: job.poNumber || '',
-      projectId: job.projectId || '',
+      /* patch BIDPO: no PO / CRM id typed here; the site walk + questions deadline (the CRM's site walk when the bid site has none) */
+      ...(() => { const w = (job.siteWalk && job.siteWalk.date) ? job.siteWalk : ((job._po && job._po.crmSiteWalk) || {});
+        return { swDate: w.date || '', swTime: w.time || '', swMandatory: !!w.mandatory, swLocation: w.location || '', swFromCrm: !(job.siteWalk && job.siteWalk.date) && !!w.date }; })(),
+      questionsDue: job.questionsDue || '',
       visibility: job.visibility || 'public',
       bidResultsSharing: job.bidResultsSharing || 'private',
       grayCoRole: job.grayCoRole || 'gc',
@@ -2712,8 +2799,11 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       bidDueDate: editForm.bidDueDate,
       pmId: editForm.pmId,
       estimatorId: editForm.estimatorId,
-      poNumber: editForm.poNumber.trim(),
-      projectId: editForm.projectId.trim(),
+      siteWalk: editForm.swDate
+        ? { ...(job.siteWalk || {}), date: editForm.swDate, time: editForm.swTime || '', mandatory: !!editForm.swMandatory, location: (editForm.swLocation || '').trim() || editForm.address.trim() }
+        : ((job.siteWalk && job.siteWalk.date) ? { ...job.siteWalk, date: '', time: '', location: '', mandatory: false } : job.siteWalk),
+      questionsDue: editForm.questionsDue || '',
+      _detailsSave: true,   /* the server tells subs about a changed site walk / questions deadline (approval first for the e-mail) */
       visibility: editForm.visibility,
       bidResultsSharing: editForm.bidResultsSharing,
       grayCoRole: editForm.grayCoRole,
@@ -2727,6 +2817,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
     } : j));
     setEditing(false);
     showToast('Job updated.');
+    refreshPo(setJobs, [job.id]);   /* patch BIDPO: the PO the server matched (a changed address can find the CRM job) */
   }
   function cancelEdit() { setEditing(false); }
 
@@ -2748,6 +2839,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       ``,
       `Project: ${job.title}`,
       job.address ? `Address: ${job.address}` : '',
+      job.poNumber ? `PO: ${job.poNumber}` : '',   /* patch BIDPO */
       `Bid Due: ${dueInfo(job.bidDueDate, t).ok ? dueInfo(job.bidDueDate, t).date : (t.noDueDate || 'No due date')}`,
       pm ? `Project Manager: ${pm.name}${pm.phone ? ' • ' + pm.phone : ''}` : '',
       estimator && estimator.id !== pm?.id ? `Estimator: ${estimator.name}${estimator.phone ? ' • ' + estimator.phone : ''}` : '',
@@ -2908,15 +3000,30 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                 onChange={e => setEditForm({ ...editForm, bidDueDate: e.target.value })} />
             </Field>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Field label={t.poNumber}>
-              <input style={inputStyle} value={editForm.poNumber}
-                onChange={e => setEditForm({ ...editForm, poNumber: e.target.value })} />
-            </Field>
-            <Field label={t.projectId}>
-              <input style={inputStyle} value={editForm.projectId}
-                onChange={e => setEditForm({ ...editForm, projectId: e.target.value })} />
-            </Field>
+          <Field label={t.poNumber}>
+            <PoBox t={t} job={job} isAdmin={isAdmin} setJobs={setJobs} showToast={showToast} />
+          </Field>
+          <div data-sitewalk-edit="1" style={{ border: `1px solid ${styles.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 14, background: '#fff' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{t.swTitle}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, alignItems: 'end' }}>
+              <label style={{ fontSize: 12, color: styles.text2 }}>{t.swDate}
+                <input style={inputStyle} type="date" data-sw="date" value={editForm.swDate}
+                  onChange={e => setEditForm({ ...editForm, swDate: e.target.value, swFromCrm: false })} /></label>
+              <label style={{ fontSize: 12, color: styles.text2 }}>{t.swTime}
+                <input style={inputStyle} type="time" data-sw="time" value={editForm.swTime}
+                  onChange={e => setEditForm({ ...editForm, swTime: e.target.value, swFromCrm: false })} /></label>
+              <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 10 }}>
+                <input type="checkbox" data-sw="mandatory" checked={!!editForm.swMandatory}
+                  onChange={e => setEditForm({ ...editForm, swMandatory: e.target.checked, swFromCrm: false })} /> {t.swMandatory}</label>
+            </div>
+            <label style={{ fontSize: 12, color: styles.text2, display: 'block', marginTop: 8 }}>{t.swLocation}
+              <input style={inputStyle} data-sw="location" value={editForm.swLocation} placeholder={editForm.address || ''}
+                onChange={e => setEditForm({ ...editForm, swLocation: e.target.value, swFromCrm: false })} /></label>
+            <label style={{ fontSize: 12, color: styles.text2, display: 'block', marginTop: 8 }}>{t.questionsDue}
+              <input style={{ ...inputStyle, maxWidth: 200 }} type="date" data-sw="questionsDue" value={editForm.questionsDue}
+                onChange={e => setEditForm({ ...editForm, questionsDue: e.target.value })} /></label>
+            {editForm.swFromCrm && <div data-sw-from-crm="1" style={{ fontSize: 11, color: styles.accentDk, marginTop: 6 }}>{t.swFromCrm}</div>}
+            <div style={{ fontSize: 11, color: styles.text3, marginTop: 6, lineHeight: 1.4 }}>{t.swNotice}</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <Field label={t.projectManager} required>
@@ -3052,6 +3159,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 24, color: styles.text2, fontSize: 14 }}>
             {job.address && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><MapPin size={16} /> {job.address}</div>}
+            {job.poNumber && <div data-po-header="1" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Hash size={16} /> PO {job.poNumber}{isAdmin && job.poSource === 'crm' && <span style={{ fontSize: 11, color: styles.text3 }}>· {t.poFromCrm}</span>}</div>}   {/* patch BIDPO */}
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Calendar size={16} /> {dueI.ok ? `Due ${dueI.date}` : dueI.text}</div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <Users size={16} /> {jobBids.length} {jobBids.length === 1 ? t.bid : t.bids}
@@ -3111,23 +3219,19 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                   display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
                   paddingTop: isFirst ? 0 : 14,
                   paddingBottom: isFirst ? 14 : 0,
-                  borderBottom: isFirst ? `1px solid ${styles.navy2}` : 'none',
+                  borderBottom: isFirst ? `1px solid ${styles.border}` : 'none',
                 }}>
-                  <div style={{
-                    width: 44, height: 44, background: styles.accent, borderRadius: 6,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <Shield size={22} color={styles.navy} />
-                  </div>
+                  {/* BIDLOGO (owner 11/19): GrayCo's logo, clean — no colored box behind it */}
+                  <img src={logoUrl} alt="GrayCo" style={{ width: 72, height: 'auto', flexShrink: 0, display: 'block' }} />
                   <div style={{ flex: 1, minWidth: 160 }}>
                     <div style={{
-                      fontSize: 11, color: styles.accent, letterSpacing: '0.1em',
+                      fontSize: 11, color: styles.text2, letterSpacing: '0.1em',
                       textTransform: 'uppercase', fontWeight: 600, marginBottom: 3,
                     }}>{role}</div>
-                    <div style={{ fontFamily: styles.fontDisplay, fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>
+                    <div style={{ fontFamily: styles.fontDisplay, fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: styles.navy }}>
                       {person.name}
                     </div>
-                    {person.title && <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>{person.title}</div>}
+                    {person.title && <div style={{ fontSize: 12, color: styles.text2, marginTop: 2 }}>{person.title}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {person.phone && (
@@ -3143,9 +3247,9 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                     {person.email && (
                       <a href={`mailto:${person.email}`} style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '10px 14px', background: 'transparent', color: '#fff',
+                        padding: '10px 14px', background: 'transparent', color: styles.navy,
                         borderRadius: 6, textDecoration: 'none', fontWeight: 600, fontSize: 13,
-                        border: `1.5px solid ${styles.navy2}`,
+                        border: `1.5px solid ${styles.border}`,
                       }}>
                         <Mail size={14} /> {t.emailPM}
                       </a>
@@ -3157,8 +3261,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
             return (
               <Card style={{
-                marginBottom: 16, background: styles.navy, color: '#fff',
-                border: `1px solid ${styles.navy2}`,
+                marginBottom: 16, background: '#fff', color: styles.text,
               }}>
                 {samePerson ? (
                   <ContactBlock person={pm} role={`${t.projectManager} & ${t.estimator}`} isFirst={false} />
@@ -4682,7 +4785,6 @@ function TradeScopesEditor({ t, tradeScopes, setTradeScopes, showToast }) {
 function AddJob({ t, jobs, setJobs, user, users, showToast, setView }) {
   const [form, setForm] = useState({
     title: '', address: '', bidDueDate: '', pmId: user.id, estimatorId: user.id,
-    poNumber: '', projectId: '',
     visibility: 'public', bidResultsSharing: 'private',
     grayCoRole: 'gc', tradesSought: '',
     scope: '', specifications: '', notes: '',
@@ -4774,23 +4876,18 @@ function AddJob({ t, jobs, setJobs, user, users, showToast, setView }) {
       if (!form.bidDueDate) { showToast('Bid due date is required.', 'error'); return; }
       if (!form.pmId) { showToast('Please select a Project Manager.', 'error'); return; }
       if (!form.estimatorId) { showToast('Please select an Estimator.', 'error'); return; }
-      // Auto-generate a PO if one wasn't provided — this PO carries over to the CRM
-      // when the job is later officially created there. The two sides merge on this identifier.
-      const poNumber = (form.poNumber || '').trim() || generatePO(jobs);
-      const autoGenerated = !form.poNumber?.trim();
+      /* patch BIDPO: no PO typed or made up here — the server gives the job the CRM job's PO (same address / title + city), or a new
+         one the CRM's way; it shows as soon as the save is through */
       const job = {
         id: newId('j'),
         ...form,
-        poNumber,
-        poAutoGenerated: autoGenerated,   // flag so CRM knows this PO originated here
         plans, scopeDocs, specDocs, status: 'open',
         createdBy: user.id, createdByName: user.name,
         createdAt: new Date().toISOString(),
       };
       setJobs([job, ...jobs]);
-      showToast(autoGenerated
-        ? `Job added. PO ${poNumber} assigned automatically.`
-        : 'Job added.');
+      showToast('Job added. The PO comes from the CRM in a moment.');
+      refreshPo(setJobs, [job.id]);
       setView('jobs');
     } catch (err) {
       console.error('Save failed:', err);
@@ -4872,22 +4969,9 @@ function AddJob({ t, jobs, setJobs, user, users, showToast, setView }) {
             letterSpacing: '-0.005em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <Building2 size={13} color={styles.text2} strokeWidth={2} />
-            CRM Link — PO carries over when the job is added to the CRM
+            CRM Link — the PO is the CRM's
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <Field label={t.poNumber}>
-              <input style={inputStyle} value={form.poNumber}
-                placeholder="Auto-generated if blank"
-                onChange={e => setForm({ ...form, poNumber: e.target.value })} />
-              <div style={{ fontSize: 11, color: styles.text3, marginTop: 4, lineHeight: 1.4 }}>{t.poNumberHint}</div>
-            </Field>
-            <Field label={t.projectId}>
-              <input style={inputStyle} value={form.projectId}
-                placeholder="PROJ-2026-011 (if it exists)"
-                onChange={e => setForm({ ...form, projectId: e.target.value })} />
-              <div style={{ fontSize: 11, color: styles.text3, marginTop: 4, lineHeight: 1.4 }}>{t.projectIdHint}</div>
-            </Field>
-          </div>
+          <div data-po-add-note="1" style={{ fontSize: 12, color: styles.text2, lineHeight: 1.5 }}>{t.poNumber}: {t.poNumberHint}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <Field label={t.projectManager} required>
@@ -6839,7 +6923,9 @@ function EstimateBuilder({ t, estimate, job, bids, users, estimates, setEstimate
       job: job ? {
         id: job.id, title: job.title, address: job.address || '',
         poNumber: job.poNumber || null,              // CRM merges on this identifier
-        poAutoGenerated: !!job.poAutoGenerated,       // true if portal generated it; CRM should adopt this PO
+        poAutoGenerated: job.poSource === 'assigned',  // patch BIDPO: assigned the CRM's way (no CRM job yet); poSource 'crm' = the CRM job's own PO
+        poSource: job.poSource || '',
+        crmProjectId: job.crmProjectId || null,
         projectId: job.projectId || null,             // secondary reference; may be blank
         bidDueDate: job.bidDueDate,
         grayCoRole: job.grayCoRole || 'gc',           // 'gc' or 'sub' — GrayCo's role on this project

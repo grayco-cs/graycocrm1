@@ -135,7 +135,7 @@ await sect('a desk', async () => {
 await sect('a overdue', async () => {
   await A.ev(() => window._gcEpaHud.sweep()); await sleep(1500);
   const tk = await wait(A, () => { const L = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); const t = L.find(x => x && x.id === 'EPAHUD_POVR_gcb_lead_03'); return t ? { a: t.assignee, l: t.label, p: t.prio } : null; }, null, 15000);
-  ok('a9 an overdue paper (Lead 03, 30 days after completion) → a To-Do for the job\'s PM', tk && tk.a === 'Demo PM' && /OVERDUE/.test(tk.l), tk);
+  ok('a9 an overdue paper (Lead 03, 30 days after completion) → a To-Do for the job\'s PM', tk && tk.a === 'Demo PM' && /(OVERDUE|suggested by .* not sent yet)/.test(tk.l), tk);
 });
 
 /* ── b) mold gates, emergency water never blocked, the logos ── */

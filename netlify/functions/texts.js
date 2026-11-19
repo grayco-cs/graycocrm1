@@ -149,6 +149,25 @@ exports.handler = async function(event){
       const r = await require('./_lib/smsalert.js').lsaVetted({ leadId: s(b.leadId), phone: ph, name: s(b.name), note: s(b.note).slice(0, 300), by: s(who.name) || s(who.email) });
       return J(200, { ok: true, texted: r.sent || 0, to: r.to || [], skipped: r.skipped || null }, C);
     }
+    /* LSAINTAKE (owner 11/19): the Google LSA calls on the Leads page (admins + the office) — the list with codes / GOOD-BAD / call details,
+       the office's quick intake, assigning a PM from the CRM (= an admin's "GOOD <code> <PM>"), the ⚙ "Default PM for Google LSA leads" */
+    if (qs.lsaleads || qs.lsaintake || qs.lsaassign || qs.lsapm) {
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can do this.' }, C);
+      const SA = require('./_lib/smsalert.js');
+      let b = {}; if (m === 'POST') { try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); } }
+      const me = { name: s(who.name), email: low(who.email) };
+      if (qs.lsaleads && m === 'GET') {
+        const [items, pms, dpm] = await Promise.all([SA.lsaList(+qs.days || 30), SA.lsaPms(), SA.lsaDefaultPm()]);
+        return J(200, { ok: true, items, pms, defaultPm: dpm ? dpm.id : '', defaultPmName: dpm ? dpm.name : '', admin: !!who.admin }, C);
+      }
+      if (qs.lsaintake && m === 'POST') { const r = await SA.lsaIntake(b, me); return J(r.ok ? 200 : 400, r, C); }
+      if (qs.lsaassign && m === 'POST') {
+        if (s(b.verdict) === 'bad' && !who.admin) { const r = await SA.lsaIntake(Object.assign({}, b, { rating: 'bad', desc: s(b.reason) }), me); return J(r.ok ? 200 : 400, r, C); }   /* the office's BAD waits for an admin */
+        const r = await SA.lsaAssign(b, me); return J(r.ok ? 200 : 400, r, C);
+      }
+      if (qs.lsapm && m === 'POST') { if (!who.admin) return J(403, { ok: false, error: 'Only an admin changes the default PM.' }, C); const r = await SA.lsaSetDefaultPm(b.id, who.email); return J(r.ok ? 200 : 400, r, C); }
+      return J(405, { ok: false, error: 'Method not allowed.' }, C);
+    }
     /* patch SMSALERT: Admin → 📱 Text alerts to cell phones (admins) — gc_lead_inbox_kv "gc_sms_alerts" */
     if (qs.alerts) {
       if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the text alerts.' }, C);   /* patch OFFICEFULL */

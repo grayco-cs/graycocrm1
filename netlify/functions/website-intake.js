@@ -271,15 +271,19 @@ function lsaIdOf(u){ u = s(u); const m = /\/(?:lead|leads|message)s?\/([A-Za-z0-
 function lsaDupOf(list, rec, id){
   if (!lsaOf(rec)) return null;
   const ph = phone10((rec.contact || {}).phone), lid = lsaIdOf((rec.leadExtra || {}).lsaLink), now = Date.now();
-  if (ph.length !== 10 && !lid) return null;
-  return list.find(x => { if (!x || String(x.id) === String(id) || !lsaOf(x) || x.deleted || x.dismissed || x.mergedInto) return false;
+  const gid = s((rec.leadExtra || {}).lsaLeadId), cat = Date.parse(s((rec.leadExtra || {}).lsaCallAt));   /* LSAREC: the same Google lead id, or the same LSA call time (±3 min) — Google's e-mail and the Google Ads API pull */
+  if (ph.length !== 10 && !lid && !gid && !isFinite(cat)) return null;
+  return list.find(x => { if (!x || String(x.id) === String(id) || !lsaOf(x) || x.deleted || x.dismissed || x.mergedInto || x.status === 'dismissed' || x.status === 'merged') return false;
+    if (/\bTEST\b/.test(s((x.contact || {}).name) + ' ' + s(x.title))) return false;   /* LSAFWD: a test lead never swallows a real call */
     const t = Date.parse((x.leadExtra || {}).receivedAt || x.receivedAt || x.created || x.createdAt || ''); if (isFinite(t) && now - t > 30 * 864e5) return false;
     const xl = lsaIdOf((x.leadExtra || {}).lsaLink); if (lid && xl) return xl === lid;
+    const xg = s((x.leadExtra || {}).lsaLeadId); if (gid && xg) return xg === gid;
+    const xc = Date.parse(s((x.leadExtra || {}).lsaCallAt)); if (isFinite(cat) && isFinite(xc) && Math.abs(xc - cat) <= 180e3 && (ph.length !== 10 || phone10((x.contact || {}).phone).length !== 10 || phone10((x.contact || {}).phone) === ph)) return true;
     return ph.length === 10 && phone10((x.contact || {}).phone) === ph; }) || null;
 }
 function lsaFold(x, rec, at){
   const ex = Object.assign({}, x.leadExtra || {}), rx = rec.leadExtra || {};
-  ex.lsaRepeats = (+ex.lsaRepeats || 0) + 1; if (!s(ex.lsaLink) && s(rx.lsaLink)) ex.lsaLink = rx.lsaLink; if (rx.lsaCall && !ex.lsaCall) ex.lsaCall = true; x.leadExtra = ex;
+  ex.lsaRepeats = (+ex.lsaRepeats || 0) + 1; if (!s(ex.lsaLink) && s(rx.lsaLink)) ex.lsaLink = rx.lsaLink; if (rx.lsaCall && !ex.lsaCall) ex.lsaCall = true; ['lsaCallAt', 'lsaCallSid', 'callRecs', 'lsaPhoneFrom', 'lsaCallOutcome'].forEach(k => { if (rx[k] && !ex[k]) ex[k] = rx[k]; }); x.leadExtra = ex;   /* LSAREC */
   const said = clip(s(rec.scope), 300); x.notes = arr(x.notes).concat(['🔁 Same Google LSA lead again, ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (said ? ': ' + said : '') + '.']).slice(-60);
   if (!s((x.contact || {}).phone) && s((rec.contact || {}).phone)) x.contact = Object.assign({}, x.contact || {}, { phone: rec.contact.phone });
   x.updatedAt = at;
@@ -709,13 +713,41 @@ async function lsaCaller(dmy, hm){
     const t = centralMs(dmy, hm); if (!isFinite(t)) return null;
     const v = await L().kvGet('gc_call_log'), calls = v && Array.isArray(v.calls) ? v.calls : [];
     let best = null, bd = Infinity;
-    calls.forEach(c => { const ph = phone10(c && c.from), at = Date.parse(c && c.at); if (ph.length !== 10 || !isFinite(at)) return; const dd = at - t; if (dd < -120e3 || dd > 240e3) return; if (Math.abs(dd) < bd) { bd = Math.abs(dd); best = { from: ph, at: c.at, outcome: s(c.outcome) }; } });
+    calls.forEach(c => { const ph = phone10(c && c.from), at = Date.parse(c && c.at); if (ph.length !== 10 || !isFinite(at)) return; const dd = at - t; if (dd < -120e3 || dd > 240e3) return; if (Math.abs(dd) < bd) { bd = Math.abs(dd); best = { from: ph, at: c.at, outcome: s(c.outcome), sid: s(c.sid), recs: Array.isArray(c.recs) ? c.recs : [] }; } });   /* LSAREC: + the call's id and recordings */
     return best;
   } catch (e) { return null; }
 }
+/* LSAFWD (owner 11/19: "I don't see where any LSA leads are in the CRM"): Wesley's Gmail forward of Google's call e-mail ends with HIS
+   signature ("-- / Wesley Johnson / Owner/CEO / 901-692-7255"). Google's call e-mail has no caller number, so that cell was taken as the
+   caller's, and the lead was folded into the 11/10 TEST lead that has the same number (LSADEDUPE) — no lead, no text. A staff forward is
+   now read from its forwarded part only, without the forwarder's signature / disclaimer, and a GrayCo number (any staff cell, the office
+   line, the texting numbers) is never a customer's number. */
+function fwdBody(text, staff){
+  let t = String(text || '').replace(/\r\n/g, '\n');
+  if (!staff) return t;   /* a customer's own e-mail keeps everything (their signature has THEIR number) */
+  { const i = t.search(/-{5,}\s*Forwarded message\s*-{5,}|^\s*Begin forwarded message:/im); if (i >= 0) t = t.slice(i); }
+  const sig = t.search(/\n--[ \u00a0]?\n|\nThis (e-?mail|message) and any files transmitted|\nCONFIDENTIALITY NOTICE/i); if (sig > 0) t = t.slice(0, sig);
+  return t;
+}
+async function ownNumbers(){
+  const out = {}; const add = v => { const d = phone10(v); if (d.length === 10) out[d] = 1; };
+  try { const d = await core().kvRead(['users']); arr(d.users).forEach(u => { if (u && typeof u === 'object') [u.phone, u.cell, u.mobile, u.cellPhone, u.mobilePhone, u.workPhone].forEach(add); }); } catch (e) {}
+  try { add(require('./_lib/callorder.js').companyPhone()); } catch (e) {}
+  ['TWILIO_FROM', 'TWILIO_FROM_ALERTS', 'TWILIO_FROM_LEADS', 'TWILIO_RING_TO'].forEach(k => add(process.env[k]));
+  try { const v = await L().kvGet('gc_sms_numbers'); (Array.isArray(v) ? v : arr(v && v.numbers)).forEach(n => add(n && (n.number || n.phone || n))); } catch (e) {}
+  return out;
+}
+function firstPhone(t, own){
+  const re = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/g; let m;
+  while ((m = re.exec(String(t || '')))) { const d = m[1] + m[2] + m[3]; if (!own || !own[d]) return d; }
+  return '';
+}
 exports.fromEmail = async function(mail){
   mail = mail || {};
-  const text = s(mail.text), from = mail.from || {}, H = mail.headers || {};
+  const text0 = s(mail.text), from = mail.from || {}, H = mail.headers || {};
+  const staffFwd = /@grayco-cs\.com$/i.test(s(from.email));
+  const text = fwdBody(text0, staffFwd);   /* LSAFWD */
+  const OWN = staffFwd ? await ownNumbers() : {};
   const got = fieldsOf(text), b = splitAddress(got.b);
   const lsa = /local services|localservices|google guaranteed|google screened/i.test(s(mail.subject) + ' ' + text.slice(0, 3000));   /* patch MKT2 LSA: a Google Local Services lead e-mail forwarded to leads@ */
   /* LSACALL2 (owner 11/10): Google's "New call from a potential customer" e-mail has NO caller number — only "Your Customer ID: 555-434-6278"
@@ -723,16 +755,21 @@ exports.fromEmail = async function(mail){
      "Google LSA caller (2:31 PM)" so the text still goes out right away */
   const lsaTxt = text.replace(/customer\s*id\s*:?\s*[\d-]{6,}/ig, ' ');
   const lsaWhen = /called you on\s+([\d/]+)\s+at\s+([\d:]+\s*[AP]M)/i.exec(text);
-  if (lsa) { if (!b.phone) { const m = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(lsaTxt); if (m) b.phone = m[1] + m[2] + m[3]; } if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.name && !b.phone && lsaWhen) b.name = 'Google LSA caller (' + lsaWhen[2].replace(/\s+/g, ' ').toUpperCase() + ')';
-    let lsaCallRow = null; if (!b.phone && lsaWhen) { lsaCallRow = await lsaCaller(lsaWhen[1], lsaWhen[2]); if (lsaCallRow) { b.phone = lsaCallRow.from; if (/^Google LSA caller/.test(s(b.name))) b.name = 'Google LSA caller ' + lsaCallRow.from.replace(/^(\d{3})(\d{3})(\d{4})$/, '($1) $2-$3'); } }   /* LSAPHONE */
+  let lsaCallRowOut = null;   /* LSAREC */
+  if (lsa) { if (b.phone && OWN[phone10(b.phone)]) b.phone = ''; if (!b.phone) { const ph = firstPhone(lsaTxt, OWN); if (ph) b.phone = ph; }   /* LSAFWD: never a GrayCo number */ if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.name && !b.phone && lsaWhen) b.name = 'Google LSA caller (' + lsaWhen[2].replace(/\s+/g, ' ').toUpperCase() + ')';
+    let lsaCallRow = null; if (!b.phone && lsaWhen) { lsaCallRow = lsaCallRowOut = await lsaCaller(lsaWhen[1], lsaWhen[2]); if (lsaCallRow) { b.phone = lsaCallRow.from; if (/^Google LSA caller/.test(s(b.name))) b.name = 'Google LSA caller ' + lsaCallRow.from.replace(/^(\d{3})(\d{3})(\d{4})$/, '($1) $2-$3'); } }   /* LSAPHONE */
     if (!b.message) b.message = lsaWhen ? 'A potential customer called the office through Google Local Services on ' + lsaWhen[1] + ' at ' + lsaWhen[2] + '.' + (lsaCallRow ? ' Their number (from the office phone\'s call log): ' + lsaCallRow.from + (lsaCallRow.outcome ? ' — ' + s(lsaCallRow.outcome) : '') + '.' : ' Google did not include the number — open the call in the Local Services app (Leads) to call them back.') : clip(lsaTxt, 1500); }
+  /* LSAREC: Google's call time, the office call's id and its recordings on the lead (the Google LSA sync and the recording callback match by them) */
+  const lsaMore = {}; if (lsa) { const tw = lsaWhen ? centralMs(lsaWhen[1], lsaWhen[2]) : NaN; if (isFinite(tw)) lsaMore.lsaCallAt = new Date(tw).toISOString();
+    if (lsaCallRowOut) { if (lsaCallRowOut.sid) lsaMore.lsaCallSid = lsaCallRowOut.sid; lsaMore.lsaPhoneFrom = 'office call log'; if (lsaCallRowOut.outcome) lsaMore.lsaCallOutcome = clip(lsaCallRowOut.outcome, 80);
+      const rr = lsaCallRowOut.recs.filter(r => r && /^RE[0-9a-f]{32}$/.test(s(r.rsid))).slice(-5).map(r => ({ rsid: r.rsid, kind: s(r.kind) || 'call', dur: +r.dur || 0, at: s(r.at) })); if (rr.length) lsaMore.callRecs = rr; } }
   const replyTo = low(s(H['reply-to']).replace(/^.*<([^>]+)>.*$/, '$1'));
   const sender = [low(b.email || b.email_address), replyTo, low(from.email)].find(x => isEmail(x) && !NOT_CUSTOMER.test(x)) || '';
   if (!sender && !b.email && /@grayco-cs\.com$/i.test(s(from.email))) { const fw = /^\s*from:\s*([^<\n]*)<([^>@\s]+@[^>\s]+)>/im.exec(text); if (fw && !NOT_CUSTOMER.test(low(fw[2]))) { b.email = low(fw[2]); if (!b.name && s(fw[1]).replace(/"/g, '').trim()) b.name = s(fw[1]).replace(/"/g, '').trim(); } }   /* patch LEADMAIL */
   if (got.n < 2 && !(lsa && (b.phone || b.name))) {   /* a person writing in (or junk): no form fields */
     if (bulk(mail) || (!sender && !staffLead(mail, text))) return { ok: true, ignored: 'not a lead (no form, no customer address)' };
     b.message = clip((s(mail.subject) ? s(mail.subject) + '\n\n' : '') + text, 3000);
-    if (!b.phone && staffLead(mail, text)) { const pm = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(text); if (pm) b.phone = pm[1] + pm[2] + pm[3]; }   /* patch LEADMAIL */
+    if (!b.phone && staffLead(mail, text)) { const pm = firstPhone(text, OWN); if (pm) b.phone = pm; }   /* LSAFWD: not the forwarder's own number */   /* patch LEADMAIL */
     b.type = s(mail.subject);
   } else {
     /* patch LEADMAIL: no message field — keep the lines that are not "Label: value" (a hand-typed lead's description) */
@@ -752,7 +789,7 @@ exports.fromEmail = async function(mail){
   }
   if (f.type === 'roofprice') f.type = 'estimate';
   const sid = crypto.createHash('sha256').update('leads@|' + (s(mail.messageId) || s(mail.id) || (low(f.email) + '|' + f.phone + '|' + s(mail.subject) + '|' + s(mail.date)))).digest('hex').slice(0, 24);
-  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? Object.assign({ mkSource: 'Google Ads', leadSource: 'Google LSA', lsaCheck: 'pending', lsaLink: lsaLinkOf(s(mail.html) + ' ' + text) }, /phone (call|lead)|call lead|called (you|your business)|missed (a )?call|new call|answered call/i.test(s(mail.subject) + ' ' + text.slice(0, 2000)) ? { lsaCall: true } : {}) : undefined   /* LSACALL: Google's "phone lead" e-mail */ /* LSACHECK */, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
+  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? Object.assign({ mkSource: 'Google Ads', leadSource: 'Google LSA', lsaCheck: 'pending', lsaLink: lsaLinkOf(s(mail.html) + ' ' + text) }, lsaMore, /phone (call|lead)|call lead|called (you|your business)|missed (a )?call|new call|answered call/i.test(s(mail.subject) + ' ' + text.slice(0, 2000)) ? { lsaCall: true } : {}) : undefined   /* LSACALL: Google's "phone lead" e-mail */ /* LSACHECK */, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
   const alerts = r.action === 'added' ? await alertLead(r.rec) : { skipped: r.action };
   return { ok: true, lead: r.id, action: r.action, alerts, type: f.type };
 };

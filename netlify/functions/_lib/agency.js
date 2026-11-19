@@ -77,6 +77,7 @@ function L(){ return require('../bid-inbox.js')._lib; }
 function M(){ return require('./mkt.js'); }
 function X(){ return require('./mkt2.js'); }
 function C(){ return require('./mkcalc.js'); }
+function MM(){ return require('./mktmath.js'); }   /* patch MKTMATH: the Dashboard's own math (one copy, also pasted into index.html) */
 function money(v){ return '$' + Math.round(num(v)).toLocaleString('en-US'); }
 function monthName(m){ const d = new Date(m + '-15T12:00:00Z'); return isNaN(d) ? m : d.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); }
 function prevMonth(iso){ const d = new Date(iso.slice(0, 7) + '-15T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); }
@@ -161,56 +162,64 @@ async function adminEmails(){
 
 /* ── the numbers ── */
 async function crm(){
-  const d = await M().crmData(['leads', 'projects', 'invs', 'invoices', 'expenses', 'estimates']);
+  const d = await M().crmData(['leads', 'projects', 'invs', 'invoices', 'expenses', 'estimates', 'users']);
   const seen = {}, invs = arr(d.invs).concat(arr(d.invoices)).filter(function(x){ if (!x || !x.id || seen[x.id]) return false; seen[x.id] = 1; return true; });
-  return { leads: arr(d.leads), projects: arr(d.projects), invs: invs, expenses: arr(d.expenses), estimates: arr(d.estimates) };
+  return { leads: arr(d.leads), projects: arr(d.projects), invs: invs, expenses: arr(d.expenses), estimates: arr(d.estimates), users: arr(d.users) };
 }
 async function summary(o){
   o = o || {};
   const [d, doc] = await Promise.all([crm(), M().readDoc()]);
   const fix = {}; Object.keys(doc.srcfix || {}).forEach(function(k){ const r = doc.srcfix[k]; if (r && !r.del && r.key && r.channel) fix[r.key] = r.channel; });
   const spend = Object.keys(doc.spend || {}).map(function(k){ return doc.spend[k]; }).filter(function(x){ return x && !x.del; });
-  const sum = C().build({ leads: d.leads, projects: d.projects, invs: d.invs, expenses: d.expenses, estimates: d.estimates, spend: spend, srcfix: fix, now: s(o.now) || nowIso().slice(0, 10), monthsBack: o.months || 12 });
-  return { sum: sum, spend: spend, doc: doc };
+  const now = s(o.now) || MM().ctDay(Date.now());   /* the day in Memphis, as the Dashboard */
+  const sum = C().build({ leads: d.leads, projects: d.projects, invs: d.invs, expenses: d.expenses, estimates: d.estimates, spend: spend, srcfix: fix, now: now, monthsBack: o.months || 12 });   /* kept for the ad-campaign rows only */
+  /* patch MKTMATH: every lead / won / revenue / spend number is the Dashboard's — marketing leads only (bids, tests, merged,
+     imported copies, LSA bad / unmarked left out), the arrival day in Memphis, contract value of won jobs, spend = Ad spend lines
+     + advertising charges in Expenses */
+  const allSpend = MM().withExpenseSpend(spend, d.expenses, C().normSource);
+  sum.math = MM().compute({ leads: d.leads, projects: d.projects, invs: d.invs, expenses: d.expenses, spend: allSpend, srcfix: fix, users: d.users, now: now, months: o.months || 12, basis: o.basis, normSource: C().normSource });
+  return { sum: sum, spend: allSpend, doc: doc, math: sum.math };
 }
 /* what the agency may see of a summary */
 function share(sum, settings, months){
-  const rev = settings.shareRevenue !== false, gp = settings.shareProfit === true;
-  const ch = sum.channels.map(function(c){
-    const r = { channel: c.channel, leads: c.leads, appts: c.appts, estimates: c.estimates, won: c.won, lost: c.lost, closeRate: c.closeRate, spend: c.spend, cpl: c.cpl, costPerWon: c.costPerWon,
-      clicks: c.clicks, impressions: c.impressions, cpc: c.cpc, medianDaysToClose: c.medianDaysToClose };
-    if (rev) { r.revenue = c.revenue; r.avgJob = c.avgJob; r.roas = c.roas; }
-    if (gp) { r.gp = c.gp; r.roi = c.roi; }
+  const rev = settings.shareRevenue !== false, gp = settings.shareProfit === true, R = sum.math;
+  /* patch MKTMATH: the Dashboard's numbers; what the Dashboard does not count (appointments, estimates, profit) is left empty (—) */
+  const ch = R.channels.map(function(c){
+    const r = { channel: c.channel, leads: c.leads, appts: null, estimates: null, won: c.won, lost: c.lost, closeRate: c.closeRate, spend: c.spend, cpl: c.cpl, costPerWon: c.costPerJob,
+      clicks: null, impressions: null, cpc: null, medianDaysToClose: null };
+    if (rev) { r.revenue = c.revenue; r.avgJob = c.wonJobs ? Math.round(c.revenue / c.wonJobs * 100) / 100 : null; r.roas = c.roas; }
+    if (gp) { r.gp = null; r.roi = c.roi; }
     return r;
   });
-  const tot = Object.assign({}, sum.totals); if (!rev) delete tot.revenue; if (!gp) { delete tot.gp; delete tot.wonWithCosts; }
-  const recent = sum.opps.filter(function(x){ return x.created; }).sort(function(a, b){ return a.created < b.created ? 1 : -1; }).slice(0, 80).map(function(x){
-    const r = { date: x.created, source: x.source || '(not set)', campaign: x.campaign, city: x.city, zip: x.zip, kind: x.kind,
-      stage: x.won ? 'Won' : x.lost ? 'Lost' : x.rank >= 2 ? 'Estimate' : x.rank >= 1 ? 'Appointment' : 'New' };
-    if (rev && x.won) r.revenue = x.revenue;
+  const T = R.totals;
+  const tot = { leads: T.leads, withSource: T.leads - T.notSet, missingSource: T.notSet, won: T.won, lost: T.lost, decided: T.decided, closeRate: T.closeRate, spend: T.spend, cpl: T.cpl, costPerJob: T.costPerJob,
+    months: R.months.length, from: R.from, to: R.thisMonth, bids: R.bids.n };
+  if (rev) tot.revenue = T.revenue;
+  const recent = arr(R.marketing).filter(function(x){ return x.date; }).sort(function(a, b){ return a.date < b.date ? 1 : -1; }).slice(0, 80).map(function(x){
+    const r = { date: x.date, source: x.channel, campaign: '', city: '', zip: '', kind: '', stage: x.won ? 'Won' : x.lost ? 'Lost' : 'Open' };
+    if (rev && x.won) r.revenue = x.value;
     return r;
   });
+  const bySourceMonth = {}; R.months.forEach(function(m){ bySourceMonth[m] = {}; });
+  arr(R.marketing).forEach(function(x){ if (bySourceMonth[x.month]) bySourceMonth[x.month][x.channel] = (bySourceMonth[x.month][x.channel] || 0) + 1; });
+  const warnings = [];
+  if (!R.spend.any) warnings.push('No ad spend in the CRM yet — cost per lead and cost per job say "no spend data" until it is entered (Marketing → Dashboard → Ad spend) or the Google Ads account is connected.');
+  if (T.notSet) warnings.push(T.notSet + ' of ' + T.leads + ' marketing leads have no source.');
+  warnings.push('Google LSA calls did not reach the CRM before 11/19/2026 — LSA numbers before then are near zero; the real count is in Google LSA.');
   const camps = sum.campaigns.map(function(c){ const r = { channel: c.channel, campaign: c.campaign, spend: c.spend, clicks: c.clicks, impressions: c.impressions, ctr: c.ctr, cpc: c.cpc, platformConversions: c.platformConversions, crmLeads: c.crmLeads, crmWon: c.crmWon, crmCpl: c.crmCpl };
     if (rev) { r.crmRevenue = c.crmRevenue; r.roas = c.roas; } return r; });
-  return { months: months || sum.months.length, from: sum.totals.from, to: sum.totals.to, channels: ch, totals: tot, thisMonth: sum.thisMonth, bySourceMonth: sum.bySourceMonth, campaigns: camps,
-    kindMix: sum.kindMix.map(function(k){ const r = { kind: k.kind, leads: k.leads, won: k.won }; if (rev) r.revenue = k.revenue; return r; }),
-    warnings: sum.warnings.filter(function(w){ return gp || !/costs recorded|profit/.test(w); }), recent: recent, shareRevenue: rev, shareProfit: gp };
+  const tm = R.channels.reduce(function(a, c){ a.leads += c.thisMonth; a.spend += c.spendThisMonth; return a; }, { leads: 0, spend: 0 });
+  return { months: months || R.months.length, from: R.from, to: R.thisMonth, channels: ch, totals: tot, thisMonth: { month: R.thisMonth, leads: tm.leads, spend: Math.round(tm.spend * 100) / 100, cpl: T.cplThisMonth }, bySourceMonth: bySourceMonth, campaigns: camps,
+    kindMix: [], warnings: warnings, recent: recent, shareRevenue: rev, shareProfit: gp };
 }
 /* one month: leads that came in that month (by source), how many are won so far, and that month's spend */
 function monthTable(sum, spend, m, settings){
-  const by = {};
-  function row(ch){ return by[ch] || (by[ch] = { channel: ch, leads: 0, won: 0, revenue: 0, spend: 0 }); }
-  sum.opps.forEach(function(o){ if (o.month !== m) return; const r = row(o.source || '(not set)'); r.leads++; if (o.won) { r.won++; r.revenue += o.revenue; } });
-  spend.forEach(function(x){ const mo = s(x.month) || s(x.date).slice(0, 7); if (mo !== m || !(num(x.amount) > 0)) return; row(/local services|\blsa\b/i.test(s(x.channel)) ? 'Local Services Ads' : (C().normSource(x.channel) || s(x.channel) || 'Other')).spend += num(x.amount); });   /* LSA on its own line here (the CRM dashboard counts it in Google Ads) */
-  const rows = Object.keys(by).map(function(k){ const r = by[k]; r.revenue = Math.round(r.revenue * 100) / 100; r.spend = Math.round(r.spend * 100) / 100;
-    r.cpl = r.spend && r.leads ? Math.round(r.spend / r.leads * 100) / 100 : null; r.costPerWon = r.spend && r.won ? Math.round(r.spend / r.won * 100) / 100 : null;
-    r.roas = r.spend && r.revenue ? Math.round(r.revenue / r.spend * 100) / 100 : null;
-    if (settings && settings.shareRevenue === false) { delete r.revenue; delete r.roas; }
-    return r; }).sort(function(a, b){ return b.spend - a.spend || b.leads - a.leads; });
-  const t = rows.reduce(function(a, r){ a.leads += r.leads; a.won += r.won; a.spend += r.spend; a.revenue += r.revenue || 0; return a; }, { leads: 0, won: 0, spend: 0, revenue: 0 });
-  t.spend = Math.round(t.spend * 100) / 100; t.revenue = Math.round(t.revenue * 100) / 100; t.cpl = t.spend && t.leads ? Math.round(t.spend / t.leads * 100) / 100 : null;
-  if (settings && settings.shareRevenue === false) delete t.revenue;
-  return { month: m, label: monthName(m), rows: rows, totals: t };
+  /* patch MKTMATH: the Dashboard's math for that month (the marketing leads that arrived in it, by source; won so far; that
+     month's spend; cost per lead / per job only with spend) — lib/mktmath.js monthTable */
+  const mt = MM().monthTable(sum.math, m);
+  if (settings && settings.shareRevenue === false) { mt.rows.forEach(function(r){ delete r.revenue; delete r.roas; }); delete mt.totals.revenue; delete mt.totals.roas; }
+  mt.label = monthName(m);
+  return mt;
 }
 
 /* ── setup status: what is switched on, read from the CRM itself ── */
@@ -347,8 +356,9 @@ async function report(o){
   const dash = function(x, f){ return x == null ? '—' : f(x); };
   let html = '<p>Leads that came in during <b>' + esc(mt.label) + '</b>, by source, with that month\'s spend. Jobs won are counted to the month the lead came in, so last month\'s numbers keep improving as jobs close.</p>';
   html += '<table style="border-collapse:collapse;width:100%"><tr>' + th('Source') + th('Leads') + th('Won') + (rev ? th('Revenue') : '') + th('Spend') + th('Cost / lead') + th('Cost / job') + (rev ? th('$ back per $1') : '') + '</tr>' +
-    mt.rows.map(function(r){ return '<tr>' + td(esc(r.channel)) + td(r.leads, 1) + td(r.won, 1) + (rev ? td(money(r.revenue), 1) : '') + td(r.spend ? money(r.spend) : '—', 1) + td(dash(r.cpl, money), 1) + td(dash(r.costPerWon, money), 1) + (rev ? td(dash(r.roas, function(x){ return '$' + x.toFixed(2); }), 1) : '') + '</tr>'; }).join('') +
-    '<tr style="font-weight:bold">' + td('Total') + td(mt.totals.leads, 1) + td(mt.totals.won, 1) + (rev ? td(money(mt.totals.revenue), 1) : '') + td(money(mt.totals.spend), 1) + td(dash(mt.totals.cpl, money), 1) + td('', 1) + (rev ? td('', 1) : '') + '</tr></table>';
+    mt.rows.map(function(r){ return '<tr>' + td(esc(r.channel)) + td(r.leads, 1) + td(r.won, 1) + (rev ? td(money(r.revenue), 1) : '') + td(r.spend ? money(r.spend) : '—', 1) + td(r.cpl == null ? esc(r.cplWhy || '—') : money(r.cpl), 1) + td(r.costPerWon == null ? esc(r.costPerWonWhy || '—') : money(r.costPerWon), 1) + (rev ? td(dash(r.roas, function(x){ return '$' + x.toFixed(2); }), 1) : '') + '</tr>'; }).join('') +
+    '<tr style="font-weight:bold">' + td('Total') + td(mt.totals.leads, 1) + td(mt.totals.won, 1) + (rev ? td(money(mt.totals.revenue), 1) : '') + td(mt.totals.spend ? money(mt.totals.spend) : 'no spend data', 1) + td(mt.totals.cpl == null ? esc(mt.totals.cplWhy) : money(mt.totals.cpl), 1) + td('', 1) + (rev ? td('', 1) : '') + '</tr></table>';
+  html += '<p style="color:#55626F;font-size:12px">Marketing leads only, the same numbers as the CRM\'s 📣 Marketing → 📊 Dashboard: bid invitations (' + mt.bids + ' that month), tests, duplicates, imported records and Google LSA leads marked bad are counted apart. Sold value = contract value of the won jobs.</p>';
   html += '<h3 style="font-size:15px;margin:22px 0 6px">Last 12 months</h3><p style="margin:0">' + sh.totals.leads + ' leads · ' + sh.totals.won + ' jobs won' + (rev ? ' · ' + money(sh.totals.revenue) + ' revenue' : '') + ' · ' + money(sh.totals.spend) + ' marketing spend' + (sh.totals.cpl ? ' · ' + money(sh.totals.cpl) + ' per lead' : '') + '.</p>';
   if (sh.warnings.length) html += '<ul style="color:#9a3412;font-size:13px">' + sh.warnings.map(function(w){ return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>';
   html += '<h3 style="font-size:15px;margin:22px 0 6px">The plan</h3><p style="margin:0">' + (done.length ? 'Done in ' + esc(mt.label) + ': ' + done.map(function(p){ return esc(p.title); }).join('; ') + '. ' : '') + open.length + ' item' + (open.length === 1 ? '' : 's') + ' open' + (open.length ? ' — next up: ' + open.slice(0, 4).map(function(p){ return esc(p.title) + ' (' + esc(p.owner) + ')'; }).join('; ') : '') + '.</p>';

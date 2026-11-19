@@ -327,10 +327,10 @@ function reportHtml(R){
   const td = function(t, r){ return '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:13px' + (r ? ';text-align:right' : '') + '">' + t + '</td>'; };
   const t = R.table, tot = t.totals;
   let h = '<h2 style="margin:0 0 6px;font-size:19px;color:#0F1D2F">Marketing report — ' + esc(R.label) + '</h2>' +
-    '<p style="margin:0 0 14px;color:#55626F;font-size:13px">Leads that came in during ' + esc(R.label) + ', by source, with that month\'s marketing spend and ad charges. Jobs won count to the month the lead came in. The same numbers as Marketing → 📊 Dashboard.</p>';
+    '<p style="margin:0 0 14px;color:#55626F;font-size:13px">Leads that came in during ' + esc(R.label) + ', by source, with that month\'s marketing spend and ad charges. Jobs won count to the month the lead came in. The same numbers as Marketing → 📊 Dashboard: marketing leads only — bid invitations (' + (t.bids || 0) + ' that month), tests, duplicates, imported records and Google LSA leads marked bad are counted apart.</p>';
   h += '<table role="presentation" style="border-collapse:collapse;width:100%"><tr>' + th('Source') + th('Leads', 1) + th('Spend', 1) + th('Cost / lead', 1) + th('Jobs won', 1) + th('Sold value', 1) + '</tr>' +
-    t.rows.map(function(r){ return '<tr>' + td(esc(r.channel)) + td(r.leads, 1) + td(r.spend ? money(r.spend) : '—', 1) + td(r.cpl != null ? money(r.cpl) : '—', 1) + td(r.won, 1) + td(r.won ? money(r.revenue) : '—', 1) + '</tr>'; }).join('') +
-    '<tr style="font-weight:bold">' + td('Total') + td(tot.leads, 1) + td(money(tot.spend), 1) + td(tot.cpl != null ? money(tot.cpl) : '—', 1) + td(tot.won, 1) + td(money(tot.revenue), 1) + '</tr></table>';
+    t.rows.map(function(r){ return '<tr>' + td(esc(r.channel)) + td(r.leads, 1) + td(r.spend ? money(r.spend) : '—', 1) + td(r.cpl != null ? money(r.cpl) : esc(r.cplWhy || '—'), 1) + td(r.won, 1) + td(r.won ? money(r.revenue) : '—', 1) + '</tr>'; }).join('') +
+    '<tr style="font-weight:bold">' + td('Total') + td(tot.leads, 1) + td(tot.spend ? money(tot.spend) : 'no spend data', 1) + td(tot.cpl != null ? money(tot.cpl) : esc(tot.cplWhy || '—'), 1) + td(tot.won, 1) + td(money(tot.revenue), 1) + '</tr></table>';
   if (!t.rows.length) h += '<p style="color:#55626F">No leads or spend recorded for ' + esc(R.label) + '.</p>';
   const camp = function(c){ return c ? esc(c.campaign || c.source) + ' (' + esc(c.source) + ') — ' + c.leads + ' lead' + (c.leads === 1 ? '' : 's') + ', ' + c.won + ' won' + (c.sold ? ', ' + money(c.sold) + ' sold' : '') : '—'; };
   h += '<h3 style="font-size:15px;margin:20px 0 6px">The month in marketing</h3><table role="presentation" style="border-collapse:collapse;width:100%">' +

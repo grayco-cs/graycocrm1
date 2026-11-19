@@ -45,7 +45,7 @@ function savedForm(v) {
   for (const [k, x] of Object.entries(v)) {
     if (x === undefined) continue;
     if (k === 'dataUrl' && v.fileRef && typeof x === 'string' && !x.startsWith('data:')) continue;
-    if (k === '_rank' || k === '_total' || k === '_amounts') continue;
+    if (k === '_rank' || k === '_total' || k === '_amounts' || k === '_po') continue;   // _po: patch BIDPO — the server's CRM-link info for an admin, never saved
     out[k] = (x && typeof x === 'object') ? savedForm(x) : x;
   }
   return out;

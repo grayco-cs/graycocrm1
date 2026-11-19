@@ -154,6 +154,10 @@
 [functions."x10-scheduled"]
   schedule = "*/2 * * * *"
 
+# LSAREC: Google LSA calls → leads (number, job type, length, recording), office call log matching, call transcripts (every 10 minutes)
+[functions."lsa-sync-scheduled"]
+  schedule = "3,13,23,33,43,53 * * * *"
+
 # patch AUTO11: COI renewal requests to subs, warranty check-up offers, "We need from you" reminders (daily, ~9:35 AM Central)
 [functions."care11-scheduled"]
   schedule = "35 14 * * *"

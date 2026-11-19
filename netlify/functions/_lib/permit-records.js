@@ -2,6 +2,9 @@
    (owner 11/12: a weekly office task to download Develop 901's permits, and a monthly public-records e-mail to MSCCE.)
    · weeklyTask(): every Monday one item on the shared 🏢 Office To-Do — "Download new Shelby County permits from Develop 901
      (aca-prod.accela.com/SHELBYCO) and import them into 🏗️ Permitted jobs", with the link and the steps. Once per week (its id).
+     patch PERMITS3: Develop 901's permits now come in every day from the public "DPD Building Permits" feed (permit-watch.js), so
+     the To-Do is only a FALLBACK — it is made only when that feed is off, failed its last run, has not read in 3 days, or its
+     newest permit is more than 30 days old (feedHealth()).
    · MSCCE (Memphis & Shelby County Code Enforcement) records request — gc_lead_inbox_kv "gc_permit_mscce":
        { on: false, to: '', from, replyTo, sent: { 'YYYY-MM': { at, by, to, ok, held } }, replies: [ … ] }
      OFF and with NO recipient by default (the records address is not known yet: call 901-222-8300 to confirm it). When it is on
@@ -42,14 +45,29 @@ const TASK_STEPS = '1) Open Develop 901: ' + DEVELOP901 + ' (Shelby County\'s Ac
   '3) Download results (the small "Download results" link above the list) — it saves a CSV / Excel file. ' +
   '4) CRM → 🏗️ Permitted jobs → 📥 Import a permit list → pick the file → source "Shelby County (Develop 901)" → check the columns → Import. ' +
   'Permits already imported are skipped. Nothing is sent to anyone.';
+/* patch PERMITS3: is the Memphis / Shelby feed working? (gc_permit_status.memphis, written by permit-watch.js) */
+async function feedHealth(){
+  let st = {}, set = {};
+  try { st = obj(obj(await D.kvGet('gc_permit_status')).memphis); } catch (e) { st = {}; }
+  try { set = obj(obj(await D.kvGet('gc_permit_settings')).memphis); } catch (e) { set = {}; }
+  const now = D.now(), day = function(d){ const t = Date.parse(s(d).length === 10 ? s(d) + 'T12:00:00Z' : s(d)); return isFinite(t) ? t : 0; };
+  if (set.on === false) return { ok: false, why: 'the Memphis feed is turned off' };
+  if (!st.lastRun) return { ok: false, why: 'the Memphis feed has not run yet' };
+  if (st.error) return { ok: false, why: 'the Memphis feed failed: ' + clip(st.error, 80) };
+  if (!day(st.lastOk) || now - day(st.lastOk) > 3 * 864e5) return { ok: false, why: 'the Memphis feed has not read in 3 days' };
+  if (!day(st.newest) || now - day(st.newest) > 30 * 864e5) return { ok: false, why: 'the Memphis feed is stale (newest permit ' + (st.newest || 'none') + ')' };
+  return { ok: true, newest: st.newest };
+}
 async function weeklyTask(opts){
   opts = opts || {};
   const now = D.now(), c = A.central(now);
   if (!opts.force && c.wd !== 'Mon') return { skipped: 'not Monday' };
+  const fh = await feedHealth();   /* patch PERMITS3: only a fallback */
+  if (fh.ok && !opts.always) return { skipped: 'the Memphis feed is working', newest: fh.newest };
   const wk = isoWeek(now), id = 'permits_develop901_' + wk;
   const made = await D.todo(id, '🏗️ Download new Shelby County permits from Develop 901 and import them into 🏗️ Permitted jobs',
-    { note: TASK_STEPS, by: '🏗️ Permitted jobs (every Monday, for the office manager)', prio: 'normal' });
-  return { id: id, made: !!made };
+    { note: (fh.ok ? '' : 'Why: ' + fh.why + ' (the daily feed usually brings these in by itself). ') + TASK_STEPS, by: '🏗️ Permitted jobs (Mondays, only when the Memphis feed is not working)', prio: 'normal' });
+  return { id: id, made: !!made, why: fh.why || '' };
 }
 
 /* ── the MSCCE monthly public-records request ── */
@@ -128,4 +146,4 @@ async function onReply(mail){
   try { await D.kvCas(KEY, function(v){ v = clean(v); v.replies = v.replies.concat([{ at: new Date(D.now()).toISOString(), from: clip(from, 120), subject: subj, files: files }]).slice(-30); return v; }); } catch (e) {}
   return { ok: true, todo: id, made: !!made };
 }
-module.exports = { KEY, DEVELOP901, REPLY_INBOX, MSCCE_PHONE, TASK_STEPS, D, isoWeek, weeklyTask, defaults, clean, cfg, letter, lastMonth, send, monthly, isReplyMail, onReply };
+module.exports = { KEY, DEVELOP901, REPLY_INBOX, MSCCE_PHONE, TASK_STEPS, D, isoWeek, weeklyTask, feedHealth, defaults, clean, cfg, letter, lastMonth, send, monthly, isReplyMail, onReply };

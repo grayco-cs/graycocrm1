@@ -964,5 +964,7 @@ module.exports = {
   addSignup, signups, draftNewsletter, ensureNewsletter, NL_TIPS,
   newsSlug, cleanNewsHtml, newsPublic, newsPosts, newsWeb,
   approvalFor, afterApproved, makeState, readState,
-  _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; }, _cache: CACHE
+  _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; }, _cache: CACHE,
+  /* LSAREC: the Google Ads read helpers, for the Local Services leads pull (_lib/lsarec.js) */
+  _g: { configured: gConfigured, tokens: tokens, access: gAccess, headers: gHeaders, base: GBASE, query: gQuery, customers: googleCustomers }
 };
