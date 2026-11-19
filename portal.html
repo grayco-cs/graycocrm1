@@ -280,7 +280,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 var FN = '/.netlify/functions/portal';
 var ACC = '/.netlify/functions/portal-access';
 var OFFICE = '901-585-0944';
-var V = null, PHOTOS = null, TAB = 'home', token = '', session = '', JOBS = null, PID = '', MSGS = null, UNREAD = 0;
+var V = null, PHOTOS = null, TAB = 'home', token = '', session = '', JOBS = null, PID = '', MSGS = null, UNREAD = 0, UNREADQ = 0;
 var S = {
   en: { title: 'GrayCo Portal', welcome: 'Welcome to your GrayCo Portal', openLink: 'Sign in with your e-mail (or mobile number) and password — or just open the link we sent you.', who: 'E-mail or mobile number', sendCode: 'Send me a code',
     codeNote: 'We send a 6-digit code to the e-mail we have for you (texting is coming soon). It works for 10 minutes.', codeSent: 'If that is on file with GrayCo, a 6-digit code is on its way. Check your e-mail.',
@@ -713,9 +713,21 @@ function inspCard(){
 }
 /* patch PORTALED: what the PM / office put in the portal with the CRM's portal editor — "About your project", "Your project
    checklist" and the scope of work (portal.js view.job.summary / view.checklist / view.scopes; the server cleans them: no
-   price, no note, no sub, no carrier, no portal link). The milestones are in "Your schedule" with the job's own steps. */
+   price, no note, no sub, no portal link — PORTALPOL: the customer's own insurance company may be named). The milestones are in "Your schedule" with the job's own steps. */
 function edCards(){
   var out = [], es = LANG === 'es', j = (V && V.job) || {};
+  /* patch PORTALPOL (owner 11/19): the project details carry the customer's insurance — company, claim number, adjuster — when stored
+     (an insurance-claim job shows them in its claim box instead) */
+  var ins = j.insurance;
+  if (ins && !(V && V.insurance) && !(V && V.claimHelp)) {
+    var rows = [];
+    var row = function(k, v){ if (v) { rows.push(h('dt', { text: k })); rows.push(h('dd', { text: v })); } };
+    row(es ? 'Compañía de seguros' : 'Insurance company', ins.carrier);
+    row(es ? 'Número de reclamo' : 'Claim number', ins.claimNumber);
+    if (ins.adjuster) row(es ? 'Ajustador' : 'Adjuster', [ins.adjuster.name, ins.adjuster.phone].filter(Boolean).join(' · '));
+    if (rows.length) out.push(h('section', { class: 'card', id: 'gcInsDetails' }, [h('h2', { text: es ? '🛡 Su seguro' : '🛡 Your insurance' }), h('dl', { class: 'info' }, rows),
+      ins.adjuster && ins.adjuster.phone ? h('a', { class: 'btn', href: tel(ins.adjuster.phone), text: es ? 'Llamar al ajustador' : 'Call the adjuster' }) : null]));
+  }
   if (j.summary) out.push(h('section', { class: 'card', id: 'gcEdSummary' }, [h('h2', { text: es ? 'Sobre su proyecto' : 'About your project' }), h('p', { style: 'white-space:pre-wrap;margin:0;line-height:1.5', text: j.summary })]));
   var cl = (V && V.checklist) || [];
   if (cl.length) {
@@ -745,6 +757,8 @@ function home(){
   var icd = inspCard(); if (icd) tr0 = tr0.concat([icd]);   /* patch INSPECT2 */
   var ec = estCards().filter(function(c){ return !/Accepted|Declined/.test(c.textContent || ''); });   /* patch ESTPDF: an open estimate is on the Home page too */
   var ed = edCards();   /* patch PORTALED */
+  var nq = newQCard();   /* patch PORTALPOL: "💬 1 new question from GrayCo" first */
+  if (nq) ec = [nq].concat(ec);
   if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []).concat(icd ? [icd] : []), ed, [updates(), photosButton(), reviewCard()]);   /* patch INSPECT2: + icd */
   return [ownPwCard()].concat(ec, tr0, ed, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
@@ -976,17 +990,40 @@ var msgTimer = null;
 function loadMsgs(markRead){
   if (!markRead && TAB !== 'msgs') {
     /* only the count (the thread is marked read when it is opened) */
-    if (session && !token) acc('c-jobs').then(function(r){ var j = (r.data.jobs || []).find(function(x){ return x.id === (PID || (V && V.job && V.job.id)); }); setUnread(j ? j.unread : 0); });
-    else acc('c-jobs').then(function(r){ var j = (r.data.jobs || [])[0]; setUnread(j ? j.unread : 0); });
+    if (session && !token) acc('c-jobs').then(function(r){ var j = (r.data.jobs || []).find(function(x){ return x.id === (PID || (V && V.job && V.job.id)); }); setUnread(j ? j.unread : 0, j ? j.questions : 0); });
+    else acc('c-jobs').then(function(r){ var j = (r.data.jobs || [])[0]; setUnread(j ? j.unread : 0, j ? j.questions : 0); });
     return;
   }
   return acc('c-msgs').then(function(r){ if (r.data.ok) { MSGS = r.data.messages || []; setUnread(0); if (TAB === 'msgs') paintMsgs(); } });
 }
-function setUnread(n){
-  UNREAD = n || 0;
+function setUnread(n, q){
+  UNREAD = n || 0; UNREADQ = Math.min(UNREAD, q || 0);
+  paintNewQ();   /* patch PORTALPOL */
   var b = document.querySelector('#tabs button[data-tab="msgs"]'); if (!b) return;
   var old = b.querySelector('.badge'); if (old) old.remove();
   if (UNREAD) b.appendChild(h('span', { class: 'badge', id: 'msgBadge', text: String(UNREAD) }));
+}
+/* patch PORTALPOL (owner 11/19: "questions are answered in the portal"): GrayCo's new questions / messages, big on Home —
+   "💬 1 new question from GrayCo" (a question = a message the team sent with ❓, the CRM's portal editor) with "Answer" (Messages).
+   Nothing is e-mailed or texted: the answer goes in the portal thread and the job's PM is told in the CRM. */
+function newQCard(){
+  if (!UNREAD || TAB !== 'home') return null;
+  var es = LANG === 'es', q = UNREADQ, n = UNREAD;
+  var t = q ? (es ? '💬 ' + q + (q === 1 ? ' pregunta nueva de GrayCo' : ' preguntas nuevas de GrayCo') : '💬 ' + q + ' new question' + (q === 1 ? '' : 's') + ' from GrayCo')
+            : (es ? '💬 ' + n + (n === 1 ? ' mensaje nuevo de GrayCo' : ' mensajes nuevos de GrayCo') : '💬 ' + n + ' new message' + (n === 1 ? '' : 's') + ' from GrayCo');
+  return h('section', { class: 'card', id: 'gcNewQ', 'data-q': String(q), 'data-n': String(n), style: 'border:2px solid #D4A017;background:#FFF8E1' }, [
+    h('div', { class: 'row' }, [h('h2', { style: 'margin:0', text: t })]),
+    h('p', { class: 'muted', style: 'margin:6px 0 10px', text: q ? (es ? 'Su equipo GrayCo necesita su respuesta. Responda aquí mismo, en Mensajes.' : 'Your GrayCo team needs your answer. Answer right here, in Messages.') : (es ? 'Léalo en Mensajes.' : 'Read it in Messages.') }),
+    h('button', { type: 'button', class: 'btn gold', id: 'gcNewQGo', text: q ? (es ? 'Responder' : 'Answer') : (es ? 'Abrir mensajes' : 'Open messages'), on: { click: function(){ go('msgs'); } } })]);
+}
+function paintNewQ(){
+  var old = document.getElementById('gcNewQ'), main = $('main');
+  if (!V || !main || TAB !== 'home') { if (old) old.remove(); return; }
+  var c = newQCard();
+  if (!c) { if (old) old.remove(); return; }
+  if (old) { old.replaceWith(c); return; }
+  var host = main.querySelector('.col-r') || main, at = host.querySelector(':scope > .jobbar');
+  host.insertBefore(c, at ? at.nextSibling : host.firstChild);
 }
 function paintMsgs(){
   var list = $('cMsgList'); if (!list) return;
@@ -1031,7 +1068,7 @@ function insHome(){
   row('Date of loss', dt(c.dateOfLoss));
   row('Type of loss', c.lossType);
   row('Policy deductible', c.deductible != null ? usd(c.deductible) : '');
-  row('Insurance', 'Your insurance company');   /* owner 11/01: the carrier's name is never shown in the portal */
+  row('Insurance company', c.company || '');   /* patch PORTALPOL (owner 11/19): the customer's own insurance company, when stored */
   if (c.adjuster) row('Adjuster', [c.adjuster.name, c.adjuster.phone].filter(Boolean).join(' · '));
   if (c.adjusterMeeting) row('Adjuster visit', dt(c.adjusterMeeting));
   if (c.mortgage) row('Mortgage company', c.mortgage);

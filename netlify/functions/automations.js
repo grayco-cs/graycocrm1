@@ -135,6 +135,18 @@ exports.handler = async function(event){
       return J(200, { ok: true, n: ok.length });
     } catch (e) { return J(502, { error: 'Could not record it: ' + s(e && e.message) }); }
   }
+  /* patch PORTALPOL: the go-live card (Admin → ⚡ Automations) — anyone on staff sees it; only an admin changes the date / cancels / undoes */
+  if (body.op === 'golive') {
+    const GL = require('./_lib/golive.js'), sub = s(body.sub || 'view');
+    try {
+      if (sub === 'view') return J(200, Object.assign(await GL.view(), { admin: require('./_lib/staff-role.js').isAdmin(who) }));
+      if (!require('./_lib/staff-role.js').isAdmin(who)) return J(403, { error: 'Only an admin can change the go-live.' });
+      const r = await GL.admin(sub, body, who);
+      if (!r.ok) return J(r.code || 400, { error: r.error });
+      console.log('[automations] go-live ' + sub + ' by ' + who.email);
+      return J(200, Object.assign(r, { admin: true }));
+    } catch (e) { return J(502, { error: 'The go-live could not be read or saved: ' + s(e && e.message) }); }
+  }
   if (!require('./_lib/staff-role.js').isAdmin(who)) return J(403, { error: 'Only an admin can switch automations on or off.' });
   let changes = {};
   if (body.op === 'before') changes = AUTO.before();

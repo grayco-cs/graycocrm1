@@ -1070,6 +1070,19 @@ async function unreadFor(pids, party){
   const rows = await dbGet('gc_portal_msg', 'select=project_id&side=eq.gc&read_at=is.null&party=eq.' + encodeURIComponent(party) + '&project_id=' + inq(pids));
   const out = {}; rows.forEach(function(r){ out[r.project_id] = (out[r.project_id] || 0) + 1; }); return out;
 }
+/* patch PORTALPOL: GrayCo's unread QUESTIONS to the customer (a message that starts with ❓ — the portal editor's "Ask … a question") */
+async function questionsFor(pids){
+  if (!pids.length) return {};
+  const rows = await dbGet('gc_portal_msg', 'select=project_id,text&side=eq.gc&read_at=is.null&party=eq.c&project_id=' + inq(pids));
+  const out = {}; rows.forEach(function(r){ if (/^\s*❓/.test(s(r.text))) out[r.project_id] = (out[r.project_id] || 0) + 1; }); return out;
+}
+/* patch PORTALPOL: the customer wrote in the portal → the job's PM hears it (staff only; the job-message notifier's rules: push + staff text,
+   🏖 Away cover, quiet hours, one per 5 minutes per thread). The link opens the job's portal editor in the CRM. */
+const CMN = { run: function(who, b){ return require('./_lib/jobmsgnotify.js').run(who, b); } };
+async function custMsgNotify(p, msgId, text){
+  const first = s(p.client).split(/\s+/)[0] || 'The customer';
+  return CMN.run({ email: 'customer@portal.invalid', name: first }, { pid: s(p.id), msgId: s(msgId), text: '💬 Portal: ' + clip(text, 1900), head: first + ' (customer portal) on ' + (s(p.name) || 'a job'), link: (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/?portaled=' + encodeURIComponent(s(p.id)) });
+}
 async function pHome(ctx){
   const sub = ctx.sub, data = ctx.data, pids = ctx.jobs.map(function(p){ return s(p.id); });
   const events = await dbGet('gc_sub_event', 'select=id,kind,project_id,data,applied_at,created_at&sub_id=' + eq(sub.id) + '&kind=in.(paper,punch)&order=created_at.desc&limit=200');
@@ -1808,7 +1821,8 @@ async function customerAction(action, body, pids){
   const projects = liveProjects(data).filter(function(p){ return pids.indexOf(s(p.id)) > -1; });
   if (action === 'c-jobs') {
     const unread = await unreadFor(projects.map(function(p){ return s(p.id); }), 'c');
-    return { ok: true, kind: 'customer', jobs: projects.map(function(p){ return { id: s(p.id), name: s(p.name), address: s(p.address), unread: unread[s(p.id)] || 0 }; }) };
+    let qs = {}; try { qs = await questionsFor(projects.map(function(p){ return s(p.id); })); } catch (e) { qs = {}; }   /* patch PORTALPOL: "💬 1 new question from GrayCo" */
+    return { ok: true, kind: 'customer', jobs: projects.map(function(p){ return { id: s(p.id), name: s(p.name), address: s(p.address), unread: unread[s(p.id)] || 0, questions: qs[s(p.id)] || 0 }; }) };
   }
   const pid = s(body.projectId) || (projects.length === 1 ? s(projects[0].id) : '');
   const p = projects.find(function(x){ return s(x.id) === pid; });
@@ -1818,7 +1832,11 @@ async function customerAction(action, body, pids){
   if (action === 'c-send') {
     if (body.preview === true) throw Fail(400, 'This is a preview — messages are sent from the customer\'s own portal.');
     const text = clip(body.text, 4000); if (!text) throw Fail(400, 'Type a message.');
-    return { ok: true, id: await msgInsert(p.id, 'c', 'them', s(p.client).split(/\s+/)[0] || 'Customer', text, []) };
+    const cid = await msgInsert(p.id, 'c', 'them', s(p.client).split(/\s+/)[0] || 'Customer', text, []);
+    /* patch PORTALPOL (owner 11/19: "questions are answered in the portal"): the customer's answer / message tells the job's PM (a STAFF
+       notification: phone push + staff text alert, _lib/jobmsgnotify.js; no PM → the owners). Nothing goes to the customer. */
+    let notified = null; try { notified = await custMsgNotify(p, cid, text); } catch (e) { notified = { ok: false }; }
+    return { ok: true, id: cid, pmTold: !!(notified && notified.ok && arr(notified.to).length) };
   }
   throw Fail(400, 'Bad request');
 }
@@ -1878,8 +1896,9 @@ async function staffAction(action, body, who){
   }
   if (action === 's-send') {
     if (!okId(body.projectId) || !/^(c|s:[A-Za-z0-9_.:-]{1,80})$/.test(s(body.party))) throw Fail(400, 'Bad request');
-    const text = clip(body.text, 4000), files = arr(body.files).slice(0, 10);
+    let text = clip(body.text, 4000); const files = arr(body.files).slice(0, 10);
     if (!text && !files.length) throw Fail(400, 'Type a message.');
+    if (body.question === true && s(body.party) === 'c' && text && !/^\s*❓/.test(text)) text = clip('❓ ' + text, 4000);   /* patch PORTALPOL: a question to the customer (portal editor) — their Home shows "💬 1 new question from GrayCo" */
     return { ok: true, id: await msgInsert(s(body.projectId), s(body.party), 'gc', me, text, files) };
   }
   if (action === 's-scopes') {
@@ -2126,6 +2145,7 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
   _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
 
 /* LEGAL2-patch */
+exports._portalpol = { CMN: CMN, questionsFor: questionsFor, custMsgNotify: custMsgNotify };   /* patch PORTALPOL: tests */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut };   /* patch BIDSCOPE: tests */
 exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch };   /* patch SUBSYNC: tests */

@@ -4,7 +4,7 @@
    NODE: ➕ Request a change (customer, property manager, GC) · 🏗 Request a new project → a Lead Inbox lead linked to the
          customer (customerId), source "Portal request", emergency → the emergency path · the ✅ Approvals card (PM + office) ·
          staff reply / decline go through approvals (7 PM–7 AM → 7:00 AM) · status Received → Being priced → Change order sent /
-         Not possible · only their own jobs and properties · 10 a day · upload limits · no carrier / sub / cost / note in answers.
+         Not possible · only their own jobs and properties · 10 a day · upload limits · no sub / cost / note in answers (PORTALPOL: their own carrier may show).
    BROWSER (with the real functions behind a local server; phone 390 + desktop 1280): each portal's buttons and forms, a
          request sent with a photo, My requests and its status updates; the CRM's staff card (offline harness) and
          "Make a change order" opening the change order builder prefilled; no page errors. Screenshots → $PORTALREQ_SHOTS. */
@@ -140,7 +140,7 @@ const aq = () => (get(C.AQ_KEY) || []);
 const store = () => (get('gc_portal_requests') || []);
 const ALL = [];   /* every public answer, checked at the end for anything private */
 const P = async (b, hd) => { const r = await R(b, hd); ALL.push(r.raw); return r; };
-const FORBIDDEN = [/state\s*farm/i, /ridgeway/i, /rory/i, /8765/, /12345/, /internal note/i, /margin/i, /bidAmt/i, /\bcost/i, /\brk\b|"rk"/, /sb:crm-files/, /steven\.test@/i, /byEmail/];
+const FORBIDDEN = [/* PORTALPOL (owner 11/19): the customer's own insurance company (State Farm on their job) may be named */ /ridgeway/i, /rory/i, /8765/, /12345/, /internal note/i, /margin/i, /bidAmt/i, /\bcost/i, /\brk\b|"rk"/, /sb:crm-files/, /steven\.test@/i, /byEmail/];
 
 console.log('NODE');
 let reqA = null, reqProj = null;
@@ -200,11 +200,11 @@ await t('staff side: the card\'s details with signed file links; only staff; a c
   assert.ok(r.data.ok && r.data.waiting && !r.data.sent, r.raw);
   r = await P({ action: 'mine' }, A); assert.strictEqual(r.data.requests[0].replies.length, 0, 'not shown until approved');
 });
-await t('💬 Reply by the PM at noon: approved as it is sent → in My requests at once (a carrier / sub name in it is scrubbed)', async () => {
+await t('💬 Reply by the PM at noon: approved as it is sent → in My requests at once (a sub name in it is scrubbed; PORTALPOL: their own carrier stays)', async () => {
   const r = await R({ action: 'staff-reply', id: reqA.id, text: 'Thanks Ann — I will look at it with Ridgeway Framing; State Farm is not involved in this one.' }, PM);
   assert.ok(r.data.ok && r.data.sent, r.raw);
   const m = await P({ action: 'mine' }, A), it = m.data.requests.find(x => x.id === reqA.id);
-  assert.strictEqual(it.replies.length, 1); assert.ok(/our crew/.test(it.replies[0].text) && /your insurance company/.test(it.replies[0].text), it.replies[0].text);
+  assert.strictEqual(it.replies.length, 1); assert.ok(/our crew/.test(it.replies[0].text) && /State Farm is not involved/.test(it.replies[0].text), it.replies[0].text);
   assert.strictEqual(it.replies[0].by, 'Steven · GrayCo');
   const item = aq().find(x => x.kind === 'preq_reply' && x.status === 'sent'); assert.ok(item && item.approvals[0].by === 'Steven Park');
 });
@@ -361,14 +361,14 @@ await t('10 requests a day (Central day), then a polite no; the next day it work
   NOW += 864e5; m = await P({ action: 'mine' }, B); assert.strictEqual(m.data.left, 10);
   const r = await P({ action: 'change', text: 'A new day, a new request', contact: 'call' }, B); assert.strictEqual(r.status, 200);
 });
-await t('no insurance carrier, sub, cost, internal note, staff e-mail or file reference in any portal answer', async () => {
+await t('no sub, cost, internal note, staff e-mail or file reference in any portal answer', async () => {
   world();
   await P({ action: 'change', text: 'One more thing on the Alpha job', contact: 'call' }, A);
   ALL.push((await P({ action: 'mine' }, A)).raw);
   const bad = [];
   ALL.forEach((raw, i) => FORBIDDEN.forEach(re => { if (re.test(raw)) bad.push(i + ': ' + re + ' in ' + raw.slice(0, 200)); }));
   assert.deepStrictEqual(bad, []);
-  const m = JSON.parse(ALL[ALL.length - 1]); assert.ok(m.requests.some(x => /your insurance company/.test(x.job)), 'the job name has the carrier taken out: ' + JSON.stringify(m.requests.map(x => x.job)));
+  const m = JSON.parse(ALL[ALL.length - 1]); assert.ok(m.requests.some(x => /State Farm/.test(x.job)), 'PORTALPOL: the job name keeps the customer\'s own carrier: ' + JSON.stringify(m.requests.map(x => x.job)));
 });
 await t('function hygiene: pause installed, node --check, CORS for the portal', async () => {
   const src = fs.readFileSync(path.join(FNDIR, 'portal-req.js'), 'utf8'); assert.ok(src.includes("require('./_lib/pause').install()"));
@@ -478,7 +478,7 @@ if (!process.argv.includes('--no-browser')) {
     await pg.evaluate(() => window.GCPortalReq.reload()); await sleep(800);
     tx = await itemText(pg, custReq); assert.ok(/Change order sent/.test(tx) && /sign it in your portal/.test(tx), tx);
     await shot(pg, 'customer_status_phone', '#gcpr-card');
-    const html = await pg.content(); assert.ok(!/State Farm|Ridgeway|8765/.test(html.replace(/<script[\s\S]*?<\/script>/g, '')), 'no carrier / sub / cost on the page');
+    const html = await pg.content(); assert.ok(!/Ridgeway|8765/.test(html.replace(/<script[\s\S]*?<\/script>/g, '')), 'no sub / cost on the page');
     await ctx.close();
   });
   for (const kind of ['phone', 'desktop']) {

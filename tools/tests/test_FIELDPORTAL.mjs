@@ -103,7 +103,7 @@ try {
   // P2: no portal → Make portal (the desk's "by hand" link action)
   await O.ev(() => { document.querySelectorAll('#gcq-post').forEach(o => o.remove()); window._gcPortalEd.close(); });
   await home(O); await tap(O, '#_gcJobPick .fh-job[data-job="P2"] [data-fa="fp-cust"]');
-  ok(await O.ev(() => !!document.querySelector('#gcpe [data-pe="make"]') && document.querySelector('#gcpe [data-m="cust"]').disabled), '👤 a job with no portal offers 🏠 Make the portal (no customer view yet) — PORTALED');
+  ok(await O.ev(() => !!document.querySelector('#gcpe [data-pe="make"]') && (b => b.disabled || b.getAttribute('aria-disabled') === 'true')(document.querySelector('#gcpe [data-m="cust"]')))   /* BTNFIX: aria-disabled */, '👤 a job with no portal offers 🏠 Make the portal (no customer view yet) — PORTALED');
   await O.ev(() => window._gcPortalEd.close());
   // 🔧 Sub portal on P1: two subs → pick → what Ace sees → post to Ace
   await home(O); await tap(O, '#_gcJobPick .fh-job[data-job="P1"] [data-fa="fp-sub"]');

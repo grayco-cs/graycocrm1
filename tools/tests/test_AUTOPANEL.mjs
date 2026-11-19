@@ -34,7 +34,7 @@ globalThis.Date = FakeDate;
 
 /* ── the cloud: the prod-shaped mirror (read only copy), or a small made-up set — the browser harness's own gc_kv, so the
    page (part B) and the real function handlers (officefix_bridge) share it ── */
-const HARNESS = process.env.GC_HARNESS || SP + '/wUPG/harness.mjs';
+const HARNESS = process.env.GC_HARNESS || (fs.existsSync(SP + '/wUPG/harness.mjs') ? SP + '/wUPG/harness.mjs' : SP + '/wN/harness_N.mjs');   /* wUPG is gone from this machine: the offline harness_N has the same cloud / ACCOUNTS */
 const H = await import(pathToFileURL(HARNESS).href);
 const cloud = H.cloud;
 function loadCloud(){
@@ -169,6 +169,9 @@ async function runAllScheduled(label){
   return res;
 }
 loadCloud(); seedWork(); setKv('gc_automations', ALL_OFF); cloud.delete('gc_auto_held');
+/* PORTALPOL: the owner's one-time roll-out (portal links for the active jobs, _lib/golive.js) is not a panel automation — it is
+   already done here, so the all-OFF runs below show only what the panel gates (test_PORTALPOL_fn covers the roll-out itself) */
+setKv('gc_golive', { backfill: { state: 'done', n: 0, at: '2026-11-19T20:00:00.000Z' } });
 let snap = snapshot(), ext0 = bridge.EXT.length;
 const resOff = await runAllScheduled('off');
 const threw = Object.keys(resOff).filter(k => /threw|timeout/.test(String(resOff[k])));

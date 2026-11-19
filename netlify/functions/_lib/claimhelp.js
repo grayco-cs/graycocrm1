@@ -9,8 +9,8 @@
 // decides):
 //   · the claim steps in plain words — what YOU do and what GRAYCO does at each one — with "You are here" on the step
 //     staff set on the job (project.claimHelp.step) and the short note staff wrote for the customer (claimHelp.note);
-//   · the claim number, date of loss and the adjuster's name / phone when staff entered them (never the insurance
-//     carrier's name — owner rule: "your insurance company");
+//   · the claim number, date of loss and the adjuster's name / phone when staff entered them, and (PORTALPOL, owner 11/19)
+//     the customer's own insurance company's name when stored (a TPA / adjusting company still reads "your insurance company");
 //   · "Questions & answers" and "Ask us a question" (the portal's messages);
 //   · the footer "General information, not legal or insurance advice."
 //
@@ -214,7 +214,8 @@ function view(content, p, data, opts){
     claim: {
       number: clip(c.claimNumber || p.claimNumber || p.claimNo, 40),
       dateOfLoss: ymd(c.dateOfLoss || p.dateOfLoss || p.lossDate),
-      adjuster: adjusterOf(p, c)
+      adjuster: adjusterOf(p, c),
+      company: clip(s(c.carrier) || ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName'].map(function(k){ return s(p[k]); }).filter(function(v){ return v.length >= 3; })[0] || '', 60)   /* patch PORTALPOL: the customer's own insurance company */
     },
     qa: C.qa.filter(function(x){ return !x.hidden; }).map(function(x){ return { q: x.q, a: x.a }; }),
     footer: FOOTER,

@@ -221,7 +221,7 @@ console.log('— NODE: the portal shows the newest sent version; older ones "(su
   const prop = docs.find(d => d.kind === 'proposal'), sup = docs.find(d => /superseded/.test(d.title || ''));
   ok(prop && /v2|sent/.test(prop.url || '') !== null && prop.url && prop.url.indexOf(v2.sha256) >= 0, 'the portal\'s proposal is the newest sent PDF (v2)', prop);
   ok(sup && sup.url.indexOf(v1.sha256) >= 0 && /\(superseded\)/.test(sup.title), 'v1 stays in the portal, marked "(superseded)"', docs.map(d => d.title));
-  ok(!JSON.stringify(view).match(/state\s*farm/i), 'no carrier name in the portal view');
+  ok(!/INTERNAL|margin/i.test(JSON.stringify(view.docs || [])), 'nothing internal in the portal papers (PORTALPOL: a carrier name is no longer taken out)');
 }
 
 console.log('— NODE: the portal\'s Estimate card (same estimate data; nothing internal) —');
@@ -240,7 +240,7 @@ console.log('— NODE: the portal\'s Estimate card (same estimate data; nothing 
   ok(card0.total === 15000 && card0.num === '77' && card0.scope.length === 2 && card0.scope[0].label === 'Cabinets' && card0.scope[0].amount === 9000 && card0.pdf.indexOf(v1.sha256) >= 0 && card0.signId === 'sr_P1_estimate_E7', 'the card: total, the sections at their sell amounts, View PDF = the sent file, the e-sign paper', card0);
   ok(card0.status === 'Sent', 'status: Sent');
   const js = JSON.stringify(card0);
-  ok(!/9000.*cost|totalCost|margin|INTERNAL|Demo Sub|Demo Supplier|state\s*farm/i.test(js) && /your insurance company/.test(card0.title), 'nothing internal on the card (no costs, margins, notes, sub / vendor names, carrier name)', js);
+  ok(!/9000.*cost|totalCost|margin|INTERNAL|Demo Sub|Demo Supplier/i.test(js) && /State Farm claim/.test(card0.title), 'nothing internal on the card (no costs, margins, notes, sub / vendor names); PORTALPOL: the carrier name stays as written', js);
   await C.estViewed(data.projects[0], 'E7');
   const card1 = ((NOW += 20000, await C.buildView(data, data.projects[0], { noGateQueue: true })).estimates || [])[0] || {};
   ok(card1.status === 'Viewed' && card1.viewedAt, 'the customer opened the PDF → Viewed', card1.status);

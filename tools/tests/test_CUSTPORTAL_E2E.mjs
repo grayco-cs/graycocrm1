@@ -12,7 +12,7 @@
      5 signing: change order on a phone → signed copy (PDF) in the portal + the job's documents (not gated) + office to-do
      6 requests: change / new project → the CRM (approvals card, Lead Inbox)
      7 pay: how to pay (check / cash to the PM) — no card payments by design
-     8 hard rules: no carrier / sub / sub price / internal note / margin / other customer; only their own job; 7 PM–7 AM quiet
+     8 hard rules: no sub / sub price (PORTALPOL: their own carrier may show) / internal note / margin / other customer; only their own job; 7 PM–7 AM quiet
      9 no page errors, no 4xx/5xx; every page / asset the portal links is served as itself on the portal host
    Screenshots → $CUSTPORTAL_SHOTS (default <scratch>/custportal_e2e). */
 import fs from 'fs';
@@ -33,7 +33,7 @@ const C = require(W.FNDIR + '/portal.js')._core;
 const isPdf = b => Buffer.isBuffer(b) && b.slice(0, 5).toString('latin1') === '%PDF-';
 const fileOfUrl = u => { const m = /\/crm-files\/([0-9a-f]{64}\.[a-z0-9]+)/.exec(String(u)); return m ? W.FILES[m[1]] : null; };
 const jpeg = (w, h) => execFileSync('convert', ['-size', w + 'x' + h, 'gradient:#88aacc-#334455', '-quality', '80', 'jpg:-']);
-const LEAKS = () => [S.carrier, 'Sample Mutual', S.sub, 'Ridgeline', '8765', 'INTERNAL', 'internal note', 'margin', 'Other Person', 'POTHER1', 'crew note', 'costTotal', '33100', '31000', 'adjuster measurements'];
+const LEAKS = () => [/* PORTALPOL (owner 11/19): the customer's OWN insurance company may be shown — not a leak */ S.sub, 'Ridgeline', '8765', 'INTERNAL', 'internal note', 'margin', 'Other Person', 'POTHER1', 'crew note', 'costTotal', '33100', '31000', 'adjuster measurements'];
 function leakIn(obj){ const j = JSON.stringify(obj); return LEAKS().filter(w => j.toLowerCase().includes(w.toLowerCase())); }
 function fresh(){ W.setDay(); W.seedSample({ crmDocs: false }); W.resetCaches(); W.RESEND.length = 0; }
 
@@ -273,7 +273,7 @@ await t('7 pay: no card payments by design — the portal says how (check / cash
   const html = fs.readFileSync(path.join(W.ROOT, 'portal.html'), 'utf8'); assert.ok(/How to pay/.test(html) && /check/.test(html));
 });
 /* ── 8. hard rules ── */
-await t('8 nothing leaks: no carrier, sub, sub price, internal note, margin, cost or other customer in any answer the customer gets', async () => {
+await t('8 nothing leaks: no sub, sub price, internal note, margin, cost or other customer in any answer the customer gets', async () => {
   const answers = [VIEW, PH, (await call('portal-sign', { action: 'view' }, L())).data, (await call('portal-access', { action: 'c-msgs' }, L())).data, (await call('portal-access', { action: 'c-jobs' }, L())).data,
     (await call('portal', { action: 'crew' }, L())).data, (await call('portal', { action: 'app' }, L())).data];
   answers.forEach((a, i) => assert.deepStrictEqual(leakIn(a), [], 'answer ' + i));
@@ -370,7 +370,7 @@ await t('9 the CRM patch is applied and idempotent (tools/patch_CUSTPORTAL.py)',
 });
 /* ── a REAL job from the mirror, as its customer ── */
 let MIR = null;
-await t('mirror: a real job (from the mirror) opens for its customer — view, photos, papers, invoices — with nothing internal and no carrier name', async () => {
+await t('mirror: a real job (from the mirror) opens for its customer — view, photos, papers, invoices — with nothing internal and no other job\'s carrier name', async () => {
   if (!fs.existsSync(MIRROR)) { console.log('    (mirror not on this computer — skipped)'); return; }
   const rows = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
   W.setDay(); for (const k of Object.keys(W.KV)) delete W.KV[k];
@@ -386,10 +386,11 @@ await t('mirror: a real job (from the mirror) opens for its customer — view, p
   const v = (await call('portal', { action: 'view' }, H)).data; assert.ok(v.ok && v.job.name, JSON.stringify(v).slice(0, 200));
   const ph = (await call('portal', { action: 'photos' }, H)).data; assert.ok(ph.ok);
   const sg = (await call('portal-sign', { action: 'view' }, H)).data; assert.ok(sg.ok);
-  const carriers = [...new Set(C.listOf(data, ['projects']).map(p => String(p.insCarrier || p.insuranceCompany || p.carrier || '').trim()).filter(x => x.length >= 4))];
+  const own = [best.p.insCarrier, best.p.insuranceCompany, best.p.carrier].map(x => String(x || '').trim().toLowerCase()).concat(C.ownCarriers ? C.ownCarriers(data, best.p).map(x => String(x).toLowerCase()) : []);   /* PORTALPOL: their own carrier may show */
+  const carriers = [...new Set(C.listOf(data, ['projects']).map(p => String(p.insCarrier || p.insuranceCompany || p.carrier || '').trim()).filter(x => x.length >= 4 && !own.includes(x.toLowerCase())))];
   const all = JSON.stringify([v, ph, sg]).toLowerCase();
   const leaked = carriers.filter(c => all.includes(c.toLowerCase()));
-  assert.deepStrictEqual(leaked, [], 'carrier names in the portal');
+  assert.deepStrictEqual(leaked, [], 'another job\'s carrier names in the portal');
   for (const sub of (best.p.subs || [])) if (String(sub.name || '').length >= 5) assert.ok(!all.includes(String(sub.name).toLowerCase()), 'sub name');
   const others = C.listOf(data, ['projects']).filter(p => p.id !== best.p.id && String(p.client || '').length >= 6 && String(p.client) !== String(best.p.client)).map(p => String(p.client).toLowerCase());
   assert.ok(!others.some(o => JSON.stringify(v.docs.map(d => d.title)).toLowerCase().includes(o) && !String(best.p.name).toLowerCase().includes(o)), 'another customer in the papers');

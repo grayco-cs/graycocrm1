@@ -2038,7 +2038,8 @@ W._gcAutoOn = on;
 W._gcAutoGate = gate;
 W._gcAutoHeld = held;
 W._gcAutoSince = since;
-W._gcAutomations = { load: load, state: state, set: set, before: function(){ return op('before'); }, defaults: function(){ return op('defaults'); }, flush: flush, reg: R };
+W._gcAutomations = { load: load, state: state, set: set, before: function(){ return op('before'); }, defaults: function(){ return op('defaults'); }, flush: flush, reg: R,
+  golive: function(sub, extra){ return call('POST', Object.assign({ op: 'golive', sub: sub || 'view' }, extra || {})); } };   /* patch PORTALPOL: the go-live card */
 T(load, 1500);
 I(function(){ if (!document.hidden) load(); }, 60000);
 try { document.addEventListener('visibilitychange', function(){ if (!document.hidden) load(); }); } catch (e) {}
@@ -125856,7 +125857,7 @@ async function uploadDocs(pid, files, msg){
       var meta = await window._gcStoreFile(f, { kind: 'doc', pid: pid, name: f.name });
       if (!meta || !meta.ref) throw new Error('no reference');
       await addJobDoc({ id: 'pdoc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), pid: pid, name: f.name, cat: 'Customer portal', type: meta.type || f.type || '',
-        size: meta.size || f.size, ref: meta.ref, hash: meta.hash || '', uploaded: new Date().toISOString().slice(0, 10), uploadedAt: new Date().toISOString(), by: me(), portalShare: true, savedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        size: meta.size || f.size, ref: meta.ref, hash: meta.hash || '', uploaded: new Date().toISOString().slice(0, 10), uploadedAt: new Date().toISOString(), by: me(), portalShare: true, portalLive: true, portalLiveAt: new Date().toISOString(), portalLiveBy: me(), source: 'portal-card', savedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });   /* patch PORTALPOL: live at once (no approval) */
       done++;
     } catch (e) { msg('Could not save “' + f.name + '” (' + (e && e.message || e) + ').'); }
   }
@@ -125893,7 +125894,7 @@ async function openDocs(pid){
       if (on && d && !d.ref && /^data:/.test(s(d.data)) && typeof window._gcStoreFile === 'function') {
         try { var meta = await window._gcStoreFile(d.data, { kind: 'doc', pid: pid, name: d.name }); if (meta && meta.ref) d.ref = meta.ref; } catch (e) {}
       }
-      await saveDoc(id, function(q){ q.portalShare = on; if (d && d.ref && !q.ref) q.ref = d.ref; });
+      await saveDoc(id, function(q){ q.portalShare = on; if (on) { q.portalLive = true; q.portalLiveAt = new Date().toISOString(); q.portalLiveBy = me(); } else q.portalLive = false; if (d && d.ref && !q.ref) q.ref = d.ref; });   /* patch PORTALPOL: live at once */
       toast(on ? 'The customer can see “' + (d && d.name || 'the file') + '”.' : 'Hidden from the customer.');
       if (on) notifySoon(pid);
     };
@@ -131231,7 +131232,7 @@ try { console.log('[GC] Customer portal box on customer documents (patch DOCP): 
    On a job MARKED insurance (isInsurance true, or type "Insurance Claim"), right under the job's
    "🏠 Portal" card (desk job page and the field job screen): a "🛡 Insurance portal" panel —
      • which claim fields the customer sees (and filling in the ones that are missing),
-     • "Show carrier name to customer" (default OFF — owner rule: the customer sees "your insurance company"),
+     • the carrier's name: PORTALPOL (owner 11/19) — shown to the customer (the old "Show carrier name" switch is gone),
      • "Show adjuster name & phone" (default OFF — only when the PM allows it),
      • the claim step the customer sees (automatic, or set by hand),
      • insurance checks (received / the customer must endorse) and the depreciation status,
@@ -131361,7 +131362,7 @@ var H4 = 'font-size:12px;font-weight:800;color:#8A5A00;letter-spacing:.03em;marg
 var docCache = {}, lastDocs = null, docsN = 0;
 function docsVer(){ var d = crm().projectDocs || window._gcProjectDocs || null; if (d !== lastDocs) { lastDocs = d; docsN++; } return docsN; }
 function fieldRows(p){
-  var showC = false /* owner 11/01: never */, showA = p.portalShowAdjuster !== false /* owner 11/01: shown by default */, carrier = carrierOf(p);
+  var showC = true /* patch PORTALPOL (owner 11/19): the customer sees their own insurance company */, showA = p.portalShowAdjuster !== false /* owner 11/01: shown by default */, carrier = carrierOf(p);
   var rcv = num(p.rcv || p.totalRCV), acv = num(p.acv || p.totalACV);
   var dep = num(p.recoverableDep || p.recoverableDepreciation || p.depreciation || p.totalDepreciation) || (rcv > acv && acv > 0 ? rcv - acv : 0);
   var adjN = s(p.adjusterName || (typeof p.adjuster === 'string' ? p.adjuster : (p.adjuster && p.adjuster.name)));
@@ -131375,7 +131376,7 @@ function fieldRows(p){
     row('Date of loss', s(p.dateOfLoss), !!s(p.dateOfLoss), 'not set') +
     row('Type of loss', s(p.lossType), !!s(p.lossType), 'guessed from the job') +
     row('Policy deductible', num(p.deductible) ? usd(p.deductible) : '', num(p.deductible) > 0, 'not set') +
-    row('Insurance company', showC ? (carrier || '') : 'your insurance company', true, '') +
+    row('Insurance company', carrier || '', !!carrier, 'not set') +   /* patch PORTALPOL */
     row('Adjuster', [adjN, adjP].filter(Boolean).join(' · '), showA && !!(adjN || adjP), showA ? 'not set' : 'hidden (PM has not allowed)') +
     row('Adjuster visit', s(p.adjusterMeetingAt), !!s(p.adjusterMeetingAt), 'not set') +
     row('Mortgage company', s(p.mortgageCo || p.mortgageCompany), !!s(p.mortgageCo || p.mortgageCompany), 'not set') +
@@ -131389,12 +131390,12 @@ function panelHtml(p, docs, open){
   var stage = p.portalInsStage == null || p.portalInsStage === '' ? 'auto' : String(p.portalInsStage);
   var h = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:40px">' +
     '<div style="display:flex;flex-direction:column;min-width:0;flex:1 1 160px"><b style="font-size:14px;white-space:nowrap">🛡 Insurance portal</b>' +
-    '<span style="font-size:12px;color:#55626F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Claim view' + (s(p.claimNumber || p.claimNo) ? ' · #' + esc(p.claimNumber || p.claimNo) : '') + ' · carrier never shown</span></div>' +
+    '<span style="font-size:12px;color:#55626F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Claim view' + (s(p.claimNumber || p.claimNo) ? ' · #' + esc(p.claimNumber || p.claimNo) : '') + ' · carrier shown</span></div>' +
     '<button type="button" data-i="preview" style="' + BTN + ';background:' + GOLD + ';border-color:' + GOLD + ';color:' + NAVY + ';font-weight:800">👁 Preview as customer</button>' +
     '<button type="button" data-i="toggle" aria-expanded="' + (open ? 'true' : 'false') + '" style="' + BTN + '">' + (open ? 'Close ▴' : 'Settings ▾') + '</button></div>';
   h += '<div data-i="body"' + (open ? '' : ' hidden') + ' style="border-top:1px solid #EFEAE0;margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:10px">';
   h += '<div style="' + H4 + '">WHAT THE CUSTOMER SEES</div>' + fieldRows(p);
-  h += ck('carrier', false, 'Show carrier name to customer', 'GrayCo never shows the insurance company’s name to customers. The portal always says “your insurance company”.').replace('<input ', '<input disabled ').replace('cursor:pointer', 'cursor:not-allowed;opacity:.6') +
+  h += '<div data-i="carrier-note" style="font-size:12.5px;color:#1D5E2C">🏷 The customer sees their insurance company’s name, the claim number and the adjuster (owner 11/19). A TPA / adjusting company still reads “your insurance company”.</div>' +
        ck('adjuster', p.portalShowAdjuster !== false, 'Show adjuster name &amp; phone', 'On by default when they are entered (owner 11/01). Untick to hide them from this customer.');
   h += '<label style="' + LAB + '">Claim step the customer sees<select data-i="stage" style="' + INP + '"><option value="auto"' + (stage === 'auto' ? ' selected' : '') + '>Automatic (from the job status and the claim fields)</option>' +
        STEPS.map(function(n, i){ return '<option value="' + i + '"' + (stage === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>';
@@ -131479,7 +131480,7 @@ function wire(el, pid){
   });
   el.addEventListener('change', async function(ev){
     var t = ev.target, q = t && t.getAttribute && t.getAttribute('data-i'); if (!q) return;
-    if (q === 'carrier') { t.checked = false; toast('GrayCo never shows the insurance company’s name to customers.'); return; }
+    if (q === 'carrier') { return; }   /* patch PORTALPOL: no carrier switch — the customer's own insurance company is shown */
     if (q === 'carrier-old') { await saveProject(pid, function(x){ x.portalShowCarrier = !!t.checked; }); toast(t.checked ? 'The customer now sees the carrier’s name.' : 'Carrier name hidden — the customer sees "your insurance company".', t.checked ? '#92400e' : null); render(el, pid, true); }
     if (q === 'adjuster') { await saveProject(pid, function(x){ x.portalShowAdjuster = !!t.checked; }); toast(t.checked ? 'Adjuster name and phone show in the portal.' : 'Adjuster hidden from the customer.'); render(el, pid, true); }
     if (q === 'stage') { await saveProject(pid, function(x){ x.portalInsStage = t.value === 'auto' ? '' : Number(t.value); }); toast('The customer now sees: ' + (t.value === 'auto' ? 'automatic claim step' : STEPS[+t.value])); render(el, pid, true); }
@@ -131487,7 +131488,7 @@ function wire(el, pid){
       var id = t.getAttribute('data-id'), on = !!t.checked, d = (docCache[pid] || []).find(function(x){ return String(x.id) === id; });
       if (d && internalDoc(d)) { t.checked = false; return; }
       if (on && d && !d.ref && /^data:/.test(s(d.data)) && typeof window._gcStoreFile === 'function') { try { var meta = await window._gcStoreFile(d.data, { kind: 'doc', pid: pid, name: d.name }); if (meta && meta.ref) d.ref = meta.ref; } catch (e) {} }
-      await saveDoc(id, function(x){ x.portalShare = on; if (d && d.ref && !x.ref) x.ref = d.ref; });
+      await saveDoc(id, function(x){ x.portalShare = on; if (on) { x.portalLive = true; x.portalLiveAt = new Date().toISOString(); x.portalLiveBy = me(); } else x.portalLive = false; if (d && d.ref && !x.ref) x.ref = d.ref; });   /* patch PORTALPOL: live at once */
       toast(on ? 'The customer can see “' + (d && d.name || 'the paper') + '”.' : 'Hidden from the customer.');
       /* the portal server decides about telling the customer — and it waits for approval (Office to-do) */
       if (on) { try { if (window._gcPortal && window._gcPortal.notify) window._gcPortal.notify(pid); } catch (e) {} }
@@ -156805,7 +156806,7 @@ var OPTS = [
   ['claimFile', 'create', '🛡 Insurance claim file', 'Open a claim file for this insurance job.', { insurance: true, other: false }],
   ['portalLink', 'portal', '🔗 Make the portal link', 'The customer’s private project page (progress, photos, papers, payments).', true],
   ['portalInvite', 'portal', '✉️ Send the portal invite', 'E-mail / text the link to the customer.', true, false, 'pm'],
-  ['showCarrier', 'portal', '🏷 Show the insurance carrier name', 'GrayCo never shows the insurance company’s name to customers. The portal says “your insurance company”.', false],
+  ['showCarrier', 'portal', '🏷 Show the insurance carrier name', 'The portal shows the customer’s own insurance company, claim number and adjuster (owner 11/19) — this switch has no effect.', false],
   ['portalSelections', 'portal', '🎨 Customer picks selections in the portal', 'Off: the PM picks with them (their signature is still asked).', true],
   ['welcome', 'email', '👋 Welcome / job started', 'A hello from the PM when the job starts.', true, false, 'pm'],
   ['scheduleUpdates', 'email', '🗓 Schedule updates', 'What happens next, appointment confirmations and day-before reminders.', true, false, 'pm'],
@@ -184610,12 +184611,53 @@ function lineFor(a, st, adm){
     '<div class="gcap-meta">' + meta.join(' · ') + '</div></div>' +
     '<label class="gcap-sw ' + (on ? 'gcap-on' : 'gcap-off') + '"><input type="checkbox" data-gcap-sw="' + esc(a.key) + '"' + (on ? ' checked' : '') + (ro ? ' disabled' : '') + '> ' + (a.fixed ? 'Always ON' : on ? 'ON' : 'OFF') + '</label></div>';
 }
+/* patch PORTALPOL (owner 11/19: "Jan 1 automatically make a portal for everything; everything will be active by January 1, including
+   auto texts, e-mails etc."): "🚀 Go-live: Jan 1, 2027 — these switch on" — the date, what happens, the list, and for admins
+   "Change date" / "Cancel"; plus the one-time portal links for the active jobs (made on this build, nothing sent) with Undo.
+   The server does it (netlify/functions/_lib/golive.js, the 5-minute appr-ping-scheduled run). */
+function glDate(ymd){ try { return new Date(ymd + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return ymd; } }
+function goLive(el, adm, box){
+  if (!el || !A.golive) return;
+  el.innerHTML = '<div class="gcap-note" data-gl="loading">🚀 Go-live — loading…</div>';
+  A.golive('view').then(function(o){
+    if (!o || o.__status !== 200 || !o.plan) { el.innerHTML = '<div class="gcap-note">🚀 Go-live: could not read it (' + esc((o && o.error) || (o && o.__status)) + ').</div>'; return; }
+    var pl = o.plan, gl = o.golive || {}, bf = o.backfill || {}, done = gl.state === 'done', a2 = adm && o.admin !== false;
+    var head = done ? '🚀 Go-live ran ' + esc(glDate(pl.date)) + ' — these switched on' : pl.cancelled ? '🚀 Go-live: cancelled — nothing switches on by itself' : '🚀 Go-live: ' + esc(glDate(pl.date)) + ' — these switch on';
+    var h = '<div class="gcap-note" data-gl="card" data-gl-date="' + esc(pl.date) + '" data-gl-state="' + esc(done ? 'done' : pl.cancelled ? 'cancelled' : 'planned') + '" style="background:#eff6ff;border-color:#bfdbfe;color:#0f172a">' +
+      '<div style="font:800 15px Inter,sans-serif;margin-bottom:4px" data-gl="head">' + head + '</div>' +
+      '<div class="gcap-gd" style="margin:0 0 6px">At 12:00 AM Central on ' + esc(glDate(pl.date)) + ' the CRM does, by itself (once):</div><ol style="margin:0 0 6px 18px;padding:0;font-size:13px">' +
+      (o.steps || []).map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>' +
+      '<div class="gcap-gd" style="margin:0 0 4px">' + esc(o.replaces || '') + '</div>' +
+      '<div style="font-weight:700;font-size:13px;margin:6px 0 2px">These switch on:</div><ul data-gl="keys" style="margin:0 0 6px 18px;padding:0;font-size:12.5px">' +
+      (o.keys || []).map(function(k){ return '<li data-gl-key="' + esc(k.key) + '"><b>' + esc(k.name) + '</b> — ' + esc(k.desc) + ' <span class="' + (k.on ? 'gcap-on' : 'gcap-off') + '">(' + (k.on ? 'ON now' : 'OFF now') + ')</span></li>'; }).join('') + '</ul>';
+    if (a2 && !done) h += '<div class="gcap-bar"><label style="font-size:12px;font-weight:700">Date <input type="date" data-gl="date" value="' + esc(pl.date) + '" style="font:13px Inter,sans-serif;padding:5px;border:1px solid #cbd5e1;border-radius:6px"></label>' +
+      '<button type="button" class="gcap-b2" data-gl-act="date">Change date</button>' + (pl.cancelled ? '<button type="button" class="gcap-b1" data-gl-act="resume">Plan it again</button>' : '<button type="button" class="gcap-b2" data-gl-act="cancel" style="background:#fee2e2;color:#7f1d1d">Cancel go-live</button>') + '</div>';
+    else if (!a2) h += '<div class="gcap-gd">Only an admin can change the date or cancel it.</div>';
+    h += '<div style="border-top:1px solid #bfdbfe;margin-top:8px;padding-top:6px;font-size:12.5px" data-gl="backfill" data-gl-bf="' + esc(bf.state) + '"><b>🏠 Portals for active jobs (this build, once):</b> ' +
+      (bf.state === 'done' ? bf.n + ' portal link' + (bf.n === 1 ? '' : 's') + ' made for active jobs that had none (' + esc(when(bf.at)) + ') — nothing was sent.' + (a2 ? ' <button type="button" class="gcap-b2" data-gl-act="undo-backfill" style="border:none;border-radius:6px;padding:4px 8px;font:700 12px Inter,sans-serif;cursor:pointer">Undo</button>' : '')
+        : bf.state === 'undone' ? 'undone ' + esc(when(bf.undoneAt)) + ' by ' + esc(bf.undoneBy) + ' (' + bf.undone + ' link' + (bf.undone === 1 ? '' : 's') + ' turned off).'
+        : bf.state === 'running' ? 'being made (' + bf.n + ' so far) — nothing is sent.' : 'made by the server within a few minutes of this build — nothing is sent.') + '</div>';
+    if ((o.log || []).length) h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;font-weight:700">Log (' + o.log.length + ')</summary>' + o.log.slice(0, 15).map(function(x){ return '<div class="gcap-meta">' + esc(when(x.at)) + ' — ' + esc(x.by) + ': ' + esc(x.what) + '</div>'; }).join('') + '</details>';
+    el.innerHTML = h + '</div>';
+    el.onclick = function(ev){
+      var b = ev.target && ev.target.closest && ev.target.closest('[data-gl-act]'); if (!b || !a2) return;
+      ev.stopPropagation();
+      var act = b.getAttribute('data-gl-act'), extra = {};
+      if (act === 'date') { extra.date = s((el.querySelector('[data-gl="date"]') || {}).value); if (!confirm('Move the go-live to ' + glDate(extra.date) + ' at 12:00 AM Central?')) return; }
+      if (act === 'cancel' && !confirm('Cancel the go-live?\n\nNothing switches on by itself: data-entry mode stays on and the customer automations stay off until someone turns them on here.')) return;
+      if (act === 'resume' && !confirm('Plan the go-live again for ' + glDate(pl.date) + '?')) return;
+      if (act === 'undo-backfill' && !confirm('Undo: turn off the ' + bf.n + ' portal link(s) made for the active jobs?\n\nOnly those links; nothing is sent.')) return;
+      b.disabled = true;
+      A.golive(act, extra).then(function(r){ if (r && r.__status === 200) toast('🚀 Go-live: saved.'); else toast('Could not change it: ' + ((r && r.error) || (r && r.__status)), true); goLive(el, adm, box); });
+    };
+  });
+}
 function render(box){
   css();
   var st = A.state(), adm = isAdmin() && st.admin !== false;
   if (!st.loaded) { box.innerHTML = '<div class="gcap">Loading the automations…</div>'; A.load().then(function(){ if (A.state().loaded) render(box); else box.innerHTML = '<div class="gcap gcap-note">Could not read the automations: ' + esc(A.state().err || 'not signed in') + '</div>'; }); return; }
   var onN = R.LIST.filter(function(a){ return st.settings[a.key]; }).length;
-  var html = '<div class="gcap">' +
+  var html = '<div class="gcap"><div data-gcap-golive></div>' +
     '<div class="gcap-note"><b>Nothing runs by itself unless it is ON here.</b> An automation that is OFF does nothing and notes what it would have done ("held") — nothing is saved up to go out later. Safety (missed calls, emergencies, on-call), lead intake, sync and backups stay ON. ' + onN + ' of ' + R.LIST.length + ' are ON.</div>' +
     (adm ? '<div class="gcap-bar"><button type="button" class="gcap-b1" data-gcap="before">↺ Turn on everything I had before</button><button type="button" class="gcap-b2" data-gcap="defaults">Back to the safe defaults</button><span class="gcap-gd">Changes are saved at once and logged (who / when).</span></div>'
          : '<div class="gcap-gd" style="margin:6px 0">You can see the automations; only an admin (Wesley or Nick) can switch them.</div>');
@@ -184628,6 +184670,7 @@ function render(box){
   if (log.length) html += '<h4>Recent changes</h4>' + log.map(function(x){ var a = R.BY[x.key]; return '<div class="gcap-meta">' + esc(when(x.at)) + ' — ' + esc(x.byName || x.by) + ' turned <b>' + esc(a ? a.name : x.key) + '</b> ' + (x.on ? 'ON' : 'OFF') + (x.op && x.op !== 'set' ? ' (' + esc(x.op === 'before' ? 'everything I had before' : 'defaults') + ')' : '') + '</div>'; }).join('');
   html += '</div>';
   box.innerHTML = html;
+  goLive(box.querySelector('[data-gcap-golive]'), adm, box);   /* patch PORTALPOL */
   box.onchange = function(ev){
     var k = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcap-sw'); if (!k) return;
     var a = R.BY[k], want = !!ev.target.checked;
@@ -198522,7 +198565,15 @@ try {
 /* ⏳ the job's 🏠 Portal card: what waits for an approval before the customer sees it (no server call: the queue) */
 function pendingFor(pid){
   pid = s(pid); if (!pid) return [];
-  return queueAll().filter(function(x){ return x && x.kind === 'portal_publish' && s(x.jobId) === pid && (x.status === 'waiting' || x.status === 'sending'); });
+  return queueAll().filter(function(x){ return x && x.kind === 'portal_publish' && s(x.jobId) === pid && (x.status === 'waiting' || x.status === 'sending') && !liveNow(x); });
+}
+/* patch PORTALPOL: a paper staff put in the portal themselves is live already (the server's staffLiveDoc) — not "waiting" */
+function liveNow(x){
+  try {
+    var m = x.meta || {}; if (s(m.type) !== 'd' || !s(m.refId) || !(W._gcPortalEd && W._gcPortalEd.staffLive)) return false;
+    var d = ((W._crm && W._crm.projectDocs) || W._gcProjectDocs || []).filter(function(y){ return y && s(y.id) === s(m.refId); })[0];
+    return !!d && W._gcPortalEd.staffLive(d, null);
+  } catch (e) { return false; }
 }
 var sigs = typeof WeakMap === 'function' ? new WeakMap() : null;
 function paintCard(card){
@@ -210279,11 +210330,16 @@ try { console.log('[GC] 📱 Field part 2: Call / Text from my phone or the Gray
        📎 We need from you — the customer's to-dos (patch AUTO11, cust-care needs-*)
        📐 Scope of work — from the job's scopes (the 📋 no-price sub scope — never the 💲 budget) or the Scopes-tab text, or typed
           (job.portalScopes: area / work / qty / unit — never a price, a note or a sub)
-       📄 Plans & documents — upload a PDF / picture (job's Documents, "Plans", customer sees it); the portal gate (PORTALGATE)
-          holds a new paper until it is approved: "⏳ Waiting for approval" + ✅ Put it in the portal (the server's own approval)
+       📄 Plans & documents — upload a PDF / picture (job's Documents, "Plans", customer sees it). PORTALPOL (owner 11/19: "Plans/
+          documents can skip approval in portal"): what staff upload or switch on here goes live at once (portalLive — the
+          server's staffLiveDoc); only an older paper still waiting shows "⏳ Waiting for approval" + ✅ Put it in the portal
        ✍️ Change orders & addendums — ✨ New change order (the CRM's CO form; AUTO5 asks the customer to sign it) or an addendum
           paper to sign (portal-sign: the paper shows in "Papers to sign"; the e-mail asking them waits on ✅ Approvals)
-       💬 Questions & messages — the portal's Messages thread (portal-access s-thread / s-send): no e-mail, no text
+       💬 Questions & messages — the portal's Messages thread (portal-access s-thread / s-send): no e-mail, no text. PORTALPOL: a
+          question is sent with ❓ — the customer's Home shows "💬 1 new question from GrayCo"; their answer tells the job's PM
+       📅 Milestones (PORTALPOL, owner 11/19: "Milestones yes add in job schedule too"): each milestone is also a row on the job's
+          📅 Schedule (id pms_<milestone>, customerVisible, type milestone; no sub, no assignee, notify off — no sub text, no
+          appointment message), kept in step when it is added / done / archived and each time the editor opens
        📣 Updates & photos — patch Q's 📣 Post; an update can be hidden from the customer (kept on the job)
        ➕ Another job for this customer (admin / office — patch NEWPROJ's form), then its portal: the customer's sign-in shows every
           job with their e-mail / phone that has a portal
@@ -210293,8 +210349,8 @@ try { console.log('[GC] 📱 Field part 2: Call / Text from my phone or the Gray
      data-entry mode is on (as are messages and signature requests).
    • Archive, never delete: a task / milestone / scope is archived (kept on the job, not shown), an update is hidden, a paper is
      turned off for the customer, a "We need" item is cancelled.
-   • The customer's page never gets an insurance carrier's name, a sub, a price or a portal link from here (the server cleans
-     every text: netlify/functions/_lib/portaled.js); this page never shows the sub portal.
+   • The customer's page never gets a sub, a price or a portal link from here (the server cleans every text: netlify/functions/
+     _lib/portaled.js); this page never shows the sub portal. PORTALPOL: the customer's own insurance company may be named.
    No timers, no observers. API: window._gcPortalEd = { open(pid), close(), can(pid), state() } */
 (function(){
 'use strict';
@@ -210420,7 +210476,7 @@ function warnings(p, text){
   var t = s(text), out = [];
   if (!t) return out;
   var car = ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName'].map(function(k){ return s(p && p[k]); }).filter(function(v){ return v.length >= 3; });
-  if (CARRIERS.test(t) || car.some(function(c){ return low(t).indexOf(low(c)) >= 0; })) out.push('An insurance company’s name is never shown to a customer — the portal will say “your insurance company”.');
+  /* patch PORTALPOL (owner 11/19): the customer's own insurance company may be named — no carrier warning any more */
   if (arr(p && p.subs).some(function(r){ var n = s(r && (r.name || r.company)); return n.length >= 4 && low(t).indexOf(low(n)) >= 0; })) out.push('A sub’s name is never shown to a customer — the portal will say “our trade partner”.');
   if (/https?:\/\/\S*(#t=|[?&]t=|subportal|portal-app|bids\.grayco|portal\.grayco)/i.test(t)) out.push('Portal links are taken out of what the customer sees (a sub’s portal link looks the same) — send links yourself.');
   return out;
@@ -210540,6 +210596,7 @@ function open(pid){
   if (!can(p)) { toast('The customer portal opens for an admin, the office or this job’s own PM.', true); return false; }
   css(); close(true);
   CUR = { pid: String(pid), mode: 'edit', gate: null, gateAt: 0, msgs: null, needs: null, signs: null, viewed: undefined, saving: false };
+  later(function(){ try { if (can(proj(pid))) msSync(pid); } catch (e) {} }, 1200);   /* patch PORTALPOL: the milestones' 📅 Schedule rows */
   CUR.lsBefore = {}; ['gc_portal_t', 'gc_portal_s', 'gc_lang'].forEach(function(k){ try { CUR.lsBefore[k] = localStorage.getItem(k); } catch (e) {} });
   var o = D.createElement('div'); o.id = 'gcpe'; o.setAttribute('data-gc-keep', '1'); o.setAttribute('data-gcnav-ignore', '1'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('data-pid', String(pid)); o.setAttribute('data-gc-pu-own', '1');   /* PHONEUI: not made into one of its pages (it has its own header, scroll and Back) */
   o.innerHTML = '<div class="pe-top"><button type="button" data-pe="close" aria-label="Close the customer portal">‹ Back</button><div class="pe-tt"><b></b><small></small></div></div>' +
@@ -210633,6 +210690,41 @@ function detailsSec(p){
     '<label class="pe-f"><span>About your project (scope summary the customer reads)</span><textarea class="pe-i" data-f="summary" maxlength="3000" placeholder="e.g. Full roof replacement with architectural shingles, new gutters on the front, and a kitchen remodel.">' + esc(sum) + '</textarea></label>' +
     '<button type="button" class="pe-b pri" data-pe="details-save" style="width:100%">Save details</button>');
 }
+/* patch PORTALPOL (owner 11/19: "Milestones yes add in job schedule too"): each milestone is also a row on the job's 📅 Schedule —
+   the CRM's schedule record (id pms_<milestone id>, title "<job> — <milestone>", pid, date / endDate, type milestone, customerVisible
+   + portal true, notify false (no appointment message), no assignee / vendor / sub (no sub text), draft false, source portal-editor).
+   Kept in step: added, renamed / moved, done (status done) and archived (the row is marked deleted + archived, kept). */
+function msRowId(m){ return 'pms_' + s(m && m.id).replace(/[^A-Za-z0-9_-]/g, '_'); }
+function msDays(a, b){ var x = Date.parse(a + 'T12:00:00Z'), y = Date.parse(b + 'T12:00:00Z'); return x && y && y >= x ? Math.round((y - x) / 864e5) + 1 : 1; }
+function msRow(p, m, prev, at){
+  var d = s(m.date).slice(0, 10), e = s(m.end).slice(0, 10); if (!e || e < d) e = d;
+  var r = Object.assign({}, prev || {}, { id: msRowId(m), title: s(p.name) + ' — ' + s(m.name), pid: p.id, date: d, endDate: e, days: msDays(d, e), time: '', endTime: '',
+    type: 'milestone', milestone: true, portalMilestoneId: s(m.id), customerVisible: true, portal: true, notify: false, assignee: '', vendor: '', who: '', subId: '',
+    address: s(p.address), notes: 'Customer portal milestone (from 👤 Customer portal)', draft: false, source: 'portal-editor', done: m.done === true, status: m.done === true ? 'done' : '', deleted: false, archived: false });
+  if (!prev) { r.by = me(); r.createdAt = at; }
+  return r;
+}
+var MS_KEYS = ['title', 'date', 'endDate', 'done', 'status', 'customerVisible', 'deleted', 'notify', 'vendor', 'assignee'];
+/* pure: the schedule rows to write for this job's milestones → { id: row } */
+function msPlan(p, sched, at){
+  var by = {}, out = {}; arr(sched).forEach(function(r){ if (r && r.id) by[r.id] = r; });
+  arr(p && p.portalMilestones).forEach(function(m){
+    if (!m || !s(m.id)) return;
+    var id = msRowId(m), prev = by[id];
+    if (m.archived === true || !/^\d{4}-\d{2}-\d{2}/.test(s(m.date))) { if (prev && prev.deleted !== true) out[id] = Object.assign({}, prev, { deleted: true, archived: true, customerVisible: false, portal: false, updatedAt: at }); return; }
+    var want = msRow(p, m, prev, at);
+    if (!prev || MS_KEYS.some(function(k){ return String(prev[k]) !== String(want[k]); })) { want.updatedAt = at; out[id] = want; }
+  });
+  return out;
+}
+function msSync(pid){
+  var p = proj(pid); if (!p || typeof W._setSchedule !== 'function') return 0;
+  var at = nowIso(), ch = msPlan(p, crm().schedule, at), ids = Object.keys(ch); if (!ids.length) return 0;
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('customer portal milestones'); } catch (e) {}
+  try { W._setSchedule(function(prev){ prev = Array.isArray(prev) ? prev : []; var seen = {}; var next = prev.map(function(r){ if (r && ch[r.id]) { seen[r.id] = 1; return ch[r.id]; } return r; }); ids.forEach(function(id){ if (!seen[id] && ch[id].deleted !== true) next.push(ch[id]); }); return next; }); } catch (e) {}
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  return ids.length;
+}
 /* 📅 schedule + milestones */
 function live(l){ return arr(l).filter(function(x){ return x && x.archived !== true; }); }
 function schedSec(p){
@@ -210690,6 +210782,13 @@ function scopeSec(p){
   return sec('scope', '📐 Scope of work', 'Shows as "Scope of work" in the portal.', h);
 }
 /* 📄 plans & documents */
+/* patch PORTALPOL: the server's staffLiveDoc — a paper staff uploaded / switched on here or on the 🏠 Portal card is live at once */
+function staffLive(d, g){
+  if (!d || d.portalShare !== true || d.internal === true || d.portalNever === true || s(d.estimateId) || d.estinWaiting === true) return false;
+  if (/^(estin|estin-source|gdoc|proposal|estimate|estimate-sent|estimate-upload|generated)$/.test(s(d.source))) return false;
+  if (!(d.portalLive === true || s(d.source) === 'portal-editor' || s(d.source) === 'portal-card' || /^(pped_|pdoc_)/.test(s(d.id)))) return false;
+  return !(g && /rejected|recorded/.test(s(g.st)) && s(g.decidedAt || g.at) >= s(d.portalLiveAt || ''));
+}
 function gateOf(d){
   var g = CUR.gate && CUR.gate.items ? CUR.gate.items.filter(function(x){ return x.key === 'd:' + d.id; })[0] : null;
   return g || null;
@@ -210697,7 +210796,7 @@ function gateOf(d){
 function docsSec(p){
   var h = '<div data-pe-docs><p class="pe-note">Loading…</p></div>';
   h += '<label class="pe-b pri" style="width:100%;margin-top:8px">⬆ Add plans or a paper (PDF or picture)<input type="file" data-f="doc-file" accept=".pdf,application/pdf,image/*" multiple style="display:none"></label>' +
-    '<p class="pe-note" style="margin:6px 0 0">Goes to the job’s Documents as "Plans" and to the customer’s Documents once approved (every new paper is approved first — ✅ Approvals).</p>' +
+    '<p class="pe-note" style="margin:6px 0 0">Goes to the job’s Documents as "Plans" and straight into the customer’s Documents — no approval needed. Nothing is e-mailed.</p>' +
     (W._gcPortal && typeof W._gcPortal.docs === 'function' ? '<button type="button" class="pe-b sm" data-pe="docs-all" style="margin-top:6px">All files on this job (on / off)</button>' : '');
   return sec('docs', '📄 Plans & documents', 'Proposals, contracts, plans and papers in the customer’s Documents.', h);
 }
@@ -210709,7 +210808,7 @@ function paintDocs(){
     box.innerHTML = rows.map(function(d){
       /* the gate's own rule: approved, or there before the gate started (its first look) → shown; a newer paper with no gate row yet is waiting too */
       var on = shown(d), g = gateOf(d), since = s(CUR.gate && CUR.gate.since), at = s(d.uploadedAt || d.savedAt || d.uploaded);
-      var st = !on ? 'off' : (g && g.st === 'approved') ? 'ok' : (g && g.st === 'pending') ? 'wait' : (g && (g.st === 'rejected' || g.st === 'recorded')) ? 'Not approved' : !CUR.gate ? '…' : (since && at && at > since) ? 'wait' : 'ok';
+      var st = !on ? 'off' : staffLive(d, g) ? 'ok' : (g && g.st === 'approved') ? 'ok' : (g && g.st === 'pending') ? 'wait' : (g && (g.st === 'rejected' || g.st === 'recorded')) ? 'Not approved' : !CUR.gate ? '…' : (since && at && at > since) ? 'wait' : 'ok';
       if (st === 'wait' && !g) newWait = true;
       return '<div class="pe-row" data-doc="' + esc(d.id) + '"><span class="pe-x">' + esc(d.name || 'File') + '<small>' + esc(s(d.cat)) + '</small>' + pill(st) + '</span>' +
         (st === 'wait' && g && g.aq ? '<button type="button" class="pe-b sm pri" data-pe="doc-appr" data-aq="' + esc(g.aq) + '">✅ Put in portal</button>' : '') +
@@ -210741,7 +210840,7 @@ function msgSec(p){
   else h += CUR.msgs.slice(-12).map(function(m){ return '<div class="pe-msg ' + (m.mine ? 'gc' : 'them') + '"><small>' + esc((m.mine ? (m.by || 'GrayCo') : (m.by || 'Customer')) + ' · ' + ago(m.at)) + '</small>' + esc(m.text) + '</div>'; }).join('') || '<p class="pe-note">No messages yet.</p>';
   h += '</div><label class="pe-f" style="margin-top:8px"><span>Ask ' + esc(first(p.client) || 'the customer') + ' a question</span><textarea class="pe-i" data-f="msg-text" maxlength="4000" placeholder="e.g. Do you want the gutters white or bronze?"></textarea></label>' +
     '<button type="button" class="pe-b navy" data-pe="msg-send" style="width:100%"' + (off ? ' disabled' : '') + '>💬 Send in the portal</button>' + (off ? '<p class="pe-note">Off while ⏸ data-entry mode is on.</p>' : '');
-  return sec('msgs', '💬 Questions & messages', 'The portal’s Messages: they answer there. No e-mail or text is sent.', h);
+  return sec('msgs', '💬 Questions & messages', 'The portal’s Messages: they answer there (their Home shows the new question). No e-mail or text is sent; the job’s PM is told when they answer.', h);
 }
 /* 📣 updates */
 function postsSec(p){
@@ -210836,13 +210935,13 @@ function onClick(e){
     var mn = s(val('ms-name')), md = s(val('ms-date'));
     if (!mn) { toast('Type the milestone first.', true); return; }
     var mrow = { id: uid('pm_'), name: mn.slice(0, 90), date: md, done: false, at: nowIso(), by: me() };
-    confirmVis(b, { lines: ['Your schedule: ' + mn + (md ? ' · ' + day(md) : '')], texts: [mn], save: function(){ return patchList(pid, 'portalMilestones', function(l){ l.push(mrow); }); }, done: 'Milestone added — ' + who + ' sees it.' });
+    confirmVis(b, { lines: ['Your schedule: ' + mn + (md ? ' · ' + day(md) : '')], texts: [mn], save: function(){ return patchList(pid, 'portalMilestones', function(l){ l.push(mrow); }).then(function(ok){ if (ok) msSync(pid); return ok; }); }, done: 'Milestone added — ' + who + ' sees it; it is on the job’s 📅 Schedule too.' });   /* patch PORTALPOL */
     return;
   }
   if (a === 'ms-done' || a === 'ms-arch') {
     var mid = b.getAttribute('data-id'), m = arr(p.portalMilestones).filter(function(x){ return x && x.id === mid; })[0]; if (!m) return;
     var arch = a === 'ms-arch';
-    confirmVis(b.closest('.pe-row'), { lines: [arch ? 'Taken off the schedule: ' + m.name + ' (kept on the job)' : (m.done ? 'Not done: ' : 'Done ✓: ') + m.name], save: function(){ return patchList(pid, 'portalMilestones', function(l){ l.forEach(function(x){ if (x && x.id === mid) { if (arch) { x.archived = true; x.archivedAt = nowIso(); x.archivedBy = me(); } else { x.done = !x.done; x.doneAt = x.done ? today() : ''; } } }); }); }, ok: arch ? 'Archive — the customer no longer sees it' : undefined });
+    confirmVis(b.closest('.pe-row'), { lines: [arch ? 'Taken off the schedule: ' + m.name + ' (kept on the job)' : (m.done ? 'Not done: ' : 'Done ✓: ') + m.name], save: function(){ return patchList(pid, 'portalMilestones', function(l){ l.forEach(function(x){ if (x && x.id === mid) { if (arch) { x.archived = true; x.archivedAt = nowIso(); x.archivedBy = me(); } else { x.done = !x.done; x.doneAt = x.done ? today() : ''; } } }); }).then(function(ok){ if (ok) msSync(pid); return ok; }); }, ok: arch ? 'Archive — the customer no longer sees it' : undefined });   /* patch PORTALPOL: the 📅 Schedule row follows */
     return;
   }
   if (a === 'task-add') {
@@ -210889,8 +210988,8 @@ function onClick(e){
   }
   if (a === 'doc-off' || a === 'doc-on') {
     var did = b.getAttribute('data-id'), on = a === 'doc-on', row = b.closest('.pe-row'), nmd = row ? row.querySelector('.pe-x').firstChild.textContent : 'the paper';
-    confirmVis(row, { lines: [(on ? 'In the customer’s Documents: ' : 'Hidden from the customer (kept on the job): ') + nmd], ok: on ? 'Show it to the customer' : 'Hide it', note: on ? 'A new paper waits for approval before the customer sees it. Nothing is e-mailed.' : 'Nothing is e-mailed.',
-      save: function(){ return setDoc(did, function(q){ q.portalShare = on; }).then(function(ok){ if (on) later(function(){ fn('portal', { action: 'gate', op: 'scan', projectId: pid }).then(loadGate); }, 2500); return ok; }); } });
+    confirmVis(row, { lines: [(on ? 'In the customer’s Documents: ' : 'Hidden from the customer (kept on the job): ') + nmd], ok: on ? 'Show it to the customer' : 'Hide it', note: on ? 'The customer sees it at once — no approval needed. Nothing is e-mailed.' : 'Nothing is e-mailed.',
+      save: function(){ return setDoc(did, function(q){ q.portalShare = on; if (on) { q.portalLive = true; q.portalLiveAt = nowIso(); q.portalLiveBy = me(); } else q.portalLive = false; }).then(function(ok){ later(function(){ paintDocs(); }, 300); return ok; }); } });   /* patch PORTALPOL: live at once */
     return;
   }
   if (a === 'doc-appr') {
@@ -210920,8 +211019,8 @@ function onClick(e){
   if (a === 'msg-send') {
     var mt = s(val('msg-text')); if (!mt) { toast('Type the question first.', true); return; }
     if (paused()) { toast('⏸ Data-entry mode is on — messages to customers are off.', true); return; }
-    confirmVis(b, { lines: ['Message from ' + me() + ': ' + mt], texts: [mt], ok: '💬 Send in the portal', note: 'Shows in ' + who + '’s portal → Messages (with a red dot). No e-mail or text is sent.',
-      save: function(){ return fn('portal-access', { action: 's-send', projectId: pid, party: 'c', text: mt }).then(function(r){ if (!r.ok) throw new Error(r.error || ('the server said ' + r.__s)); return loadMsgs(); }); }, done: 'Sent in the portal — ' + who + ' sees it under Messages.' });
+    confirmVis(b, { lines: ['❓ Question from ' + me() + ': ' + mt], texts: [mt], ok: '💬 Send in the portal', note: 'Shows big on ' + who + '’s portal Home (“💬 1 new question from GrayCo”) and in Messages. No e-mail or text is sent; their answer comes back here and the job’s PM is told.',
+      save: function(){ return fn('portal-access', { action: 's-send', projectId: pid, party: 'c', text: mt, question: true }).then(function(r){ if (!r.ok) throw new Error(r.error || ('the server said ' + r.__s)); return loadMsgs(); }); }, done: 'Sent in the portal — ' + who + ' sees “💬 1 new question from GrayCo” on their Home.' });   /* patch PORTALPOL: a question (❓) */
     return;
   }
   if (a === 'post') { foreign(function(){ W._gcPortal.post(pid); }); return; }
@@ -210950,14 +211049,14 @@ function onClick(e){
     return;
   }
 }
-/* ⬆ plans / papers: the job's Documents ("Plans"), customer sees it once the gate approves it */
+/* ⬆ plans / papers: the job's Documents ("Plans"), the customer sees it at once (PORTALPOL) */
 function upload(files, label){
   var pid = CUR.pid, p = proj(pid); if (!p) return;
   var ok = files.filter(function(f){ return /pdf|image\//.test(f.type || '') || /\.(pdf|jpe?g|png|heic|heif|webp)$/i.test(f.name || ''); }).filter(function(f){ return f.size <= 25 * 1048576; });
   if (!ok.length) { toast('Pick a PDF or a picture (25 MB at most).', true); return; }
   var anchor = label || body().querySelector('[data-pe-sec="docs"] label');
-  confirmVis(anchor, { lines: ok.map(function(f){ return '📄 In the customer’s Documents (Plans): ' + f.name; }), texts: ok.map(function(f){ return f.name; }), ok: 'Add — the customer sees it once approved',
-    note: 'It goes to the job’s Documents now; the customer sees it after its ✅ Approvals item ("Put in the customer portal") is approved. Nothing is e-mailed.',
+  confirmVis(anchor, { lines: ok.map(function(f){ return '📄 In the customer’s Documents (Plans): ' + f.name; }), texts: ok.map(function(f){ return f.name; }), ok: 'Add — the customer sees it now',
+    note: 'It goes to the job’s Documents and the customer’s portal at once — no approval needed (owner 11/19). Nothing is e-mailed.',
     save: function(){
       if (typeof W._gcStoreFile !== 'function') return Promise.reject(new Error('file storage is not ready — try again in a moment'));
       var chain = Promise.resolve(0), ids = [];
@@ -210966,30 +211065,28 @@ function upload(files, label){
           if (!meta || !meta.ref) throw new Error('“' + f.name + '” was not saved');
           var at = nowIso();
           var nid = uid('pped_'); ids.push(nid);
-          return addDoc({ id: nid, pid: pid, name: f.name, cat: 'Plans', type: meta.type || f.type || '', size: meta.size || f.size, ref: meta.ref, hash: meta.hash || '', uploaded: at.slice(0, 10), uploadedAt: at, by: me(), portalShare: true, source: 'portal-editor', savedAt: at, updatedAt: at }).then(function(){ return n + 1; });
+          return addDoc({ id: nid, pid: pid, name: f.name, cat: 'Plans', type: meta.type || f.type || '', size: meta.size || f.size, ref: meta.ref, hash: meta.hash || '', uploaded: at.slice(0, 10), uploadedAt: at, by: me(), portalShare: true, portalLive: true, portalLiveAt: at, portalLiveBy: me(), source: 'portal-editor', savedAt: at, updatedAt: at }).then(function(){ return n + 1; });   /* patch PORTALPOL: live at once */
         });
       }); });
       return chain.then(function(n){
-        /* the portal gate: its "Put in the customer portal" approval (the server waits until the job's papers reached the cloud) */
-        /* the paper reaches the cloud a few seconds after it is saved here (the sync): ask again until the gate has it */
-        var want = ids.map(function(id){ return 'd:' + id; }), waits = [3000, 5000, 8000, 15000, 30000];
-        (function chase(i){ if (i >= waits.length) return; later(function(){
-          if (CUR.pid !== pid) return; CUR.scanAt = Date.now();
-          fn('portal', { action: 'gate', op: 'scan', projectId: pid }).then(loadGate).then(function(){
-            var have = arr(CUR.gate && CUR.gate.items).map(function(x){ return x.key; });
-            if (!want.every(function(k){ return have.indexOf(k) >= 0; })) chase(i + 1);
-          });
-        }, waits[i]); })(0);
+        /* patch PORTALPOL (owner 11/19: "Plans/documents can skip approval in portal"): staff uploads are live at once — no gate scan */
         paintDocs(); return n > 0;
       });
-    }, done: 'Added to the job’s Documents — waiting for approval to show in the portal.' });
+    }, done: 'Added — it is in the customer’s portal now.' });
 }
 
 /* ── the job card / job page button (FIELDPORTAL's run 'fp-cust') and the desk's 🏠 Portal card call this ── */
-W._gcPortalEd = { open: open, close: close, can: function(pid){ return can(proj(pid)); }, state: function(){ return { pid: CUR.pid, mode: CUR.mode, open: !!ov(), gate: CUR.gate, msgs: CUR.msgs, needs: CUR.needs }; }, warnings: function(pid, t){ return warnings(proj(pid), t); } };
+W._gcPortalEd = { msPlan: msPlan, msSync: msSync, msRowId: msRowId, staffLive: staffLive, open: open, close: close, can: function(pid){ return can(proj(pid)); }, state: function(){ return { pid: CUR.pid, mode: CUR.mode, open: !!ov(), gate: CUR.gate, msgs: CUR.msgs, needs: CUR.needs }; }, warnings: function(pid, t){ return warnings(proj(pid), t); } };
 /* the phone's back gesture / Escape closes it like ‹ Back */
 D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && ov() && !D.querySelector('.pe-vis')) close(); });
 D.addEventListener('click', function(e){ try { if (ov() && e.target && e.target.closest && e.target.closest('#gc-fh-tabs')) close(); } catch (x) {} }, true);   /* a bottom-bar tab goes where it says: this page closes */
+/* patch PORTALPOL: the PM's notification about a customer's portal message links here (crm…/?portaled=<job>) — the job's portal editor
+   opens once the job is on this device (only for whoever may open it: admin / office / the job's own PM) */
+(function(){
+  var m = /[?&]portaled=([A-Za-z0-9_.:-]{1,80})/.exec(location.search || ''); if (!m) return;
+  var pid = decodeURIComponent(m[1]), n = 0;
+  (function tryOpen(){ n++; var p = proj(pid); if (p && W.__GC_AUTH__ && can(p)) { open(pid); return; } if (n < 40) later(tryOpen, 1500); })();
+})();
 try { console.log('[GC] 👤 Customer portal: open, see as the customer, edit (patch PORTALED) — _gcPortalEd'); } catch (e) {}
 })();
 </script>
@@ -214499,8 +214596,8 @@ function tkTile(){
 /* ═════ the job page by kind: 💧 MITIGATION and ☢️ ENVIRONMENTAL (owner 11/16: "Field must be really good for Mitigation and
    Environmental jobs") — patch FIELDMORE's job-page layouts get two more kinds (window._gcFieldMore.layout / .extra, here) ═════
    kind: the job's company (Mitigation → mit, Environmental → env), else its words (lead / asbestos / abatement / trauma / biohazard /
-   mold assessment → env; water / fire / smoke / mold remediation / dry-out → mit unless it is an insurance rebuild — that stays
-   patch FIELDMORE's 🛡 insurance layout). Insurance stays a flag on top of mit: 🛡 Claim info and 📆 TPA dates only on insurance jobs.
+   mold assessment → env). PORTALPOL (owner 11/19: "Keep drying logs on mit only"): water / fire / smoke words no longer make a
+   Construction job 'mit' — the 💧 drying / equipment layout is only for jobs filed under GrayCo Mitigation. Insurance stays a flag on top of mit: 🛡 Claim info and 📆 TPA dates only on insurance jobs.
    The tiles run the existing tools: the claims app's drying file (moisture / equipment — patch MITWS' forms), patch MITWS' environmental
    logs (survey / samples, air, containment, PPE, waste), patch DOCAUTO's customer papers, the claims app's milestones (TPA dates).
    The layouts are data: the admin changes each kind's top buttons (☰ More → 🧩 Job page buttons; gc_kv gc_field_layouts). */
@@ -214514,8 +214611,8 @@ function jobKind(p, k0){
   if (co === 'environmental') return 'env';
   var txt = [p.type, p.jobType, p.service, p.services, p.category].concat(arr(p.tags)).map(function(v){ return s(Array.isArray(v) ? v.join(' ') : v); }).join(' ');   /* the job's type / services / tags — not its name ("Water heater swap" is not a water loss) */
   if (ENV_WORDS.test(txt) || arr(p.envTypes).length) return 'env';
-  if (k0 === 'ins') return 'ins';
-  if (MIT_WORDS.test(txt)) return 'mit';
+  /* patch PORTALPOL (owner 11/19: "Keep drying logs on mit only"): a Construction job never gets the 💧 drying / equipment layout from
+     its words (water / fire / mold …) — only a job filed under GrayCo Mitigation does (above). SDSCO reported Construction jobs got it. */
   return k0;
 }
 var JL0 = {
@@ -214544,7 +214641,7 @@ function jlApply(over){
   ['mit', 'env'].forEach(function(k){ FM.layout[k] = JSON.parse(JSON.stringify(JL0[k])); });
   if (FM.kindL) { FM.kindL.mit = '💧 Mitigation'; FM.kindL.env = '☢️ Environmental'; }
   if (FM.extra) Object.keys(JX).forEach(function(id){ FM.extra[id] = JX[id]; });
-  if (FM.extra && FM.extra.dry && !FM.extra.dry.__pmf) { var d0 = FM.extra.dry[2]; FM.extra.dry = FM.extra.dry.slice(); FM.extra.dry[2] = function(k, r, T, p){ return k === 'mit' ? !!W._gcClaims : d0(k, r, T, p); }; FM.extra.dry.__pmf = 1; }   /* the drying log on every mitigation job */
+  if (FM.extra && FM.extra.dry && !FM.extra.dry.__pmf) { var d0 = FM.extra.dry[2]; FM.extra.dry = FM.extra.dry.slice(); FM.extra.dry[2] = function(k, r, T, p){ if (k === 'mit') return !!W._gcClaims; var co0 = ''; try { co0 = W._gcCo ? s(W._gcCo.ofJob(p)) : s(p && p.companyId); } catch (e) {} return co0 === 'mitigation' ? d0(k, r, T, p) : false; }; FM.extra.dry.__pmf = 1; }   /* the drying log on every mitigation job — PORTALPOL: only there (never on a Construction job) */
   if (FM.extra && FM.extra.claim && !FM.extra.claim.__pmf) { var c0 = FM.extra.claim[2]; FM.extra.claim = FM.extra.claim.slice(); FM.extra.claim[2] = function(k, r, T, p){ return k === 'mit' ? !!p && insFlag(p) && !!W._gcClaims : c0(k, r, T, p); }; FM.extra.claim.__pmf = 1; }   /* 🛡 only on an insurance job */
   over = over || jlOver();
   Object.keys(over || {}).forEach(function(k){ var o = over[k]; if (FM.layout[k] && o && Array.isArray(o.top) && o.top.length) FM.layout[k].top = o.top.map(s).filter(Boolean); });

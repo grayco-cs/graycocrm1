@@ -24,7 +24,7 @@
    (CUSTQUIET, 7 PM–7 AM) hold it until 7:00 AM exactly as every other approval. Nothing we send promises a price or a time:
    "Someone from our team will be with you shortly."
    Security: only the signed-in person's own jobs and properties; 10 requests a day; never a sub, an internal note, a cost
-   or an insurance carrier in anything the portal gets back.
+   or a TPA / adjusting company in anything the portal gets back (PORTALPOL: their own insurance company may be named).
    ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 'use strict';
 const crypto = require('crypto');
@@ -168,11 +168,10 @@ function rx(w){ return w instanceof RegExp ? new RegExp(w.source, 'gi') : new Re
 function carrierRes(data, jobs){
   const C = core(), out = [];
   jobs.forEach(function(p){
-    try { C.insWords(data, p).forEach(function(w){ out.push(rx(w)); }); } catch (e) {}
-    ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName', 'adjusterCompany', 'adjustingCompany', 'tpa'].forEach(function(k){ if (s(p[k]).length >= 3) out.push(rx(p[k])); });
-    arr(data.gc_claims).forEach(function(c){ if (c && s(c.projectId) === s(p.id) && s(c.carrier).length >= 3) out.push(rx(c.carrier)); });
+    /* patch PORTALPOL (owner 11/19): the customer's own insurance company is shown in the portal — only a TPA / program / adjusting
+       company is still replaced (core portalInsWords never lists the job's own carrier) */
+    try { (C.portalInsWords ? C.portalInsWords(data, p) : []).forEach(function(w){ out.push(rx(w)); }); } catch (e) {}
   });
-  if (C.COMMON_CARRIERS) out.push(rx(C.COMMON_CARRIERS));
   return out;
 }
 function subRes(ctx, jobs){

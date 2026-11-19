@@ -109,7 +109,9 @@ try {
     seen.forEach(x => MIRROR_CARRIERS.push(x));
   }
 } catch (e) { console.log('  (mirror not readable: ' + (e && e.message) + ')'); }
-const CARRIERS = SEEDED.concat(WELL_KNOWN, MIRROR_CARRIERS);
+/* PORTALPOL (owner 11/19: "we can show the name of their insurance company"): the customer's own carrier (and any carrier staff
+   typed) may be shown now — what must still never reach the portal is a TPA / program / adjusting company */
+const CARRIERS = ['Acme Adjusting LLC', 'Riverbend TPA Services'];
 const hasCarrier = txt => CARRIERS.filter(c => new RegExp('(^|[^a-z0-9])' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*') + '(?![a-z0-9])', 'i').test(txt));
 
 /* ── the made-up world ── */
@@ -181,7 +183,7 @@ await t('the portal view', async () => {
   ok(/adjuster visit went well/.test(ch.note) && ch.noteAt === '2026-10-28', 'the customer sees staff’s note', ch.note);
   ok(ch.claim.number === 'TST-2026-0042' && ch.claim.dateOfLoss === '2026-10-02' && ch.claim.adjuster && ch.claim.adjuster.name === 'Dana Reed' && ch.claim.adjuster.phone === '901-555-0142', 'claim number, date of loss, adjuster name / phone (staff entered them)', ch.claim);
   ok(ch.qa.length === CH.defaults().qa.length && ch.footer === CH.FOOTER, 'Q&A (GrayCo defaults until an admin publishes) + the footer');
-  ok(!hasCarrier(JSON.stringify(ch)).length && /your insurance company will send its estimate/.test(ch.note), 'no carrier name in the section — even the one staff typed in the note became “your insurance company”', hasCarrier(JSON.stringify(ch)));
+  ok(!hasCarrier(JSON.stringify(ch)).length && /Volunteer Mutual Test Co will send its estimate/.test(ch.note), 'no carrier name in the section — even the one staff typed in the note became “your insurance company”', hasCarrier(JSON.stringify(ch)));
   ok(!hasCarrier(JSON.stringify(V)).length, 'no carrier name anywhere in the whole portal view of this job', hasCarrier(JSON.stringify(V)));
   ok(!/lawyer|DRAFT/.test(JSON.stringify(V)), 'no "DRAFT — for lawyer review" in the portal');
   const m = (await viewFor(LINKS.PJM)).data;
@@ -195,9 +197,9 @@ await t('the portal view', async () => {
 });
 await t('owner 11/01: carrier names never shown anywhere in the portal (even with "Show carrier name" ON)', async () => {
   const v = (await viewFor(LINKS.PJS)).data;
-  ok(v.insurance && v.insurance.claim.companyShown === false && v.insurance.claim.company === 'your insurance company', 'the insurance claim box: "your insurance company" although the job’s switch and ⚡ Automations say show', v.insurance && v.insurance.claim);
+  ok(v.insurance && v.insurance.claim.companyShown === true && v.insurance.claim.company === 'Bluff City Casualty', 'PORTALPOL: the insurance claim box names the customer\'s own insurance company', v.insurance && v.insurance.claim);
   ok(!hasCarrier(JSON.stringify(v)).length, 'no carrier name anywhere in the whole view (claim box, papers, checks, claim help)', hasCarrier(JSON.stringify(v)));
-  ok((v.docs || []).some(d => /your insurance company estimate/i.test(d.title)), 'a paper named after the carrier reaches the portal as “your insurance company estimate”', (v.docs || []).map(d => d.title));
+  ok((v.docs || []).some(d => /Bluff City Casualty estimate/i.test(d.title)), 'PORTALPOL: a paper named after the customer\'s own carrier keeps its name', (v.docs || []).map(d => d.title));
   const r = (await viewFor(LINKS.PJR)).data;   /* a regular job's view too */
   ok(!hasCarrier(JSON.stringify(r)).length, 'a regular job: no carrier either');
 });
@@ -303,7 +305,7 @@ await t('files', async () => {
   const claimNeg = (html + srv).split('\n').filter(l => /negotiat/i.test(l) && /claim|insur|adjust/i.test(l) && !/(does|do) not (adjust, )?negotiate|not negotiate|no negotiating|not negotiating|never negotiat|NEVER|owner 11\/01|negotiating\)|estimat\|sent\|negotiat|negotiat\\w|Negotiating/.test(l));
   ok(!claimNeg.length, 'no customer-facing line says GrayCo negotiates a claim', claimNeg.map(l => l.trim().slice(0, 160)));
   ok(/DRAFT — for lawyer review: O&P clause and the insurance-claim wording/.test(idx) && /Admin note: DRAFT — for lawyer review — O&P clause/.test(idx) && !/for lawyer review/.test(html), 'the changed legal text is marked "DRAFT — for lawyer review" in the admin notes only (never in the portal)');
-  ok(idx.includes("ck('carrier', false, 'Show carrier name to customer', 'GrayCo never shows the insurance company’s name to customers.") && idx.includes("nev = k === 'showCarrier'"), 'CRM: both "show carrier" switches are disabled with "GrayCo never shows the insurance company’s name to customers."');
+  ok(idx.includes('data-i="carrier-note"') && idx.includes("nev = k === 'showCarrier'"), 'PORTALPOL: CRM — the INSP panel says the customer sees their insurance company (no switch); the job automation switch has no effect');
 });
 
 /* ═════════ BROWSER: portal.html ═════════ */
@@ -356,7 +358,7 @@ if (!process.argv.includes('--no-browser')) {
     ok(r.nowT === 'Inspection done' && r.here && r.open && r.heres === 1 && r.done === 2 && /Now: Inspection done/.test(r.pill), 'the step marker: "You are here" on Inspection done (open), 2 steps done', r);
     ok(/What you do/i.test(r.nowBody) && /What GrayCo does/i.test(r.nowBody), 'the current step says what you do and what GrayCo does');
     ok(/A note from GrayCo/i.test(r.note) && /adjuster visit went well/.test(r.note), 'staff’s note');
-    ok(/TST-2026-0042/.test(r.claim) && /Oct 2, 2026/.test(r.claim) && /Dana Reed · 901-555-0142/.test(r.claim) && /Your insurance company/.test(r.claim), 'the claim box: number, date of loss, adjuster, "Your insurance company"', r.claim);
+    ok(/TST-2026-0042/.test(r.claim) && /Oct 2, 2026/.test(r.claim) && /Dana Reed · 901-555-0142/.test(r.claim) && /Test Mutual/.test(r.claim), 'the claim box: number, date of loss, adjuster, the customer\'s insurance company (PORTALPOL)', r.claim);
     ok(r.qa === CH.defaults().qa.length, 'Questions & answers: ' + r.qa);
     ok(r.foot.startsWith('General information, not legal or insurance advice.'), 'the footer');
     ok(!r.oldClaim && !r.oldTrack, 'one set of claim steps on Home (the automatic claim box / timeline make way)');
@@ -394,7 +396,7 @@ if (!process.argv.includes('--no-browser')) {
         for (const tab of ['home', 'photos', 'docs', 'pay', 'msgs']) { await pg.click('#tabs button[data-tab="' + tab + '"]'); await sleep(900); seen[tab] = await domCarriers(pg); }
         ok(Object.values(seen).every(x => !x.length), '"Show carrier name" ON: no carrier name on Home, Photos, Documents, Payments or Messages', seen);
         await pg.click('#tabs button[data-tab="docs"]'); await sleep(600);
-        ok(/your insurance company estimate/i.test(await pg.evaluate(() => document.body.innerText)), '…the carrier-named paper shows as “your insurance company estimate”');
+        ok(/Bluff City Casualty estimate/i.test(await pg.evaluate(() => document.body.innerText)), '…PORTALPOL: the carrier-named paper keeps its name');
         await pg.click('#tabs button[data-tab="home"]'); await sleep(400);
         const wide = await browser.newContext({ viewport: { width: 1280, height: 900 } }); const pw = await wide.newPage(); pw.on('pageerror', e => ERRS.push('PJS@1280: ' + e.message));
         await pw.goto(ORIGIN + '/portal.html#t=' + LINKS.PJS); await pw.waitForSelector('#tabs:not([hidden])', { timeout: 15000 }); await sleep(1200);
