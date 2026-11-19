@@ -142,6 +142,23 @@ try {
   ok(!pm.errs.length, 'no page errors (PM)', pm.errs.slice(0, 5));
   await pm.close();
 
+  console.log('D. admin on an iPhone (FGADMIN): guarded too');
+  seed();
+  const ap = await H.computer('AdminPhone', { build, mobile: true, init: INIT }); OPEN.push(ap);
+  const t3 = Date.now();
+  ok(await H.signIn(ap, ADMIN, 20000), 'admin signs in on the phone');
+  await sleep(process.env.FG_QUICK ? 5000 : 30000);
+  const st4 = await ap.ev(() => window.__gcFG && window.__gcFG.state());
+  ok(st4 && st4.guarded === true && st4.full === true, 'the admin\'s phone is guarded', st4);
+  const sw4 = sharedWrites(t3);
+  ok(!sw4.length, 'no shared list went to the cloud from the admin\'s phone with no input', sw4.map(w => w.key));
+  await ap.page().touchscreen.tap(195, 120); await sleep(300);
+  await ap.ev(async () => { const L = await window.idbGet('projects'); const j = L.find(p => p.id === 'P5'); j.notes = 'Changed on the phone by the admin'; j.updatedAt = new Date().toISOString(); await window.idbSet('projects', L); window._gcSyncDirty(['projects']); });
+  let up4 = null; for (let i = 0; i < 60 && !up4; i++) { await sleep(500); const c = H.cget('projects') || []; const p5 = c.find(p => p.id === 'P5'); if (p5 && p5.notes === 'Changed on the phone by the admin') up4 = c; }
+  ok(!!up4, 'the admin\'s own change on the phone reaches the cloud');
+  ok(!ap.errs.length, 'no page errors (admin phone)', ap.errs.slice(0, 5));
+  await ap.close();
+
   console.log('C. admin on the desk: unchanged');
   seed();
   const ad = await H.computer('Admin', { build }); OPEN.push(ad);

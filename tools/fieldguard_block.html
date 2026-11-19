@@ -59,7 +59,7 @@ try {
   var gAt = 0, gV = false;
   var guarded = FG.guarded = function(){
     var n = now(); if (n - gAt < 2000) return gV; gAt = n;
-    gV = !!(phone() && !full());   /* before the sign-in / role is known: held too (an admin's or the office's held lists are sent once the role is known) */
+    gV = !!phone();   /* FGADMIN (owner 11/19, his own phone "so many lags"): every phone, admins included — the office computers do the company's sweeps */
     return gV;
   };
 
