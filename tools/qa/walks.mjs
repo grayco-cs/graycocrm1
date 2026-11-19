@@ -213,7 +213,11 @@ async function desk(X){
   await step('Accounting', {}, st => D.go('^(📒 ?|🏦 ?|💼 ?)?Accounting$', 'taxcenter', null, st));
   await step('Leads', {}, st => D.go('^(📥 ?|🎯 ?)?Leads$', 'leads', null, st));
   await step('Approvals', {}, st => D.go('^(✅ ?)?Approvals', 'approvals', null, st));
-  for (const c of ['construction', 'mitigation']) await step(`Materials & SDS (${c})`, {}, async st => { const ok = await D.sds(c, st); st.info.sdsText = await A().ev(() => /Materials library/.test(document.body.innerText)); if (ok && !st.info.sdsText) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the Materials & SDS tab opened without its library' }); return ok; });
+  /* SDSCO: Materials & SDS belongs to Mitigation and Environmental — on Construction the tab says so and shows no library (by design) */
+  for (const c of ['construction', 'mitigation']) await step(`Materials & SDS (${c})`, {}, async st => { const ok = await D.sds(c, st); st.info.sdsText = await A().ev(() => /Materials library/.test(document.body.innerText)); st.info.notConstruction = await A().ev(() => /not Construction/i.test(document.body.innerText));
+    if (ok && c !== 'construction' && !st.info.sdsText) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the Materials & SDS tab opened without its library' });
+    if (ok && c === 'construction' && (st.info.sdsText || !st.info.notConstruction)) st.fails.push({ check: 'stuck', sev: 'major', msg: 'on Construction the Materials & SDS tab should say it is for Mitigation / Environmental and show no library' + (st.info.sdsText ? ' (it showed the library)' : '') });
+    return ok; });
   await step('Marketing dashboard (office)', {}, st => D.go('^(📣 ?|📈 ?)?Marketing', 'marketing', null, st));
   if (X.acc.map.marketing) {
     try { await A().close(); } catch (e) {}
