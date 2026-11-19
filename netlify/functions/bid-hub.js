@@ -473,7 +473,7 @@ async function award(who, b){
   const on = b.on !== false, id = s(b.id), at = nowIso(), src = s(b.source);
   const found = await jobRow(b.jobId).catch(() => null), job = found || { id: s(b.jobId), title: '' };
   const pm = pmOf(b, who), exclusions = cleanList(b.exclusions), wantMail = on && b.mail !== false;
-  const awardPo = on ? (s(job.poNumber) || s(b.po)).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30) : '';   /* patch BIDMULTI: the job's PO for the awarded sub · patch BIDPO: the bid job's PO (= the CRM job's) first */
+  const awardPo = on ? s(b.po) ? s(b.po).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30) : s(job.poNumber).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30) : '';   /* patch BIDMULTI: the job's PO for the awarded sub (the CRM sends its job's) · patch BIDPO: none sent → the bid job's PO (= the CRM job's) */
   const us = on ? await users() : [], uByEmail = {}; us.forEach(u => { if (u && u.email) uByEmail[low(u.email)] = u; });
   let crmByEmail = null; const langFor = async e => { if (!crmByEmail) { crmByEmail = {}; (await crmSubsRaw()).forEach(r => { if (r && r.email) crmByEmail[low(r.email)] = r; }); } return langOf(uByEmail[low(e)], crmByEmail[low(e)]); };
   const out = { ok: true, awarded: on, notSelected: 0, mail: { sent: false } };
