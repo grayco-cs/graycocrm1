@@ -1,0 +1,51 @@
+<script id="gc-patch-sdsco">
+/* __GC_PATCH_SDSCO__ — 🧪 MATERIALS & SDS BELONGS TO MITIGATION AND ENVIRONMENTAL (owner 11/19, on "🧪 Materials & SDS · Construction":
+   "this stuff is for mit and env").
+   A job's company is the CRM's own: window._gcCo.ofJob(p) (project.companyId 'construction' | 'mitigation' | 'environmental'; the
+   MULTICO misfiled list reads as Construction), plus project.sharedWith (a job shared into Mitigation / Environmental) — the same rule
+   window._gcCo.passJob uses for every split page.
+   • Construction picked: no 🧪 Materials & SDS in the left menu (patch RP's menu), the page says it is Mitigation & Environmental's
+     (with "🏢 Show All companies" for people who can switch), and a Construction job's page has no 🧪 Materials card / button.
+   • All companies picked: the page is there (admins, and people whose menu has 💧 Mitigation / ☢️ Environmental, as before); its title
+     says "· Mitigation & Environmental" and "Pick materials for a job" lists only Mitigation / Environmental jobs.
+   • The job's 🧪 Materials window and ✍️ Send for customer signature (the portal's Chemical & Product Use Consent) are for Mitigation /
+     Environmental jobs. A job that already has materials picked or a consent keeps them (nothing is removed or rewritten) and is still
+     shown outside the Construction pick, so a paper already signed stays visible.
+   API: window._gcSdsCo = { isJob(p), hasData(p), ctxOk(), jobOk(p), coNow(), title(co), offHtml() } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_SDSCO__) return; W.__GC_PATCH_SDSCO__ = true;
+var MIT_ENV = ['mitigation', 'environmental'];
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function coNow(){ try { return W._gcCo ? s(W._gcCo.filter()) || 'all' : 'all'; } catch (e) { return 'all'; } }
+function ofJob(p){ try { return W._gcCo ? s(W._gcCo.ofJob(p)) : (s(p && p.companyId) || 'construction'); } catch (e) { return 'construction'; } }
+/* a Mitigation / Environmental job: filed there (companyId), or shared into one of them */
+function isJob(p){
+  if (!p) return false;
+  if (MIT_ENV.indexOf(ofJob(p)) >= 0) return true;
+  return arr(p.sharedWith).some(function(c){ return MIT_ENV.indexOf(s(c && typeof c === 'object' ? c.id : c).toLowerCase()) >= 0; });
+}
+/* materials already picked / a consent already sent or signed on the job (kept as they are) */
+function hasData(p){ return !!p && (arr(p.materials).some(function(m){ return m && m.id; }) || !!p.materialsConsent); }
+function ctxOk(){ return coNow() !== 'construction'; }
+function jobOk(p){ return isJob(p) || (ctxOk() && hasData(p)); }
+function title(co){
+  co = co || coNow();
+  if (co === 'all') return 'Mitigation & Environmental';
+  try { return s(W._gcCo.get(co).short); } catch (e) { return ''; }
+}
+function canSwitch(){ try { return !W._gcCo || !W._gcCo.canSwitch || !!W._gcCo.canSwitch(); } catch (e) { return false; } }
+function offHtml(){
+  var cs = []; try { cs = arr(W._gcCo && W._gcCo.list && W._gcCo.list()).filter(function(c){ return c && MIT_ENV.indexOf(c.id) >= 0; }); } catch (e) {}
+  var names = cs.length ? cs.map(function(c){ return esc(c.icon + ' ' + c.short); }).join(' and ') : 'Mitigation and Environmental';
+  return '<div class="gcsds" data-sds-off="construction"><div style="font-size:24px;font-weight:800;margin:0 0 2px">🧪 Materials &amp; SDS</div>'
+    + '<p class="sub">Materials, safety data sheets, the dilution calculator and the customer\'s materials sign-off are for ' + names + ' jobs — not Construction.</p>'
+    + (canSwitch() ? '<div class="chips"><button type="button" class="gcsds-btn pr" data-sds="coall">🏢 Show All companies</button>'
+      + cs.map(function(c){ return ' <button type="button" class="gcsds-btn" data-sds="co" data-sds-co="' + esc(c.id) + '">' + esc(c.icon + ' ' + c.short) + '</button>'; }).join('') + '</div>' : '')
+    + '</div>';
+}
+W._gcSdsCo = { isJob: isJob, hasData: hasData, ctxOk: ctxOk, jobOk: jobOk, coNow: coNow, title: title, offHtml: offHtml, MIT_ENV: MIT_ENV };
+})(window);
+</script>

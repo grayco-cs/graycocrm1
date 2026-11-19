@@ -59,9 +59,11 @@ if (SHOT) await A.page().screenshot({ path: SHOT + '/sds_environmental_tab.png' 
 const who = await A.ev(() => { const u0 = window._gcMeUser, a0 = window.__GC_AUTH__.isAdmin, f0 = localStorage.getItem('gc_co_filter');
   window.__GC_AUTH__.isAdmin = () => false; window._gcMeUser = () => ({ name: 'Pat PM', role: 'Project Manager' });
   const r = {}; window._gcCo.setFilter('all'); r.pmAll = window._gcSdsCanSee(); window._gcCo.setFilter('mitigation'); r.pmMit = window._gcSdsCanSee(); window._gcCo.setFilter('construction'); r.pmCon = window._gcSdsCanSee();
-  window._gcMeUser = () => ({ name: 'Mo', role: 'Mitigation Manager' }); r.mitMgr = window._gcSdsCanSee();
-  window._gcMeUser = u0; window.__GC_AUTH__.isAdmin = a0; window._gcCo.setFilter('environmental'); r.admin = window._gcSdsCanSee(); return r; });
-ok('who: admins; anyone while Mitigation / Environmental is picked; the mitigation manager; not a construction PM on Construction', who.admin && who.pmMit && who.mitMgr && !who.pmCon && !who.pmAll, who);
+  window._gcCo.setFilter('all'); window._gcMeUser = () => ({ name: 'Mo', role: 'Mitigation Manager' }); r.mitMgr = window._gcSdsCanSee();
+  window._gcMeUser = u0; window.__GC_AUTH__.isAdmin = a0; window._gcCo.setFilter('environmental'); r.admin = window._gcSdsCanSee();
+  window._gcCo.setFilter('construction'); r.adminCon = window._gcSdsCanSee(); window._gcCo.setFilter('environmental'); return r; });
+/* patch SDSCO (owner 11/19 "this stuff is for mit and env"): nobody on Construction — admins included */
+ok('who: admins; anyone while Mitigation / Environmental is picked; the mitigation manager; not a construction PM on Construction; nobody (admins too) on Construction', who.admin && who.pmMit && who.mitMgr && !who.pmCon && !who.pmAll && who.adminCon === false, who);
 await sleep(1500); await A.ev(() => window._setView('sds')); await sleep(2000);
 await A.ev(() => document.querySelector('.gcsds [data-sds-g="lead"]').click()); await sleep(600);
 
