@@ -146537,7 +146537,7 @@ function srcStored(out){
   var company = isCompany(), me = myKey();
   [OT, AT].forEach(function(n){
     storeList(n).forEach(function(t){
-      if (!t || !t.id || t.done || t.deleted) return;
+      if (!t || !t.id || t.done || t.deleted || t.archived) return;   /* PAPERS: ✓ Not needed (archived) stays off, even if its generator opens it again */
       if (n === AT && !company) return;
       var who = storedWho(t).map(pkey).filter(Boolean), id = s(t.id);
       var o = { key: 'st:' + n + ':' + id, src: 'st', store: { n: n, id: id }, legacy: (n === AT ? 'admin_' : 'manual_') + id,
@@ -146719,6 +146719,7 @@ function build(){
   try { compact(raw); } catch (e) { warn(e); }
   raw = raw.filter(function(r){ return !(r.src === 'st' && r.rec && (r.rec.done || r.rec.deleted)); });
   try { if (typeof W._gcQbFactDrop === 'function') { var qbCtx = { owner: isAdmin() && !isOffice() }; raw = raw.filter(function(r){ return !W._gcQbFactDrop(r, qbCtx); }); } } catch (e) { warn(e); }   /* patch QBFACT */
+  try { if (W._gcPapers && W._gcPapers.todoDrop) raw = raw.filter(function(r){ return !W._gcPapers.todoDrop(r, proj); }); } catch (e) { warn(e); }   /* PAPERS: an older job's auto To-Dos are off */
   var me = myKey(), company = isCompany(), t0 = today();
   /* de-duplicate by what it is about */
   var by = {}, list = [], doneToday = [], snoozed = [];
@@ -146903,7 +146904,7 @@ function subsDone(it){ if (it.children) return it.children.filter(function(c){ r
 function rowHtml(it, depth){
   ITEMS[it.key] = it;
   var job = it.pid ? jobName(it.pid) : '', tot = it.children ? it.children.length : arr(it.subs).length, open = !!UI.open[it.key];
-  var h = '<div class="td2-row p-' + it.prio + (it.waiting ? ' wait' : '') + (depth ? ' d1' : '') + '" data-taskid="' + esc(it.legacy || it.key) + '" data-k="' + esc(it.key) + '">'
+  var h = '<div class="td2-row p-' + it.prio + (it.waiting ? ' wait' : '') + (depth ? ' d1' : '') + '" data-taskid="' + esc(it.legacy || it.key) + '" data-k="' + esc(it.key) + '">' + (W._gcPapers && W._gcPapers.selBox ? W._gcPapers.selBox(it, depth) : '')   /* PAPERS: bulk select (admins, desk) */
     + '<input type="checkbox" class="td2-ck _todoChk" data-id="' + esc(it.legacy || it.key) + '" title="Done — for everyone it is for" aria-label="Done">'
     + '<span class="td2-dot" title="' + esc({ high: 'High priority', med: 'Normal', low: 'Low' }[it.prio]) + '"></span>'
     + '<div class="td2-tt" data-td2="open" title="' + esc(it.title + (it.sub ? ' — ' + it.sub : '')) + '">'
@@ -146925,8 +146926,8 @@ function rowHtml(it, depth){
   return h;
 }
 function section(id, title, n, inner, collapsedDefault, extra){
-  var col = UI.col[id] != null ? UI.col[id] : !!collapsedDefault;
-  return '<div class="td2-sec' + (col ? ' col' : '') + '" data-s="' + esc(id) + '"><button type="button" class="td2-sh" data-td2="sec" data-s="' + esc(id) + '"><span class="td2-car">▾</span><span class="td2-st">' + title + '</span><span class="td2-n">' + n + '</span>' + (extra || '') + '</button><div class="td2-sbody">' + inner + '</div></div>';
+  var col = W._gcPapers && W._gcPapers.colOf ? W._gcPapers.colOf(id, UI.col[id], collapsedDefault) : (UI.col[id] != null ? UI.col[id] : !!collapsedDefault);   /* PAPERS: desk groups start collapsed */
+  return '<div class="td2-sec' + (col ? ' col' : '') + '" data-s="' + esc(id) + '"><button type="button" class="td2-sh" data-td2="sec" data-s="' + esc(id) + '"><span class="td2-car">▾</span><span class="td2-st">' + title + '</span><span class="td2-n">' + n + '</span>' + (extra || '') + '</button>' + (W._gcPapers && W._gcPapers.selAll ? W._gcPapers.selAll(id) : '') + '<div class="td2-sbody">' + inner + '</div></div>';
 }
 var LIMIT = 10;
 /* patch FLAKEFIX: "✓ Done today" — what a person (or the CRM, on paid / signed) finished comes first, newest first;
@@ -147075,7 +147076,7 @@ function paintRoot(root, st){
     if (fa) { if (!n) fa.remove(); else fa.textContent = '✅ ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you — open'; }
   }
   if (root.querySelector('.td2-menu')) return;                               /* a menu is open: the body stays still */
-  var bh = bodyHtml(st, kind);
+  var bh = (W._gcPapers && W._gcPapers.bar ? W._gcPapers.bar(kind) : '') + bodyHtml(st, kind);   /* PAPERS: ☑ Select · 🗄 Show archived */
   if (body.__h !== bh) { var y = body.getBoundingClientRect().top; body.__h = bh; body.innerHTML = bh; }
 }
 function hosts(){
@@ -147222,6 +147223,28 @@ function remove(it){
     dirty = true; paint(true);
   });
 }
+/* PAPERS: ✓ Not needed — archived, never deleted: a saved To-Do keeps its record (done, archived, notNeeded {by, at}); a generated one
+   is marked in gc_todo_meta (del + na, kept forever: metaPrune keeps del marks) so its generator never brings it back. on = false restores. */
+function notNeeded(it, on){
+  if (!it || vasRefuse()) return;
+  var by = myName(), at = nowIso(), seen = {};
+  var one = function(m){
+    if (!m || !m.key || seen[m.key]) return; seen[m.key] = 1;
+    if (m.store) { storeMut(m.store.n, m.store.id, function(t){ if (on) { t.done = true; t.archived = true; t.notNeeded = { by: by, at: at }; t.doneAt = at; t.doneBy = by + ' (not needed)'; } else { t.done = false; t.archived = false; t.restored = { by: by, at: at }; t.doneAt = ''; t.doneBy = ''; } }); return; }
+    if (m.src === 'roll') return;   /* a roll-up line is its members: a new member of the same kind still shows */
+    metaSet(m.key, on ? { del: true, na: true, sig: m.sig, title: s(m.title).slice(0, 160), pid: s(m.pid) } : { del: false, na: false });
+  };
+  [it].concat(it.members || []).forEach(one);
+  (it.children || []).forEach(function(c){ [c].concat(c.members || []).forEach(one); });
+  dirty = true;
+}
+function archivedList(){
+  var out = [];
+  Object.keys(meta).forEach(function(k){ var x = meta[k]; if (x && x.na && x.del) out.push({ key: k, title: s(x.title) || k, pid: s(x.pid), by: s(x.by), at: s(x.at) }); });
+  [OT, AT].forEach(function(n){ storeList(n).forEach(function(t){ if (t && t.archived && !t.deleted) out.push({ key: 'st:' + n + ':' + s(t.id), title: s(t.label), pid: s(t.pid), by: s(obj(t.notNeeded).by), at: s(obj(t.notNeeded).at) }); }); });
+  return out.sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; });
+}
+function restoreKey(k){ var m = /^st:([^:]+):(.+)$/.exec(s(k)); if (m) notNeeded({ key: k, store: { n: m[1], id: m[2] } }, false); else notNeeded({ key: k, sig: '' }, false); }
 function menu(it, btn, root){
   var old = D.querySelector('.td2-menu'); if (old) { old.remove(); if (old.__k === it.key) return; }
   var t0 = today(), nextMon = addDays(t0, ((8 - new Date().getDay()) % 7) || 7);
@@ -147240,6 +147263,7 @@ function menu(it, btn, root){
     + (it.store && root.getAttribute('data-td2-host') === 'as' ? '<div class="td2-ml">📝 Note</div><div class="td2-mr"><input type="text" data-m="noteTxt" maxlength="1000" style="flex:1;min-width:160px" value="' + esc(s(it.rec && it.rec.note)) + '"><button type="button" data-m="note">Save note</button></div>'
        + '<div class="td2-ml">📅 Due date</div><div class="td2-mr"><input type="date" data-m="dueDate" value="' + esc(it.due || '') + '" aria-label="Due date">' + (it.due ? '<button type="button" data-m="nodue">No due date</button>' : '') + '</div>' : '')   /* patch OFFICETAB */
     + (it.pid ? '<div class="td2-mr"><button type="button" data-m="job">🏗 Open the job</button></div>' : '')
+    + '<div class="td2-mr"><button type="button" data-m="na">✓ Not needed (archive)</button></div>'   /* PAPERS */
     + '<div class="td2-mr"><button type="button" class="del" data-m="del">🗑 Delete' + (it.store ? ' for everyone' : ' (don’t show again)') + '</button></div>';
   (root.closest('#_gcOfficeToDoOv') || root.closest('#_gcTD2Ov') || D.body).appendChild(m);
   var r = btn.getBoundingClientRect(), mw = Math.min(320, W.innerWidth - 16);
@@ -147250,6 +147274,7 @@ function menu(it, btn, root){
     var b = e.target.closest('[data-m]'); if (!b || b.tagName === 'INPUT') return;
     var a = b.getAttribute('data-m'), v = b.getAttribute('data-v'); m.remove();
     if (a === 'snooze') snooze(it, v); else if (a === 'to') reassign(it, v); else if (a === 'del') remove(it);
+    else if (a === 'na') { notNeeded(it, true); paint(true); toast('✓ Not needed (archived): ' + it.title.slice(0, 60), function(){ notNeeded(it, false); paint(true); }); }   /* PAPERS */
     else if (a === 'act2') { closeHostOverlay(root); later(function(){ run(it.act2.f); }, 30); }
     else if (a === 'job') { closeHostOverlay(root); later(function(){ run(actJob(it.pid).f); }, 30); }
     else if (a === 'note') { var ni = m.querySelector('[data-m="noteTxt"]'); setNote(it, ni ? ni.value : ''); }   /* patch OFFICETAB */
@@ -147273,7 +147298,7 @@ function wire(root){
     if (a === 'chip') { var f = b.getAttribute('data-f'); UI.filter = UI.filter === f ? '' : f; paint(true); if (UI.filter === 'appr') { var sec = root.querySelector('._gcAp2Sec'); if (sec) try { sec.scrollIntoView({ block: 'nearest' }); } catch (x) {} } return; }
     if (a === 'view') { UI.view = b.getAttribute('data-v'); UI.filter = ''; uiSave(); paint(true); return; }
     if (a === 'gb') { UI.groupBy = b.getAttribute('data-g'); uiSave(); paint(true); return; }
-    if (a === 'sec') { var id = b.getAttribute('data-s'), secEl = b.parentNode; UI.col[id] = !secEl.classList.contains('col'); secEl.classList.toggle('col', UI.col[id]); uiSave(); return; }
+    if (a === 'sec') { var id = b.getAttribute('data-s'), secEl = b.parentNode; UI.col[id] = !secEl.classList.contains('col'); secEl.classList.toggle('col', UI.col[id]); uiSave(); try { if (W._gcPapers && W._gcPapers.colSet) W._gcPapers.colSet(id, UI.col[id]); } catch (x) {} return; }
     if (a === 'morerows') { UI.open['more:' + b.getAttribute('data-s')] = 1; paint(true); return; }
     if (a === 'subs') { e.stopPropagation(); if (it) { UI.open[it.key] = !UI.open[it.key]; paint(true); } return; }
     if (a === 'act') { e.stopPropagation(); doAct(it, root); return; }
@@ -147544,7 +147569,10 @@ W._gcTD2 = {
   count: function(){ return state().counts.now + state().counts.mine; }, greetCount: function(){ var c = state().counts; return c.appr + c.over + c.today + c.mine; },
   counts: function(){ return state().counts; }, ui: UI, meta: function(){ return JSON.parse(JSON.stringify(meta)); }, pullMeta: function(){ return pullMeta(true); }, pushMeta: pushMeta,
   complete: function(key, on){ var it = ITEMS[key] || state(true).items.filter(function(x){ return x.key === key; })[0]; complete(it, on !== false); return !!it; },
-  find: function(re){ re = re instanceof RegExp ? re : new RegExp(String(re), 'i'); return state(true).all.filter(function(x){ return re.test(x.title); }); }
+  find: function(re){ re = re instanceof RegExp ? re : new RegExp(String(re), 'i'); return state(true).all.filter(function(x){ return re.test(x.title); }); },
+  /* PAPERS: ✓ Not needed (archive) by item key — the rows on screen; archived() lists them; restore(key) brings one back */
+  notNeeded: function(keys, on){ var n = 0; arr(keys).forEach(function(k){ if (on === false) { restoreKey(k); n++; return; } var it = ITEMS[k]; if (it) { notNeeded(it, true); n++; } }); dirty = true; paint(true); return n; },
+  archived: function(){ return archivedList(); }, restore: function(k){ restoreKey(k); dirty = true; paint(true); return true; }
 };
 start();
 try { console.log('[GC] One structured To-Do (patch TD2) ready — window._gcTD2'); } catch (e) {}
@@ -238500,6 +238528,7 @@ function stateOfItem(p, x){
   var na = (J.na || {})[x.k]; if (na) return { done: true, na: true, txt: 'N/A · ' + (na.by || '') };
   var se = (J.sent || {})[x.k] || (x.la && (a.sent || {})[x.la]) || (x.doc && (p.docAuto || {}).sent && p.docAuto.sent[x.doc] && { on: p.docAuto.sent[x.doc] });
   if (se) return { sent: true, txt: '📤 Sent ' + nice(se.on) + ' — waiting' };
+  try { var pp = W._gcPapers && W._gcPapers.itemState(p, x); if (pp) return pp; } catch (e) {}   /* PAPERS: an older job keeps only the basics */
   return null;
 }
 function handled(p, x){ return !!stateOfItem(p, x); }
@@ -238675,13 +238704,13 @@ function html(p){
     h += '<div class="sec">' + WHEN[w] + '</div>';
     L.forEach(function(x){
       var st = stateOfItem(p, x), lock = x.gate && !em && !x.stale && !given(p, x);
-      var due = (EP && W._gcEpaHud && W._gcEpaHud.dueHtml && (x.due || EP.meta(x).due)) ? W._gcEpaHud.dueHtml(p, x) : w === 'before' ? (start ? (start < today() ? '<span class="bad">Was due before ' + esc(nice(start)) + '</span>' : '<span class="due">Due before ' + esc(nice(start)) + '</span>') : '<span class="due">Due before work starts</span>') : w === 'during' ? '<span class="due">During the job</span>' : '<span class="due">At completion</span>';
+      var due = (EP && W._gcEpaHud && W._gcEpaHud.dueHtml && (x.due || EP.meta(x).due)) ? W._gcEpaHud.dueHtml(p, x) : w === 'before' ? (start ? (W._gcPapers ? '<span class="' + (x.gate && start < today() ? 'bad' : 'due') + '">' + (x.gate ? 'Required before ' : 'Suggested before ') + esc(nice(start)) + (start < today() ? ' — not sent yet' : '') + '</span>' : start < today() ? '<span class="bad">Was due before ' + esc(nice(start)) + '</span>' : '<span class="due">Due before ' + esc(nice(start)) + '</span>') : '<span class="due">Due before work starts</span>') : w === 'during' ? '<span class="due">During the job</span>' : '<span class="due">At completion</span>';
       h += '<div class="r' + (x.stale ? ' old' : '') + '" data-jk="' + esc(x.k) + '"><div class="l"><b>' + esc(x.label) + '</b>' + (x.needsForm ? ' <span class="nf">needs a form — upload yours</span>' : '') + (lock ? ' <span class="lock">🔒 Start job waits for it</span>' : '')
         + '<div class="tag">' + (EP && EP.TO[x.to || EP.meta(x).to] ? '→ ' + esc(EP.TO[x.to || EP.meta(x).to].label) + (x.cite ? ' · ' + esc(x.cite) : '') : x.who === 'file' ? 'job file / crew' : 'customer') + (x.stale ? ' · no longer this job type — kept because it was handled' : '') + '</div>' + (x.xr && W._gcJobReq ? W._gcJobReq.rowTag(p, x) : '') + '</div>'
         + '<div class="b">' + (st ? '<span class="' + (st.sent ? 'due' : 'ok') + '">' + esc(st.txt) + '</span>' : due)
         + (x.needsForm ? (office() ? '<button type="button" data-jd="upload">📁 Upload yours</button>' : '') : '<button type="button" data-jd="open">👁 Open</button>')
         + (W._gcEpaHud && W._gcEpaHud.sendBtn ? W._gcEpaHud.sendBtn(p, x, st) : (!st && x.doc && /^gcb_/.test(x.doc) && x.who !== 'file' ? '<button type="button" data-jd="send">📤 Send</button>' : ''))   /* EPAHUD: 📤 Send… (portal / e-mail / text / share) · 🏛 Filed */
-        + (st && !st.sent ? '<button type="button" data-jd="undo">Undo</button>' : '<button type="button" class="g" data-jd="done">✓ Done</button>' + (st ? '' : '<button type="button" data-jd="na" title="Not needed on this job">N/A</button>'))
+        + (st && !st.sent ? (st.older ? '' : '<button type="button" data-jd="undo">Undo</button>') : '<button type="button" class="g" data-jd="done">✓ Done</button>' + (st ? '' : '<button type="button" data-jd="na" title="Not needed on this job">N/A</button>'))
         + (x.xr && W._gcJobReq ? W._gcJobReq.rowBtns(p, x, st) : '')   /* JOBREQ: 🗄 Remove (archived, never deleted) */
         + '</div></div>';
     });
@@ -243637,6 +243666,7 @@ function cardTop(p, items){
 /* ═════ 6 · GrayCo Field home: Needs you · 📑 papers to send + 📜 My certifications ═════ */
 function myPmJobs(){ var n = low(me()), e = myEmail(); return projects().filter(function(p){ return p && !p.deleted && !/complete|closed|lost|cancel|dead|archiv/i.test(s(p.status)) && ((n && low(p.pm) === n) || (e && low(p.pmEmail) === e)); }); }
 function fieldModel(){
+  if (W._gcPapers && W._gcPapers.fieldModel) { try { return W._gcPapers.fieldModel(); } catch (e) { W.__gcEpErr = String(e && e.stack || e); } }   /* PAPERS: PM → office → admins */
   var out = []; myPmJobs().forEach(function(p){ toSend(p).forEach(function(z){ out.push({ p: p, x: z.x, d: z.d }); }); });
   if (office()) projects().forEach(function(p){ if (!p || p.deleted || myPmJobs().indexOf(p) > -1) return; toSend(p).forEach(function(z){ if (z.d.over && (z.d.days || 0) <= -2) out.push({ p: p, x: z.x, d: z.d, esc: true }); }); });
   /* soonest first; on the same day a paper that holds the job (🔒 Start job / the final invoice — JOBREQ) comes first; otherwise the list order stays */
@@ -243648,15 +243678,15 @@ var FSIG = '';
 function fieldPaint(){
   try {
     var home = D.querySelector('#_gcJobPick.gc-fh .fh-wrap'); if (!home) return;
-    var M = fieldModel(), C = myCerts(), sig = JSON.stringify([M.map(function(z){ return [z.p.id, z.x.k, z.d.date, z.d.over]; }), C.map(function(c){ return [c.id, c.expires, c.number]; }), paused()]);
+    var M = fieldModel(), C = myCerts(), sig = JSON.stringify([M.map(function(z){ return [z.p.id, z.x.k, z.d.date, z.d.over, z.esc || '']; }), C.map(function(c){ return [c.id, c.expires, c.number]; }), paused()]);
     var box = D.getElementById('gc-ep-field');
     if (box && box.parentElement === home && box.__sig === sig) return;
     if (!box) { box = D.createElement('div'); box.id = 'gc-ep-field'; box.setAttribute('data-gc-keep', '1'); }
     var bad = C.filter(function(c){ return s(c.expires) && s(c.expires) < today(); }).length;
     var h = '';
     if (M.length) {
-      h += '<div class="fh-sec"><span>Needs you · 📑 ' + M.length + ' paper' + (M.length === 1 ? '' : 's') + ' to send</span></div>';
-      h += M.slice(0, 6).map(function(z){ return '<div class="fh-ap" data-ep-pid="' + esc(z.p.id) + '" data-ep-k="' + esc(z.x.k) + '" style="display:flex;gap:8px;align-items:center"><div class="t" style="flex:1;min-width:0"><b>' + esc(z.x.label.split(' — ')[0]) + ' · ' + esc(z.p.name) + '</b><span style="display:block;font-size:12.5px;color:' + (z.d.over ? '#b91c1c' : '#475569') + '">' + (z.d.date ? (z.d.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(z.d.date)) : 'Due ' + esc(z.d.txt)) + (z.esc ? ' · office' : '') + '</span></div><button type="button" data-ep-fa="send" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font-weight:800;padding:0 12px">' + (EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].filing ? '🏛 File' : EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].internal ? '✓ Do it' : '📤 Send') + '</button></div>'; }).join('');
+      h += '<div class="fh-sec"><span>' + (W._gcPapers ? esc(W._gcPapers.head(M)) : 'Needs you · 📑 ' + M.length + ' paper' + (M.length === 1 ? '' : 's') + ' to send') + '</span></div>';   /* PAPERS: suggested */
+      h += M.slice(0, 6).map(function(z){ return '<div class="fh-ap" data-ep-pid="' + esc(z.p.id) + '" data-ep-k="' + esc(z.x.k) + '" style="display:flex;gap:8px;align-items:center"><div class="t" style="flex:1;min-width:0"><b>' + esc(z.x.label.split(' — ')[0]) + ' · ' + esc(z.p.name) + '</b>' + (W._gcPapers ? W._gcPapers.rowDue(z) : '<span style="display:block;font-size:12.5px;color:' + (z.d.over ? '#b91c1c' : '#475569') + '">' + (z.d.date ? (z.d.over ? 'OVERDUE — was due ' : 'Due ') + esc(nice(z.d.date)) : 'Due ' + esc(z.d.txt)) + (z.esc ? ' · office' : '') + '</span>') + '</div><button type="button" data-ep-fa="send" style="min-height:44px;border-radius:10px;border:0;background:#241968;color:#fff;font-weight:800;padding:0 12px">' + (EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].filing ? '🏛 File' : EP.TO[EP.meta(z.x).to] && EP.TO[EP.meta(z.x).to].internal ? '✓ Do it' : '📤 Send') + '</button></div>'; }).join('');
       if (M.length > 6) h += '<div class="fh-empty">+ ' + (M.length - 6) + ' more on the jobs\' 📑 Paperwork</div>';
     }
     h += '<button type="button" data-ep-fa="certs" style="display:flex;align-items:center;gap:8px;width:100%;min-height:46px;margin:8px 0;border:1px solid #e5e7eb;border-radius:12px;background:#fff;padding:8px 12px;font-weight:700;color:#0f172a">📜 My certifications (' + C.length + ')' + (bad ? ' <span style="color:#b91c1c">· ' + bad + ' expired</span>' : '') + '</button>';
@@ -243691,6 +243721,7 @@ function mine(){
 function tasks(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; } }
 function saveTasks(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u('gc_office_tasks', l); } catch (e) {} }
 function wanted(){
+  if (W._gcPapers && W._gcPapers.wanted) { try { return W._gcPapers.wanted(); } catch (e) { W.__gcEpErr = String(e && e.stack || e); } }   /* PAPERS: PM → office → admins */
   var want = {}, mine = low(me());
   projects().forEach(function(p){
     if (!p || p.deleted || p.importedHistory || /lost|cancel|dead|archiv/i.test(s(p.status))) return;
@@ -243711,7 +243742,7 @@ function sweep(){
     Object.keys(want).forEach(function(id){ var w = want[id], cur = l.find(function(y){ return y && y.id === id; });
       if (!cur) { l.push({ id: id, kind: 'epahud', pid: w.p.id, label: w.label, note: w.note, assignee: w.assignee, prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
       else if (cur.done || cur.label !== w.label) { cur.label = w.label; cur.note = w.note; cur.prio = w.prio; cur.done = false; cur.updatedAt = now; ch++; } });
-    l.forEach(function(y){ if (y && !y.done && /^EPAHUD_/.test(s(y.id)) && !want[y.id]) { var p = proj(y.pid); if (!office() && !(p && low(p.pm) === low(me()))) return; y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'sent / handled on 📑 Paperwork'; ch++; } });
+    l.forEach(function(y){ if (y && !y.done && /^EPAHUD_/.test(s(y.id)) && !want[y.id]) { var p = proj(y.pid); if (!office() && !(p && low(p.pm) === low(me()))) return; y.done = true; y.doneAt = y.updatedAt = now; y.resolution = (W._gcPapers && W._gcPapers.closeWhy ? W._gcPapers.closeWhy(y) : '') || 'sent / handled on 📑 Paperwork'; ch++; } });
     if (ch) saveTasks(l);
     return ch;
   } catch (e) { W.__gcEpErr = String(e && e.stack || e); return 0; }
@@ -244225,5 +244256,315 @@ W._gcJobReq = { canAdd: canAdd, canHold: canHold, canRemove: canRemove, isPM: is
   cardAdd: cardAdd, rowTag: rowTag, rowBtns: rowBtns, cardBottom: cardBottom, sendBtn: sendBtn, channels: channels, sendVia: sendVia, open: open, nameOf: nameOf,
   checkSigned: checkSigned, finalMissing: finalMissing, fieldPaint: fieldPaint, libList: libList, PARTY: PARTY, DUE: DUEK };
 try { console.log('[GC] ＋ required papers on one job (patch JOBREQ) — _gcJobReq'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-papers">
+/* __GC_PATCH_PAPERS__ — 📑 PAPERS TO SEND: OLDER JOBS KEEP ONLY THE BASICS, PAPERS ARE SUGGESTED, PM FIRST (tools/patch_PAPERS.py).
+   Owner 11/19 (his phone said "Needs you · 📑 285 papers to send", every one "OVERDUE"): "All these papers to send and approve but
+   they're old, I don't want to have to enter all of that. Just the basics for the older jobs, let's take those off, and we don't HAVE
+   to do all those documents anyway. If they are papers to send they go to PM first too, then office, then admin if no one sends the paper."
+   Why 285: 📑 JOBDOCS gives every job its papers by job type (a job with no saved list gets them on the fly), and 🏛 EPAHUD showed an
+   admin / the office every paper 2+ days past its date on every job — 480 jobs, most made before the papers existed.
+   1. Older job = made (project.created, else createdAt) or started (startDate) before OLDER_BEFORE, or entered as history
+      (importedHistory / dataEntry / an invoice-entry job). Such a job keeps only THE BASICS: the signed agreement (construction
+      agreement, abatement / mold remediation agreement, the emergency-services or fire & smoke work authorization on a mitigation job,
+      a paper named contract / agreement someone added) and, when the job has an invoice, an invoice / pay-app paper. Papers the code
+      treats as REQUIRED (🔒 "Start job waits for it": Lead 01, Asbestos 01, the Environmental mold disclosure; a 🔒 hold an admin or
+      the office put on a paper) and papers someone added to that one job (JOBREQ) stay too.
+      Every other paper stays on the job's 📑 Paperwork, marked "Not needed (older job)" (nothing deleted, nothing written to the job),
+      and is out of Needs you, the counts, the To-Dos and the escalation for everyone. An admin can turn them back on per job
+      (↩ Turn them back on — project.jobDocs.olderOn, every switch kept in jobDocs.olderLog).
+   2. Papers are suggested: "Suggested by 11/12", never a red OVERDUE; a paper never blocks anything (the existing 🔒 required ones keep
+      their gate, with the admin's "Start anyway").
+   3. PM first: a paper to send is in the job's PM's GrayCo Field Needs you (and a To-Do for the PM when its date is near or past).
+      Not sent ESC_OFFICE_BD business days after its date → also the office (office role); ESC_ADMIN_BD business days → also the admins.
+      An older job's basics never go up to the admins. ⏸ Data-entry mode: nothing goes up to the admins at all.
+   4. The To-Do (TD2), owner 11/19 ("crowding up my todo notifications, old jobs there are no todos marked"): every auto To-Do about an
+      older job is off — papers, "Upload the signed contract", "No scope written", "Update progress", closeout, verify costs, invoice
+      this job, PO, portal, no PM … — except a missing customer phone / e-mail on an OPEN older job, money owed (an overdue invoice),
+      a decision waiting in Approvals, and anything a person wrote by hand. A finished / closed older job: none of them. Roll-ups
+      ("51 finished jobs have no signed contract on file") count newer jobs only and are gone at 0.
+      ✓ Not needed (row ⋯ menu, and for admins on the desk ☑ Select → per group "Select all" → ✓ Not needed) archives: a saved To-Do
+      keeps its record (done, archived, notNeeded {by, at}); a generated one is marked in gc_todo_meta and never comes back.
+      🗄 Show archived lists them, each with ↩ Restore. On the desk every To-Do group opens collapsed (counts on each header);
+      open / closed is remembered for this page session only.
+   Roles decide (admin / office / the job's PM), never names. Test date: window.__GC_PAPERS_TODAY__ = 'YYYY-MM-DD'.
+   Console: _gcPapers.state()   API: window._gcPapers = { older(p), basic(p, x), dropped(p, x), itemState(p, x), fieldModel(), wanted(),
+        tier(p, z), rowDue(z), head(M), closeWhy(t), turnOn(pid, on), OLDER_BEFORE, ESC_OFFICE_BD, ESC_ADMIN_BD } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_PAPERS__) return; W.__GC_PATCH_PAPERS__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+/* ── the rule's numbers (one place) ── */
+var OLDER_BEFORE = '2026-11-19';    /* go-live of this rule: a job made or started before this day is an older job */
+var ESC_OFFICE_BD = 2;              /* business days after a paper's date, not sent → the office sees it too */
+var ESC_ADMIN_BD = 5;               /* business days after a paper's date, not sent → the admins see it too (never in data-entry mode) */
+/* the basics an older job keeps: the signed agreement (by the job type table's paper ids) … */
+var BASIC_DOCS = { gcb_contract: 1, gcb_env_abatement_agreement: 1, gcb_mold_contract: 1, gcb_water_emergency_auth: 1, gcb_fire_work_auth: 1 };
+var BASIC_RX = /\bcontract\b|\b(construction|services|remediation|work|customer|signed) agreement\b/i;
+/* … and an invoice paper when the job has an invoice */
+var INVOICE_DOCS = { gcb_pay_app: 1 }, INVOICE_RX = /\binvoice\b|application for payment|\bpay app/i;
+var GONE = /lost|cancel|dead|archiv/i, FINISHED = /complete|closed|warrant|close.?out|paid in full/i;
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function ymdOf(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function today(){ var t = s(W.__GC_PAPERS_TODAY__); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : ymdOf(new Date()); }
+/* a job's date: "2026-03-17", an ISO time, or epoch milliseconds (createdAt is sometimes a number) */
+function day(v){
+  if (v == null || v === '') return '';
+  if (typeof v === 'number' || /^\d{12,14}$/.test(s(v))) { var d = new Date(+v); return isNaN(d) ? '' : ymdOf(d); }
+  var t = s(v); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : '';
+}
+function addDays(d, n){ var t = Date.parse(d + 'T12:00:00Z'); return isNaN(t) ? '' : new Date(t + n * 864e5).toISOString().slice(0, 10); }
+function dow(d){ return new Date(d + 'T12:00:00Z').getUTCDay(); }
+/* business days (Mon–Fri) after `due`, up to and including `t` (holidays are not known) */
+function bdAfter(due, t){ due = day(due); t = day(t); if (!due || !t || t <= due) return 0; var n = 0, x = due, g = 0; while (x < t && g++ < 800) { x = addDays(x, 1); var w = dow(x); if (w !== 0 && w !== 6) n++; } return n; }
+function nice(d){ d = day(d); return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : ''; }
+
+/* ── who is looking (roles, never names) ── */
+function user(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && (u.name || u.email)) return u; } } catch (e) {} try { var j = JSON.parse(localStorage.getItem('grayco_user') || '{}'); if (j && typeof j === 'object') return j; } catch (e) {} return {}; }
+function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function officeRole(){ if (admin()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(); return /^office/i.test(s(u.role)) || /office/i.test(s(u.profile)); }
+function myName(){ var u = user(); if (s(u.name)) return s(u.name); try { var e = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); var r = arr(W._crm && W._crm.users).find(function(z){ return z && low(z.email) === e; }); if (r) return s(r.name); } catch (e) {} return ''; }
+function isPM(p){
+  try { if (W._gcJobReq && W._gcJobReq.isPM) return !!W._gcJobReq.isPM(p); } catch (e) {}
+  var n = low(myName()), e = ''; try { e = low(W.__GC_AUTH__.email()); } catch (x) {}
+  return !!p && ((n && (low(p.pm) === n || low(p.projectManager) === n)) || (e && (low(p.pmEmail) === e || low(p.pm) === e)));
+}
+function paused(){ try { var st = W._gcPause && W._gcPause.state(); return !!(st && st.paused); } catch (e) { return false; } }
+function projects(){ return arr(W._crm && W._crm.projects); }
+function proj(pid){ return projects().find(function(p){ return p && s(p.id) === s(pid); }) || null; }
+function invoices(){ var L = arr(W._crm && W._crm.invoices); return L.length ? L : arr(W._crm && W._crm.invs); }
+function EH(){ return W._gcEpaHud || null; }
+function JD(){ return W._gcJobDocs || null; }
+function EP(){ return W._gcEpaHudCore || null; }
+
+/* ── 1 · older job, the basics, the dropped papers ── */
+function madeOn(p){ return day(p && p.created) || day(p && p.createdAt); }
+function older(p){
+  if (!p) return false;
+  if (p.importedHistory || p.dataEntry || s(p.createdVia) === 'invoice-entry') return true;
+  var m = madeOn(p), st = day(p.startDate);
+  return !!((m && m < OLDER_BEFORE) || (st && st < OLDER_BEFORE));
+}
+function turnedOn(p){ return !!obj(obj(p && p.jobDocs).olderOn).on; }
+function hasInvoice(p){ var id = s(p && p.id); return !!id && invoices().some(function(iv){ return iv && !iv.deleted && !iv.void && s(iv.pid || iv.projectId || iv.jobId) === id; }); }
+function required(x){ return !!(x && (x.gate || x.hold)); }
+function basic(p, x){
+  if (!x) return false;
+  var lab = s(x.label);
+  if (BASIC_DOCS[s(x.doc)] || BASIC_RX.test(lab)) return true;
+  if ((INVOICE_DOCS[s(x.doc)] || INVOICE_RX.test(lab)) && hasInvoice(p)) return true;
+  return false;
+}
+/* the paper is on an older job and is not one it keeps */
+function dropped(p, x){ return !!(x && older(p) && !turnedOn(p) && !basic(p, x) && !required(x) && !x.xr); }
+function itemState(p, x){ return dropped(p, x) ? { done: true, na: true, older: true, txt: 'Not needed (older job)' } : null; }
+
+/* ── 2 · routing: the PM first, then the office, then the admins ── */
+function live(p){ return !!p && !p.deleted && !p.archived && !GONE.test(s(p.status)) && !(older(p) && FINISHED.test(s(p.status))); }
+function legacy(p){ return older(p) && !turnedOn(p); }
+/* 0 = the PM only · 1 = + the office · 2 = + the admins */
+function tier(p, z){
+  var d = day(z && z.d && z.d.date); if (!d) return 0;
+  var n = bdAfter(d, today());
+  if (n >= ESC_ADMIN_BD && !legacy(p) && !paused()) return 2;
+  if (n >= ESC_OFFICE_BD) return 1;
+  return 0;
+}
+function toSend(p){ try { return EH() && EH().toSend ? arr(EH().toSend(p)) : []; } catch (e) { return []; } }
+function fieldModel(){
+  var out = [], adm = admin(), off = officeRole();
+  projects().forEach(function(p){
+    if (!live(p)) return;
+    var mine = isPM(p);
+    if (!mine && !adm && !off) return;
+    toSend(p).forEach(function(z){
+      var t = tier(p, z);
+      if (mine) out.push({ p: p, x: z.x, d: z.d, t: t });
+      else if (adm && t >= 2) out.push({ p: p, x: z.x, d: z.d, t: t, esc: 'admin' });
+      else if (off && t >= 1) out.push({ p: p, x: z.x, d: z.d, t: t, esc: 'office' });
+    });
+  });
+  var held = function(z){ return required(z.x) ? 0 : 1; };
+  return out.map(function(z, i){ z.__i = i; return z; }).sort(function(a, b){ var da = a.d.date || '9999', db = b.d.date || '9999'; return da < db ? -1 : da > db ? 1 : (held(a) - held(b)) || (a.__i - b.__i); });
+}
+/* the To-Dos (EPAHUD's sweep): the job's PM when the date is near or past; the office when it is ESC_OFFICE_BD business days past */
+function wanted(){
+  var want = {}, off = admin() || officeRole(), t0 = today();
+  projects().forEach(function(p){
+    if (!live(p) || p.importedHistory || legacy(p)) return;   /* an older job: no To-Dos (its basics are in its PM's Needs you) */
+    if (!off && !isPM(p)) return;
+    toSend(p).forEach(function(z){
+      var d = day(z.d && z.d.date); if (!d) return;
+      var n = Math.round((Date.parse(d + 'T12:00:00Z') - Date.parse(t0 + 'T12:00:00Z')) / 864e5);
+      if (n > 3) return;
+      var job = s(p.name || p.client || p.id), lab = s(z.x.label).split(' — ')[0], req = required(z.x), past = n < 0;
+      var when = (req ? 'required by ' : 'suggested by ') + nice(d) + (past ? ' — not sent yet' : '');
+      want['EPAHUD_' + p.id + '_' + z.x.k] = { p: p, assignee: s(p.pm) || 'Office', prio: past && req ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + ' — ' + when, note: s(z.x.label) + '\n' + s(z.d.txt) + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '\n' + (req ? 'Required — the job waits for it.' : 'Suggested — send it if it fits this job, or mark it N/A.') + '\nJob → 📑 Paperwork → 📤 Send… (or GrayCo Field → Needs you).' };
+      var tr = tier(p, z);
+      if (tr >= 1) want['EPAHUD_ESC_' + p.id + '_' + z.x.k] = { p: p, assignee: 'Office', prio: req ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + ' — not sent ' + bdAfter(d, t0) + ' business days after ' + nice(d) + ' — PM ' + (s(p.pm) || 'not set') + (tr >= 2 ? ' (office + admins)' : ' (office)'), note: s(z.x.label) + '\nSuggested by ' + nice(d) + ' — ' + s(z.d.txt) + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '. The PM has it first; not sent ' + ESC_OFFICE_BD + '+ business days → the office' + (legacy(p) ? ' (an older job: it does not go up to the admins).' : paused() ? ' (⏸ data-entry mode: it does not go up to the admins).' : '; ' + ESC_ADMIN_BD + '+ → the admins.') };
+    });
+  });
+  return want;
+}
+/* why EPAHUD's sweep closes a To-Do it no longer wants (the To-Do is kept, ticked, with this reason) */
+function closeWhy(t){
+  var m = /^EPAHUD_(?:ESC_)?(.+)$/.exec(s(t && t.id)); var p = proj(t && t.pid); if (!m || !p) return '';
+  var k = m[1].slice(s(p.id).length + 1), x = null;
+  try { x = (arr(obj(p.jobDocs).items).length ? arr(p.jobDocs.items) : arr(JD().want(p).items)).find(function(y){ return y && y.k === k; }) || null; } catch (e) {}
+  if (x && dropped(p, x)) return 'not needed (older job) — only the basics are suggested on jobs from before ' + nice(OLDER_BEFORE) + '/' + OLDER_BEFORE.slice(0, 4);
+  if (!live(p)) return 'the job is finished / closed';
+  if (x && toSend(p).some(function(z){ return z.x && z.x.k === k; })) return 'not escalated — the PM has it first (papers rule ' + nice(OLDER_BEFORE) + ')';
+  return '';
+}
+
+/* ── 3 · the words: suggested, never a red OVERDUE ── */
+function rowDue(z){
+  var d = day(z.d && z.d.date), req = required(z.x), past = d && d < today();
+  var txt = d ? (req ? 'Required by ' : 'Suggested by ') + nice(d) + (past ? ' — not sent yet' : '') : (req ? 'Required ' : 'Suggested ') + s(z.d && z.d.txt);
+  var tag = z.esc === 'admin' ? ' · not sent ' + ESC_ADMIN_BD + '+ business days — admins' : z.esc === 'office' ? ' · not sent ' + ESC_OFFICE_BD + '+ business days — office' : '';
+  return '<span style="display:block;font-size:12.5px;color:' + (past ? '#92400e' : '#475569') + '" data-pp-due="' + esc(d) + '">' + esc(txt) + esc(tag) + '</span>';
+}
+function head(M){ return 'Needs you · 📑 ' + M.length + ' paper' + (M.length === 1 ? '' : 's') + ' to send (suggested)'; }
+function dueHtml0(p, x){
+  var H = EH(); if (!H || !H.dueOf) return '';
+  var d = H.dueOf(p, x), cite = d.cite ? ' <span class="tag">(' + esc(d.cite) + ')</span>' : '', req = required(x), dd = day(d.date), past = dd && dd < today();
+  if (dd) return '<span class="' + (past && req ? 'bad' : 'due') + '" data-ep-due="' + esc(dd) + '"' + (past ? ' data-pp-past="1"' : '') + '>' + (req ? 'Required by ' : 'Suggested by ') + esc(nice(dd)) + (past ? ' — not sent yet' : '') + ' · ' + esc(d.txt) + (d.basis ? ' (' + esc(d.basis) + ')' : '') + '</span>' + cite;
+  return '<span class="due">' + (req ? 'Required ' : 'Suggested ') + esc(d.txt) + (d.wait ? ' — set ' + esc(d.wait) + ' in 🏛 facts' : '') + '</span>' + cite;
+}
+function olderBar(p){
+  if (!p || !older(p)) return '';
+  var items = []; try { items = arr(obj(p.jobDocs).items).length ? arr(p.jobDocs.items) : arr(JD().want(p).items); } catch (e) {}
+  var on = turnedOn(p), n = items.filter(function(x){ return x && !x.stale && !basic(p, x) && !required(x) && !x.xr; }).length, O = obj(obj(p.jobDocs).olderOn);
+  var why = 'made ' + (nice(madeOn(p)) ? nice(madeOn(p)) + '/' + madeOn(p).slice(0, 4) : '—') + (day(p.startDate) ? ' · started ' + nice(p.startDate) + '/' + day(p.startDate).slice(0, 4) : '');
+  var h = '<div class="m" data-pp-older="' + (on ? 'on' : 'off') + '" style="margin:6px 0;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#334155">🗂 <b>Older job</b> (' + esc(why) + ') — ';
+  if (!on) h += 'only the basics are suggested (the signed agreement' + (hasInvoice(p) ? ', the invoice' : '') + '). ' + n + ' other paper' + (n === 1 ? ' is' : 's are') + ' marked "Not needed (older job)" — kept here, nothing deleted.' + (admin() && n ? ' <button type="button" data-pp="on" style="min-height:28px;padding:2px 8px">↩ Turn them back on for this job</button>' : '');
+  else h += 'all its papers were turned back on' + (s(O.by) ? ' by ' + esc(O.by) : '') + (s(O.at) ? ' ' + esc(nice(day(O.at))) : '') + '.' + (admin() ? ' <button type="button" data-pp="off" style="min-height:28px;padding:2px 8px">Only the basics again</button>' : '');
+  return h + '</div>';
+}
+function cardTop0(p, html){
+  var h = s(html).replace(/<b class="bad">📑/, '<b>📑').replace(/(📑 \d+ papers? to send)<\/b>/, '$1 (suggested)</b>').replace(/ · <b class="bad">(\d+) overdue<\/b>/, ' · <b style="color:#92400e">$1 past the suggested date</b>');
+  return olderBar(p) + h;
+}
+/* an admin turns the dropped papers of one older job back on (or off again) — logged on the job, never removed */
+function turnOn(pid, on){
+  if (!admin()) return false;
+  var J = JD(); if (!J || !J.patchJD || !proj(pid)) return false;
+  var rec = { on: !!on, by: myName() || 'admin', at: new Date().toISOString() };
+  J.patchJD(pid, function(X){ X.olderOn = rec; X.olderLog = arr(X.olderLog).concat([{ act: on ? 'turned back on' : 'only the basics', by: rec.by, at: rec.at }]); return X; });
+  ST.call(W, function(){ try { J.paint(); } catch (e) {} try { if (W._gcJobReq && W._gcJobReq.fieldPaint) W._gcJobReq.fieldPaint(true); } catch (e) {} try { if (EH() && EH().fieldPaint) EH().fieldPaint(); } catch (e) {} }, 120);
+  return true;
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-pp]') : null; if (!b) return;
+  var box = b.closest('[data-pid]'); var pid = box && box.getAttribute('data-pid'); if (!pid) return;
+  e.preventDefault(); e.stopPropagation();
+  var on = b.getAttribute('data-pp') === 'on';
+  if (!W.confirm(on ? 'Turn every paper of this older job back on?\n\nThey go back on its 📑 Paperwork and to its PM (then the office / admins if nobody sends them).' : 'Back to only the basics on this older job?\n\nThe other papers are marked "Not needed (older job)" again — nothing is deleted.')) return;
+  turnOn(pid, on);
+}, true);
+
+/* ── 4 · the To-Do (TD2): an older job's auto To-Dos are off ── */
+var AUTO_KINDS = /^(epahud|jobdocs_env|job_done|job_contact|sub_confirm|scope_review|paid_before|lsa_check|qb_home|no_pm|datacheck|closeout|progress)$/;
+function autoRec(t){
+  if (!t) return false;
+  if (t.kind === 'quick' || t.kind === 'mention' || t.self || t.kind === 'admin_seed') return false;   /* a person wrote it */
+  if (AUTO_KINDS.test(s(t.kind)) || t._noContract || t.auto) return true;
+  if (/^(portal_|EPAHUD_|JOBDOCS_|SUPPLIERBILLS_|AUTOCHECKS_|JOBCONTACT|JOBDONE)/i.test(s(t.id))) return true;
+  return /^(crm|system|grayco crm|setup|admin \(setup\)|auto\b.*)$/i.test(s(t.addedBy));
+}
+var THING_PID = /^(contract|bill|scope|po|info|prop|final|portal-link|portal-docs|nopm|draft|progress|closeout|verify)\|([^|]+)/;
+function pidOf(r){ if (s(r.pid)) return s(r.pid); var m = THING_PID.exec(s(r.thing)); if (m) return m[2]; return s(r.rec && r.rec.pid); }
+function contactItem(r){ var t = s(r.title) + ' ' + s(r.sub); return /^info\|/.test(s(r.thing)) && /phone|e-?mail|contact/i.test(t) || /no customer (phone|e-?mail)|missing (customer )?(phone|e-?mail)/i.test(t); }
+/* r: a TD2 source item; proj: TD2's job lookup */
+function todoDrop(r, pj){
+  if (!r) return false;
+  if (r.src === 'st' && !autoRec(r.rec)) return false;            /* a person's own To-Do stays */
+  if (r.src === 'lead' || r.src === 'rt' || r.src === 'wait') return false;   /* leads, routines, waiting-on-others are not about a job */
+  var pid = pidOf(r); if (!pid) return false;
+  var p = (typeof pj === 'function' ? pj(pid) : null) || proj(pid); if (!p || !older(p)) return false;
+  if (r.rec && r.rec.kind === 'epahud' && turnedOn(p)) return false;   /* an admin turned the job's papers back on */
+  if (/^(ar|sub)\|/.test(s(r.thing)) || r.cat === 'appr' || r.cat === 'subs') return false;    /* money owed, a sub's papers, a decision waiting: not a job nag */
+  if (contactItem(r) && !FINISHED.test(s(p.status)) && !GONE.test(s(p.status))) return false;   /* an open job with no phone / e-mail: kept */
+  return true;
+}
+
+/* ── 5 · the desk To-Do's bulk tool (admins): ☑ Select · Select all in this group · ✓ Not needed · 🗄 Show archived ── */
+var SEL = { on: false, keys: {}, arch: false };
+function deskAdmin(){ return admin() && !D.documentElement.classList.contains('_fieldmode'); }
+function selBox(it, depth){ if (!SEL.on || !deskAdmin() || depth) return ''; return '<input type="checkbox" class="pp-sel" data-pp-k="' + esc(it.key) + '"' + (SEL.keys[it.key] ? ' checked' : '') + ' title="Select" aria-label="Select" style="width:18px;height:18px;margin:0 6px 0 0;accent-color:#241968">'; }
+function selAll(id){ if (!SEL.on || !deskAdmin()) return ''; return '<button type="button" class="pp-selall" data-pp-all="' + esc(id) + '" style="margin:2px 0 4px 26px;border:0;background:none;color:#241968;font:700 12px Inter,Arial,sans-serif;cursor:pointer;text-decoration:underline">☑ Select all in this group</button>'; }
+function nSel(){ return Object.keys(SEL.keys).filter(function(k){ return SEL.keys[k]; }).length; }
+function archList(){ try { return arr(W._gcTD2 && W._gcTD2.archived && W._gcTD2.archived()); } catch (e) { return []; } }
+function bar(kind){
+  if (!deskAdmin() || kind === 'field') return '';
+  var B = 'min-height:32px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:3px 10px;font:700 12.5px Inter,Arial,sans-serif;cursor:pointer;color:#0f172a';
+  var h = '<div class="pp-bar" data-gc-keep="1" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 8px">'
+    + '<button type="button" data-pp-b="sel" style="' + B + (SEL.on ? ';background:#ede9fe;border-color:#241968' : '') + '">' + (SEL.on ? '✕ Stop selecting' : '☑ Select') + '</button>'
+    + (SEL.on ? '<button type="button" data-pp-b="na" style="' + B + ';background:#166534;color:#fff;border-color:#166534"' + (nSel() ? '' : ' disabled') + '>✓ Not needed (' + nSel() + ')</button><span style="font-size:12px;color:#64748b">archived, never deleted — they don\'t come back</span>' : '')
+    + '<button type="button" data-pp-b="arch" style="' + B + ';margin-left:auto">' + (SEL.arch ? 'Hide archived' : '🗄 Show archived') + '</button></div>';
+  if (SEL.arch) {
+    var L = archList();
+    h += '<div class="pp-arch" style="border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;margin:0 0 10px;background:#f8fafc"><b>🗄 Archived — not needed (' + L.length + ')</b>'
+      + (L.length ? L.slice(0, 300).map(function(x){ return '<div class="pp-ar" data-pp-ak="' + esc(x.key) + '" style="display:flex;gap:8px;align-items:center;border-top:1px solid #eef2f7;padding:4px 0;font-size:12.5px"><span style="flex:1;min-width:0">' + esc(x.title) + ' <span style="color:#64748b">· ' + esc(x.by || '') + (x.at ? ' ' + esc(nice(day(x.at))) : '') + '</span></span><button type="button" data-pp-b="restore" style="' + B + '">↩ Restore</button></div>'; }).join('') : '<div style="color:#64748b;font-size:12.5px">Nothing archived.</div>')
+      + '</div>';
+  }
+  return h;
+}
+function td2Paint(){ try { if (W._gcTD2 && W._gcTD2.paint) W._gcTD2.paint(); } catch (e) {} }
+D.addEventListener('click', function(e){
+  var t = e.target; if (!t || !t.closest) return;
+  var b = t.closest('[data-pp-b],[data-pp-all],.pp-sel'); if (!b) return;
+  e.stopPropagation();
+  if (b.classList.contains('pp-sel')) { SEL.keys[b.getAttribute('data-pp-k')] = !!b.checked; var nb = D.querySelector('.pp-bar [data-pp-b="na"]'); if (nb) { nb.textContent = '✓ Not needed (' + nSel() + ')'; nb.disabled = !nSel(); } return; }
+  e.preventDefault();
+  if (b.hasAttribute('data-pp-all')) {
+    var id = b.getAttribute('data-pp-all'), sec = b.closest('.td2-sec');
+    var more = sec && sec.querySelector('.td2-moreRows[data-s="' + id.replace(/"/g, '') + '"]');
+    var pick = function(){ var sc = D.querySelector('.td2-sec[data-s="' + id.replace(/"/g, '') + '"]') || sec; if (!sc) return; sc.querySelectorAll('.td2-row[data-k]:not(.d1)').forEach(function(r){ SEL.keys[r.getAttribute('data-k')] = true; }); td2Paint(); };
+    if (more) { more.click(); ST.call(W, pick, 250); } else pick();
+    return;
+  }
+  var a = b.getAttribute('data-pp-b');
+  if (a === 'sel') { SEL.on = !SEL.on; if (!SEL.on) SEL.keys = {}; td2Paint(); return; }
+  if (a === 'arch') { SEL.arch = !SEL.arch; td2Paint(); return; }
+  if (a === 'na') { var ks = Object.keys(SEL.keys).filter(function(k){ return SEL.keys[k]; }); if (!ks.length) return; if (!W.confirm('Mark ' + ks.length + ' To-Do' + (ks.length === 1 ? '' : 's') + ' "Not needed"?\n\nThey are archived (kept, never deleted) and do not come back. 🗄 Show archived → ↩ Restore brings one back.')) return; var n = W._gcTD2.notNeeded(ks, true); SEL.keys = {}; td2Paint(); try { if (W._gcToast) W._gcToast('✓ ' + n + ' marked not needed (archived)'); } catch (x) {} return; }
+  if (a === 'restore') { var r = b.closest('[data-pp-ak]'); if (r) { W._gcTD2.restore(r.getAttribute('data-pp-ak')); td2Paint(); } return; }
+}, true);
+
+/* ── 6 · the desk To-Do opens with every group collapsed (owner 11/19: he opens the one he wants); open / closed is kept for this
+   page session only (memory — a fresh open of the CRM starts collapsed again). GrayCo Field keeps its own behaviour. ── */
+var COL = {};
+function colOf(id, saved, dflt){
+  if (D.documentElement.classList.contains('_fieldmode')) return saved != null ? !!saved : !!dflt;
+  return COL[id] != null ? COL[id] : true;
+}
+function colSet(id, c){ COL[id] = !!c; }
+
+/* ── wire into EPAHUD's API (the job card asks it through window._gcEpaHud) ── */
+function wire(){
+  var H = EH(); if (!H || H.__pp) return !!H;
+  var top = H.cardTop, due = H.dueHtml;
+  if (typeof top === 'function') H.cardTop = function(p, items){ var h = ''; try { h = top.apply(this, arguments); } catch (e) {} try { return cardTop0(p, h); } catch (e) { return h; } };
+  if (typeof due === 'function') H.dueHtml = function(p, x){ try { var r = dueHtml0(p, x); if (r) return r; } catch (e) {} return due.apply(this, arguments); };
+  H.__pp = true; return true;
+}
+if (!wire()) { var n = 0, iv = (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (wire() || ++n > 120) W.clearInterval(iv); }, 500); }
+
+function state(){
+  var P = projects(), o = 0, kept = 0, drop = 0;
+  P.forEach(function(p){ if (!older(p)) return; o++; });
+  var M = fieldModel();
+  return { today: today(), olderBefore: OLDER_BEFORE, escOffice: ESC_OFFICE_BD, escAdmin: ESC_ADMIN_BD, jobs: P.length, older: o, paused: paused(), role: admin() ? 'admin' : officeRole() ? 'office' : 'staff', needsYou: M.length, mine: M.filter(function(z){ return !z.esc; }).length, office: M.filter(function(z){ return z.esc === 'office'; }).length, admin: M.filter(function(z){ return z.esc === 'admin'; }).length };
+}
+W._gcPapers = { older: older, basic: basic, dropped: dropped, required: required, itemState: itemState, fieldModel: fieldModel, wanted: wanted, tier: tier, bdAfter: bdAfter, rowDue: rowDue, head: head,
+  closeWhy: closeWhy, turnOn: turnOn, todoDrop: todoDrop, autoRec: autoRec, colOf: colOf, colSet: colSet, selBox: selBox, selAll: selAll, bar: bar, sel: SEL, olderBar: olderBar, live: live, state: state, OLDER_BEFORE: OLDER_BEFORE, ESC_OFFICE_BD: ESC_OFFICE_BD, ESC_ADMIN_BD: ESC_ADMIN_BD };
+try { console.log('[GC] 📑 papers: older jobs keep the basics · suggested · PM → office → admins (patch PAPERS) — _gcPapers'); } catch (e) {}
 })(window);
 </script>

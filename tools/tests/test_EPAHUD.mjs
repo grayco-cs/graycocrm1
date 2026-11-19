@@ -41,7 +41,7 @@ ok('A1 the HUD job got the HUD papers by itself (HUD 01–05, Lead 12 occupant c
 await A.ev(() => { if (window._navToJob) window._navToJob('PHUD'); else if (window._openJobDetail) window._openJobDetail(window._crm.projects.find(p => p.id === 'PHUD')); });
 let card = await wait(A, () => { const c = document.getElementById('gc-jd'); return c && c.getAttribute('data-pid') === 'PHUD' && c.innerText; }, null, 20000);
 if (!card) { await A.ev(() => { window._gcOpenProject = { id: 'PHUD' }; }); card = await wait(A, () => { const c = document.getElementById('gc-jd'); return c && c.innerText; }, null, 8000); }
-ok('A2 the job card: "📑 N papers to send · N overdue", 🏛 EPA / HUD facts, HUD 02 OVERDUE with the rule, → occupants', card && /📑 \d+ papers to send/.test(card) && /overdue/.test(card) && /EPA \/ HUD facts/.test(card) && /HUD 02[\s\S]*OVERDUE — was due[\s\S]*35\.125\(b\)\(1\)/.test(card) && /→ Occupants \/ tenants/.test(card), card && card.slice(0, 900));
+ok('A2 the job card: "📑 N papers to send · N overdue", 🏛 EPA / HUD facts, HUD 02 OVERDUE with the rule, → occupants', card && /📑 \d+ papers to send/.test(card) && /overdue|past the suggested date/.test(card) && /EPA \/ HUD facts/.test(card) && /HUD 02[\s\S]*(OVERDUE — was due|Suggested by \d+\/\d+ — not sent yet)[\s\S]*35\.125\(b\)\(1\)/.test(card) && /→ Occupants \/ tenants/.test(card), card && card.slice(0, 900));
 await A.ev(() => { const c = document.getElementById('gc-jd'); if (c) c.scrollIntoView({ block: 'start' }); }); await sleep(300); await shot(A, 'A2-card');
 await A.ev(() => { const b = document.querySelector('#gc-jd [data-jk="gcb_hud_02"] [data-ep="menu"]'); if (b) b.click(); });
 let sheet = await wait(A, () => { const o = document.getElementById('gc-ep-sheet'); return o && o.innerText; }, null, 6000);
@@ -93,7 +93,7 @@ await signIn(B, 'pm@grayco-cs.com', 20000);
 ok('C0 the PM\'s phone is up', !!await wait(B, () => window._gcEpaHud && (window._crm.projects || []).length >= 4, null, 60000));
 await wait(B, () => { if (!document.querySelector('#_gcJobPick.gc-fh') && window._gcField && window._gcField.open) { try { window._gcField.open(); } catch (e) {} } return document.querySelector('#_gcJobPick.gc-fh'); }, null, 30000);
 let fh = await wait(B, () => { const b = document.getElementById('gc-ep-field'); return b && b.innerText; }, null, 20000);
-ok('C1 GrayCo Field home: "Needs you · 📑 N papers to send" with due dates (the PM\'s jobs) + 📜 My certifications', fh && /Needs you · 📑 \d+ papers? to send/i.test(fh) && /OVERDUE|Due/.test(fh) && /My certifications/.test(fh), fh);
+ok('C1 GrayCo Field home: "Needs you · 📑 N papers to send" with due dates (the PM\'s jobs) + 📜 My certifications', fh && /Needs you · 📑 \d+ papers? to send/i.test(fh) && /OVERDUE|Due|Suggested/.test(fh) && /My certifications/.test(fh), fh);
 await shot(B, 'C1-field-needs-you');
 await B.ev(() => { const OUT = /^gcb_(hud_0[1235]|lead_0[129]|lead_12|asb_0[16]|lead_03)$/; const r = [...document.querySelectorAll('#gc-ep-field [data-ep-pid]')].find(x => OUT.test(x.getAttribute('data-ep-k'))); if (r) { window.__k = r.getAttribute('data-ep-k'); window.__pid = r.getAttribute('data-ep-pid'); r.querySelector('[data-ep-fa="send"]').click(); } else { window.__k = 'gcb_hud_03'; window.__pid = 'PHUD'; window._gcEpaHud.menu('PHUD', 'gcb_hud_03'); } });
 await wait(B, () => document.querySelector('#gc-ep-sheet [data-ep-ch="share"]'), null, 6000);
