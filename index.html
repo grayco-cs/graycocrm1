@@ -7980,7 +7980,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
       .then(function(v){
         if(!v) return;
         var remote = String(v).trim();
-        if(remote && remote !== BUILD_ID) showUpdateBar(remote);
+        if(remote && remote !== BUILD_ID && !(window._gcBootWatch && window._gcBootWatch.older && !window._gcBootWatch.older(BUILD_ID, remote))) showUpdateBar(remote);   /* AUTOUPD: only when the server's build is NEWER (a newer copy — a preview, a rollback — is left alone) */
       })
       .catch(function(){});
   }
