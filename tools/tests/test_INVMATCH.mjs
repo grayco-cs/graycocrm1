@@ -6,7 +6,7 @@
 //      · a job for the customer "Enterprise" no longer takes a bill for another Enterprise site (#1302);
 //      · a customer with several jobs → the invoice is NOT put on the first one; one PO on 3 jobs → no job; two jobs at one address → no job;
 //      · a lost job is never the target; nothing attaches to a job that is not there;
-//      · what IS sure still lands by itself: the PO of exactly one job, its street address, the customer of exactly one job.
+//      · what IS sure still lands by itself: the PO of exactly one job, its street address (INVLINK 11/19: the customer of one job alone is only a suggestion).
 //   B. ➕ New project (patch NEWPROJ) from the invoice:
 //      · "Did you mean …?" finds the existing job for "4964 Given Ave" (the job is at 4964 GivenS Ave) and for a memo that holds the address;
 //      · opened from 🔗 QuickBooks ↔ CRM it knows the record (id, vendor, memo);
@@ -81,7 +81,7 @@ ok(!pidOf('IV_CLAIR'), 'two jobs at the same address: the bill gets no job by it
 ok(pidOf('IV_LOST') !== 'PJ_LOST', 'a lost job is never picked by the finder', live.IV_LOST);
 ok(pidOf('IV_K101') === 'PJ_ONE', 'the PO of exactly one job still puts the bill on it', live.IV_K101);
 ok(pidOf('IV_ADDR') === 'PJ_ONE', 'the street address of exactly one job ("88 Hollis Road" = 88 Hollis Rd) still puts the bill on it', live.IV_ADDR);
-ok(pidOf('IV_CUST1') === 'PJ_ONE', 'the customer of exactly ONE job still gets its invoice on that job', live.IV_CUST1);
+ok(!pidOf('IV_CUST1'), 'INVLINK (owner 11/19): the customer\'s name alone is a suggestion, never a link — even when it has ONE job', live.IV_CUST1);
 ok(/address 88 Hollis/.test((live.IV_ADDR || {}).why) || /PO K101/.test((live.IV_K101 || {}).why), 'an automatic link by the job finder says why (autoLinkWhy)', [live.IV_K101, live.IV_ADDR]);
 const jobIds = new Set(PROJECTS.map(p => p.id));
 ok(Object.values(live).every(v => !v.pid || jobIds.has(v.pid)), 'nothing is attached to a job that is not there', live);
