@@ -158123,7 +158123,7 @@ function applySubRead(rd, sid, form, meta){
     if (rd.tinMasked) { ch.ein = rd.tinMasked; extra.taxId = rd.tinMasked; extra.tinType = s(f.tinType); extra.taxRef = s(rd.taxRef); }
   } else return { ok: false, error: 'Not a COI or W-9.' };
   var all = Object.assign({}, ch, extra);
-  W._setSubs(function(list){ return (list || []).map(function(x){ if (!x || String(x.id) !== String(sid)) return x; var y = Object.assign({}, x, all); var fl = arr(x.files); if (file.ref && !fl.some(function(z){ return z.ref === file.ref; })) fl = fl.concat([file]); y.files = fl; y.updatedAt = at; return y; }); });
+  W._setSubs(function(list){ return (list || []).map(function(x){ if (!x || String(x.id) !== String(sid)) return x; var y = Object.assign({}, x, all); var fl = arr(x.files); if (file.ref && !fl.some(function(z){ return z.ref === file.ref; })) fl = fl.concat([file]); else if (file.ref) fl = fl.map(function(z){ return z && z.ref === file.ref && !z.aiRead ? Object.assign({}, z, { aiRead: rd.id || true, readBy: by, readAt: at }) : z; }); y.files = fl;   /* SUBDOCREAD (owner 11/19): a file already on the sub is marked read too, so it leaves "COI / W-9 to confirm" */ y.updatedAt = at; return y; }); });
   /* the open form (React state) gets the same values, so its Save keeps them */
   var LBL = { insCarrier: 'GL Insurance Carrier', insPolicy: 'GL Policy #', insExp: 'GL Insurance Exp', wcCarrier: 'WC Carrier', wcPolicy: 'WC Policy #', wcExp: 'WC Exp', autoInsCarrier: 'Auto Insurance Carrier', autoInsExp: 'Auto Insurance Exp', ein: 'Tax ID / EIN' };
   if (form && D.body.contains(form) && formSubId(form) === String(sid)) Object.keys(ch).forEach(function(k){ setInput(formInput(form, LBL[k]), ch[k]); });
@@ -158131,6 +158131,7 @@ function applySubRead(rd, sid, form, meta){
   pend[sid] = { at: Date.now(), f: all, file: file }; lsSet(SUBF, JSON.stringify(pend));
   if (rd.taxRef) fn('sub-doc-read', { act: 'link', taxRef: rd.taxRef, subId: sid });
   fn('sub-doc-read', { act: 'done', id: rd.id, subId: sid });
+  try { if (file.ref) { SEENDOC[file.ref] = 1; SDQ = SDQ.filter(function(z){ return z.ref !== file.ref; }); paintPills(); } } catch (e) {}   /* SUBDOCREAD: off the list at once */
   try { W._gcPushAll && ST(W._gcPushAll, 800); } catch (e) {}
   log({ what: 'subdoc', kind: rd.kind, sub: sid });
   return { ok: true, msg: (rd.kind === 'coi' ? 'Insurance filled' + (extra.coiExp ? ' — COI expires ' + extra.coiExp + ' (the 30-day alert uses it)' : '') : 'W-9 filled' + (rd.tinMasked ? ' — EIN kept as ' + rd.tinMasked : '')) + ' on ' + sb.name + '.' };
