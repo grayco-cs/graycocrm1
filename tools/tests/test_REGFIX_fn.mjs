@@ -2,7 +2,7 @@
 //   a register with live supplier-bill lines + copies of them that were DELETED (tombstoned + gc_deleted_gcAcctRegister),
 //   a fold cycle (C into Z, Z into C), and a real duplicate pair. Then the duplicate fold runs, then the deleted copies are
 //   stripped (what the next sync / upload does). The live lines must still be there.
-// Also: the out-of-date-copy gate (_gcStaleGate), the bill-amount fix (_gcBillAmtFix: plan / apply / undo) and the import guard.
+// Also: the out-of-date-copy gate (_gcStaleGate), the import guard, and that the bill-amount restore (REGFIX-AMT) is gone (owner 11/19).
 import fs from 'fs'; import vm from 'vm'; import path from 'path';
 const FILE = path.resolve(process.argv[2] || 'index.html');
 const html = fs.readFileSync(FILE, 'utf8');
@@ -143,6 +143,14 @@ async function gate(){
   ok(SD.state() === 'current', 'no answer for 20 s: opens up (never stuck shut)');
 }
 
+/* owner 11/19: the bill-amount restore is taken out (bill #373642's $49.19 is right — the $31,484.70 was a payment over several
+   bills); the import guard stays */
+async function amtfixGone(){
+  const src = html;
+  ok(!/__GC_PATCH_AMTFIX__/.test(src) && !/_gcBillAmtFix/.test(src), 'the bill-amount restore (REGFIX-AMT) is not in the page');
+  ok(!/label: "Fix bill amounts the 11-13 import changed"/.test(src), 'no 💎 menu item "Fix bill amounts the 11-13 import changed"');
+  ok(/window\._gcQbBillAmtHold = function/.test(src), 'the import guard (a re-import never changes a bill total) stays');
+}
 async function amtfix(){
   const AF = blockAt('__GC_PATCH_AMTFIX__');
   ok(!html.includes('_gcRegRestore'), 'the "Restore 44 register lines" action is gone (those lines were copies of money still on the register)');
@@ -192,6 +200,6 @@ async function amtfix(){
 }
 
 await run();
-if (HAS_FIX) { await gate(); await amtfix(); }
+if (HAS_FIX) { await gate(); await amtfixGone(); }
 console.log(`\nREGFIX: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
