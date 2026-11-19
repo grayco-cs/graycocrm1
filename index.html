@@ -108407,7 +108407,7 @@ window._gcSyncNote = noteResult;
        was closed), answered "503 offline" here by NETSAFE, was counted as a refused upload — measured on the throttled phone,
        eight of those stopped all uploading for good ("Eight uploads refused in a row"), right after he approved something. */
     var m = 'GET'; try{ m = String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase(); }catch(e){}
-    if(m === 'GET' || m === 'HEAD') return p;
+    if(m === 'GET' || m === 'HEAD') return p.then(function(res){ if(res && res.ok && res.type !== 'default') noteResult(true); return res; });   /* the database answering a read still clears it, as before */
     return p.then(function(res){ if(!(res && !res.ok && res.type === 'default')) noteResult(!!(res && res.ok)); return res; },
                   function(err){ throw err; });
   };
