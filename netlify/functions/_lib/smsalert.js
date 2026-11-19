@@ -389,7 +389,8 @@ async function notify(o){
   }
   if (out.sent && o.lsa) {   /* LSATEXT: the phones that got this LSA lead can answer GOOD / BAD (72 h) */
     const adm = lsaAdmins(), ph2 = go.filter(g => out.to.indexOf(g.email) >= 0 && (!o.lsa.adminsOnly || adm.indexOf(low(g.email)) >= 0)).map(g => g.phone);   /* LEADTXT: an emergency / NEW LEAD code answers from the admins' cells only */
-    await _D.kvCas(SKEY, v => { const st = loadState(v); ph2.forEach(ph => { const l = arr(st.lsa[ph]).filter(x => x.leadId !== o.lsa.leadId); l.push(Object.assign({ at }, o.lsa)); st.lsa[ph] = l.slice(-12); }); return st; }).catch(() => {});
+    await _D.kvCas(SKEY, v => { const st = loadState(v); ph2.forEach(ph => { const l0 = arr(st.lsa[ph]), was = l0.find(x => x.leadId === o.lsa.leadId), l = l0.filter(x => x.leadId !== o.lsa.leadId);
+      l.push(Object.assign({ at }, o.lsa, was && was.done && !('done' in o.lsa) ? { done: was.done } : {})); st.lsa[ph] = l.slice(-12); }); return st; }).catch(() => {});   /* LEADTXT: a later text about an answered lead (the customer wrote back) keeps it answered */
   }
   if (out.sent && o.replyTo && (phone10(o.replyTo.phone).length === 10 || s(o.replyTo.leadId))) {
     const rt = { at, to: phone10(o.replyTo.phone).length === 10 ? phone10(o.replyTo.phone) : '', pid: s(o.replyTo.pid), name: clip(o.replyTo.name, 60), kind: o.type,
@@ -419,7 +420,7 @@ async function flushHeld(){
     /* OVERNIGHT: each overnight lead as its own text (the same text it would have been, with its reply code), oldest first */
     for (const x of leadsH) {
       let r = null; try { r = await sendL(p.phone, s(x.body || x.text).slice(0, 600), leadNum(), undefined, { who: p.name, leadId: s(x.lsa && x.lsa.leadId), code: s(x.lsa && x.lsa.code), type: 'lead', overnight: true }); } catch (e2) {}
-      if (r && r.ok) { out.sent++; if (x.lsa && (!x.lsa.adminsOnly || lsaAdmins().indexOf(low(e)) >= 0)) { const ph = p.phone; await _D.kvCas(SKEY, v => { const st = loadState(v); const l = arr(st.lsa[ph]).filter(y => y.leadId !== x.lsa.leadId); l.push(Object.assign({}, x.lsa, { at: new Date(now()).toISOString() })); st.lsa[ph] = l.slice(-12); return st; }).catch(() => {}); } }
+      if (r && r.ok) { out.sent++; if (x.lsa && (!x.lsa.adminsOnly || lsaAdmins().indexOf(low(e)) >= 0)) { const ph = p.phone; await _D.kvCas(SKEY, v => { const st = loadState(v); const l0 = arr(st.lsa[ph]), was = l0.find(y => y.leadId === x.lsa.leadId), l = l0.filter(y => y.leadId !== x.lsa.leadId); l.push(Object.assign({}, x.lsa, { at: new Date(now()).toISOString() }, was && was.done && !('done' in x.lsa) ? { done: was.done } : {})); st.lsa[ph] = l.slice(-12); return st; }).catch(() => {}); } }
     }
     const sysOk = sys.filter(x => x.kind !== 'system' || p.system);   /* QUIET: every held alert (a system one only for whoever wants those) */
     if (sysOk.length) { const sys2 = sysOk; const text = sys2.length === 1 ? sys2[0].text : sys2.length + ' overnight alerts: ' + sys2.map(x => x.text).join(' · ');
@@ -691,7 +692,7 @@ function lsaParseMulti(body, codes){
 }
 /* one lead's answer (the single-answer texts unchanged; quiet = no confirmation text, a several-lead reply sends one summary) */
 async function lsaApply(ph, who, isAdm, verb, rec, reason, o){
-  o = o || {}; const good = verb === 'good', more = s(o.more);
+  o = o || {}; const good = verb === 'good', more = o.more ? String(o.more) : '';
   try { await _D.ack(rec.leadId, 'answered the LSA text (' + (who.name || who.email) + ')'); } catch (e) {}   /* any GOOD / BAD / NA answer acknowledges an emergency LSA lead: no escalation calls */
   /* LSANA (owner 11/10: "also put in leads as not answered — not necessarily a bad lead but no answer once we got the lead, will revisit") */
   if (verb === 'na') {
@@ -744,15 +745,18 @@ async function lsaMulti(ph, who, isAdm, list, mp){
   const pool = op.pick.filter(x => !named[x.leadId]);   /* oldest → newest as texted to this phone */
   let askMore = '';
   if (bare.length) {
-    if (bare.length === pool.length) bare.forEach((b, k) => todo.push({ i: b.i, a: b.a, rec: pool[k], mapped: true }));
+    /* only the bare words ("bad bad good") go by position; "Bad lead, good luck to them" is not guessed — with details, the code is needed */
+    const words = bare.every(b => !b.a.rest);
+    if (words && bare.length === pool.length) bare.forEach((b, k) => todo.push({ i: b.i, a: b.a, rec: pool[k], mapped: true }));
     else if (!todo.length) {
-      if (who.rep && bare.some(b => b.a.rest)) return null;   /* "Good morning, bad traffic" in a reply window: a text for the customer */
-      const txt = pool.length || op.open.length
+      if (who.rep && !words) return null;   /* "Good morning, bad traffic" in a reply window: a text for the customer */
+      const txt = !words ? lsaAskText(op.open, list).replace(/\. Nothing saved\.$/, '. With more than one answer, put the code before each. Nothing saved.')
+        : pool.length || op.open.length
         ? 'GrayCo: you sent ' + bare.length + ' answer' + (bare.length === 1 ? '' : 's') + ' but ' + pool.length + ' lead' + (pool.length === 1 ? ' is' : 's are') + ' open — nothing saved. ' + lsaAskText(op.open, list).replace(/^GrayCo: /, '').replace(/ Nothing saved\.$/, '')
         : lsaAskText([], list);
       let c = null; try { c = await sendL(ph, txt, leadNum()); } catch (e) {}
       return { handled: true, staff: who.email, multi: true, lsaAsk: 'count', words: bare.length, open: pool.length, asked: !!(c && c.ok) };
-    } else askMore = bare.length + ' answer' + (bare.length === 1 ? '' : 's') + ' had no code and ' + pool.length + ' other lead' + (pool.length === 1 ? ' is' : 's are') + ' open — not saved' + (pool.length ? '. Open: ' + lsaOpenLine(pool) : '') + '.';
+    } else askMore = bare.length + ' answer' + (bare.length === 1 ? '' : 's') + ' had no code and ' + (words ? '' : 'details, ') + pool.length + ' other lead' + (pool.length === 1 ? ' is' : 's are') + ' open — not saved' + (pool.length ? '. Open: ' + lsaOpenLine(pool) : '') + '.';
   }
   todo.sort((x, y) => x.i - y.i);
   const results = [], lines = [];
@@ -1087,5 +1091,5 @@ async function emqDue(){
   const out = []; for (const ph of due) out.push(await emqSend(ph, '15 minutes after we answered'));
   return { due: due.length, out };
 }
-module.exports = { emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

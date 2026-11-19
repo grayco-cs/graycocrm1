@@ -48,7 +48,7 @@ const to = r => r.sent.map(x => x.to).sort();
     { L1: { id: 'L1', leadExtra: { textMessage: true, smsFrom: '9015550100', textBody: 'Roof is leaking a little, can someone look Tuesday?' } } }, () => false);
   assert.deepStrictEqual(to(r), ['9015550001', '9015550002']);
   const b = r.sent[0].body;
-  assert.ok(/^GrayCo: text lead [A-Z0-9]{4} from \(901\) 555-0100 Jane Doe says "Roof is leaking a little, can someone look Tuesday\?"\. crm\.test\/#leads&lead=L1 Reply GOOD \+ PM name/.test(b), b);   /* LEADTEXT (owner 11/10): every lead in the GrayCo text shape */
+  assert.ok(/^GrayCo: text lead [A-Z0-9]{4} from \(901\) 555-0100 Jane Doe says "Roof is leaking a little, can someone look Tuesday\?"\. crm\.test\/#leads&lead=L1 Reply GOOD ([A-Z0-9]{4}) \/ BAD \1\. GOOD \1 Pat = PM Pat/.test(b), b);   /* LEADTEXT (owner 11/10): every lead in the GrayCo text shape */
   assert.strictEqual(r.sent[0].from, '+19015550999');
   /* long message trimmed with … under 300 */
   r = rig();
