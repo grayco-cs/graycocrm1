@@ -1,0 +1,71 @@
+<script id="gc-patch-supply">
+/* __GC_PATCH_SUPPLY__ — outside scripts are pinned and checked (tools/patch_SUPPLY.py).
+   · supabase-js is our own copy: /vendor/supabase-js-2.119.0.min.js (the UMD build; the same bytes on jsdelivr, unpkg and in the npm
+     package — it was a floating "@2" link that could change under us);
+   · every pinned CDN file the CRM loads (React, pdf.js, JSZip, mammoth, jsPDF, html2pdf, SheetJS, pdf-lib, docx, Leaflet) is loaded with
+     Subresource Integrity: a script / stylesheet added for one of these exact addresses gets integrity + crossorigin="anonymous" just
+     before it goes into the page, so a changed file is refused instead of run. A tag that already has integrity is left alone. Each
+     hash was computed from the file as two CDNs serve it (the same bytes on both);
+   · the Word reader (mammoth 1.6.0) is the pinned cdnjs file for every caller — the two esm.sh / jsdelivr "+esm" imports (built on the
+     fly, they cannot be checked) use window.__gcMammoth().
+   Not covered (cannot be pinned or checked): pdf.js's worker (a Worker, not a page script), Google Fonts CSS, the YouTube / Spotify
+   player APIs (lobby TV). */
+(function(){
+  var W = window, D = document;
+  var SRI = {
+    'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js': 'sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z',
+    'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js': 'sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js': 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e',
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js': 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e',
+    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js': 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js': 'sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2',
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js': 'sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2',
+    'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js': 'sha384-SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2',
+    'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js': 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
+    'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js': 'sha384-nFoSjZIoH3CCp8W639jJyQkuPHinJ2NHe7on1xvlUA7SuGfJAfvMldrsoAVm6ECz',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js': 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk',
+    'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js': 'sha384-Yv5O+t3uE3hunW8uyrbpPW3iw6/5/Y7HitWJBLgqfMoA36NogMmy+8wWZMpn3HWc',
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js': 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js': 'sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI',
+    'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js': 'sha384-4xaIisuLEy2lo2HkB2C4rEf7v8jbTb2kuogX6TkuEt9feTWKBSFSOzsqNNbV+sKh',
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js': 'sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH',
+    'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css': 'sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H'
+  };
+  try { Object.freeze(SRI); W.__GC_SRI = SRI; } catch (e) {}
+  function sri(n){
+    try {
+      if (!n || n.nodeType !== 1) return;
+      var t = n.tagName, u = '';
+      if (t === 'SCRIPT') u = n.src; else if (t === 'LINK' && /(^|\s)stylesheet(\s|$)/i.test(n.rel || '')) u = n.href; else return;
+      var h = u && SRI[u]; if (!h || n.integrity) return;
+      n.integrity = h; n.crossOrigin = 'anonymous';
+    } catch (e) {}
+  }
+  try {
+    ['appendChild', 'insertBefore', 'replaceChild'].forEach(function(k){
+      var o = Node.prototype[k]; if (typeof o !== 'function') return;
+      Node.prototype[k] = function(n){ if (n && (n.tagName === 'SCRIPT' || n.tagName === 'LINK')) sri(n); return o.apply(this, arguments); };
+    });
+    [Element.prototype, D.constructor && D.constructor.prototype].forEach(function(P){
+      if (!P) return;
+      ['append', 'prepend', 'before', 'after', 'replaceWith'].forEach(function(k){
+        var o = P[k]; if (typeof o !== 'function' || !Object.prototype.hasOwnProperty.call(P, k)) return;
+        P[k] = function(){ for (var i = 0; i < arguments.length; i++) { var a = arguments[i]; if (a && (a.tagName === 'SCRIPT' || a.tagName === 'LINK')) sri(a); } return o.apply(this, arguments); };
+      });
+    });
+  } catch (e) {}
+  /* the Word reader for the two places that imported mammoth's "+esm" build: the same mammoth 1.6.0, pinned and checked */
+  var MAMMOTH = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js', mamP = null;
+  W.__gcMammoth = function(){
+    if (W.mammoth && typeof W.mammoth.extractRawText === 'function') return Promise.resolve(W.mammoth);
+    if (mamP) return mamP;
+    mamP = new Promise(function(res, rej){
+      var s = D.createElement('script'); s.src = MAMMOTH; s.async = true;
+      s.onload = function(){ if (W.mammoth && typeof W.mammoth.extractRawText === 'function') res(W.mammoth); else { mamP = null; rej(new Error('The Word reader did not load')); } };
+      s.onerror = function(){ mamP = null; rej(new Error('Could not load the Word reader')); };
+      (D.head || D.documentElement).appendChild(s);
+    });
+    return mamP;
+  };
+})();
+</script>
