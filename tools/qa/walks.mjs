@@ -42,6 +42,17 @@ function kit(X){
   return { A, page, sig, tapOpen, jobTiles, jobTile };
 }
 
+/* owner 11/19 — a lean Field home: at most 9 tiles, no 🎤 button of its own (it is in the 💎 menu), no COI / W-9 pill */
+async function homeChecks(X, st){
+  const h = await X.A().ev(() => { const vis = e => { if (!e) return false; const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
+    const tiles = [...document.querySelectorAll('#_gcJobPick .gc-pmf-q .gc-pmf-t, #_gcJobPick .gc-pmf-x .gc-ra-qb')].filter(vis).map(e => (e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 24));
+    const pills = [...document.querySelectorAll('#_gcSubDocPill, .gcautai-pill')].filter(vis).map(e => (e.innerText || '').trim().slice(0, 40));
+    return { tiles, mic: vis(document.getElementById('_gcMicBtn')), pills }; }).catch(() => null);
+  if (!h) return; st.info.homeTiles = h.tiles;
+  if (h.tiles.length > 9) st.fails.push({ check: 'toggle', sev: 'major', msg: `${h.tiles.length} tiles on the Field home (owner: at most 8–9; the rest in ☰ More)`, list: h.tiles });
+  if (h.mic) st.fails.push({ check: 'floating', sev: 'major', msg: 'a 🎤 button of its own on the Field home (owner: 🎤 Voice note is in the 💎 menu)' });
+  if (h.pills.length) st.fails.push({ check: 'floating', sev: 'major', msg: 'the COI / W-9 pill is showing: ' + h.pills.join(' · ') });
+}
 /* a job to walk: the active job with the most going on (documents, schedule, messages), from the snapshot */
 function pickJob(X, pmName){
   const P = (X.snap.get('projects') || []).filter(p => p && p.id && !p.deleted && /active|progress|production|scheduled/i.test(p.status || '') );
@@ -76,7 +87,19 @@ async function owner(X){
     return !!(await until(async () => (await fieldHome()) && await A().ev(() => document.querySelectorAll('#_gcJobPick .gc-pmf-t, #_gcJobPick [data-ra-a]').length > 3), 60000));
   });
   await step('Phone left alone for 30 s after opening (no taps)', { scroll: false, timed: false }, async () => { await sleep(30000); return true; });
-  await step('🏠 Home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); return !!(await until(fieldHome, 15000)); });
+  await step('🏠 Home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); const ok = !!(await until(fieldHome, 15000)); await homeChecks(X, st); return ok; });
+  /* owner 11/19: 💎 is the one menu button; "🎤 Voice note" is its first item */
+  await step('💎 Menu (🎤 Voice note first)', { scroll: false }, async st => {
+    await goHome(); const hb = await X.locate({ sel: '#_gcFieldHubBtn' }); if (!hb) throw new Error('could not find the 💎 menu button');
+    if (hb.covered) st.fails.push({ check: 'tap', sev: 'major', msg: 'the 💎 menu button is covered by ' + hb.by });
+    await X.tapAt(hb.x, hb.y); await sleep(1200);
+    const m = await A().ev(() => { const p = document.querySelector('.gc-hub-panel'); if (!p) return null; const it = [...p.querySelectorAll('.gc-hub-item')].filter(e => e.getBoundingClientRect().width > 0).map(e => (e.innerText || '').replace(/[\s≡]+/g, ' ').trim()); return { first: it[0] || '', n: it.length }; });
+    st.info.menu = m;
+    if (!m) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the 💎 menu did not open' });
+    else if (!/Voice note/.test(m.first)) st.fails.push({ check: 'notfound', sev: 'major', msg: `"🎤 Voice note" is not the first item of the 💎 menu (first: "${m.first}")` });
+    try { await A().ev(() => { const p = document.querySelector('.gc-hub-panel'); if (p) p.remove(); }); } catch (e) {}
+    return !!m;
+  });
   // Approvals
   let apprOpen = false;
   await step('✅ Approvals (open + scroll)', {}, async st => {
@@ -153,7 +176,7 @@ async function owner(X){
   /* owner 11/19: a lead's TEXT link (crm.grayco-cs.com/#leads&lead=LEADIN-…) opened cold on his iPhone showed a navy Leads page,
      "No lead pipeline" (an empty list), ‹ Back over the title, the "New here? Tap Field" tip over a COI pill and the floating
      🎤 / 💎 / 💬. The newest lead from the Lead Inbox, opened the same way: the list loads, that lead opens, nothing in the way. */
-  let LL = X.snap.get('leads'); if (typeof LL === 'string') { try { LL = JSON.parse(LL); } catch (e) { LL = []; } } const ll = (Array.isArray(LL) ? LL : []).filter(l => l && /^LEADIN-/.test(String(l.id)) && !l.deleted && !l.archived).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
+  let LL = X.snap.get('leads'); if (typeof LL === 'string') { try { LL = JSON.parse(LL); } catch (e) { LL = []; } } const ll = (Array.isArray(LL) ? LL : []).filter(l => l && /^LEADIN-/.test(String(l.id)) && !l.deleted && !l.archived && !/lost|dead|won|closed|junk/i.test(String(l.status || '') + ' ' + String(l.stage || '')) && l.lsaCheck !== 'bad').sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
   if (ll) await step('Lead text link → that lead (cold open, #leads&lead=…)', { scroll: false, timed: false }, async st => {
     st.info.lead = ll.id; const nm = String(ll.name || '').replace(/\s+/g, ' ').trim().slice(0, 14);
     await page().goto('http://app.local/#leads&lead=' + encodeURIComponent(ll.id), { waitUntil: 'commit' }).catch(() => {});
@@ -183,7 +206,7 @@ async function pm(X){
   const A = K.A, page = K.page;
   await step('Open the app (time to Field home)', { scroll: false }, async () => { await page().reload({ waitUntil: 'commit' }); return !!(await until(async () => (await fieldHome()) && await A().ev(() => document.querySelectorAll('#_gcJobPick .gc-pmf-t, #_gcJobPick [data-ra-a], #_gcJobPick ._jpItem').length > 2), 60000)); });
   await step('Phone left alone for 30 s after opening (no taps)', { scroll: false, timed: false }, async () => { await sleep(30000); return true; });
-  await step('🏠 Field home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); return !!(await until(fieldHome, 15000)); });
+  await step('🏠 Field home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); const ok = !!(await until(fieldHome, 15000)); await homeChecks(X, st); return ok; });
   const job = pickJob(X, X.acc.map.pm && X.acc.map.pm.name);
   X.R.notes.push('job walked: ' + (job ? job.name : 'none'));
   await step('A job (My jobs)', {}, async st => { await goHome(); const ok = await openJobPage(X, K, st, job || {}); st.info.tiles = await K.jobTiles(); return ok; });
