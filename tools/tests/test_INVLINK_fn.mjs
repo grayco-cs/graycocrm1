@@ -159,7 +159,7 @@ ok(ms.top && ms.top.pid === 'P_SUBJOB' && ms.level !== 'sure', 'a sub\'s bill ar
 ok(C.matchPayable({ id: 'b2', type: 'sub', sub: 'X', portalPid: 'P_BW', desc: '' }, PROJ, {}).pid === 'P_BW', 'a bill from the sub portal keeps the job the sub picked');
 
 /* 9. the page hooks */
-ok(html.includes('/* INVLINK-B1: the job\'s PO, never "view" */') && !html.includes('children:[W.po||"view"," 📄"]'), 'page: the client PO cell no longer prints "view"');
+ok(html.includes('/* INVLINK-B1: the job\'s PO, never "view"') && !html.includes('children:[W.po||"view"," 📄"]'), 'page: the client PO cell no longer prints "view"');
 ok(html.includes('INVLINK-B2: Client · Sub · Supplier'), 'page: three tabs Client · Sub · Supplier');
 ok(html.includes('INVLINK-B3: the guesses first'), 'page: a bill\'s Assign… list starts with the guesses');
 ok(html.includes('INVLINK-D1') && html.includes('INVLINK-D2') && html.includes('INVLINK-D3'), 'page: the three automatic draw makers skip past jobs');

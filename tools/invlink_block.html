@@ -300,6 +300,7 @@ ST.call(W, sweepBills, 45000); RI.call(W, sweepBills, 300000);
 W._gcInvLink = Object.assign({}, CORE, { open: open, close: close, poCell: function(inv){ return CORE.poCell(inv, projects()); }, tabs: tabs, retab: retab, pickJobs: pickJobs,
   linkRows: linkRows, payRows: payRows, plan: curPlan, applyCleanup: applyCleanup, undoCleanup: undoCleanup, relinkOne: relinkOne, log: logLoad, paint: paint, sweepBills: sweepBills, core: CORE });
 W._gcInvPoCell = W._gcInvLink.poCell;
+W._gcInvNumCell = function(inv){ try { return CORE.qbNums(inv)[0] || s(inv && (inv.invNum || inv.num || inv.number)); } catch (e) { return ''; } };
 try { console.log('[GC] 🔗 invoice ↔ job links, QuickBooks-only past jobs, sub / supplier tabs (patch INVLINK) — _gcInvLink'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>

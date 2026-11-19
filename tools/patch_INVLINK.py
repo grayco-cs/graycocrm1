@@ -20,7 +20,8 @@ def past(v): return PAST.replace('{P}', v)
 PARTS = []
 # ── B. the bundle ──
 B1 = 'children:[W.po||"view"," 📄"]'
-B1n = 'children:[(window._gcInvPoCell?window._gcInvPoCell(W):(W.po||"—"))/* INVLINK-B1: the job\'s PO, never "view" */," 📄"]'
+B1n = ('children:[(window._gcInvPoCell?window._gcInvPoCell(W):(W.po||"—"))/* INVLINK-B1: the job\'s PO, never "view"; the invoice # under it (two invoices on one job no longer look doubled) */," 📄",'
+       '(window._gcInvNumCell&&window._gcInvNumCell(W))?e.jsx("span",{style:{display:"block",fontSize:10,fontWeight:600,color:"#64748b",textDecoration:"none"},children:"#"+window._gcInvNumCell(W)}):null]')
 B2 = ('[{id:"client",l:`Client Invoices (${De.length})`},{id:"sub",l:`Sub Invoices (${z.length})`}].map(W=>e.jsx("button",{onClick:()=>{document.activeElement&&document.activeElement.blur&&document.activeElement.blur();window.__GC_INV_TAB__={tab:W.id};_(W.id)},'
       'style:{padding:"7px 18px",border:"none",background:"none",borderBottom:H===W.id?`2px solid ${u.acc}`:"2px solid transparent",color:H===W.id?u.acc:u.tx2,fontWeight:H===W.id?700:400,')
 B2n = ('(window._gcInvLink&&window._gcInvLink.tabs?window._gcInvLink.tabs(De.length,Ba,W=>(_shA||_shP.has(W.pid)),H):[{id:"client",l:`Client Invoices (${De.length})`},{id:"sub",l:`Sub Invoices (${z.length})`}])/* INVLINK-B2: Client · Sub · Supplier */.map(W=>e.jsx("button",{onClick:()=>{document.activeElement&&document.activeElement.blur&&document.activeElement.blur();window.__GC_INV_TAB__={tab:W.tab||W.id};if(W.sup){window._gcInvTab=W.sup;window._gcInvLink&&window._gcInvLink.retab&&window._gcInvLink.retab();}_(W.tab||W.id)},'

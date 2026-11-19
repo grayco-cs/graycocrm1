@@ -73,7 +73,9 @@ ok(tabsTxt.length === 3 && /^Supplier Invoices \(\d+\)$/.test(tabsTxt[2]), 'thre
 const nSup = +((tabsTxt[2] || '').match(/\((\d+)\)/) || [])[1], nSub = +((tabsTxt[1] || '').match(/\((\d+)\)/) || [])[1];
 ok(nSub === 2 && nSup === 2, 'the counts: subs = the plumber + the insulation crew (2); suppliers = the paint store + the unclear payee (2)', tabsTxt);
 await A.ev(() => { const b = Array.from(document.querySelectorAll('button')).find(x => /^Client Invoices/.test(x.textContent.trim())); b && b.click(); }); await sleep(1500);
-const poCells = await A.ev(() => Array.from(document.querySelectorAll('td a[title="Open invoice document"]')).map(a => a.textContent.replace('📄', '').trim()));
+const poCells = await A.ev(() => Array.from(document.querySelectorAll('td a[title="Open invoice document"]')).map(a => (a.childNodes[0] || {}).textContent.trim()));
+const numCells = await A.ev(() => Array.from(document.querySelectorAll('td a[title="Open invoice document"] span')).map(x => x.textContent.trim()));
+ok(numCells.includes('#1131') && numCells.includes('#1140') && numCells.includes('#1106'), 'each row shows its invoice # under the PO (two invoices on one job no longer look like a double)', numCells);
 ok(poCells.length >= 6 && !poCells.some(t => /^view$/i.test(t)), 'the PO column never says "view"', poCells);
 ok(poCells.includes('—'), 'an invoice with no job and no PO shows "—"', poCells);
 ok(await A.ev(() => !!document.getElementById('gc-il-btn')), 'the office sees 🔗 Check invoice ↔ job links on ▥ Invoices', await A.ev(() => (document.getElementById('gc-il-btn') || {}).textContent));
