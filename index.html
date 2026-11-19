@@ -1493,6 +1493,8 @@ var ROWS = [
   ['emergency_line', 'safety', 'B', 1, 1, 'server', 'Emergency line', 'Emergency words or "press 1" phone and text staff until someone answers.'],
   ['oncall_paging', 'safety', 'B', 1, 1, 'server', 'On-call paging + escalation', 'An after-hours emergency pages the on-call person; nobody accepts → the next person, then all admins.'],
   ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
+  ['call_recording', 'cust', 'A', 0, 0, 'server', 'Record office-line calls', 'Calls through the GrayCo Twilio number are recorded once someone answers (the caller first hears “This call may be recorded”). Staff play them on the lead. Never part of “turn on everything”.', 0, 1],
+  ['call_voicemail', 'cust', 'A', 0, 0, 'server', 'Voicemail on missed calls', 'When nobody answers, the caller can leave a message (2 min). It is saved on the lead, staff only. Never part of “turn on everything”.', 0, 1],
   /* ── lead intake, sync, backups ── */
   ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
   ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (lead companies)', 'Leads posted by lead partners come into the CRM.'],
@@ -1509,6 +1511,8 @@ var ROWS = [
   ['gdocs_sync', 'sync', 'D', 0, 1, 'server', 'Google Docs list', 'The team’s new Google Docs show in the CRM (no e-mail).'],
   ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
   ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
+  ['lsa_sync', 'sync', 'C', 1, 1, 'server', 'Google LSA calls → leads', 'Every 10 min: Google Local Services calls get the caller’s number, job type, length and recording (Google Ads API, the office call log, Wesley’s mailbox); a call that is not a lead yet becomes one.'],
+  ['call_transcribe', 'sync', 'D', 0, 1, 'server', 'Transcribe call recordings', 'A new call recording or voicemail is turned into text with a short summary on the lead (needs a transcription key).'],
   ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
   /* ── staff alerts ── */
   ['bid_alerts_staff', 'staff', 'B', 0, 1, 'server', 'Bid-due and speed-to-lead alerts', '"Bid due in 1 h / today / tomorrow", "assign this lead", "reach out", RoofScout lead mail.'],
@@ -1592,7 +1596,7 @@ var ROWS = [
   ['dup_invoice_delete', 'rec', 'C', 0, 0, 'page', 'Duplicate sub invoice / $0 row delete', 'Deletes duplicate sub invoices and $0 rows. OFF: they are only flagged.'],
   ['ms_tax_add', 'rec', 'C', 0, 0, 'page', 'Mississippi tax auto-add', 'Adds 3.5 % MS contractor’s tax to Mississippi estimates.']
 ];
-var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8] }; });
+var LIST = ROWS.map(function(r){ return { key: r[0], group: r[1], effect: r[2], critical: !!r[3], defaultOn: !!r[4], where: r[5], name: r[6], desc: r[7], fixed: !!r[8], optIn: !!r[9] }; });   /* LSAREC: optIn — only ever turned on by hand (call recording / voicemail) */
 var BY = {}; LIST.forEach(function(a){ BY[a.key] = a; });
 
 function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
@@ -1606,7 +1610,7 @@ function valueOf(row, key){
 }
 function defaults(){ var o = {}; LIST.forEach(function(a){ o[a.key] = a.defaultOn; }); return o; }
 /* "Turn on everything I had before": every automation ran before the panel existed */
-function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = true; }); return o; }
+function before(){ var o = {}; LIST.forEach(function(a){ o[a.key] = !a.optIn; }); return o; }
 function all(row){ var o = {}; LIST.forEach(function(a){ o[a.key] = valueOf(row, a.key); }); return o; }
 /* a held record, merged into the gc_auto_held row: { n: times held, since, last, would: last count, sample } */
 function heldMerge(heldRow, key, n, sample, nowIso){
@@ -6622,7 +6626,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.274-2026-11-19-r36n -->
+<!-- GrayCo CRM Build: 33.276-2026-11-19-r36p -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -7594,7 +7598,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.274-2026-11-19-r36n");
+  console.log("[GC] Build 33.276-2026-11-19-r36p");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -7642,7 +7646,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.274-2026-11-19-r36n"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.276-2026-11-19-r36p"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -221941,7 +221945,7 @@ function vetHtml(L){
       + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"><input data-vet-ph type="tel" inputmode="tel" value="' + esc(s(l.phone || (l.contact && l.contact.phone))) + '" placeholder="Their number (901) 555-1234" style="flex:1 1 170px;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif">'
       + '<input data-vet-note placeholder="What they need (optional)" style="flex:2 1 200px;min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif"></div>'
       + '<div style="display:flex;gap:8px;margin-top:6px"><button type="button" data-vet-b="real" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #166534;background:#166534;color:#fff;font:700 14px Inter,Arial,sans-serif;cursor:pointer">✅ Real lead — text Wesley &amp; Nick</button>'
-      + '<button type="button" data-vet-b="junk" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #fca5a5;background:#fee2e2;color:#991b1b;font:700 14px Inter,Arial,sans-serif;cursor:pointer">🚫 Junk — no text</button></div><div data-vet-msg style="font-size:12.5px;color:#b91c1c"></div></div>'; });
+      + '<button type="button" data-vet-b="junk" style="flex:1;min-height:42px;border-radius:9px;border:1px solid #fca5a5;background:#fee2e2;color:#991b1b;font:700 14px Inter,Arial,sans-serif;cursor:pointer">🚫 Junk — no text</button></div><div data-vet-msg style="font-size:12.5px;color:#b91c1c"></div><div data-vet-rec="' + esc(s(l.inboxId || l.leadInboxId || l.fromInbox || l.id)) + '"></div></div>'; });   /* LSAREC: 🎧 the call box (number, length, ▶ Play) */
   return h;
 }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -221966,7 +221970,7 @@ function vetPaint(){
     if (cur && cur.getAttribute('data-sig') === sig && cur.parentElement === hub && (!spot || cur.previousElementSibling === spot)) return;
     if (cur && cur.contains(D.activeElement)) return;   /* do not wipe what they are typing */
     if (!cur) { cur = D.createElement('div'); cur.id = 'gc-lsa-vet'; cur.setAttribute('data-gc-keep', '1'); cur.style.cssText = 'position:relative;background:#eff6ff;border:2px solid #3b82f6;border-radius:14px;padding:10px 12px;margin:8px 0 10px;font:14px Inter,Arial,sans-serif;color:#0f172a'; }
-    cur.setAttribute('data-sig', sig); cur.innerHTML = '<button type="button" data-vet-x aria-label="Close" style="position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#475569">✕</button>' + vetHtml(L);
+    cur.setAttribute('data-sig', sig); cur.innerHTML = '<button type="button" data-vet-x aria-label="Close" style="position:absolute;top:6px;right:8px;border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#475569">✕</button>' + vetHtml(L); vetRecFill(cur);   /* LSAREC */
     if (spot) spot.insertAdjacentElement('afterend', cur); else if (cur.parentElement !== hub) hub.insertBefore(cur, hub.firstChild);
   } catch (e) {}
 }
@@ -222021,6 +222025,97 @@ function disputeBar(){
   } catch (e) {}
 }
 SI.call(W, disputeBar, 700);
+/* LSAREC (owner 11/19: "can you transcribe these Google LSA leads to get the info from them, phone numbers etc so we know what the leads
+   are, can you also have the recording for us, the voicemail or phone recording from Brittany"): an open Google LSA / missed-call lead
+   shows "🎧 Call" under the LSA bar — the caller's number (from Google or the office call log), Google's call time, the call length, the
+   job type, ▶ Play (a Twilio recording or voicemail, fetched through the signed-in staff-only call-recording function), 🔗 Listen in Google
+   (Google's own LSA recording), 📝 Transcribe, and the transcript's short summary (full text under "Full transcript"). Staff only: the
+   CRM page and that function are for signed-in staff; nothing here reaches a customer. The office's "📞 LSA calls" check card gets the
+   same box, and the number Google / the call log found is filled in for them. */
+var REC_C = {}, REC_URL = {};
+var REC_BTN = 'display:inline-flex;align-items:center;min-height:38px;padding:0 12px;border-radius:9px;font:700 13.5px Inter,Arial,sans-serif;cursor:pointer;text-decoration:none;';
+function recLeadOk(l){ var ex = (l && l.leadExtra) || {}; return !!l && (lsaAny(l) || !!(l.missedCall || ex.missedCall || l.callSid || ex.callSid) || /missed call/i.test(s(l.source))); }
+function recSrv(l){ return s(l.inboxId || l.leadInboxId || l.fromInbox || l.id); }
+function recTidy(p){ p = s(p).replace(/\D/g, ''); return p.length === 10 ? '(' + p.slice(0, 3) + ') ' + p.slice(3, 6) + '-' + p.slice(6) : p; }
+function recGet(id, fresh){
+  var c = REC_C[id]; if (c && !fresh) { if (c.p) return c.p; if (Date.now() - c.at < 60000) return Promise.resolve(c.v); }
+  var p = W.fetch('/.netlify/functions/call-recording?lead=' + encodeURIComponent(id), { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { ok: false, error: 'No signal' }; })
+    .then(function(o){ REC_C[id] = { at: Date.now(), v: o }; return o; });
+  REC_C[id] = { at: Date.now(), p: p }; return p;
+}
+function recHtml(o){
+  if (!o || !o.ok || !o.info) return '';
+  var i = o.info, st = o.status || {}, bits = [], acts = '', recs = i.recs || [];
+  if (i.phone) bits.push('📞 <a href="tel:' + esc(i.phone) + '" style="color:#1d4ed8;font-weight:700">' + esc(recTidy(i.phone)) + '</a>' + (i.phoneFrom ? ' <span style="color:#64748b">(' + esc(i.phoneFrom === 'google' ? 'from Google' : i.phoneFrom) + ')</span>' : ''));
+  if (i.callAtLabel) bits.push('🕒 ' + esc(i.callAtLabel));
+  if (i.dur) bits.push('⏱ ' + esc(i.dur) + ' call');
+  if (i.job) bits.push('🔧 ' + esc(i.job));
+  if (i.outcome) bits.push(esc(i.outcome));
+  if (i.googleId) bits.push('Google lead ' + esc(i.googleId) + (i.charged ? ' · charged' : ''));
+  recs.forEach(function(r){ acts += '<button type="button" data-rec-play="' + esc(r.id) + '" style="' + REC_BTN + 'border:1px solid #1d4ed8;background:#1d4ed8;color:#fff">▶ Play ' + (r.kind === 'voicemail' ? 'voicemail' : 'call') + (r.durLabel ? ' (' + esc(r.durLabel) + ')' : '') + '</button>'; });
+  if (i.google && i.google.url) acts += '<a href="' + esc(i.google.url) + '" target="_blank" rel="noopener noreferrer" data-rec-google style="' + REC_BTN + 'border:1px solid #1d4ed8;background:#fff;color:#1d4ed8">🔗 Listen in Google ↗</a>';
+  if (st.transcribe && (recs.length || i.google) && !i.transcript) acts += '<button type="button" data-rec-tx style="' + REC_BTN + 'border:1px solid #166534;background:#f0fdf4;color:#166534">📝 Transcribe</button>';
+  var tx = i.transcript ? '<div data-rec-sum style="margin-top:6px;font-size:13.5px;color:#0f172a">📝 ' + esc(i.transcript.summary || '') + '<details style="margin-top:4px"><summary style="cursor:pointer;color:#1d4ed8;font-size:13px">Full transcript</summary><div style="white-space:pre-wrap;font-size:13px;color:#334155;margin-top:4px">' + esc(i.transcript.text) + '</div></details></div>' : '';
+  var miss = [];
+  if (!recs.length && !(i.google && i.google.url)) { if (!st.recording) miss.push('office-line recording is off (⚡ Automations → Record office-line calls)'); if (i.lsa && !(st.googleApi && st.googleApi.connected)) miss.push('the Google Ads API is not connected (Marketing → 📈 Ads hub), so Google\'s LSA recording is only in the LSA app'); }
+  if ((recs.length || i.google) && !st.transcribe) miss.push('no transcription key on Netlify (OPENAI_API_KEY or DEEPGRAM_API_KEY)');
+  var hint = miss.length && admin() ? '<div style="font-size:12px;color:#64748b;margin-top:4px">Not set up yet: ' + esc(miss.join('; ')) + '.</div>' : '';
+  if (!bits.length && !acts && !tx && !hint) return '';
+  return '<b>🎧 Call</b>' + (bits.length ? '<div data-rec-bits style="font-size:13.5px;color:#0f172a;margin:4px 0;line-height:1.5">' + bits.join(' · ') + '</div>' : '')
+    + (acts ? '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">' + acts + '</div>' : '') + '<div data-rec-audio style="margin-top:6px"></div>' + tx
+    + (i.txError && !i.transcript ? '<div style="font-size:12.5px;color:#b91c1c">Transcript: ' + esc(i.txError) + '</div>' : '') + '<div data-rec-msg style="font-size:12.5px;color:#b91c1c"></div>' + hint;
+}
+function recFill(b, srv, fresh){
+  b.setAttribute('data-rec-id', srv);
+  recGet(srv, fresh).then(function(o){
+    if (!b.isConnected || b.getAttribute('data-rec-id') !== srv) return;
+    var h = recHtml(o); if (!h) { b.style.display = 'none'; b.innerHTML = ''; return; }
+    b.innerHTML = h; b.style.display = '';
+    var row = b.closest('[data-vet]'), inp = row && row.querySelector('[data-vet-ph]');   /* the office check: the number Google / the call log found */
+    if (inp && !s(inp.value) && o.info && o.info.phone && D.activeElement !== inp) inp.value = recTidy(o.info.phone);
+  });
+}
+function callBox(){
+  try {
+    var d = D.getElementById('gcl-drawer'); if (!d || !d.getClientRects().length) return;
+    var H = W._gcLeadsHub, id = H && H.ui && H.ui().open, l = id && lead(id), have = d.querySelector('#gc-call-rec');
+    if (!l || !recLeadOk(l)) { if (have) have.remove(); return; }
+    var srv = recSrv(l);
+    if (have && have.getAttribute('data-id') === srv) return; if (have) have.remove();
+    var b = D.createElement('div'); b.id = 'gc-call-rec'; b.setAttribute('data-id', srv);
+    b.style.cssText = 'display:none;margin:0 0 10px;padding:10px 12px;border-radius:10px;border:1px solid #c7d2fe;background:#f8fafc;font:14px Inter,Arial,sans-serif;color:#0f172a';
+    var dis = d.querySelector('#gc-lsa-dispute'); if (dis && dis.parentElement === d) dis.insertAdjacentElement('afterend', b); else d.insertBefore(b, d.firstChild);
+    recFill(b, srv, false);
+  } catch (e) {}
+}
+SI.call(W, callBox, 700);
+function vetRecFill(cur){
+  try { Array.prototype.forEach.call(cur.querySelectorAll('[data-vet-rec]'), function(b){ b.style.cssText = 'display:none;margin-top:6px;padding:8px 10px;border-radius:9px;border:1px solid #c7d2fe;background:#fff'; recFill(b, b.getAttribute('data-vet-rec'), false); }); } catch (e) {}
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-rec-play],[data-rec-tx]') : null; if (!t) return;
+  var box = t.closest('[data-rec-id]'); if (!box) return;
+  e.preventDefault(); e.stopPropagation();
+  var srv = box.getAttribute('data-rec-id'), msg = box.querySelector('[data-rec-msg]'), au = box.querySelector('[data-rec-audio]'); if (msg) msg.textContent = '';
+  if (t.hasAttribute('data-rec-play')) {
+    var rid = t.getAttribute('data-rec-play');
+    var show = function(u){ if (au) au.innerHTML = '<audio controls autoplay preload="auto" src="' + esc(u) + '" style="width:100%;max-width:420px"></audio>'; };
+    if (REC_URL[rid]) { show(REC_URL[rid]); return; }
+    t.disabled = true; var was = t.textContent; t.textContent = 'Loading…';
+    W.fetch('/.netlify/functions/call-recording?lead=' + encodeURIComponent(srv) + '&play=' + encodeURIComponent(rid), { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { error: 'No signal — try again.' }; }).then(function(o){
+      t.disabled = false; t.textContent = was;
+      if (!o || !o.ok || !o.b64) { if (msg) msg.textContent = s(o && o.error) || 'Could not load the recording.'; return; }
+      try { var bin = atob(o.b64), u8 = new Uint8Array(bin.length); for (var k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k); REC_URL[rid] = URL.createObjectURL(new Blob([u8], { type: s(o.mime) || 'audio/mpeg' })); show(REC_URL[rid]); } catch (x) { if (msg) msg.textContent = 'Could not play it here.'; }
+    });
+    return;
+  }
+  t.disabled = true; t.textContent = '📝 Transcribing…';
+  W.fetch('/.netlify/functions/call-recording?transcribe=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead: srv }) }).then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return { error: 'No signal — try again.' }; }).then(function(o){
+    if (!o || !o.ok) { t.disabled = false; t.textContent = '📝 Transcribe'; if (msg) msg.textContent = s(o && o.error) || 'Could not transcribe it.'; return; }
+    delete REC_C[srv]; recFill(box, srv, true);
+  });
+}, true);
+W._gcCallRec = { info: function(id){ return recGet(id, true); }, html: recHtml };
 /* patch LSATEXT (owner 11/10): GOOD / BAD texted back from Wesley's or Nick's cell (server: _lib/smsalert.js → gc_kv "gc_lsa_decisions")
    → the same mark on the CRM lead; the office To-Do "Dispute … in Google Ads" was already added by the server */
 function textMarks(){
@@ -244228,29 +244323,31 @@ try { console.log('[GC] ＋ required papers on one job (patch JOBREQ) — _gcJob
 })(window);
 </script>
 <script id="gc-patch-phoneui">
-/* __GC_PATCH_PHONEUI__ — GrayCo Field on a phone looks like an app (tools/patch_PHONEUI.py).
-   Owner 11/19 (iPhone, Field, Leads opened from the Field home): "Top search bar and changing companies shouldn't be in
-   there, it needs to look like an app, and those buttons list calendar etc need to be a little bigger so I know what they are."
-   What was wrong:
-   · the desk top bar (#_masterSearch: 🏢 company switcher + "Search jobs, subs, invoices…") showed under the Field header;
-   · the Field page header (#_gcAppHead: ‹ + title) was taken for a "notice" by the two-second notice sweep (it is fixed at the
-     top with one button) and removed every 2 s, then drawn again a second later — so the header blinked, and while it was
-     gone NAV painted its own sticky "‹ Back" pill, which then sat on top of the header's ‹ and the title ("‹ Back ds");
-   · main was padded a fixed 64 px, so on an iPhone (notch: safe-area-inset-top) the first lines sat under the header;
-   · the red 💬 job-messages button sat on the top bar (Messages is on every Field job page already);
-   · the Leads views (Board · List · Calendar · Map · Outreach · RoofScout · LSA …) and the filter chips (All · Bids ·
-     Residential · Insurance …) were one cut-off strip that scrolled sideways;
-   · the "📄 N COI / W-9 to confirm" / "💵 N payments match invoices" pills floated over the page.
-   On a phone in GrayCo Field (any person, admins too):
-   1. the desk top bar and the 💬 bubble are hidden; the Field header stays (it is marked data-gc-keep) and is a native app
-      header: "‹ Back" on the left, the page title next to it, fully visible; NAV's floating Back stands down while the
-      header is showing (a sheet opened over the page still gets it); main starts right under the header (its real height,
-      notch included);
-   2. the pills ride at the right end of that header (small, ellipsis when tight), not over the page; on the Field home they
-      stay small just above the bottom bar;
-   3. Leads: the views are a 3-across grid of 48 px buttons with the whole label; the filter chips wrap into rows (≥ 44 px),
-      nothing scrolls sideways; the chosen one stays dark. The views / chips grid also applies to any phone-width screen.
-   A computer (desk, wider than 640 px, not in Field): nothing changes.
+/* __GC_PATCH_PHONEUI__ — GrayCo Field on a phone looks and works like an app (tools/patch_PHONEUI.py).
+   Owner 11/19 (iPhone, Field): "Top search bar and changing companies shouldn't be in there, it needs to look like an app,
+   and those buttons list calendar etc need to be a little bigger so I know what they are"; panels sit under the status bar
+   (🆘 Problem reports: title under the clock, ✕ under the battery, not tappable); Approvals "should open like a page, not
+   a pop up, and it should be white"; the "Get your approvals on this phone" card under the clock; notes stacked over the
+   bottom bar.
+   The page uses viewport-fit=cover, so anything fixed at top:0 starts under the iPhone status bar unless it pads itself.
+   Everything here is for a phone (iPhone / Android phone, or a window under 820 px); a computer's desk does not change.
+   1. SAFE AREA (any person, Field or not): --gc-sat = env(safe-area-inset-top). Each second (and when something is added
+      to the page) the strip under the status bar is sampled; text or a button of a fixed / sticky panel found there gets
+      that panel a padding-top of max(its own, --gc-sat) (or, for a button placed absolutely, its top moved down by it).
+      Close / Back buttons of the open panels are at least 44 x 44. NAV's floating Back sits under the inset too.
+   2. NOTES (Field): toasts, the amber "Saved on this phone" note, "☁ Saved…" and the COI / W-9 pill stack up from just
+      above the bottom bar instead of piling on each other; the Field home's 🔔 notifications card sits under the
+      GrayCo Field header (not above it, under the clock).
+   3. APP PAGES (Field): ✅ My Approvals, 📅 My Schedule, ☰ More and the Field sheets the Home tiles open are full-screen
+      white pages: no dimmed backdrop or card edge, an app header (‹ Back + title, under the status bar), the bottom bar
+      stays. My Approvals' dark card is turned light (dark text, contrast ≥ 4.5:1); the green Approve / red Don't approve
+      buttons keep their colors.
+   4. DESK BAR (Field): the desk top bar (🏢 company switcher + global search) and the red 💬 bubble (Messages is on every
+      Field job page) are hidden. The Field page header is kept (the two-second notice sweep removed it every 2 s, which
+      let NAV's floating "‹ Back" sit on the title) and is a native header: ‹ Back, the title next to it; main starts
+      under it; the COI / payments pills ride at its right end.
+   5. LEADS (any phone-width screen): the views (Board · List · Calendar · Map · Outreach · RoofScout · LSA …) are a
+      3-across grid of 48 px buttons with the whole label; the filter chips wrap; the chosen one stays dark.
    Console: __gcPhoneUI.state()   Off: localStorage gc_phoneui_off = '1'. */
 (function(){
 'use strict';
@@ -244260,33 +244357,67 @@ try {
   try { if (W.localStorage && W.localStorage.getItem('gc_phoneui_off') === '1') return; } catch (e) {}
   var H = D.documentElement;
   var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
-  var PU = W.__gcPhoneUI = { moves: 0, kept: 0 };
+  var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+  var PU = W.__gcPhoneUI = { moves: 0, kept: 0, pads: [], tops: 0, x44: 0, pages: 0, lit: 0, stacked: 0 };
 
   function phoneDev(){
     var ua = String((W.navigator && W.navigator.userAgent) || ''), w = W.innerWidth || 0;
     return /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(ua) || (/iPad|Android/i.test(ua) && w < 900) || (w > 0 && w < 820);
   }
   function tog(c, on){ if (H.classList.contains(c) !== !!on) H.classList.toggle(c, !!on); }
+  function field(){ return H.classList.contains('_fieldmode'); }
+  function cs(e){ return W.getComputedStyle(e); }
+  function shown(e){ if (!e || !e.isConnected) return false; var s = cs(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0; }
+  function txt(e){ return String((e && (e.innerText || e.textContent)) || '').replace(/\s+/g, ' ').trim(); }
 
+  var BACKBTN = '<span class="gc-pu-chev" aria-hidden="true">‹</span><span>Back</span>';
   var CSS =
-    /* 1. the app: no desk top bar, no 💬 bubble up there */
+    ':root{--gc-sat:env(safe-area-inset-top,0px)}' +
+    /* 1. NAV's floating Back under the status bar; close buttons 44 px */
+    'html.gc-pu #_gcNavBk{top:calc(8px + var(--gc-sat))!important}' +
+    'html.gc-pu #gc-update-bar{padding-top:max(10px,var(--gc-sat))!important;flex-wrap:wrap}' +
+    'html.gc-pu #gc-bw-update{padding-top:calc(10px + var(--gc-sat))!important}' +
+    'html.gc-pu-ownback #_gcNavBk{display:none!important}' +
+    'html.gc-pu .gc-pu-page .gc-pu-fab,html.gc-pu .gc-pu-sheet .gc-pu-fab{bottom:calc(12px + env(safe-area-inset-bottom,0px))!important}' +
+    'html.gc-pu .gc-pu-fab{width:max-content!important;max-width:calc(100% - 32px)!important;position:sticky!important;left:auto!important;right:auto!important;top:auto!important;transform:none!important;bottom:calc(var(--gc-pu-tabs,0px) + 12px + env(safe-area-inset-bottom,0px))!important;display:block!important;margin:auto auto 12px!important;z-index:6!important}' +
+    'html.gc-pu .gc-pu-x44{min-width:44px!important;min-height:44px!important;display:inline-flex!important;align-items:center;justify-content:center;box-sizing:border-box}' +
+    /* the app back button (pages, sheets) */
+    '.gc-pu-back{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px 0 4px;margin:0;border:0;border-radius:22px;background:transparent;color:#1d4ed8;font:600 17px/1 -apple-system,Inter,Arial,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent}' +
+    '.gc-pu-back .gc-pu-chev{font-size:30px;line-height:1;margin-top:-3px}.gc-pu-back:active{background:rgba(29,78,216,.1)}' +
+    '.gc-pu-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:6px;padding:calc(6px + var(--gc-sat)) 12px 6px 4px;background:#fff;border-bottom:1px solid #e5e7eb;box-sizing:border-box}' +
+    '.gc-pu-bar .gc-pu-t{font:800 18px/1.2 -apple-system,Inter,Arial,sans-serif;color:#0f172a;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    /* 3. app pages: full screen, white, the bottom bar stays */
+    'html.gc-pu-app .gc-pu-sheet{background:#f3f5f8!important;align-items:stretch!important;justify-content:stretch!important;bottom:var(--gc-pu-tabs,0px)!important;top:0!important}' +
+    'html.gc-pu-app .gc-pu-sheet > .in{max-width:none!important;max-height:none!important;width:100%!important;height:100%!important;border-radius:0!important;box-shadow:none!important;margin:0!important}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .hd{justify-content:flex-start!important;gap:6px;padding:calc(6px + var(--gc-sat)) 12px 6px 4px!important;border-bottom:1px solid #e5e7eb!important}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .hd .gc-pu-back{width:auto!important;height:auto!important;min-height:44px!important;background:transparent!important;border-radius:22px!important;font-size:17px!important}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .hd > b{font-size:18px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    'html.gc-pu-app .gc-pu-sheet .gc-pu-hide{display:none!important}' +
+    'html.gc-pu-app .gc-pu-page .gc-pu-hide{display:none!important}' +
+    'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-top:0!important}' +
+    'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet .gc-pu-bar{margin:0 -16px 10px}' +
+    'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;transform:none!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-bar{order:-1;flex:0 0 auto}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;transform:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
+    'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .bd{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
+    'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
+    'html.gc-pu-app #_gcJobPick,html.gc-pu-app #_gcJobDash{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
+    /* 4. the app: no desk top bar, no 💬 bubble up there; the Field header as a native app header */
     'html.gc-pu-app #_masterSearch{display:none!important}' +
     'html.gc-pu-app #_gcJobMsgFab{display:none!important}' +
-    /* the Field header as a native app header */
-    'html.gc-pu-app #_gcAppHead{gap:6px!important;padding:calc(6px + env(safe-area-inset-top,0px)) 10px 6px 4px!important;min-height:0!important;box-sizing:border-box!important}' +
+    'html.gc-pu-app #_gcAppHead{gap:6px!important;padding:calc(6px + var(--gc-sat)) 10px 6px 4px!important;min-height:0!important;box-sizing:border-box!important}' +
     'html.gc-pu-app #_gcAppBack{display:inline-flex!important;align-items:center;gap:2px;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px 0 6px!important;border-radius:22px!important;color:#60a5fa!important;font-size:30px!important;line-height:1!important;-webkit-tap-highlight-color:transparent}' +
     'html.gc-pu-app #_gcAppBack::after{content:"Back";font:600 17px/1 -apple-system,Inter,Arial,sans-serif;margin-left:3px;position:relative;top:1px}' +
     'html.gc-pu-app #_gcAppBack:active{background:rgba(96,165,250,.15)!important}' +
     'html.gc-pu-app #_gcAppTitle{flex:0 0 auto;white-space:nowrap;font-size:19px!important;line-height:1.2}' +
-    /* NAV's floating Back is not needed while the header (with its own Back) is on the screen */
     'html.gc-pu-head:not(._gcNavLayer) #_gcNavBk{display:none!important}' +
-    /* content right under the header */
     'html.gc-pu-app.gc-pu-head main{padding-top:calc(var(--gc-pu-hh,56px) + 8px)!important}' +
-    /* 2. the pills: in the header (right end), small */
     'html.gc-pu-app #_gcAppHead .gcautai-pill{position:static!important;margin:0 0 0 auto!important;flex:0 1 auto;min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 11px!important;font-size:12px!important;box-shadow:none!important;min-height:32px}' +
     'html.gc-pu-app #_gcAppHead .gcautai-pill ~ .gcautai-pill{margin-left:6px!important}' +
-    'html.gc-pu-app body > .gcautai-pill{padding:6px 10px!important;font-size:12px!important;bottom:calc(104px + env(safe-area-inset-bottom,0px))!important}' +
-    /* 3. Leads on a phone: views = a grid of real buttons, chips wrap */
+    'html.gc-pu-app body > .gcautai-pill{padding:6px 10px!important;font-size:12px!important}' +
+    '#gc-pu-pills{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0}' +
+    'html.gc-pu-app #gc-pu-pills .gcautai-pill{position:static!important;margin:0!important;padding:7px 12px!important;font-size:13px!important;box-shadow:none!important;min-height:36px;max-width:100%;white-space:normal;text-align:left}' +
+    /* 5. Leads on a phone: views = a grid of real buttons, chips wrap */
     'html.gc-pu #gc-leads-hub .gclu-views{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%!important;overflow:visible!important;border:0!important;border-radius:0!important;background:transparent!important;box-sizing:border-box}' +
     'html.gc-pu #gc-leads-hub .gclu-views > button{display:flex!important;align-items:center;justify-content:center;text-align:center;min-width:0;min-height:48px!important;height:auto!important;margin:0!important;padding:6px 4px!important;border:1px solid #d6d3ea!important;border-radius:12px!important;background:#fff;color:#241968;font:700 14px/1.2 -apple-system,Inter,Arial,sans-serif!important;white-space:normal!important;overflow-wrap:anywhere;word-break:normal;box-sizing:border-box;flex:none!important}' +
     'html.gc-pu #gc-leads-hub .gclu-views > button.on{background:#241968!important;color:#fff!important;border-color:#241968!important;box-shadow:0 0 0 2px #fff inset,0 2px 6px rgba(36,25,104,.35)}' +
@@ -244296,40 +244427,296 @@ try {
     'html.gc-pu #gc-leads-hub .gclu-chips > .gclu-chip.on{box-shadow:0 2px 6px rgba(36,25,104,.35)}';
   var st = D.createElement('style'); st.id = 'gc-phoneui-css'; st.textContent = CSS; (D.head || H).appendChild(st);
 
-  /* the header: never swept as a notice; the pills ride in it; main follows its real height */
+  /* ── the inset, measured (a probe at top: var(--gc-sat)) ── */
+  var probe = null;
+  function sat(){
+    if (!D.body) return 0;
+    if (!probe || !probe.isConnected) { probe = D.createElement('div'); probe.id = 'gc-pu-sat'; probe.setAttribute('aria-hidden', 'true'); probe.setAttribute('data-gc-keep', '1'); probe.setAttribute('data-gcnav-ignore', '1'); probe.style.cssText = 'position:fixed;left:0;top:var(--gc-sat);width:0;height:0;pointer-events:none;visibility:hidden'; D.body.appendChild(probe); }
+    return Math.round(probe.getBoundingClientRect().top) || 0;
+  }
+
+  /* ── 1. safe area ── */
+  var CLOSE_T = /^(✕|✖|×|⨯|x|close|done|‹|‹ ?back|back|← ?back)$/i;
+  function closeish(b){ var t = txt(b), al = b.getAttribute('aria-label') || ''; return CLOSE_T.test(t) || /^(close|back)$/i.test(al) || b.hasAttribute('data-x') || b.classList.contains('gc-pu-back'); }
+  function contentish(e){
+    if (!e || e === D.body || e === H) return false;
+    if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|IMG|SVG|LABEL|H1|H2|H3|H4|B|STRONG)$/i.test(e.tagName)) return true;
+    if (e.closest && e.closest('button,a,[role=button]')) return true;
+    for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) return true;
+    return false;
+  }
+  function holder(e){
+    for (var x = e; x && x !== D.body && x !== H; x = x.parentElement) { var p = cs(x).position; if (p === 'fixed' || p === 'sticky') return x; }
+    return null;
+  }
+  var SKIP = /^(_gcAppHead|_gcNavBk|gc-pu-sat|gc-co-strip|_masterSearch)$/;
+  function padTop(t){
+    if (t.hasAttribute('data-gc-sa')) return false;
+    var p = parseFloat(cs(t).paddingTop) || 0;
+    t.setAttribute('data-gc-sa', String(p));
+    t.style.setProperty('padding-top', 'max(' + p + 'px, var(--gc-sat))', 'important');
+    PU.pads.push(t.id || String(t.className || t.tagName).slice(0, 40)); if (PU.pads.length > 40) PU.pads.shift();
+    return true;
+  }
+  function moveDown(e, t, S){
+    /* a button placed absolutely (or fixed) inside the panel: padding does not move it */
+    for (var x = e; x && x !== t; x = x.parentElement) {
+      var p = cs(x).position;
+      if ((p === 'absolute' || p === 'fixed') && !x.hasAttribute('data-gc-sat-top')) {
+        var top = parseFloat(cs(x).top) || 0; x.setAttribute('data-gc-sat-top', String(top));
+        x.style.setProperty('top', 'calc(' + top + 'px + var(--gc-sat))', 'important'); PU.tops++; return true;
+      }
+    }
+    return false;
+  }
+  function safeSweep(){
+    var S = sat(); if (S < 4) return;
+    var w = W.innerWidth || 0; if (!w) return;
+    var xs = [12, 40, w * 0.25, w * 0.5, w * 0.75, w - 40, w - 14], ys = [Math.max(1, Math.round(S * 0.35)), S - 2];
+    for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
+      var e = D.elementFromPoint(xs[i], ys[j]); if (!contentish(e)) continue;
+      var t = holder(e); if (!t || (t.id && SKIP.test(t.id)) || (t.closest && t.closest('#_gcAppHead'))) continue;
+      if (t.scrollTop > 0) continue;   /* a page scrolled under the status bar is not a panel under it */
+      if (!padTop(t)) moveDown(e, t, S);
+      else if (e.getBoundingClientRect().top < S - 1) moveDown(e, t, S);
+    }
+  }
+  function closeSweep(){
+    var layers = Array.prototype.filter.call(D.body.children, function(e){ return !/^(SCRIPT|STYLE|LINK)$/.test(e.tagName) && cs(e).position === 'fixed' && shown(e) && e.getBoundingClientRect().height > 120; });
+    layers.forEach(function(L){
+      Array.prototype.forEach.call(L.querySelectorAll('button,[role=button],[data-x]'), function(b){
+        if (b.classList.contains('gc-pu-x44') || !closeish(b) || !shown(b)) return;
+        var r = b.getBoundingClientRect(); if (r.width < 44 || r.height < 44) { b.classList.add('gc-pu-x44'); PU.x44++; }
+      });
+    });
+  }
+
+  /* ── 2. notes stack above the bottom bar; the 🔔 card under the Field header ── */
+  var NOTES = '#gc-unsent-note,#gc-save-note,.gc-away-toast,#gc-ra-toast,#gc-fd-toast,#_gcNavToast,#gc-rpb-toast,body > .gcautai-pill';
+  function tabsH(){ var t = D.getElementById('gc-fh-tabs'); if (!t || !shown(t)) return 0; var r = t.getBoundingClientRect(); return Math.max(0, Math.round((W.innerHeight || 0) - r.top)); }
+  function stackSweep(){
+    var base = tabsH(); H.style.setProperty('--gc-pu-tabs', base + 'px');
+    var list = Array.prototype.filter.call(D.querySelectorAll(NOTES), function(n){ return n.parentNode === D.body && shown(n) && cs(n).position === 'fixed'; });
+    var y = (base || 12) + 8;
+    list.forEach(function(n){
+      var want = y + 'px';
+      if (n.style.getPropertyValue('bottom') !== want || n.style.getPropertyPriority('bottom') !== 'important') { n.style.setProperty('bottom', want, 'important'); n.style.setProperty('top', 'auto', 'important'); n.style.setProperty('margin-bottom', '0', 'important'); PU.stacked++; }
+      y += Math.round(n.getBoundingClientRect().height) + 6;
+    });
+  }
+  /* a floating action button inside a page that is mid-screen (over the list) or under the bottom bar: it sits at the
+     bottom of its page, just above the bottom bar (sticky), never over content */
+  function fabSweep(){
+    var S = sat(), vh = W.innerHeight || 0, tb = tabsH(); if (!vh) return;
+    Array.prototype.forEach.call(D.querySelectorAll('body > * button[style*="fixed"], body > * a[style*="fixed"], body > * .gc-fab'), function(b){
+      if (b.classList.contains('gc-pu-fab') || b.parentNode === D.body || closeish(b)) return;
+      if (b.closest('#gc-fh-tabs,#_gcAppHead,.gc-pu-bar,#gc-update-bar,#gc-bw-update')) return;
+      var s = cs(b); if (s.position !== 'fixed' || !shown(b)) return;
+      var r = b.getBoundingClientRect(); if (r.width < 90 || r.top < S + 70) return;
+      /* (a fixed button inside a panel scrolls with it when the panel is its containing block, and sits mid-screen) */
+      b.classList.add('gc-pu-fab'); PU.fabs = (PU.fabs || 0) + 1;
+    });
+  }
+  function homeCard(){
+    var c = D.getElementById('gc-away-pushcard'), home = D.querySelector('#_gcJobPick.gc-fh'); if (!c || !home) return;
+    var top = home.querySelector('.fh-top'); if (top && top.nextElementSibling !== c && !(top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills' && top.nextElementSibling.nextElementSibling === c)) top.parentNode.insertBefore(c, (top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills') ? top.nextElementSibling.nextSibling : top.nextSibling);
+    if (!c.__gcPu) { c.__gcPu = 1; c.style.margin = '8px 12px'; }
+  }
+
+  /* ── 3. app pages ── */
+  function bar(title, onBack){
+    var b = D.createElement('div'); b.className = 'gc-pu-bar';
+    b.innerHTML = '<button type="button" class="gc-pu-back" aria-label="Back">' + BACKBTN + '</button><span class="gc-pu-t"></span>';
+    b.querySelector('.gc-pu-t').textContent = title || '';
+    b.querySelector('.gc-pu-back').addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); onBack(); });
+    return b;
+  }
+  function backHome(){ ST.call(W, function(){ try { if (field() && W._gcNavSync) W._gcNavSync(); if (field() && !D.querySelector('#_gcJobPick,#_gcJobDash') && !(W._gcNavLayers && W._gcNavLayers().length) && W._gcJobPicker) W._gcJobPicker(); } catch (e) {} }, 150); }
+  function sheetPage(o){
+    if (o.classList.contains('gc-pu-sheet')) return;
+    var inn = o.querySelector(':scope > .in'); if (!inn) return;
+    o.classList.add('gc-pu-sheet'); PU.pages++;
+    try { new MutationObserver(function(){ lightSoon(o); }).observe(o, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] }); } catch (e) {}
+    lightSoon(o);
+    if (o.classList.contains('gc-ra-sheet')) {
+      var hd = inn.querySelector(':scope > .hd'), x = hd && hd.querySelector('[data-x]');
+      if (hd && !hd.querySelector('.gc-pu-back')) {
+        var b = D.createElement('button'); b.type = 'button'; b.className = 'gc-pu-back'; b.setAttribute('data-x', ''); b.setAttribute('aria-label', 'Back'); b.innerHTML = BACKBTN;
+        hd.insertBefore(b, hd.firstChild); if (x) x.classList.add('gc-pu-hide');
+      }
+    } else {
+      var h3 = inn.querySelector('h3'), title = h3 ? txt(h3) : '';
+      if (!inn.querySelector(':scope > .gc-pu-bar')) {
+        var br = bar(title, function(){ o.remove(); backHome(); });
+        br.querySelector('.gc-pu-back').setAttribute('data-x', '');
+        inn.insertBefore(br, inn.firstChild);
+        if (h3 && h3.parentNode === inn) h3.classList.add('gc-pu-hide');
+      }
+    }
+  }
+  /* any other panel opened over the Field (Approvals, Job Info, Documents, the Schedule page, lead details, Away, …):
+     a full-screen white page (no dim backdrop, no card edge), its dark colors made light, an app header ‹ Back · title
+     unless it has its own back / close at the top, the bottom bar visible, the end scrolls clear of it */
+  var NOT_PAGE = /^(_gcJobPick|_gcJobDash|gcuOv|gc-fh-tabs|root|gc-pu-sat|_gcNavBk|_gcAppHead|_masterSearch|gc-update-bar|gc-bw-update)$/;
+  function pageable(L){
+    if (!L || L.parentNode !== D.body || L.nodeType !== 1 || /^(SCRIPT|STYLE|LINK)$/.test(L.tagName)) return false;
+    if ((L.id && (NOT_PAGE.test(L.id) || /^gc-auth|gate$|splash|^_gcLock|toast/i.test(L.id))) || /toast|gc-ra-sheet|gc-fh-sheet|gcautai-pill/.test(String(L.className || ''))) return false;
+    if (L.classList.contains('gc-pu-page')) return true;
+    var s = cs(L); if (s.position !== 'fixed' || !shown(L) || parseFloat(s.opacity) < 0.05 || s.pointerEvents === 'none') return false;
+    var r = L.getBoundingClientRect(), vw = W.innerWidth, vh = W.innerHeight;
+    if ((Math.min(r.right, vw) - Math.max(r.left, 0)) * (Math.min(r.bottom, vh) - Math.max(r.top, 0)) < 0.55 * vw * vh) return false;
+    if (L.querySelector('#gc-auth-email,#gc-auth-password')) return false;
+    return true;
+  }
+  function mainCard(L){
+    var best = null, ba = 0;
+    Array.prototype.forEach.call(L.children, function(c){ if (c.classList.contains('gc-pu-bar') || /^(SCRIPT|STYLE)$/.test(c.tagName) || !shown(c)) return; var r = c.getBoundingClientRect(), a = r.width * r.height; if (a > ba) { ba = a; best = c; } });
+    return best;
+  }
+  function titleOf(L){ var t = titleEl(L); return t ? txt(t).slice(0, 48) : ''; }
+  function titleEl(L){
+    var all = L.querySelectorAll('h1,h2,h3,b,strong,div,span');
+    for (var i = 0; i < all.length && i < 400; i++) {
+      var e = all[i]; if (e.closest('.gc-pu-bar,button')) continue;
+      var direct = ''; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3) direct += n.nodeValue;
+      direct = direct.replace(/\s+/g, ' ').trim(); if (!direct) continue;
+      if (parseFloat(cs(e).fontSize) >= 17 && shown(e)) return e;
+    }
+    return null;
+  }
+  function ownBackAtTop(L){
+    var S = sat();
+    return Array.prototype.some.call(L.querySelectorAll('button,a,[role=button]'), function(b){
+      if (b.closest('.gc-pu-bar') || !closeish(b) || !shown(b)) return false;
+      var r = b.getBoundingClientRect(); return r.top < S + 130 && r.bottom > 0 && r.left < W.innerWidth && r.right > 0;
+    });
+  }
+  function closeLayer(L){
+    var own = Array.prototype.filter.call(L.querySelectorAll('button,[role=button]'), function(b){ return !b.closest('.gc-pu-bar') && /^(close|✕|×|done|‹|back|‹ ?back|cancel)$/i.test(txt(b)); })[0];
+    if (own) { try { own.click(); } catch (e) {} }
+    if (L.isConnected) ST.call(W, function(){ if (L.isConnected) L.remove(); backHome(); }, 60); else backHome();
+  }
+  function genericPage(L){
+    if (!L.classList.contains('gc-pu-page')) {
+      L.classList.add('gc-pu-page'); PU.pages++;
+      if (L.hasAttribute('data-gc-sa')) { L.style.removeProperty('padding-top'); L.removeAttribute('data-gc-sa'); }
+      var card = mainCard(L); if (card) card.classList.add('gc-pu-card');
+      try { new MutationObserver(function(){ lightSoon(L); }).observe(L, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] }); } catch (e) {}
+      lightSoon(L);
+    }
+    if (!L.hasAttribute('data-gc-pu-bar')) {
+      var mine = /My Approvals/.test(String((L.firstElementChild && L.firstElementChild.textContent) || '').slice(0, 200));
+      if (mine || !ownBackAtTop(L)) {
+        var te = mine ? null : titleEl(L);
+        L.appendChild(bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); })); L.setAttribute('data-gc-pu-bar', '1');
+        if (te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input')) te.classList.add('gc-pu-hide');
+      }
+    }
+  }
+  function pageSweep(){
+    Array.prototype.forEach.call(D.querySelectorAll('body > .gc-ra-sheet, body > .gc-fh-sheet'), sheetPage);
+    Array.prototype.forEach.call(D.body.children, function(L){ if (pageable(L)) genericPage(L); });
+    /* and once a second over what is open (a color can change without a node being added) */
+    Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet'), function(L){ if (shown(L)) lightSoon(L); });
+  }
+
+  /* dark → light: backgrounds that are dark become a light tint of the same hue; text then gets ≥ 4.5:1 against what is
+     under it (same hue, darker). Saturated mid-tone buttons (green Approve, red, blue) are left as they are. */
+  function rgb(s){ var m = String(s || '').match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?/); if (!m) return null; var a = m[4] == null ? 1 : (/%$/.test(m[4]) ? parseFloat(m[4]) / 100 : +m[4]); return [+m[1], +m[2], +m[3], a]; }
+  function lum(c){ var f = function(v){ v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); }
+  function ratio(a, b){ var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function hsl(c){ var r = c[0] / 255, g = c[1] / 255, b = c[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, h = 0, s = 0; if (mx !== mn) { var d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
+  function fromHsl(h, s, l){ var k = function(n){ return (n + h / 30) % 12; }, a = s * Math.min(l, 1 - l), f = function(n){ return Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))); }; return [f(0), f(8), f(4), 1]; }
+  function css3(c){ return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+  function bgOf(e, stop){
+    for (var x = e; x; x = x.parentElement) { var c = rgb(cs(x).backgroundColor); if (c && c[3] > 0.5) return c; if (x === stop) break; }
+    return [255, 255, 255, 1];
+  }
+  function keepColor(c){ var q = hsl(c); return q[1] > 0.35 && q[2] > 0.28 && q[2] < 0.72; }
+  function light(root){
+    if (!root || !root.isConnected) return;
+    var c0 = root.querySelector(':scope > .gc-pu-card'); if (c0 && root.hasAttribute('data-gc-pu-bar')) { var t0 = c0.firstElementChild; if (t0 && txt(t0) === 'My Approvals') t0.classList.add('gc-pu-hide'); }
+    var all = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
+    all.forEach(function(e){
+      if (e.classList && (e.classList.contains('gc-pu-bar') || e.classList.contains('gc-pu-page') || e.classList.contains('gc-pu-card'))) return;
+      if (e.closest && e.closest('.gc-pu-bar')) return;
+      var s = cs(e), c = rgb(s.backgroundColor), gi = String(s.backgroundImage || '');
+      if (gi.indexOf('gradient') >= 0) { var g = rgb(gi); if (g && hsl(g)[2] < 0.3) { e.style.setProperty('background-image', 'none', 'important'); c = g; c[3] = 1; } }
+      if (c && c[3] > 0.3 && !keepColor(c)) { var q = hsl(c); if (q[2] < 0.3) { e.style.setProperty('background-color', css3(fromHsl(q[0], Math.min(q[1], 0.25), e === root ? 1 : 0.97)), 'important'); PU.lit++; } }
+      ['Top', 'Right', 'Bottom', 'Left'].forEach(function(sd){ var bc = rgb(s['border' + sd + 'Color']); if (bc && parseFloat(s['border' + sd + 'Width']) > 0 && bc[3] > 0.3 && hsl(bc)[2] < 0.3 && !keepColor(bc)) { var bq = hsl(bc); e.style.setProperty('border-' + sd.toLowerCase() + '-color', css3(fromHsl(bq[0], Math.min(bq[1], 0.2), 0.86)), 'important'); } });
+      if (e.tagName === 'BUTTON' && e.style.getPropertyValue('background-color') && !e.__gcPuB) { e.__gcPuB = 1; if (!(parseFloat(s.borderTopWidth) > 0)) e.style.setProperty('border', '1px solid #cbd5e1', 'important'); }
+    });
+    all.forEach(function(e){
+      var direct = false; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) { direct = true; break; }
+      if (!direct && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return;
+      var fg = rgb(cs(e).color); if (!fg) return;
+      var bg = bgOf(e); if (keepColor(bg)) return;   /* on a colored button: as it was */
+      if (ratio(fg, bg) >= 4.6) return;
+      var q = hsl(fg), l = q[1] < 0.2 ? 0.16 : Math.min(q[2], 0.5), c2 = fromHsl(q[0], q[1], l), lb = lum(bg) > 0.4;
+      for (var k = 0; k < 14 && ratio(c2, bg) < 4.6; k++) { l = lb ? Math.max(0, l - 0.05) : Math.min(1, l + 0.05); c2 = fromHsl(q[0], q[1], l); }
+      e.style.setProperty('color', css3(c2), 'important');
+    });
+  }
+  /* run straight from the MutationObserver (already one call per batch of changes; the page's own timers can be held while
+     a field has the focus); our own color changes come back once and change nothing */
+  var lighting = false;
+  function lightSoon(root){ if (lighting) return; lighting = true; try { light(root); } catch (e) {} lighting = false; }
+
+  /* ── 4. the header: never swept as a notice; the pills ride in it; main follows its real height ── */
   var lastH = -1;
   function head(){
     var hd = D.getElementById('_gcAppHead');
     if (hd && hd.getAttribute('data-gc-keep') !== '1') { hd.setAttribute('data-gc-keep', '1'); PU.kept++; }
     var app = H.classList.contains('gc-pu-app');
     tog('gc-pu-head', app && !!hd);
-    if (!app || !hd) return;
-    ['_gcSubDocPill', '_gcPayPill'].forEach(function(id){
-      var p = D.getElementById(id); if (p && p.parentNode !== hd) { hd.appendChild(p); PU.moves++; }
+    if (!app) return;
+    /* the pills: in the page header (desk pages), or in the flow right under the Field home / job page header */
+    var host = hd || null, row = null;
+    if (!host) {
+      var pg = [D.getElementById('_gcJobDash'), D.querySelector('#_gcJobPick.gc-fh')].filter(function(x){ return x && shown(x); })[0];
+      if (pg) {
+        row = pg.querySelector(':scope > #gc-pu-pills');
+        if (!row) { row = D.createElement('div'); row.id = 'gc-pu-pills'; var anc = pg.querySelector(':scope > .fh-top') || pg.firstElementChild; pg.insertBefore(row, anc ? anc.nextSibling : pg.firstChild); }
+        host = row;
+      }
+    }
+    if (host) ['_gcSubDocPill', '_gcPayPill'].forEach(function(id){
+      var p = D.getElementById(id); if (p && p.parentNode !== host) { host.appendChild(p); PU.moves++; }
     });
+    if (!hd) return;
     var h = hd.offsetHeight || 0;
     if (h && h !== lastH) { lastH = h; H.style.setProperty('--gc-pu-hh', h + 'px'); }
   }
-  function sync(){
+
+  function run(){
     try {
-      var ph = phoneDev(), field = H.classList.contains('_fieldmode');
+      var ph = phoneDev();
       tog('gc-pu', ph || (W.innerWidth || 0) <= 640);
-      tog('gc-pu-app', ph && field);
+      tog('gc-pu-app', ph && field());
       head();
+      if (!ph || !D.body) return;
+      if (field()) { try { pageSweep(); } catch (e) {}
+        try { var Ls = W._gcNavLayers ? W._gcNavLayers() : [], tl = Ls[Ls.length - 1]; tog('gc-pu-ownback', !!tl && (tl.hasAttribute('data-gc-pu-bar') || tl.classList.contains('gc-pu-sheet') || (tl.classList.contains('gc-pu-page') && ownBackAtTop(tl)))); } catch (e) {} try { homeCard(); } catch (e) {} try { stackSweep(); } catch (e) {} }
+      try { safeSweep(); } catch (e) {}
+      try { fabSweep(); } catch (e) {}
+      try { closeSweep(); } catch (e) {}
     } catch (e) {}
   }
-  sync();
+  var soonT = 0;
+  function soon(){ if (soonT) return; soonT = ST.call(W, function(){ soonT = 0; run(); }, 60); }
+  run();
   try {
     new MutationObserver(function(ms){
-      for (var i = 0; i < ms.length; i++) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) { var n = a[k]; if (n.nodeType === 1 && (n.id === '_gcAppHead' || /gcautai-pill/.test(String(n.className || '')))) { head(); return; } } }
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); soon(); return; } }
     }).observe(D.body || H, { childList: true });
-    new MutationObserver(function(){ sync(); }).observe(H, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(function(){ head(); soon(); }).observe(H, { attributes: true, attributeFilter: ['class'] });
   } catch (e) {}
-  W.addEventListener('resize', sync);
-  SI.call(W, function(){ if (!D.hidden) sync(); }, 1000);
-  PU.sync = sync;
-  PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), hh: lastH, moves: PU.moves, kept: PU.kept }; };
-  try { console.log('[GC] PHONEUI: Field on a phone looks like an app (no desk top bar, native header, bigger Leads views) — __gcPhoneUI.state()'); } catch (e) {}
+  W.addEventListener('resize', soon);
+  SI.call(W, function(){ if (!D.hidden) run(); }, 1000);
+  SI.call(W, function(){ if (!D.hidden && H.classList.contains('gc-pu-app')) { try { stackSweep(); } catch (e) {} } }, 300);
+  PU.run = run; PU.light = light; PU.sat = sat; PU.ratio = function(a, b){ return ratio(rgb(a), rgb(b)); };
+  PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), sat: sat(), hh: lastH, moves: PU.moves, kept: PU.kept, pads: PU.pads.slice(), tops: PU.tops, x44: PU.x44, pages: PU.pages, lit: PU.lit, stacked: PU.stacked, fabs: PU.fabs || 0 }; };
+  try { console.log('[GC] PHONEUI: phone safe area, app pages, no desk top bar in Field, bigger Leads views — __gcPhoneUI.state()'); } catch (e) {}
 } catch (e) { try { console.warn('[GC] PHONEUI', e); } catch (x) {} }
 })();
 </script>
