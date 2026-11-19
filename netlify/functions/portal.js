@@ -702,8 +702,24 @@ function gateExempt(p, key, rec){
   return !!(p && (isInsJob(p) || p.isInsurance === true || s(p.claimId) || s(p.claimNumber) || s(p.claimNo)));
 }
 /* may this thing be on the job's portal page? (sync: the gate read last; buildView / notices read it first) */
+/* patch PORTALPOL (owner 11/19: "Plans/documents can skip approval in portal"): a paper STAFF put in the portal themselves — uploaded
+   from the portal editor (PORTALED, pped_…) or the job's 🏠 Portal card (pdoc_…), or switched on there by hand (portalLive) — goes
+   live at once: no "⏳ Waiting for approval". Never an estimate's paper (ESTIN / ESTPDF keep their own rules), never an internal
+   one, never one the customer may not have (portalShare must be true). One a person rejected on ✅ Approvals AFTER it was
+   shared stays out. The e-mail telling the customer about it is unchanged (✅ Approvals). */
+function staffLiveDoc(key, rec){
+  if (!rec || key.slice(0, 2) !== 'd:' || rec.portalShare !== true || rec.deleted === true || rec.needsReview === true) return false;
+  if (rec.internal === true || rec.portalNever === true || s(rec.estimateId) || estinDocHidden(rec) || rec.estinWaiting === true) return false;
+  if (/^(estin|estin-source|gdoc|proposal|estimate|estimate-sent|estimate-upload|generated)$/.test(s(rec.source))) return false;
+  return rec.portalLive === true || s(rec.source) === 'portal-editor' || s(rec.source) === 'portal-card' || /^(pped_|pdoc_)/.test(s(rec.id));
+}
 function gateAllows(G, p, key, rec, pending, info){
   if (gateExempt(p, key, rec)) return true;   /* the insurance Work Authorization (owner, 10/24) */
+  if (staffLiveDoc(key, rec)) {   /* patch PORTALPOL */
+    const g0 = G || GATE_LAST, e0 = g0 && g0.ok ? g0.map[key] : null;
+    if (!e0 || !/rejected|recorded/.test(s(e0.st)) || s(e0.decidedAt || e0.at) < s(rec.portalLiveAt || '')) return true;
+    return false;
+  }
   G = G || GATE_LAST;
   if (!G || !G.ok) return false;
   const e = G.map[key];
@@ -941,12 +957,13 @@ async function buildView(data, p, opts){
     if (ist === undefined) { try { ist = (await kvRead([IN2.KEY]))[IN2.KEY]; } catch (e) { ist = null; } }
     view.inspections = IN2.custView(ist, p, new Date(Date.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
   } catch (e) { view.inspections = null; }
-  try { require('./_lib/portaled.js').attach(view, p, carrierWords(p).concat(claimWords(data, pid, false), [COMMON_CARRIERS])); } catch (e) {}   /* patch PORTALED: the portal editor's summary, checklist, scopes, milestones */
+  try { require('./_lib/portaled.js').attach(view, p); } catch (e) {}   /* patch PORTALED: the portal editor's summary, checklist, scopes, milestones (PORTALPOL: no carrier rewrite — the customer's own insurance company is shown) */
+  view.job.insurance = portalInsDetails(data, p);   /* patch PORTALPOL: "Your insurance" in the project details (carrier, claim number, adjuster — when stored) */
   if (ins) {   /* patch INSP: the insurance-claim view */
     insTagDocs(view.docs, pdocs, signed);
     view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
-    return chAttach(scrub(view, insWords(data, p)), data, p, view.insurance.now);   /* patch CLAIMHELP */
+    return chAttach(scrub(view, portalInsWords(data, p)), data, p, view.insurance.now);   /* patch CLAIMHELP; PORTALPOL: the customer's own carrier is shown */
   }
   /* patch GCPORTAL: the company client is greeted by its name; a GC job gets the GC variant — commercial sub stages, no homeowner
      offers (GrayCo Care, My home, referral, review ask, the residential warranty), GrayCo's own COI / W-9 (shared with GCs) */
@@ -964,8 +981,10 @@ async function buildView(data, p, opts){
       cd.forEach(function(d){ const r = full.find(function(x){ return s(x.id) === d.id; }); const u = r && sg[r.ref]; if (u) view.docs.push({ kind: 'company', title: clip('GrayCo — ' + d.title, 90), date: ymd(r.at), type: 'pdf', url: u, expires: d.expires }); });
     } catch (e) {}
   }
-  const showC = false;   /* owner 11/01 (CLAIMWORDS): the carrier's name is NEVER shown anywhere in the portal — "Show carrier name" (job / ⚡ Automations) has no effect */
-  return chAttach(scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC))), data, p, null);   /* patch CLAIMHELP */
+  /* patch PORTALPOL (owner 11/19: "we can show the name of their insurance company; we also get claim number etc."): the customer's own
+     carrier is no longer replaced; a TPA / program / adjusting company still reads "your insurance company" */
+  if (style.gc) { delete view.job.insurance; return chAttach(scrub(view, carrierWords(p).concat(claimWords(data, pid, false), portalInsWords(data, p))), data, p, null); }   /* PORTALPOL: a GC (we are the sub) is not the insured — its page stays as it was, no carrier */
+  return chAttach(scrub(view, portalInsWords(data, p)), data, p, null);   /* patch CLAIMHELP */
 }
 
 /* ── patch CLAIMHELP: "🛡 Your insurance claim" (netlify/functions/_lib/claimhelp.js) ─────────────────────────
@@ -975,11 +994,8 @@ async function buildView(data, p, opts){
 function CH(){ return require('./_lib/claimhelp.js'); }
 function chWords(data, p){
   const c = insClaim(data, p.id) || {};
-  const out = carrierWords(p).concat(claimWords(data, p.id, false));
-  [c.carrier, p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
-    .forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
-  out.push(COMMON_CARRIERS);
-  return out;
+  /* patch PORTALPOL: the customer's own carrier is shown (the claim box names it); only a TPA / program / adjusting company is replaced */
+  return portalInsWords(data, p);
 }
 function chView(content, data, p, inspNow){ return CH().view(content, p, data, { inspNow: typeof inspNow === 'number' ? inspNow : undefined, words: chWords(data, p) }); }
 function chAttach(view, data, p, inspNow){
@@ -1080,7 +1096,7 @@ async function estPortalCards(data, p, ests, signed){
     out.push({ e: e, pdf: pdf });
   });
   if (need.length) { try { Object.assign(signed, await signRefs(need)); } catch (e) {} }
-  const strip = function(v){ return s(v).replace(COMMON_CARRIERS, 'your insurance company'); };
+  const strip = function(v){ return s(v); };   /* patch PORTALPOL: a carrier's name is no longer taken out of the estimate card */
   return out.map(function(x){
     const e = x.e, groups = {}, order = [];
     arr(e.lines).forEach(function(l){
@@ -1171,6 +1187,31 @@ function insWords(data, p){
   [p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
     .forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
   return out;
+}
+/* ── patch PORTALPOL (owner 11/19) — the customer's OWN insurance company and claim are shown in the portal.
+   ownCarriers: the job's carrier fields + its claims' carriers. portalInsWords: what the portal still replaces with "your insurance
+   company" — the TPA / program and the adjusting companies only, never a word that is the customer's own carrier.
+   insWords (above) is unchanged: e-mails and papers outside the portal keep it until the owner decides. */
+function ownCarriers(data, p){
+  const out = carrierWords(p);
+  arr(data && data.gc_claims).forEach(function(c){ if (c && c.deleted !== true && s(c.projectId) === s(p && p.id) && s(c.carrier).length >= 3) out.push(s(c.carrier)); });
+  return out;
+}
+function portalInsWords(data, p){
+  const own = ownCarriers(data, p).map(low), c = insClaim(data, p.id) || {}, out = [];
+  claimWords(data, p.id, true).concat([p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program])
+    .forEach(function(v){ v = s(v); if (v.length >= 3 && own.indexOf(low(v)) < 0 && out.indexOf(v) < 0) out.push(v); });
+  return out;
+}
+/* the project details' "Your insurance": carrier, claim number, adjuster (name / phone; the job's switch hides the adjuster) — null when none stored */
+function portalInsDetails(data, p){
+  const c = insClaim(data, p.id) || {};
+  const adj = (c.adjuster && typeof c.adjuster === 'object') ? c.adjuster : {}, pa = (p.adjuster && typeof p.adjuster === 'object') ? p.adjuster : {};
+  const carrier = clip(s(c.carrier) || ownCarriers(data, p)[0] || '', 60), claimNumber = clip(c.claimNumber || p.claimNumber || p.claimNo, 40);
+  const an = clip(adj.name || p.adjusterName || (typeof p.adjuster === 'string' ? p.adjuster : pa.name), 60), ap = clip(adj.phone || p.adjusterPhone || pa.phone, 40);
+  const adjuster = p.portalShowAdjuster !== false && (an || ap) ? { name: an, phone: ap } : null;
+  if (!carrier && !claimNumber && !adjuster) return null;
+  return { carrier: carrier, claimNumber: claimNumber, adjuster: adjuster };
 }
 function insInternal(d){
   if (!d) return true;
@@ -1371,13 +1412,13 @@ function insuranceView(data, p, ctx){
   ctx.complete = ctx.stage >= 7 || !!ymd(p.completionDate || p.completedAt);
   const m = insMoney(p, c, ctx);
   const tl = insTimeline(p, c, ctx.stage, f, m, groups, ctx.cos, ctx.invoices);
-  const showCarrier = false;   /* owner 11/01 (CLAIMWORDS): never */
+  const showCarrier = !!s(f.carrier);   /* patch PORTALPOL (owner 11/19): the customer's own insurance company is shown when stored */
   const showAdj = p.portalShowAdjuster !== false && !!(f.adjusterName || f.adjusterPhone);   /* owner 11/01: shown by default when entered; the job's switch hides them */
   delete m.today;
   return {
     claim: {
       number: f.claimNumber, dateOfLoss: f.dateOfLoss, lossType: f.lossType, deductible: f.deductible > 0 ? f.deductible : null,
-      company: showCarrier ? clip(f.carrier, 60) : 'your insurance company', companyShown: showCarrier,
+      company: showCarrier ? clip(f.carrier, 60) : '', companyShown: showCarrier,
       adjuster: showAdj ? { name: f.adjusterName, phone: f.adjusterPhone } : null,
       adjusterMeeting: f.adjusterMeeting, mortgage: f.mortgageCo
     },
@@ -3023,7 +3064,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine: withPwLine, firstForPid: firstForPid, seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { starterFirst: starterFirst, pwSentence: pwSentence, withPwLine: withPwLine, firstForPid: firstForPid, seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, staffLiveDoc: staffLiveDoc, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, PORTAL_ESC_MS: PORTAL_ESC_MS, portalSide: portalSide, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
@@ -3051,7 +3092,7 @@ Object.assign(exports._core, { isHistoryInvoice: isHistoryInvoice });   /* patch
 Object.assign(exports._core, { invoiceMailHtml: invoiceMailHtml });   /* patch LEGAL3: the invoice e-mail body, so the legal-footer test can render a real one */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
 /* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */
-Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,
+Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, portalInsWords: portalInsWords, ownCarriers: ownCarriers, portalInsDetails: portalInsDetails, insClaim: insClaim,
   ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
   pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });
 exports._estin = { estinEstHidden: estinEstHidden, estinDocHidden: estinDocHidden, proposalShown: proposalShown, docShown: docShown, insDocShown: insDocShown };   /* patch ESTIN: tests */

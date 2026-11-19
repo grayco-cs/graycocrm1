@@ -109,7 +109,9 @@ try {
     seen.forEach(x => MIRROR_CARRIERS.push(x));
   }
 } catch (e) { console.log('  (mirror not readable: ' + (e && e.message) + ')'); }
-const CARRIERS = SEEDED.concat(WELL_KNOWN, MIRROR_CARRIERS);
+/* PORTALPOL (owner 11/19: "we can show the name of their insurance company"): the customer's own carrier (and any carrier staff
+   typed) may be shown now — what must still never reach the portal is a TPA / program / adjusting company */
+const CARRIERS = ['Acme Adjusting LLC', 'Riverbend TPA Services'];
 const hasCarrier = txt => CARRIERS.filter(c => new RegExp('(^|[^a-z0-9])' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*') + '(?![a-z0-9])', 'i').test(txt));
 
 /* ── the made-up world ── */
@@ -181,7 +183,7 @@ await t('the portal view', async () => {
   ok(/adjuster visit went well/.test(ch.note) && ch.noteAt === '2026-10-28', 'the customer sees staff’s note', ch.note);
   ok(ch.claim.number === 'TST-2026-0042' && ch.claim.dateOfLoss === '2026-10-02' && ch.claim.adjuster && ch.claim.adjuster.name === 'Dana Reed' && ch.claim.adjuster.phone === '901-555-0142', 'claim number, date of loss, adjuster name / phone (staff entered them)', ch.claim);
   ok(ch.qa.length === CH.defaults().qa.length && ch.footer === CH.FOOTER, 'Q&A (GrayCo defaults until an admin publishes) + the footer');
-  ok(!hasCarrier(JSON.stringify(ch)).length && /your insurance company will send its estimate/.test(ch.note), 'no carrier name in the section — even the one staff typed in the note became “your insurance company”', hasCarrier(JSON.stringify(ch)));
+  ok(!hasCarrier(JSON.stringify(ch)).length && /Volunteer Mutual Test Co will send its estimate/.test(ch.note), 'no carrier name in the section — even the one staff typed in the note became “your insurance company”', hasCarrier(JSON.stringify(ch)));
   ok(!hasCarrier(JSON.stringify(V)).length, 'no carrier name anywhere in the whole portal view of this job', hasCarrier(JSON.stringify(V)));
   ok(!/lawyer|DRAFT/.test(JSON.stringify(V)), 'no "DRAFT — for lawyer review" in the portal');
   const m = (await viewFor(LINKS.PJM)).data;
@@ -195,7 +197,7 @@ await t('the portal view', async () => {
 });
 await t('owner 11/01: carrier names never shown anywhere in the portal (even with "Show carrier name" ON)', async () => {
   const v = (await viewFor(LINKS.PJS)).data;
-  ok(v.insurance && v.insurance.claim.companyShown === false && v.insurance.claim.company === 'your insurance company', 'the insurance claim box: "your insurance company" although the job’s switch and ⚡ Automations say show', v.insurance && v.insurance.claim);
+  ok(v.insurance && v.insurance.claim.companyShown === true && v.insurance.claim.company === 'Bluff City Casualty', 'PORTALPOL: the insurance claim box names the customer\'s own insurance company', v.insurance && v.insurance.claim);
   ok(!hasCarrier(JSON.stringify(v)).length, 'no carrier name anywhere in the whole view (claim box, papers, checks, claim help)', hasCarrier(JSON.stringify(v)));
   ok((v.docs || []).some(d => /your insurance company estimate/i.test(d.title)), 'a paper named after the carrier reaches the portal as “your insurance company estimate”', (v.docs || []).map(d => d.title));
   const r = (await viewFor(LINKS.PJR)).data;   /* a regular job's view too */

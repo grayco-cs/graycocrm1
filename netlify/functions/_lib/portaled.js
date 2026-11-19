@@ -11,9 +11,10 @@
      · archived / hidden rows are never sent (they stay on the job: archive, never delete);
      · never a price, a cost, a note, who made it, or a sub — a scope line carries area / work / qty / unit only;
      · the text staff typed is cleaned: any GrayCo Portal / sub-portal / bid-site link is taken out (a sub's link has the same
-       shape as a customer's, so no portal link at all), the job's subs' names become "our trade partner", and the insurance
-       carrier words (the job's carrier, its claims' carriers, the common carriers) become "your insurance company" — the owner
-       rule: a carrier's name is never shown to a customer. portal.js scrubs the whole view once more after this. */
+       shape as a customer's, so no portal link at all) and the job's subs' names become "our trade partner". portal.js scrubs the
+       whole view once more after this (a TPA / adjusting company).
+     PORTALPOL (owner 11/19: "we can show the name of their insurance company; we also get claim number etc."): the insurance
+       carrier is no longer rewritten — the customer's own insurance company may be named in what staff type. */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
 function clip(v, n){ const t = s(v); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
@@ -26,21 +27,20 @@ function subWords(p){
   arr(p && p.subs).forEach(function(r){ if (!r) return; [r.name, r.sub, r.vendor, r.company, r.subName].forEach(function(v){ v = s(v); if (v.length >= 4) out.push(v); }); });
   return out;
 }
-function cleaner(p, carrier){
-  const subs = subWords(p).map(rx), car = arr(carrier).filter(function(w){ return w instanceof RegExp || s(w).length >= 3; }).map(rx);
+function cleaner(p){
+  const subs = subWords(p).map(rx);
   return function(t, n){
     t = s(t).replace(LINK, '[link removed]').replace(BARE, '[link removed]');
     subs.forEach(function(r){ t = t.replace(r, function(m){ const off = arguments[arguments.length - 2], before = t.slice(0, off); return /(^|[.!?]\s+)$/.test(before) ? 'Our trade partner' : 'our trade partner'; }); });
-    car.forEach(function(r){ t = t.replace(r, function(m){ const off = arguments[arguments.length - 2], before = t.slice(0, off); return /(^|[.!?]\s+)$/.test(before) ? 'Your insurance company' : 'your insurance company'; }); });
     return clip(t, n);
   };
 }
 function live(l){ return arr(l).filter(function(x){ return x && typeof x === 'object' && x.archived !== true && x.hidden !== true && x.deleted !== true; }); }
 function num(v){ if (v === '' || v == null) return ''; const n = Number(String(v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : ''; }
 /* what the customer's page gets from the editor's fields */
-function build(p, carrier){
+function build(p){
   p = p || {};
-  const c = cleaner(p, carrier);
+  const c = cleaner(p);
   const sum = p.portalSummary && typeof p.portalSummary === 'object' ? p.portalSummary.text : p.portalSummary;
   const tasks = live(p.portalTasks).slice(0, 80).map(function(t){ return { id: clip(t.id, 40), text: c(t.text, 300), due: ymd(t.due), done: t.done === true, doneAt: t.done === true ? ymd(t.doneAt) : '' }; })
     .filter(function(t){ return t.text; })
@@ -54,9 +54,9 @@ function build(p, carrier){
   return { summary: c(sum, 3000), tasks: tasks, scopes: scopes, milestones: miles };
 }
 /* into the view portal.js made (before its own scrub): the summary, the checklist, the scopes; the milestones join the schedule steps */
-function attach(view, p, carrier){
+function attach(view, p){
   if (!view || !view.job) return view;
-  const x = build(p, carrier);
+  const x = build(p);
   if (x.summary) view.job.summary = x.summary;
   view.checklist = x.tasks;
   view.scopes = x.scopes;

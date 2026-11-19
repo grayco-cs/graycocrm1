@@ -24,7 +24,7 @@ console.log('A. _lib/portaled.js');
     portalMilestones: [{ id: 'm1', name: 'Cabinets installed', date: '2030-01-10' }, { id: 'm2', name: 'Archived one', date: '2030-01-01', archived: true }] };
   const out = L.build(p, ['Sample Mutual Insurance', /\b(state\s*farm)\b/i]);
   const js = JSON.stringify(out);
-  ok(/[Yy]our insurance company/.test(out.summary) && !/Sample Mutual|State Farm/i.test(js), 'carrier names → "your insurance company" (the job\'s carrier and a common one)', out.summary);
+  ok(/Sample Mutual Insurance pays/.test(out.summary) && /State Farm/.test(out.summary) && !/your insurance company/i.test(js), 'PORTALPOL (owner 11/19): a carrier\'s name is no longer rewritten (the customer\'s own insurance company may be named)', out.summary);
   ok(/[Oo]ur trade partner/.test(out.summary) && !/Ridgeline/.test(js), 'the job\'s sub → "our trade partner"', out.summary);
   ok(!/#t=|portal\.grayco/.test(js) && /\[link removed\]/.test(out.summary), 'a portal link (customer or sub — the same shape) is taken out', out.summary);
   ok(out.tasks.length === 2 && out.tasks[0].id === 't1' && out.tasks[1].done === true && !/Old task/.test(js), 'checklist: open first, then done; archived never sent', out.tasks);
@@ -55,20 +55,20 @@ ok(/Full roof and kitchen/.test(v.job.summary || ''), 'About your project reache
 ok((v.checklist || []).length === 1 && v.checklist[0].text === 'Pick your tile', 'the checklist reaches the customer (the archived task does not)', v.checklist);
 ok((v.scopes || []).length === 1 && v.scopes[0].lines[0].work === 'Shaker cabinets, soft close', 'the scope reaches the customer', v.scopes);
 ok((v.job.steps || []).some(x => x.name === 'Cabinets installed'), 'the milestone is in Your schedule', (v.job.steps || []).map(x => x.name));
-ok(!vj.includes(S.carrier) && !/Sample Mutual/i.test(vj), 'no carrier name anywhere in the customer\'s answer');
+ok((v.job.summary || '').includes(S.carrier), 'PORTALPOL: the customer\'s own carrier stays in what staff typed', v.job && v.job.summary);
 ok(!vj.includes(S.sub) && !vj.includes(String(S.subPrice)), 'no sub name, no sub price');
 ok(!vj.includes(S.otherLink) && !/ARCHIVED TASK/.test(vj), 'no portal link from staff text, no archived row');
 
 console.log('C. gate state (staff) + approve in place');
 const docs = W.get('projectDocs');
-docs.push({ id: 'pped_plan1', pid: S.pid, name: 'Kitchen plans.pdf', cat: 'Plans', ref: W.storeFile(W.pdfOf('Kitchen plans', ['Plan view']), 'pdf', 'application/pdf'), type: 'application/pdf', portalShare: true, uploadedAt: '2026-11-02T15:00:00.000Z', source: 'portal-editor' });
+docs.push({ id: 'doc_plan1', pid: S.pid, name: 'Kitchen plans.pdf', cat: 'Plans', ref: W.storeFile(W.pdfOf('Kitchen plans', ['Plan view']), 'pdf', 'application/pdf'), type: 'application/pdf', portalShare: true, uploadedAt: '2026-11-02T15:00:00.000Z', source: 'office-upload' });   /* PORTALPOL: not a portal-editor upload — those go live at once (test_PORTALPOL_fn) */
 W.put('projectDocs', docs); W.resetCaches();
 r = await W.handlerCall('portal', { action: 'view' }, { 'x-portal-token': S.link });
 ok(!(r.data.docs || []).some(d => /Kitchen plans/.test(d.title)), 'a new paper is not in the portal before its approval (PORTALGATE)', (r.data.docs || []).map(d => d.title));
 r = await W.handlerCall('portal', { action: 'gate', op: 'scan', projectId: S.pid }, { Authorization: 'Bearer good-admin' });
 ok(r.status === 200 && r.data.ok, 'gate scan (staff) queues it', r.data);
 r = await W.handlerCall('portal', { action: 'gate', op: 'state', projectId: S.pid }, { Authorization: 'Bearer good-admin' });
-const g = (r.data.items || []).find(x => x.key === 'd:pped_plan1');
+const g = (r.data.items || []).find(x => x.key === 'd:doc_plan1');
 ok(r.status === 200 && g && g.st === 'pending' && /^aq_gate_/.test(g.aq || ''), 'gate state: the waiting paper carries its ✅ Approvals id (aq)', g);
 const r401 = await W.handlerCall('portal', { action: 'gate', op: 'state', projectId: S.pid }, {});
 ok(r401.status === 401 && !r401.data.items, 'gate state without a staff sign-in → 401, nothing listed', r401.status);

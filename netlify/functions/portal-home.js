@@ -88,7 +88,7 @@ exports.handler = async function(event){
   try {
     const data = await C.crmData(false), p = C.findProject(data, row.project_id);
     if (!p) return reply(404, headers, { ok: false, error: C.NOT_ACTIVE });
-    const words = C.insWords(data, p);
+    const words = C.portalInsWords ? C.portalInsWords(data, p) : C.insWords(data, p);   /* patch PORTALPOL: the customer's own carrier is shown in the portal */
     const testi = await X10.listGet(X10.K.TESTI), mine = testi.find(function(x){ return s(x.pid) === s(p.id) && !x.deleted; });
     if (action === 'home') {
       const out = await profile(data, p, words);

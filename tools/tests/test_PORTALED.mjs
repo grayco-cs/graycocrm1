@@ -4,11 +4,11 @@
 // leaves the machine). The SAMPLE job (made up) has a carrier and a sub on it; the portal page inside is the real portal.html.
 //   1. admin (Wesley) on an iPhone: 👤 Customer portal on a job WITH a portal → the full-screen page (✏️ Edit portal) and
 //      👁 Customer view = the real portal (staff preview) with the job, its updates;
-//   2. adds a task, a plan file (approved in place) and a question — each shows "👁 Visible to the customer" first and is saved
+//   2. adds a task, a plan file (PORTALPOL: live at once), a milestone (PORTALPOL: also a 📅 Schedule row) and a question (PORTALPOL: ❓, the customer's Home shows it) — each shows "👁 Visible to the customer" first and is saved
 //      only on its button (a Cancel saves nothing) — and they appear in the customer view (Home checklist, Documents, Messages);
 //   3. a job with NO portal → the "Make the portal" prompt; it says nothing is sent; the link is made only on its confirm; no
 //      e-mail at any time, no "send-link" / "notify-docs" asked by the page;
-//   4. the customer view has no carrier name and no sub-portal link / sub name anywhere;
+//   4. the customer view has no sub-portal link / sub name anywhere (PORTALPOL: their own insurance company IS shown);
 //   5. a PM (Demo PM) gets only his jobs' portals (another PM's job: nothing opens);
 //   6. no page errors. Screenshots (deviceScaleFactor 2) → $GC_SHOTS (default scratchpad/portaled/).
 import fs from 'fs'; import path from 'path'; import { pathToFileURL } from 'url'; import { createRequire } from 'module';
@@ -126,7 +126,7 @@ try {
   let fr = await custView(A);
   const cv = fr ? await fr.evaluate(() => ({ job: document.getElementById('jobName').textContent, pv: !!document.getElementById('pvbar'), text: document.body.innerText, html: document.getElementById('main').outerHTML + document.querySelector('header').outerHTML, hrefs: [...document.querySelectorAll('a[href],iframe[src],img[src]')].map(a => a.getAttribute('href') || a.getAttribute('src')) })) : null;
   ok(!!cv && /Roof & Kitchen/.test(cv.job) && cv.pv && /Materials are on site/.test(cv.text), '👁 Customer view: the real portal (staff preview bar) with the job and its updates', cv && { job: cv.job, pv: cv.pv });
-  ok(!!cv && !cv.html.includes(S.carrier) && !/Sample Mutual/i.test(cv.text), 'customer view: no carrier name anywhere on the page');
+  ok(!!cv && /Your insurance/.test(cv.text) && cv.text.includes(S.carrier), 'PORTALPOL: customer view shows their own insurance company (🛡 Your insurance)', cv && cv.text.slice(0, 300));
   ok(!!cv && !cv.html.includes(S.sub) && !cv.hrefs.some(h => /subportal|portal-app|#s=|\/#t=/.test(h || '')), 'customer view: no sub name, no sub-portal link', cv && cv.hrefs.filter(h => /subportal|portal-app|#s=|\/#t=/.test(h || '')));
   await shot(A, '03_customer_view');
   await tap(A, '#gcpe [data-pe="mode"][data-m="edit"]');
@@ -159,41 +159,45 @@ try {
   await A.page().locator('#gcpe [data-f="doc-file"]').setInputFiles({ name: 'Kitchen plans.pdf', mimeType: 'application/pdf', buffer: pdf });
   await sleep(600);
   const visP = await A.ev(() => (document.querySelector('#gcpe .pe-vis') || {}).innerText || '');
-  ok(/Kitchen plans\.pdf/.test(visP) && /once approved|after its/.test(visP), 'plan upload: "Visible to the customer" says it shows once approved', visP);
+  ok(/Kitchen plans\.pdf/.test(visP) && /at once|sees it now/.test(visP) && !/once approved/.test(visP), 'PORTALPOL: plan upload — "Visible to the customer" says it is in the portal at once (no approval)', visP);
   await tap(A, '#gcpe .pe-vis [data-v="ok"]');
   ok(await waitCloud(() => (H.cget('projectDocs') || []).some(d => d.pid === S.pid && d.name === 'Kitchen plans.pdf' && d.portalShare === true && d.cat === 'Plans')), 'plan in the job\'s Documents (Plans, customer sees it)');
-  const waitBtn = await H.waitFor(A, () => { const r = [...document.querySelectorAll('#gcpe [data-doc]')].find(x => /Kitchen plans/.test(x.textContent)); return !!r && /Waiting for approval/.test(r.textContent) && !!r.querySelector('[data-pe="doc-appr"]'); }, null, 30000);
-  ok(!!waitBtn, 'the plan shows "⏳ Waiting for approval — not in portal" with ✅ Put in portal', await A.ev(() => [...document.querySelectorAll('#gcpe [data-doc]')].map(x => x.textContent)));
+  const liveRow = await H.waitFor(A, () => { const r = [...document.querySelectorAll('#gcpe [data-doc]')].find(x => /Kitchen plans/.test(x.textContent)); return !!r && /Customer sees it/.test(r.textContent) && !/Waiting for approval/.test(r.textContent) && !r.querySelector('[data-pe="doc-appr"]'); }, null, 20000);
+  ok(!!liveRow, 'PORTALPOL: the plan shows "Customer sees it" at once — no "⏳ Waiting for approval", no ✅ Put in portal', await A.ev(() => [...document.querySelectorAll('#gcpe [data-doc]')].map(x => x.textContent)));
+  ok(await waitCloud(() => (H.cget('projectDocs') || []).some(d => d.name === 'Kitchen plans.pdf' && d.portalLive === true && d.portalLiveAt)), 'the upload is marked live (portalLive) on the job\'s Documents');
   await A.ev(() => { const r = [...document.querySelectorAll('#gcpe [data-doc]')].find(x => /Kitchen plans/.test(x.textContent)); if (r) r.scrollIntoView({ block: 'center' }); });
-  await shot(A, '05_plan_waiting');
-  if (!waitBtn) console.log('    plan in the functions\' cloud: ' + JSON.stringify((W.get('projectDocs') || []).filter(d => /Kitchen plans/.test(d.name))) + '\n    gate: ' +JSON.stringify((W.get('gc_portal_gate') || []).filter(x => x && (x.pid === S.pid || x.id === '_meta')).map(x => [x.id, x.st, x.aq, x.since])) + ' calls: ' + JSON.stringify(CALLS.filter(x => x.action === 'gate').map(x => x.op)));
-  if (waitBtn) {
-    await A.ev(() => { const r = [...document.querySelectorAll('#gcpe [data-doc]')].find(x => /Kitchen plans/.test(x.textContent)); r.querySelector('[data-pe="doc-appr"]').setAttribute('data-test-appr', '1'); });
-    await tap(A, '#gcpe [data-test-appr]');
-    await tap(A, '#gcpe .pe-vis [data-v="ok"]');
-    ok(!!(await H.waitFor(A, () => { const r = [...document.querySelectorAll('#gcpe [data-doc]')].find(x => /Kitchen plans/.test(x.textContent)); return !!r && /Customer sees it/.test(r.textContent); }, null, 20000)), '✅ approved in place → "Customer sees it"');
-  }
+  await shot(A, '05_plan_live');
 
   /* a question → the portal's Messages */
   await A.page().locator('#gcpe [data-f="msg-text"]').fill('Do you want the gutters white or bronze?');
   await tap(A, '#gcpe [data-pe="msg-send"]');
   const visM = await A.ev(() => (document.querySelector('#gcpe .pe-vis') || {}).innerText || '');
-  ok(/gutters white or bronze/.test(visM) && /No e-mail or text/.test(visM), 'question: "Visible to the customer" — Messages, no e-mail or text', visM);
+  ok(/gutters white or bronze/.test(visM) && /No e-mail or text/.test(visM) && /new question from GrayCo/.test(visM), 'question: "Visible to the customer" — big on their Home, Messages, no e-mail or text', visM);
   await tap(A, '#gcpe .pe-vis [data-v="ok"]');
   ok(!!(await H.waitFor(A, () => /gutters white or bronze/.test((document.querySelector('#gcpe [data-pe-sec="msgs"]') || {}).textContent || ''), null, 15000)), 'the question is in the thread');
-  ok((W.TABLES.gc_portal_msg || []).some(m => m.project_id === S.pid && m.party === 'c' && m.side === 'gc' && /gutters/.test(m.text)), 'stored as a GrayCo message on the customer\'s thread (gc_portal_msg party c)');
+  ok((W.TABLES.gc_portal_msg || []).some(m => m.project_id === S.pid && m.party === 'c' && m.side === 'gc' && /^❓ Do you want the gutters/.test(m.text)), 'stored as a GrayCo question (❓) on the customer\'s thread (gc_portal_msg party c)');
 
   /* summary + milestone */
   await A.page().locator('#gcpe [data-f="summary"]').fill('New roof and a kitchen remodel. ' + S.carrier + ' pays the roof part.');
   await tap(A, '#gcpe [data-pe="details-save"]');
   const visD = await A.ev(() => (document.querySelector('#gcpe .pe-vis') || {}).innerText || '');
-  ok(/never shown to a customer/.test(visD), 'a carrier name typed by staff: warned before saving (the portal will say "your insurance company")', visD);
+  ok(!/never shown to a customer|your insurance company/.test(visD) && visD.includes(S.carrier), 'PORTALPOL: a carrier name typed by staff — no warning, it is shown as typed', visD);
   await tap(A, '#gcpe .pe-vis [data-v="ok"]');
   ok(await waitCloud(() => /kitchen remodel/.test(((cloudJob(S.pid).portalSummary) || {}).text || '')), 'About your project saved');
   await A.page().locator('#gcpe [data-f="ms-name"]').fill('Cabinets installed');
   await A.page().locator('#gcpe [data-f="ms-date"]').fill('2026-12-03');
   await tap(A, '#gcpe [data-pe="ms-add"]'); await tap(A, '#gcpe .pe-vis [data-v="ok"]');
   ok(await waitCloud(() => (cloudJob(S.pid).portalMilestones || []).some(m => m.name === 'Cabinets installed')), 'milestone saved');
+  /* PORTALPOL: the milestone is on the job's 📅 Schedule too (customer-visible, no sub, no appointment message) */
+  const msId = await A.ev(() => { const m = (window._crm.projects.find(p => p.id === 'PSAMPLE1').portalMilestones || []).find(x => x.name === 'Cabinets installed'); return m ? window._gcPortalEd.msRowId(m) : ''; });
+  ok(await waitCloud(() => (H.cget('schedule') || []).some(r => r.id === msId && r.pid === S.pid && r.date === '2026-12-03' && r.customerVisible === true && r.notify === false && !r.vendor && !r.assignee && r.type === 'milestone' && /Cabinets installed/.test(r.title))), 'PORTALPOL: milestone → a 📅 Schedule row on the job (customerVisible, notify off, no sub / assignee)', (H.cget('schedule') || []).filter(r => /pms_/.test(r.id)));
+  const msB = await A.ev(() => [...document.querySelectorAll('#gcpe [data-ms]')].map(x => x.getAttribute('data-ms')));
+  await A.ev(() => { const r = [...document.querySelectorAll('#gcpe [data-ms]')].find(x => /Cabinets installed/.test(x.textContent)); r.querySelector('[data-pe="ms-done"]').setAttribute('data-test-msd', '1'); });
+  await tap(A, '#gcpe [data-test-msd]'); await tap(A, '#gcpe .pe-vis [data-v="ok"]');
+  ok(await waitCloud(() => (H.cget('schedule') || []).some(r => r.id === msId && r.done === true && r.status === 'done')), 'PORTALPOL: milestone done → its schedule row is done (kept in step)', msB);
+  await A.ev(() => { const r = [...document.querySelectorAll('#gcpe [data-ms]')].find(x => /Cabinets installed/.test(x.textContent)); r.querySelector('[data-pe="ms-done"]').setAttribute('data-test-msd2', '1'); });
+  await tap(A, '#gcpe [data-test-msd2]'); await tap(A, '#gcpe .pe-vis [data-v="ok"]');
+  ok(await waitCloud(() => (H.cget('schedule') || []).some(r => r.id === msId && r.done === false)), 'and back to not done');
 
   /* 👁 the customer view now: checklist, scope, summary, milestone (Home), the plan (Documents), the question (Messages) */
   await sleep(1500);
@@ -202,7 +206,11 @@ try {
   const home = fr ? await fr.evaluate(() => ({ t: (document.getElementById('gcEdTasks') || {}).innerText || '', sum: (document.getElementById('gcEdSummary') || {}).innerText || '', scope: [...document.querySelectorAll('.gc-ed-scope')].map(x => x.innerText).join('|'), steps: (document.getElementById('schedSteps') || {}).innerText || '', html: document.documentElement.outerHTML })) : null;
   ok(!!home && /Pick your tile color/.test(home.t), 'customer view: the task is on "Your project checklist"', home && home.t);
   ok(!!home && /Install shaker cabinets/.test(home.scope) && /kitchen remodel/.test(home.sum) && /Cabinets installed/.test(home.steps), 'customer view: the scope, About your project and the milestone', home && { sum: home.sum, steps: home.steps, scope: home.scope.slice(0, 100) });
-  ok(!!home && /[Yy]our insurance company/.test(home.sum) && !home.html.includes(S.carrier), 'customer view: the typed carrier name reads "your insurance company"', home && home.sum);
+  ok(!!home && home.sum.includes(S.carrier) && !/your insurance company/i.test(home.sum), 'PORTALPOL: customer view — the typed carrier name is shown as typed', home && home.sum);
+  const nq = fr ? await fr.evaluate(() => { const c = document.getElementById('gcNewQ'); return c ? { t: c.innerText, q: c.getAttribute('data-q'), btn: !!c.querySelector('#gcNewQGo'), first: (document.querySelector('#main .card') || {}).id } : null; }) : null;
+  ok(!!nq && /1 new question from GrayCo/.test(nq.t) && nq.q === '1' && nq.btn, 'PORTALPOL: the customer\'s Home shows "💬 1 new question from GrayCo" with Answer', nq);
+  const ic = fr ? await fr.evaluate(() => (document.getElementById('gcInsDetails') || {}).innerText || '') : '';
+  ok(ic.includes('Sample Mutual Insurance'), 'PORTALPOL: 🛡 Your insurance card — the insurance company', ic);
   if (fr) await fr.evaluate(() => { const e = document.getElementById('gcEdSummary') || document.getElementById('gcEdTasks'); if (e) e.scrollIntoView({ block: 'start' }); });
   await shot(A, '06_customer_view_after');
   if (fr) {
@@ -216,7 +224,7 @@ try {
     ok(/gutters white or bronze/.test(mt), 'customer view → Messages: the question', mt.slice(0, 200));
     await A.page().screenshot({ path: path.join(SHOTS, '08_customer_msgs.png') });
     const all = await fr.evaluate(() => document.documentElement.outerHTML);
-    ok(!all.includes(S.carrier) && !all.includes(S.sub), 'customer view (every tab drawn): no carrier, no sub');
+    ok(!all.includes(S.sub), 'customer view (every tab drawn): no sub name (sub names stay hidden)');
   }
   await tap(A, '#gcpe [data-pe="mode"][data-m="edit"]');
 

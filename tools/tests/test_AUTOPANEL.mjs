@@ -169,6 +169,9 @@ async function runAllScheduled(label){
   return res;
 }
 loadCloud(); seedWork(); setKv('gc_automations', ALL_OFF); cloud.delete('gc_auto_held');
+/* PORTALPOL: the owner's one-time roll-out (portal links for the active jobs, _lib/golive.js) is not a panel automation — it is
+   already done here, so the all-OFF runs below show only what the panel gates (test_PORTALPOL_fn covers the roll-out itself) */
+setKv('gc_golive', { backfill: { state: 'done', n: 0, at: '2026-11-19T20:00:00.000Z' } });
 let snap = snapshot(), ext0 = bridge.EXT.length;
 const resOff = await runAllScheduled('off');
 const threw = Object.keys(resOff).filter(k => /threw|timeout/.test(String(resOff[k])));

@@ -5,7 +5,7 @@
      GCClaimHelp.mount(host, ch, opts) → the same card inside a shadow root with the portal's look (the CRM preview)
    opts: { extra: view.insurance.claim (type of loss, deductible, adjuster visit, mortgage — when the job has them),
            onAsk: function(){ … } ("Ask us a question" → the portal's Messages), preview: true (nothing to send) }
-   Never draws an insurance carrier's name: the server sends none, and the claim box always says "your insurance company". */
+   PORTALPOL (owner 11/19): the claim box names the customer's own insurance company when the job has one (claim.company). */
 (function(){
 'use strict';
 if (window.GCClaimHelp) return;
@@ -84,14 +84,14 @@ function card(ch, opts){
   if (ch.intro) box.appendChild(h('p', { class: 'muted gch-intro', text: ch.intro }));
   if (s(ch.note)) box.appendChild(h('div', { class: 'gch-note', 'data-gch': 'note' }, [h('b', { text: 'A note from GrayCo' + (ch.noteAt ? ' · ' + dt(ch.noteAt) : '') }), h('span', { text: ch.note })]));
 
-  /* the claim box (read-only) — never the carrier's name */
+  /* the claim box (read-only) — PORTALPOL: with the customer's own insurance company when stored */
   var rows = [];
   function row(k, v){ if (v) { rows.push(h('dt', { text: k })); rows.push(h('dd', { text: v })); } }
   row('Claim number', c.number);
   row('Date of loss', dt(c.dateOfLoss));
   row('Type of loss', ex.lossType);
   row('Your deductible', ex.deductible != null && Number(ex.deductible) > 0 ? usd(ex.deductible) : '');
-  if (rows.length || c.adjuster) row('Insurance', 'Your insurance company');
+  row('Insurance company', c.company);   /* patch PORTALPOL (owner 11/19): the customer's own insurance company, when stored */
   if (c.adjuster) row('Adjuster', [c.adjuster.name, c.adjuster.phone].filter(Boolean).join(' · '));
   row('Adjuster visit', dt(ex.adjusterMeeting));
   row('Mortgage company', ex.mortgage);

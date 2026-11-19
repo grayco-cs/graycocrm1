@@ -102,7 +102,7 @@ function textBody(more, head, msg, link){
   return pre + clip(msg, Math.max(20, MAX - pre.length - tail.length)) + tail;
 }
 
-/* run({ email, name }, { pid, msgId, text, tags }) → { ok, to: [{ email, name, why, pushed, texted, held, throttled, noPhone }], … } */
+/* run({ email, name }, { pid, msgId, text, tags, head?, link? (PORTALPOL: a customer's portal message — the CRM's own address only) }) → { ok, to: [{ email, name, why, pushed, texted, held, throttled, noPhone }], … } */
 async function run(who, b){
   b = b || {};
   const pid = s(b.pid).slice(0, 80), msgId = s(b.msgId).slice(0, 80), msg = s(b.text).slice(0, 2000);
@@ -152,8 +152,8 @@ async function run(who, b){
   thr.forEach(function(e){ out.to.push({ email: e, name: nameOf[e] || e, why: whyOf[e] || '', throttled: true }); });
   if (!go.length) return out;
 
-  const p = project(data, pid), job = jobLabel(p, pid), head = sname + ' on ' + job;
-  const link = site() + '/?jobmsg=' + encodeURIComponent(pid);
+  const p = project(data, pid), job = jobLabel(p, pid), head = s(b.head).slice(0, 140) || (sname + ' on ' + job);   /* PORTALPOL: a customer's portal message names its own head / link */
+  const link = /^https:\/\/[^\s]+$/.test(s(b.link)) && s(b.link).indexOf(site() + '/') === 0 ? s(b.link) : site() + '/?jobmsg=' + encodeURIComponent(pid);
   const emergency = /^\s*🚨/.test(msg) || b.emergency === true;
   let quiet = false; if (!emergency) { try { quiet = !!(await _D.quiet(t)); } catch (e) { quiet = false; } }
   out.quiet = quiet;
