@@ -123,7 +123,7 @@ const FLOATCHK = () => { const P = window.__pu; const ids = ['_gcMicBtn', '_gcFi
   const out = []; ids.forEach(id => { const f = document.getElementById(id); if (!f || !P.shown(f)) return; const r = f.getBoundingClientRect(); const docked = !!f.closest('#gc-pu-dock');
     const under = [...document.querySelectorAll('button,a[href],[role=button],input,select')].filter(b => b !== f && !f.contains(b) && !b.contains(f) && P.shown(b) && !b.closest('#gc-pu-dock')).filter(b => { const q = b.getBoundingClientRect(); return q.width > 0 && q.left < r.right && r.left < q.right && q.top < r.bottom && r.top < q.bottom && document.elementFromPoint(Math.max(q.left, r.left) + 2, Math.max(q.top, r.top) + 2) !== b; }).map(b => P.txt(b).slice(0, 20));
     const dk = document.getElementById('gc-pu-dock'), bg = dk ? getComputedStyle(dk).backgroundColor : '';
-    out.push({ id, docked, y: Math.round(r.top), opaqueDock: /rgb\(255, 255, 255\)/.test(bg), under: docked ? [] : under }); }); return out; };
+    out.push({ id, docked, y: Math.round(r.top), opaqueDock: !!f.closest('#gc-fh-tabs'), under: docked ? [] : under }); }); return out; };
 const OPEN = [];
 async function phone(who, email){
   const c = await H.computer(who, { build, mobile: true, init: INIT }); OPEN.push(c);
@@ -204,7 +204,7 @@ try {
     ok(r.head && r.head.y + 4 < r.S + 30 && r.headText && r.headText.y >= r.S - 1, 'Field home: the header text is below the status bar, no blank gap above it', r);
     await shot(c, 'owner_home');
     const fl = await c.ev(new Function('return (' + FLOATCHK.toString() + ')()'));
-    if (TAG !== 'before') ok(fl.length && fl.every(x => x.docked && x.opaqueDock && !x.under.length), 'Field home: the 🎤 / 💎 buttons are docked above the bottom bar, over no tile', fl);
+    if (TAG !== 'before') ok(fl.length && fl.every(x => x.docked && x.opaqueDock && !x.under.length), 'Field home: the 🎤 / 💎 buttons are part of the bottom bar, over no tile', fl);
   }
   /* notes stack */
   {
@@ -274,7 +274,7 @@ try {
     ok(r.views.filter(v => v.on).length === 1 && /rgb\(36, 25, 104\)/.test(r.views.find(v => v.on).bg), `${who} Leads: the chosen view is dark`, r.views.filter(v => v.on));
     ok(r.chips.length >= 4 && r.chsw <= r.chcw && r.chips.every(b => b.r <= r.vw && b.h >= 44 && b.sw <= b.cw), `${who} Leads: the filter chips wrap, each ≥ 44 px, inside the screen`, { sw: r.chsw, cw: r.chcw, chips: r.chips.filter(b => !(b.r <= r.vw && b.h >= 44)) });
     const fl = await c.ev(new Function('return (' + FLOATCHK.toString() + ')()'));
-    if (TAG !== 'before') ok(fl.length && fl.every(x => x.docked && x.opaqueDock && !x.under.length), `${who} Leads: the 🎤 / 💎 buttons are docked above the bottom bar, over no button`, fl);
+    if (TAG !== 'before') ok(fl.length && fl.every(x => x.docked && x.opaqueDock && !x.under.length), `${who} Leads: the 🎤 / 💎 buttons are part of the bottom bar, over no button`, fl);
     if (r.pill && TAG !== 'before') ok(r.pill.inHead, `${who} Leads: the COI / W-9 pill rides in the header, not over the page`, r.pill);
     return r;
   }

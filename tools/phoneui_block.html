@@ -71,11 +71,20 @@ try {
        Site Book's ‹ All jobs): NAV's floating one only stacked on top of them */
     'html.gc-pu-app #_gcNavBk{display:none!important}' +
     /* the 🎤 voice note and 💎 menu: docked in a strip just above the bottom bar, never floating over the page */
-    '#gc-pu-dock{position:fixed;left:0;right:0;bottom:var(--gc-pu-tabsonly,0px);height:52px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;background:#fff;border-top:1px solid #e5e7eb;z-index:100049;box-sizing:border-box;font:600 13px -apple-system,Inter,Arial,sans-serif;color:#334155}' +
+    /* the 🎤 voice note and 💎 menu: a slim row at the top of the bottom bar itself (part of the bar, never floating) */
+    'html.gc-pu-app #gc-fh-tabs.gc-pu-hasdock{flex-wrap:wrap!important;row-gap:0}' +
+    '#gc-pu-dock{order:-1;flex:0 0 100%;display:flex;align-items:center;justify-content:space-between;height:40px;margin:-2px 0 2px;padding:0 6px;box-sizing:border-box;font:700 12px -apple-system,Inter,Arial,sans-serif;color:#475569}' +
     'html:not(.gc-pu-app) #gc-pu-dock{display:none!important}' +
-    '#gc-pu-dock > .gc-pu-dk{display:flex;align-items:center;gap:8px}' +
-    'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:0!important;padding:0!important;border-radius:22px!important;font-size:20px!important;line-height:44px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto}' +
+    '#gc-pu-dock > .gc-pu-dk{display:flex;align-items:center;gap:6px;min-width:0}' +
+    /* (a raised tab — 🏠 Home or ✅ Approvals in a big circle — rises into this row: the two buttons move to the other side) */
+    '#gc-pu-dock.gc-pu-dk-r{justify-content:flex-end;gap:18px}#gc-pu-dock.gc-pu-dk-l{justify-content:flex-start;gap:18px}' +
+    'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;margin:0!important;padding:0!important;border-radius:18px!important;font-size:17px!important;line-height:36px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
+    /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
+       itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
+    'html.gc-pu-app main::after,html.gc-pu-app #_gcJobPick::after,html.gc-pu-app #_gcJobDash > :last-child::after{content:"";display:block;height:calc(var(--gc-pu-tabs,0px) + 16px);flex:0 0 auto}' +
+    'html.gc-pu-app,html.gc-pu-app *{scroll-padding-top:calc(var(--gc-sat) + 84px);scroll-padding-bottom:calc(var(--gc-pu-tabs,0px) + 12px)}' +
+    'html.gc-pu-app .gc-pu-page,html.gc-pu-app .gc-pu-sheet > .in,html.gc-pu-app .gc-pu-sheet .bd{scroll-padding-bottom:16px}' +
     /* desk: the "Connect Google / Use my Gmail" bar sat on the top bar's buttons (✅ 💎 💬 🎤 📷): at the bottom of the
        screen instead; its green button readable (4.5:1) */
     'html:not(._fieldmode) #_gConnBar{top:auto!important;bottom:0!important}' +
@@ -192,7 +201,8 @@ try {
     var xs = [14, w * 0.3, w * 0.6, w - 40, w - 14], ys = [Math.max(1, Math.round(S * 0.35)), S - 2];
     for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
       var e = D.elementFromPoint(xs[i], ys[j]); if (!contentish(e)) continue;
-      var t = holder(e); if (!t || (t.id && SKIP.test(t.id)) || (t.closest && t.closest('#_gcAppHead'))) continue;
+      var t = holder(e); if (!t || (t.id && SKIP.test(t.id)) || (t.closest && t.closest('#_gcAppHead,.gc-pu-bar'))) continue;
+      if (t.classList.contains('gc-pu-sheet') || (t.classList.contains('gc-pu-page') && t.hasAttribute('data-gc-pu-bar'))) continue;   /* its header bar is below the status bar already */
       if (t.scrollTop > 0) continue;   /* a page scrolled under the status bar is not a panel under it */
       if (!padTop(t)) moveDown(e, t, S);
       else if (e.getBoundingClientRect().top < S - 1) moveDown(e, t, S);
@@ -211,15 +221,21 @@ try {
   /* ── 2. notes stack above the bottom bar; the 🔔 card under the Field header ── */
   var NOTES = '#gc-unsent-note,#gc-save-note,.gc-away-toast,#gc-ra-toast,#gc-fd-toast,#_gcNavToast,#gc-rpb-toast,body > .gcautai-pill';
   var tabsC = { el: null, k: '', v: 0 };
+  function dockSide(t){
+    var d = D.getElementById('gc-pu-dock'); if (!d || !t) return;
+    var dr = d.getBoundingClientRect(), side = '';
+    Array.prototype.forEach.call(t.querySelectorAll(':scope > [data-t]'), function(b){ var r = b.getBoundingClientRect(); if (r.top < dr.bottom - 4 && r.width > 0) { var cx = (r.left + r.right) / 2; side = cx < VW * 0.4 ? 'r' : cx > VW * 0.6 ? 'l' : ''; } });
+    d.classList.toggle('gc-pu-dk-r', side === 'r'); d.classList.toggle('gc-pu-dk-l', side === 'l');
+  }
   function tabsH(){
-    var t = D.getElementById('gc-fh-tabs'), k = VW + 'x' + VH + '|' + (t ? t.childElementCount + t.className : '');
+    var t = D.getElementById('gc-fh-tabs'), k = VW + 'x' + VH + '|' + (t ? t.childElementCount + t.className + (D.getElementById('gc-pu-dock') ? 'd' : '') : '');
     if (t === tabsC.el && k === tabsC.k) return tabsC.v;
-    var v = 0; if (t && shown(t)) { var r = t.getBoundingClientRect(); v = Math.max(0, Math.round((VH || 0) - r.top)); }
+    var v = 0; if (t && shown(t)) { var r = t.getBoundingClientRect(); v = Math.max(0, Math.round((VH || 0) - r.top)); try { dockSide(t); } catch (e) {} }
     tabsC = { el: t, k: k, v: v }; return v;
   }
   var lastTabs = -1;
   function stackSweep(){
-    var only = tabsH(), dk = D.getElementById('gc-pu-dock'), base = only + (dk && dk.firstElementChild && dk.style.display !== 'none' && H.classList.contains('gc-pu-app') ? 52 : 0);
+    var only = tabsH(), base = only;   /* (the 🎤 / 💎 row is inside the bar: measured with it) */
     if (base !== lastTabs) { lastTabs = base; H.style.setProperty('--gc-pu-tabs', base + 'px'); H.style.setProperty('--gc-pu-tabsonly', only + 'px'); }
     var all = D.querySelectorAll(NOTES); if (!all.length) return;
     var list = Array.prototype.filter.call(all, function(n){ if (n.parentNode !== D.body) return false; var s = cs(n); return s.display !== 'none' && s.visibility !== 'hidden' && s.position === 'fixed'; });
@@ -334,7 +350,7 @@ try {
     });
   }
   function closeLayer(L){
-    var own = Array.prototype.filter.call(L.querySelectorAll('button,[role=button]'), function(b){ return !b.closest('.gc-pu-bar') && /^(close|✕|×|done|‹|back|‹ ?back|cancel)$/i.test(txt(b)); })[0];
+    var own = L.querySelector('[data-gc-pu-own-back]') || Array.prototype.filter.call(L.querySelectorAll('button,[role=button]'), function(b){ return !b.closest('.gc-pu-bar') && /^(close|✕|×|done|‹|back|‹ ?back|← ?all jobs|cancel)$/i.test(txt(b)); })[0];
     if (own) { try { own.click(); } catch (e) {} }
     if (L.isConnected) ST.call(W, function(){ if (L.isConnected) L.remove(); backHome(); }, 60); else backHome();
   }
@@ -352,18 +368,24 @@ try {
     /* a panel that redraws itself (innerHTML) loses our card mark and header bar: put them back */
     if (!L.querySelector(':scope > .gc-pu-card')) { var c2 = mainCard(L); if (c2) c2.classList.add('gc-pu-card'); }
     if (L.hasAttribute('data-gc-pu-bar') && !L.querySelector(':scope > .gc-pu-bar')) { L.removeAttribute('data-gc-pu-bar'); }
+    /* our header stays the first thing on the page (other patches insert their own bars at the top) */
+    var ob = L.querySelector(':scope > .gc-pu-bar'); if (ob && !L.classList.contains('gc-pu-flex') && L.firstElementChild !== ob) L.insertBefore(ob, L.firstChild);
     /* the header and the 44 px close: when it opens, and the next two passes (its content can come a moment later) */
     if (!shown(L) || (!(L.__puChecks > 0) && L.hasAttribute('data-gc-pu-bar'))) return;
     if (L.__puChecks > 0) { L.__puChecks--; closeCheck(L); }
     if (!L.hasAttribute('data-gc-pu-bar')) {
       var mine = /My Approvals/.test(String((L.firstElementChild && L.firstElementChild.textContent) || '').slice(0, 200));
-      if (mine || !ownBackAtTop(L)) {
+      /* every panel gets the one app header (‹ Back · title), which stays on top while the page scrolls; the panel's own
+         Back / Close near its top steps aside (our ‹ Back taps it) — it used to scroll off the top or sit under a header */
+      var owns = Array.prototype.filter.call(L.querySelectorAll('button,a,[role=button]'), function(b){ if (b.closest('.gc-pu-bar') || !closeish(b) || !shown(b)) return false; var r = b.getBoundingClientRect(); return r.top < sat() + 220; });
+      if (true) {
         var te = mine ? null : titleEl(L), hide = te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input');
         var br = bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); });
         /* a flex panel: at the end, drawn first (order:-1), so code that reads the panel's first child still finds its own */
         if (L.classList.contains('gc-pu-flex')) L.appendChild(br); else L.insertBefore(br, L.firstChild);
         L.setAttribute('data-gc-pu-bar', '1');
         if (hide) te.classList.add('gc-pu-hide');
+        owns.forEach(function(b){ b.classList.add('gc-pu-hide'); b.setAttribute('data-gc-pu-own-back', '1'); });
       }
     }
   }
@@ -523,15 +545,21 @@ try {
     PU.made = (PU.made || 0) + 1; return hd;
   }
   function dock(){
-    var app = H.classList.contains('gc-pu-app'), d = D.getElementById('gc-pu-dock');
+    var app = H.classList.contains('gc-pu-app'), tabs = D.getElementById('gc-fh-tabs'), d = D.getElementById('gc-pu-dock');
     var mic = D.getElementById('_gcMicBtn'), hub = D.getElementById('_gcFieldHubBtn');
-    if (!app) { if (d) { if (mic && mic.parentNode !== D.body && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } return; }
-    if (!mic && !hub) { if (d) d.style.display = 'none'; return; }
-    if (!d) { d = D.createElement('div'); d.id = 'gc-pu-dock'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('data-gcnav-ignore', '1'); d.innerHTML = '<span class="gc-pu-dk" data-k="mic"></span><span class="gc-pu-dk" data-k="hub"></span>'; D.body.appendChild(d); }
-    d.style.display = '';
+    var home = function(){ if (d) { if (mic && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } if (tabs) tabs.classList.remove('gc-pu-hasdock'); };
+    if (!app || !tabs || (!mic && !hub)) { home(); return; }
+    if (!d || d.parentNode !== tabs) {
+      if (d) d.remove();
+      d = D.createElement('div'); d.id = 'gc-pu-dock'; d.setAttribute('data-gc-keep', '1'); d.innerHTML = '<span class="gc-pu-dk" data-k="mic"></span><span class="gc-pu-dk" data-k="hub"></span>';
+      tabs.insertBefore(d, tabs.firstChild);
+    }
+    tabs.classList.add('gc-pu-hasdock');
+    /* the bar can be drawn again by its own code: watch it and put the row back */
+    if (!tabs.__puMo) { try { tabs.__puMo = new MO(function(){ if (!D.getElementById('gc-pu-dock') || D.getElementById('gc-pu-dock').parentNode !== tabs) { try { dock(); } catch (e) {} } }); tabs.__puMo.observe(tabs, { childList: true }); } catch (e) {} }
     var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
-    if (mic && mic.parentNode !== sm) { sm.appendChild(mic); var l1 = D.createElement('span'); l1.textContent = 'Voice note'; if (!sm.querySelector('.gc-pu-l')) { l1.className = 'gc-pu-l'; sm.appendChild(l1); } }
-    if (hub && hub.parentNode !== sh) { var l2 = D.createElement('span'); if (!sh.querySelector('.gc-pu-l')) { l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
+    if (mic && mic.parentNode !== sm) { sm.insertBefore(mic, sm.firstChild); if (!sm.querySelector('.gc-pu-l')) { var l1 = D.createElement('span'); l1.className = 'gc-pu-l'; l1.textContent = 'Voice note'; sm.appendChild(l1); } }
+    if (hub && hub.parentNode !== sh) { if (!sh.querySelector('.gc-pu-l')) { var l2 = D.createElement('span'); l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
     if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
     if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
   }
@@ -632,6 +660,21 @@ try {
     mh.observe(H, { attributes: true, attributeFilter: ['class'] }); PU.mo.push(mh);
   } catch (e) {}
   W.addEventListener('resize', soon);
+  /* 🏠 Home in the bottom bar always comes back to the Field home: whatever is open over it (a page, a sheet, GrayCo
+     Photos, a page with its own header) is closed first, and if the home is still not there a moment later it is opened */
+  D.addEventListener('click', function(ev){
+    try {
+      var b = ev.target && ev.target.closest ? ev.target.closest('#gc-fh-tabs [data-t="home"]') : null;
+      if (!b || !H.classList.contains('gc-pu-app')) return;
+      try { if (W._gcPhotos && W._gcPhotos.state && W._gcPhotos.state.open) W._gcPhotos.close(); } catch (e) {}
+      Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet, body > [data-gc-pu-own]'), function(L){
+        var own = L.querySelector('[data-gc-pu-own-back]') || Array.prototype.filter.call(L.querySelectorAll('button,[role=button]'), function(x){ return !x.closest('.gc-pu-bar') && /^(close|✕|×|done|‹|back|‹ ?back|cancel)$/i.test(txt(x)); })[0];
+        try { if (own) own.click(); } catch (e) {}
+        if (L.isConnected && (L.classList.contains('gc-pu-sheet') || L.classList.contains('gc-pu-page'))) try { L.remove(); } catch (e) {}
+      });
+      ST.call(W, function(){ try { if (!D.querySelector('#_gcJobPick')) { if (W._gcField && W._gcField.open) W._gcField.open(); else if (W._gcJobPicker) W._gcJobPicker(); } } catch (e) {} }, 450);
+    } catch (e) {}
+  }, true);
   /* the light look every 2 s (classes, header, notes); the full look (panels, the status bar strip, buttons) every 6 s —
      anything added to the page gets the full look at once, above */
   var tick = 0;
