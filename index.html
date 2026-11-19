@@ -147608,7 +147608,12 @@ function counts(st){
 var STATE = null;
 var vasWho = '';
 var coWho = '';
+var dataSig = '';
 function state(force){
+  /* BADGEFIX (owner 11/19, the Field home's "Today's to-dos 584" while the To-Do said ~160): the list is built again when the jobs /
+     invoices arrive or change — a list built before the job list was there kept every older job's paper (PAPERS drops those by
+     the job's dates) for up to a minute, longer on a phone that holds its screen updates */
+  try { var ds = projects().length + ':' + invoices().length; if (ds !== dataSig) { dataSig = ds; force = true; } } catch (e) {}
   var vw = vas() ? 'vas:' + myKey() + ':' + W._gcVAS.label() : '';   /* patch VAS: another person's list → build it again */
   if (vw !== vasWho) { vasWho = vw; force = true; }
   try { vw = W._gcCo ? W._gcCo.filter() : ''; if (vw !== coWho) { coWho = vw; force = true; } } catch (e) {}   /* patch COLEAK2 */
@@ -148305,7 +148310,7 @@ W._gcTD2 = {
   state: function(){ return state(true); }, parse: parse, add: function(text){ var h = hosts()[0]; return quickAdd(h ? ensureRoot(h[0], h[1]) : null, text); },
   open: openOffice, openField: openField, openToday: openToday, mountTab: mountTab, paint: function(){ dirty = true; paint(true); },
   count: function(){ return state().counts.now + state().counts.mine; }, greetCount: function(){ var c = state().counts; return c.appr + c.over + c.today + c.mine; },
-  counts: function(){ return state().counts; }, ui: UI, meta: function(){ return JSON.parse(JSON.stringify(meta)); }, pullMeta: function(){ return pullMeta(true); }, pushMeta: pushMeta,
+  counts: function(){ var c = state().counts; if (!projects().length && c) { c = Object.assign({}, c, { notReady: true }); } return c; },   /* BADGEFIX: notReady — no job list yet, the number is not the To-Do's */ ui: UI, meta: function(){ return JSON.parse(JSON.stringify(meta)); }, pullMeta: function(){ return pullMeta(true); }, pushMeta: pushMeta,
   complete: function(key, on){ var it = ITEMS[key] || state(true).items.filter(function(x){ return x.key === key; })[0]; complete(it, on !== false); return !!it; },
   find: function(re){ re = re instanceof RegExp ? re : new RegExp(String(re), 'i'); return state(true).all.filter(function(x){ return re.test(x.title); }); },
   /* PAPERS: ✓ Not needed (archive) by item key — the rows on screen; archived() lists them; restore(key) brings one back */
@@ -192239,6 +192244,7 @@ var last = '';
 function counts(){
   var T = W._gcTD2; if (!T || typeof T.counts !== 'function') return null;
   var c; try { c = T.counts(); } catch (e) { return null; } if (!c) return null;
+  if (c.notReady) return null;   /* BADGEFIX: no number before the job list is there (it would count every older job's paper) */
   var appr = Math.max(0, c.appr || 0), todos = c.todos != null ? c.todos : Math.max(0, (c.total || 0) - (c.apprRows || 0));
   return { n: todos, todos: todos, appr: appr, tip: c.tip || '' };   /* patch TODONOAPPR: approvals have their own badge */   /* patch LEADBADGE: + tip */
 }
