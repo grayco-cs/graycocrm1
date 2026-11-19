@@ -255,6 +255,8 @@ function wrapDash(){
   try { Object.keys(f).forEach(function(k){ if (!(k in w)) w[k] = f[k]; }); } catch (e) {}
   w.__gcJI = true; W._gcJobDashboard = w;
 }
+/* a bottom-bar tab goes where it says: these pages close (PHONEUI keeps the bar tappable under them) */
+D.addEventListener('click', function(e){ try { if (e.target && e.target.closest && e.target.closest('#gc-fh-tabs')) Array.prototype.forEach.call(D.querySelectorAll('.gcji-page'), function(o){ o.remove(); }); } catch (x) {} }, true);
 /* the job page's 📅 Schedule & Inspections tile → the job's own schedule page */
 D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('#_gcJobDash [data-fp="sched"]') : null; if (!b) return;
@@ -268,7 +270,7 @@ function navH(){ try { var t = D.getElementById('gc-fh-tabs'); if (!t) return 0;
 function headHtml(title, sub){ return '<button type="button" class="gcji-back" data-ji-a="back" aria-label="Back">‹ Back</button><div class="gcji-t"><b>' + esc(title) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>'; }
 function shell(o, kind, title, sub){
   css();
-  o.classList.add('gcji-page'); o.setAttribute('data-ji', kind); o.setAttribute('data-gc-keep', '1');
+  o.classList.add('gcji-page'); o.setAttribute('data-ji', kind); o.setAttribute('data-gc-keep', '1'); o.setAttribute('data-gc-pu-own', '1');   /* PHONEUI: its own full-screen page (header, scroll, Back) — not restyled as one of its panels */
   o.style.setProperty('--gcji-nav', navH() + 'px');
   var hd = o.querySelector(':scope>.gcji-hd'); if (!hd) { hd = D.createElement('div'); hd.className = 'gcji-hd'; o.insertBefore(hd, o.firstChild); }
   hd.innerHTML = headHtml(title, sub);
@@ -757,6 +759,8 @@ function css(){
     '.gcji-t{min-width:0;flex:1}.gcji-t b{display:block;font-size:17px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gcji-t small{display:block;color:#6b7280;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.gcji-page>.gcji-bd{flex:1 1 auto;overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:14px 16px calc(var(--gcji-nav) + env(safe-area-inset-bottom,0px) + 24px)!important;box-sizing:border-box;background:#f8fafc!important;max-width:none}',
     'html._fieldmode ._gcSheetOv.gcji-page,html ._gcSheetOv.gcji-page{background:#fff!important}html._fieldmode ._gcSheetOv.gcji-page>div.gcji-bd{padding-bottom:calc(var(--gcji-nav) + env(safe-area-inset-bottom,0px) + 24px)!important;background:#f8fafc!important}',
+    /* PHONEUI's app: the page ends above its bottom bar + dock (--gc-pu-tabs); the bar stays visible and tappable */
+    'html.gc-pu-app .gcji-page{bottom:var(--gc-pu-tabs,0px)!important;--gcji-nav:0px!important}',
     '.gcji-page.gcji-hasbar>.gcji-bd{padding-bottom:calc(var(--gcji-nav) + env(safe-area-inset-bottom,0px) + 96px)!important}',
     '.gcji-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px 14px;margin:0 0 12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}',
     '.gcji-k{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6b7280;margin-bottom:8px}',

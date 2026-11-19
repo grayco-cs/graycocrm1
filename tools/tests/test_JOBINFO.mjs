@@ -130,12 +130,12 @@ try {
   const ji = await A.ev(() => {
     const o = document.querySelector('.gcji-page[data-ji="info"]'), r = o.getBoundingClientRect(), hd = o.querySelector('.gcji-hd');
     const vis = el => !!el && el.getClientRects().length > 0 && getComputedStyle(el).display !== 'none';
-    return { bg: getComputedStyle(o).backgroundColor, full: r.width >= innerWidth - 1 && r.height >= innerHeight - 1, back: hd && /‹ Back/.test(hd.textContent), title: hd && hd.querySelector('b').textContent,
+    return { bg: getComputedStyle(o).backgroundColor, full: (() => { const tb = document.getElementById('gc-fh-tabs'), tr = tb && getComputedStyle(tb).display !== 'none' ? tb.getBoundingClientRect() : null; const pu = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gc-pu-tabs')) || 0, end = pu ? innerHeight - pu : (tr ? tr.top : innerHeight); return r.width >= innerWidth - 1 && r.top <= 1 && r.bottom >= end - 2; })(), own: o.hasAttribute('data-gc-pu-own'), back: hd && /‹ Back/.test(hd.textContent), title: hd && hd.querySelector('b').textContent,
       photos: vis(document.getElementById('_jpCCBtn')) || vis(document.getElementById('_jpLinkUrl')), close: [...o.querySelectorAll('button')].some(b => /^\s*Close\s*$/.test(b.textContent) && vis(b)),
       scope: vis(document.getElementById('_jpScopeText')), docsLink: !!o.querySelector('[data-ji-a="docs"]'), mark: !!o.querySelector('[data-ji-a="active"]'), status: (o.querySelector('[data-ji-cur]') || {}).textContent,
       fields: [...o.querySelectorAll('.gcji-form [data-f]')].map(x => x.getAttribute('data-f')) };
   });
-  ok(ji.bg === 'rgb(255, 255, 255)' && ji.full && ji.back && /Job info · Outdoor Entertainment Area/.test(ji.title), 'white full page, "‹ Back · Job info · <job>" header', ji);
+  ok(ji.bg === 'rgb(255, 255, 255)' && ji.full && ji.own && ji.back && /Job info · Outdoor Entertainment Area/.test(ji.title), 'white full page down to the bottom bar (its own page, not restyled by PHONEUI), "‹ Back · Job info · <job>" header', ji);
   ok(!ji.photos && !ji.close && ji.scope && ji.docsLink, 'no photo section, no bottom Close; Scope of Work kept; documents → the Documents page', ji);
   ok(['name', 'autoPO', 'address', 'type', 'pm', 'startDate', 'endDate', 'notes', 'client', 'clientPhone', 'clientEmail', 'custAddress'].every(f => ji.fields.includes(f)), 'project + customer fields', ji.fields);
   ok(/Active/.test(ji.status || '') && !ji.mark, 'the status shows Active (set by the progress) — no Mark Active needed', ji);
@@ -273,6 +273,10 @@ try {
   const moved = await until(() => (H.cget('schedule') || []).find(x => x.id === 'S1' && x.date === day(8)), 30000);
   ok(!!moved && moved.subId === 'SUB1' && moved.title === 'Pour footings', 'editing a date moves the item (same sub, same task)', moved);
   await sleep(600); await shot(A, 'jobinfo_10_schedule_after');
+  /* a bottom-bar tab goes where it says: the page closes */
+  const tabSel = await A.ev(() => { const b = document.querySelector('#gc-fh-tabs [data-t="jobs"]') || document.querySelector('#gc-fh-tabs [data-t]'); return b ? '#gc-fh-tabs [data-t="' + b.getAttribute('data-t') + '"]' : null; });
+  if (tabSel) { await tap(A, tabSel); await sleep(800); }
+  ok(!!tabSel && !(await A.ev(() => !!document.querySelector('.gcji-page'))), 'a bottom-bar tab tap closes the job page (Schedule)', tabSel);
   ok(!A.errs.length, 'no page errors (admin phone)', A.errs.slice(0, 5));
 
   // ── the desk shows the edits ──
