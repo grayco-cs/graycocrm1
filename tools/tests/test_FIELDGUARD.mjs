@@ -156,6 +156,10 @@ try {
   await ap.ev(async () => { const L = await window.idbGet('projects'); const j = L.find(p => p.id === 'P5'); j.notes = 'Changed on the phone by the admin'; j.updatedAt = new Date().toISOString(); await window.idbSet('projects', L); window._gcSyncDirty(['projects']); });
   let up4 = null; for (let i = 0; i < 60 && !up4; i++) { await sleep(500); const c = H.cget('projects') || []; const p5 = c.find(p => p.id === 'P5'); if (p5 && p5.notes === 'Changed on the phone by the admin') up4 = c; }
   ok(!!up4, 'the admin\'s own change on the phone reaches the cloud');
+  await sleep(45000);
+  const un4 = await ap.ev(() => { const o = { unsent: window._gcUnsent ? window._gcUnsent() : null, note: (document.getElementById('gc-unsent-note') || {}).textContent || '', log: (window.__gcFG.log || []).slice(-25) }; return o; });
+  console.log('    unsent: ' + JSON.stringify(un4).slice(0, 2500));
+  ok(un4.unsent && !un4.unsent.length && !un4.note, 'no "not sent to the office yet" note on the admin phone', un4);
   ok(!ap.errs.length, 'no page errors (admin phone)', ap.errs.slice(0, 5));
   await ap.close();
 
