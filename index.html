@@ -51734,10 +51734,12 @@ window._gcUnsent = function(){ return Object.keys(_gcsvBad).map(function(k){ ret
     var el = document.getElementById('gc-unsent-note');
     if(!keys.length){ if(el) el.remove(); return; }
     if(!el){ el = document.createElement('div'); el.id = 'gc-unsent-note'; el.setAttribute('role', 'status'); el.setAttribute('data-gcnav-ignore', '1');
-      el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;pointer-events:none;opacity:.94';   /* never in the way of a button under it (it retries by itself) */
+      el.style.cssText = 'position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:5px 10px;border-radius:999px;font:600 12px Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;opacity:.9';   /* NOTEFIX (owner 11/19: "blocking buttons"): a small pill bottom-right, the full sentence in its title */   /* never in the way of a button under it (it retries by itself) */
       (document.body || document.documentElement).appendChild(el); }
     var t = '\u23F3 Saved on this ' + (/iPhone|iPad|Android/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer') + ' — not sent to the office yet (' + (navigator.onLine === false ? 'no connection' : 'the database did not answer') + '). It keeps trying by itself.';
-    if(el.textContent !== t) el.textContent = t;
+    var tShort = '\u23F3 Not sent yet \u2014 retrying';   /* NOTEFIX */
+    if(el.textContent !== tShort) el.textContent = tShort;
+    if(el.title !== t) el.title = t;
   }catch(e){}
 }, 5000);
 try{ window.addEventListener('online', function(){ if(Object.keys(_gcsvBad).length && window._gcPushAll) (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ window._gcPushAll(); }, 1500); }); }catch(e){}
