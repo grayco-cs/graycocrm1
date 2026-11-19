@@ -25,18 +25,18 @@ ok('A2 the menu rule (patch RP) checks the company pick before adding 🧪 Mater
 
 const now = new Date().toISOString();
 const C3MAT = [{ id: 'quat_disinfectant', name: 'Quaternary ammonium disinfectant (EPA-registered)', status: 'approved', at: '2026-11-12T15:00:00.000Z', by: 'Demo Old' }];
-const C3CON = { status: 'signed', reqId: 'sr_C3_doc_sds_C3', signedAt: '2026-11-12T15:00:00.000Z', signedBy: 'Demo Old', sigId: 'ps_old', items: ['quat_disinfectant'] };
+const C3CON = { status: 'signed', reqId: 'sr_PC3_doc_sds_PC3', signedAt: '2026-11-12T15:00:00.000Z', signedBy: 'Demo Old', sigId: 'ps_old', items: ['quat_disinfectant'] };
 resetCloud();
 cset('users', [{ id: 'u1', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true },
   { id: 'u2', name: 'Sam Biffle', email: 'sbiffle@grayco-cs.com', role: 'Project Manager', active: true }]);
 const J = (id, o) => Object.assign({ id, name: 'Demo ' + id, client: 'Client ' + id, address: id + ' Demo St, Memphis, TN 38135', status: 'active', pm: 'Sam Biffle', contract: 9000, createdAt: now, updatedAt: now }, o);
 cset('projects', [
-  J('M1', { name: 'Demo Ross basement', type: 'Water Damage', companyId: 'mitigation', notes: 'Sewage backup, cat 3' }),
-  J('E1', { name: 'Demo Kline trim', type: 'Environmental', companyId: 'environmental', notes: 'lead paint on the window trim' }),
-  J('S1', { name: 'Demo Shared crawlspace', type: 'Residential Reno', companyId: 'construction', sharedWith: ['mitigation'] }),
-  J('C1', { name: 'Demo Smith deck', type: 'Residential Reno' }),
-  J('C2', { name: 'Demo Wade water', type: 'Water Damage', notes: 'mold and sewage' }),
-  J('C3', { name: 'Demo Old kitchen', type: 'Kitchen', materials: C3MAT, materialsConsent: C3CON })]);
+  J('PM1', { name: 'Demo Ross basement', type: 'Water Damage', companyId: 'mitigation', notes: 'Sewage backup, cat 3' }),
+  J('PE1', { name: 'Demo Kline trim', type: 'Environmental', companyId: 'environmental', notes: 'lead paint on the window trim' }),
+  J('PS1', { name: 'Demo Shared crawlspace', type: 'Residential Reno', companyId: 'construction', sharedWith: ['mitigation'] }),
+  J('PC1', { name: 'Demo Smith deck', type: 'Residential Reno' }),
+  J('PC2', { name: 'Demo Wade water', type: 'Water Damage', notes: 'mold and sewage' }),
+  J('PC3', { name: 'Demo Old kitchen', type: 'Kitchen', materials: C3MAT, materialsConsent: C3CON })]);
 cset('invoices', []);
 
 const A = await computer('wjohnson@grayco-cs.com', { build: BUILD });
@@ -67,11 +67,11 @@ ok('B2 … and _gcSdsCanSee() is false', await A.ev(() => window._gcSdsCanSee() 
 await openSds();
 let P = await page();
 ok('B3 the page, opened anyway: "for Mitigation and Environmental jobs — not Construction", 🏢 Show All companies, no job picker, no library, no 🧮 Dilution calculator', P && P.off === 'construction' && /Mitigation/.test(P.t) && /Environmental/.test(P.t) && /not Construction/.test(P.t) && /Show All companies/.test(P.t) && P.opts === null && !/Materials library/.test(P.t) && !P.dil && !await A.ev(() => !!document.getElementById('gc-dil-btn')), P);
-let jp = await jobPage('C1');
+let jp = await jobPage('PC1');
 ok('B4 Construction picked: a Construction job page (C1 deck) has no 🧪 Materials card or button', jp.up && !jp.card, jp);
 const before = await A.ev(() => document.querySelectorAll('#gc-sds-ov').length);
-await A.ev(() => window._gcSds.open('C1')); await sleep(600);
-const sent = await A.ev(() => window._gcSds.send('C2'));
+await A.ev(() => window._gcSds.open('PC1')); await sleep(600);
+const sent = await A.ev(() => window._gcSds.send('PC2'));
 ok('B5 _gcSds.open / send on a Construction job do nothing (no 🧪 window, the send refused before any call)', before === 0 && await A.ev(() => !document.getElementById('gc-sds-ov')) && sent && sent.ok === false, sent);
 
 /* C · Mitigation */
@@ -80,7 +80,7 @@ n = await nav();
 ok('C1 Mitigation picked: 🧪 Materials & SDS in the left menu', /Materials & SDS/.test(n), n.slice(0, 500));
 await openSds();
 P = await page();
-ok('C2 the page: "· Mitigation" title, library, the picker lists the mitigation job + the job shared into Mitigation only', P && !P.off && /· Mitigation/.test(P.title) && /Materials library/.test(P.t) && P.opts && P.opts.slice().sort().join() === 'M1,S1', P && { title: P.title, opts: P.opts });
+ok('C2 the page: "· Mitigation" title, library, the picker lists the mitigation job + the job shared into Mitigation only', P && !P.off && /· Mitigation/.test(P.title) && /Materials library/.test(P.t) && P.opts && P.opts.slice().sort().join() === 'PM1,PS1', P && { title: P.title, opts: P.opts });
 ok('C3 … the 🧮 Dilution calculator is in the header', !!await waitOn(() => !!document.querySelector('.gcsds h2 #gc-dil-btn'), null, 5000));
 
 /* D · All companies */
@@ -90,33 +90,33 @@ ok('D1 All companies: 🧪 Materials & SDS in the left menu', /Materials & SDS/.
 await openSds();
 P = await page();
 ok('D2 the title says "· Mitigation & Environmental"', P && /Materials & SDS\s*· Mitigation & Environmental/.test(P.title), P && P.title);
-ok('D3 "Pick materials for a job" lists only Mitigation / Environmental jobs (M1, E1, shared S1 — no C1 / C2 / C3)', P && P.opts && P.opts.slice().sort().join() === 'E1,M1,S1', P && P.opts);
-ok('D4 a job with earlier picks + a signed consent (C3) is still listed with them (nothing hidden away)', P && P.rows.includes('C3'), P && P.rows);
+ok('D3 "Pick materials for a job" lists only Mitigation / Environmental jobs (M1, E1, shared S1 — no C1 / C2 / C3)', P && P.opts && P.opts.slice().sort().join() === 'PE1,PM1,PS1', P && P.opts);
+ok('D4 a job with earlier picks + a signed consent (C3) is still listed with them (nothing hidden away)', P && P.rows.includes('PC3'), P && P.rows);
 ok('D5 the 🧮 Dilution calculator is in the header', !!await waitOn(() => !!document.querySelector('.gcsds h2 #gc-dil-btn'), null, 5000));
-jp = await jobPage('C1');
+jp = await jobPage('PC1');
 ok('D6 a Construction job page (C1 deck) has no 🧪 Materials', jp.up && !jp.card, jp);
-jp = await jobPage('C2');
+jp = await jobPage('PC2');
 ok('D7 a Construction water / mold job page (C2) has no 🧪 Materials either', jp.up && !jp.card, jp);
-jp = await jobPage('M1');
-ok('D8 a Mitigation job page (M1) has the 🧪 Materials card with its button', jp.up && jp.card && jp.card.pid === 'M1' && jp.card.btn, jp);
-await A.ev(() => document.querySelector('#gc-sds-jc [data-sds-job]').click()); await sleep(800);
+jp = await jobPage('PM1');
+ok('D8 a Mitigation job page (M1) has the 🧪 Materials card with its button', jp.up && jp.card && jp.card.pid === 'PM1' && jp.card.btn, jp);
+await A.ev(() => { const b = document.querySelector('#gc-sds-jc [data-sds-job]'); if (b) b.click(); }); await sleep(800);
 ok('D9 … its button opens the job\'s 🧪 Materials window', await A.ev(() => /Materials — Demo Ross basement/.test((document.getElementById('gc-sds-job') || {}).innerText || '')));
 await A.ev(() => { const o = document.getElementById('gc-sds-ov'); o && o.remove(); });
-jp = await jobPage('E1');
-ok('D10 an Environmental job page (E1) has it too', jp.up && jp.card && jp.card.pid === 'E1' && jp.card.btn, jp);
+jp = await jobPage('PE1');
+ok('D10 an Environmental job page (E1) has it too', jp.up && jp.card && jp.card.pid === 'PE1' && jp.card.btn, jp);
 await setCo('construction');
-jp = await jobPage('M1');
-ok('D11 Construction picked: the Mitigation job\'s own page still has its 🧪 Materials (the button follows the job)', jp.up && jp.card && jp.card.pid === 'M1', jp);
-jp = await jobPage('C3');
+jp = await jobPage('PM1');
+ok('D11 Construction picked: the Mitigation job\'s own page still has its 🧪 Materials (the button follows the job)', jp.up && jp.card && jp.card.pid === 'PM1', jp);
+jp = await jobPage('PC3');
 ok('D12 Construction picked: the Construction job with earlier picks (C3) has no 🧪 Materials card', jp.up && !jp.card, jp);
 await setCo('all');
 
 /* E · data untouched, no page errors */
 await sleep(3000);
-const loc = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'C3'); return { m: p.materials, c: p.materialsConsent }; });
-const cl = (cget('projects') || []).find(p => p.id === 'C3') || {};
+const loc = await A.ev(() => { const p = window._crm.projects.find(x => x.id === 'PC3'); return { m: p.materials, c: p.materialsConsent }; });
+const cl = (cget('projects') || []).find(p => p.id === 'PC3') || {};
 ok('E1 the Construction job\'s earlier picks and signed consent are untouched (here and in the cloud)', JSON.stringify(loc.m) === JSON.stringify(C3MAT) && JSON.stringify(loc.c) === JSON.stringify(C3CON) && JSON.stringify(cl.materials) === JSON.stringify(C3MAT) && JSON.stringify(cl.materialsConsent) === JSON.stringify(C3CON), { loc, cl: { m: cl.materials, c: cl.materialsConsent } });
-const noMat = await A.ev(() => window._crm.projects.filter(p => ['M1', 'E1', 'S1', 'C1', 'C2'].includes(p.id) && (p.materials || p.materialsConsent)).map(p => p.id));
+const noMat = await A.ev(() => window._crm.projects.filter(p => ['PM1', 'PE1', 'PS1', 'PC1', 'PC2'].includes(p.id) && (p.materials || p.materialsConsent)).map(p => p.id));
 ok('E2 nothing was written on the other jobs (no materials / consent added)', noMat.length === 0, noMat);
 ok('E3 no page errors', errs.length === 0, errs);
 
