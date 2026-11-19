@@ -32,12 +32,25 @@ try {
   if (W.__gcPhoneUI) return;
   try { if (W.localStorage && W.localStorage.getItem('gc_phoneui_off') === '1') return; } catch (e) {}
   var H = D.documentElement;
+  /* the window's size, read once and again on resize (on a phone, reading it can make the browser lay the page out) */
+  var VW = W.innerWidth || 0, VH = W.innerHeight || 0;
+  W.addEventListener('resize', function(){ VW = W.innerWidth || 0; VH = W.innerHeight || 0; });
+  W.addEventListener('orientationchange', function(){ VW = W.innerWidth || 0; VH = W.innerHeight || 0; });
   var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
   var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+  /* the browser's own MutationObserver: the page's governors (index.html "PERFORMANCE GOVERNOR" / "MutationObserver
+     governor") hold every observer's news for 120–250 ms and while the person touches the screen, which is how a panel
+     stayed dark and a note sat on the bottom bar; this one is cheap (it only queues), so it reports at once */
+  var MO = (function(){
+    try { var g = new W.MutationObserver(function(){}); var n = g && g._n ? g._n : g, C = n && n.constructor;
+      for (var i = 0; i < 6 && C; i++) { if (/\[native code\]/.test(Function.prototype.toString.call(C))) return C; C = Object.getPrototypeOf(C); }
+    } catch (e) {}
+    return W.MutationObserver;
+  })();
   var PU = W.__gcPhoneUI = { moves: 0, kept: 0, pads: [], tops: 0, x44: 0, pages: 0, lit: 0, stacked: 0 };
 
   function phoneDev(){
-    var ua = String((W.navigator && W.navigator.userAgent) || ''), w = W.innerWidth || 0;
+    var ua = String((W.navigator && W.navigator.userAgent) || ''), w = VW || 0;
     return /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(ua) || (/iPad|Android/i.test(ua) && w < 900) || (w > 0 && w < 820);
   }
   function tog(c, on){ if (H.classList.contains(c) !== !!on) H.classList.toggle(c, !!on); }
@@ -112,10 +125,16 @@ try {
 
   /* ── the inset, measured (a probe at top: var(--gc-sat)) ── */
   var probe = null;
+  /* (measured once, and again when the window turns: reading a position makes the browser lay the page out) */
+  var satV = -1, satW = -1, satAt = 0;
   function sat(){
     if (!D.body) return 0;
+    /* (0 is measured again every 5 s: the inset can arrive after the first layout, e.g. on opening from the Home Screen) */
+    if (satV >= 0 && satW === VW + 'x' + VH && (satV > 0 || Date.now() - satAt < 5000)) return satV;
+    satAt = Date.now();
     if (!probe || !probe.isConnected) { probe = D.createElement('div'); probe.id = 'gc-pu-sat'; probe.setAttribute('aria-hidden', 'true'); probe.setAttribute('data-gc-keep', '1'); probe.setAttribute('data-gcnav-ignore', '1'); probe.style.cssText = 'position:fixed;left:0;top:var(--gc-sat);width:0;height:0;pointer-events:none;visibility:hidden'; D.body.appendChild(probe); }
-    return Math.round(probe.getBoundingClientRect().top) || 0;
+    satW = VW + 'x' + VH; satV = Math.round(probe.getBoundingClientRect().top) || 0;
+    return satV;
   }
 
   /* ── 1. safe area ── */
@@ -152,10 +171,12 @@ try {
     }
     return false;
   }
+  var safeUntil = 0, allSafe = true;
   function safeSweep(){
+    if (Date.now() > safeUntil && !allSafe) return; allSafe = false;   /* only while something is new (3 s), and on the slow look */
     var S = sat(); if (S < 4) return;
-    var w = W.innerWidth || 0; if (!w) return;
-    var xs = [12, 40, w * 0.25, w * 0.5, w * 0.75, w - 40, w - 14], ys = [Math.max(1, Math.round(S * 0.35)), S - 2];
+    var w = VW || 0; if (!w) return;
+    var xs = [14, w * 0.3, w * 0.6, w - 40, w - 14], ys = [Math.max(1, Math.round(S * 0.35)), S - 2];
     for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
       var e = D.elementFromPoint(xs[i], ys[j]); if (!contentish(e)) continue;
       var t = holder(e); if (!t || (t.id && SKIP.test(t.id)) || (t.closest && t.closest('#_gcAppHead'))) continue;
@@ -176,11 +197,19 @@ try {
 
   /* ── 2. notes stack above the bottom bar; the 🔔 card under the Field header ── */
   var NOTES = '#gc-unsent-note,#gc-save-note,.gc-away-toast,#gc-ra-toast,#gc-fd-toast,#_gcNavToast,#gc-rpb-toast,body > .gcautai-pill';
-  function tabsH(){ var t = D.getElementById('gc-fh-tabs'); if (!t || !shown(t)) return 0; var r = t.getBoundingClientRect(); return Math.max(0, Math.round((W.innerHeight || 0) - r.top)); }
+  var tabsC = { el: null, k: '', v: 0 };
+  function tabsH(){
+    var t = D.getElementById('gc-fh-tabs'), k = VW + 'x' + VH + '|' + (t ? t.childElementCount + t.className : '');
+    if (t === tabsC.el && k === tabsC.k) return tabsC.v;
+    var v = 0; if (t && shown(t)) { var r = t.getBoundingClientRect(); v = Math.max(0, Math.round((VH || 0) - r.top)); }
+    tabsC = { el: t, k: k, v: v }; return v;
+  }
   var lastTabs = -1;
   function stackSweep(){
     var base = tabsH(); if (base !== lastTabs) { lastTabs = base; H.style.setProperty('--gc-pu-tabs', base + 'px'); }
-    var list = Array.prototype.filter.call(D.querySelectorAll(NOTES), function(n){ return n.parentNode === D.body && shown(n) && cs(n).position === 'fixed'; });
+    var all = D.querySelectorAll(NOTES); if (!all.length) return;
+    var list = Array.prototype.filter.call(all, function(n){ if (n.parentNode !== D.body) return false; var s = cs(n); return s.display !== 'none' && s.visibility !== 'hidden' && s.position === 'fixed'; });
+    if (!list.length) return;
     var hs = list.map(function(n){ return Math.round(n.getBoundingClientRect().height); });   /* all reads first, then the writes */
     var y = (base || 12) + 8;
     list.forEach(function(n, i){
@@ -192,8 +221,9 @@ try {
   /* a floating action button inside a page that is mid-screen (over the list) or under the bottom bar: it sits at the
      bottom of its page, just above the bottom bar (sticky), never over content */
   function fabSweep(){
-    var S = sat(), vh = W.innerHeight || 0; if (!vh) return;
-    Array.prototype.forEach.call(D.querySelectorAll('body > * button[style*="fixed"], body > * a[style*="fixed"], body > * .gc-fab'), function(b){
+    var S = sat(), vh = VH || 0; if (!vh) return;
+    /* (inside the open panels only: the rest of the page is not searched) */
+    Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page button[style*="fixed"], body > .gc-pu-page a[style*="fixed"], body > .gc-pu-sheet button[style*="fixed"], body > .gc-pu-page .gc-fab'), function(b){
       if (b.classList.contains('gc-pu-fab') || b.parentNode === D.body || closeish(b)) return;
       if (b.closest('#gc-fh-tabs,#_gcAppHead,.gc-pu-bar,#gc-update-bar,#gc-bw-update')) return;
       var s = cs(b); if (s.position !== 'fixed' || !shown(b)) return;
@@ -204,7 +234,7 @@ try {
   }
   function homeCard(){
     var home = D.querySelector('#_gcJobPick.gc-fh');
-    if (home && !home.__puMo) { home.__puMo = 1; try { new MutationObserver(function(){ try { homeCard(); head(); } catch (e) {} }).observe(home, { childList: true }); } catch (e) {} }
+    if (home && !home.__puMo) { try { home.__puMo = new MO(function(){ try { homeCard(); head(); } catch (e) {} }); home.__puMo.observe(home, { childList: true }); } catch (e) {} }
     var c = D.getElementById('gc-away-pushcard'); if (!c || !home) return;
     var top = home.querySelector('.fh-top'); if (top && top.nextElementSibling !== c && !(top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills' && top.nextElementSibling.nextElementSibling === c)) top.parentNode.insertBefore(c, (top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills') ? top.nextElementSibling.nextSibling : top.nextSibling);
     if (!c.__gcPu) { c.__gcPu = 1; c.style.margin = '8px 12px'; }
@@ -257,16 +287,18 @@ try {
     if (L.classList.contains('gc-pu-page')) return true;
     if ((L.id && (NOT_PAGE.test(L.id) || /^gc-auth|gate$|splash|^_gcLock|toast/i.test(L.id))) || /toast|gc-ra-sheet|gc-fh-sheet|gcautai-pill/.test(String(L.className || ''))) return false;
     /* cheap first: big enough to be a screen (offset sizes are kept by the browser), only then its computed style */
-    var vw = W.innerWidth, vh = W.innerHeight; if (L.offsetWidth * L.offsetHeight < 0.5 * vw * vh) return false;
+    var vw = VW, vh = VH;
     var s = cs(L); if (s.position !== 'fixed' || s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.05 || s.pointerEvents === 'none') return false;
+    if (L.offsetWidth * L.offsetHeight < 0.5 * vw * vh) return false;
     var r = L.getBoundingClientRect();
     if ((Math.min(r.right, vw) - Math.max(r.left, 0)) * (Math.min(r.bottom, vh) - Math.max(r.top, 0)) < 0.55 * vw * vh) return false;
     if (L.querySelector('#gc-auth-email,#gc-auth-password')) return false;
     return true;
   }
+  /* the panel's card: the child holding most of its content (counted in elements: no layout needed) */
   function mainCard(L){
-    var best = null, ba = 0;
-    Array.prototype.forEach.call(L.children, function(c){ if (c.classList.contains('gc-pu-bar') || /^(SCRIPT|STYLE)$/.test(c.tagName) || !shown(c)) return; var r = c.getBoundingClientRect(), a = r.width * r.height; if (a > ba) { ba = a; best = c; } });
+    var best = null, ba = -1;
+    Array.prototype.forEach.call(L.children, function(c){ if (c.classList.contains('gc-pu-bar') || /^(SCRIPT|STYLE|LINK)$/.test(c.tagName) || c.style.display === 'none') return; var a = c.getElementsByTagName('*').length + 1; if (a > ba) { ba = a; best = c; } });
     return best;
   }
   function titleEl(L){
@@ -283,7 +315,7 @@ try {
     var S = sat();
     return Array.prototype.some.call(L.querySelectorAll('button,a,[role=button]'), function(b){
       if (b.closest('.gc-pu-bar') || !closeish(b) || !shown(b)) return false;
-      var r = b.getBoundingClientRect(); return r.top < S + 130 && r.bottom > 0 && r.left < W.innerWidth && r.right > 0;
+      var r = b.getBoundingClientRect(); return r.top < S + 130 && r.bottom > 0 && r.left < VW && r.right > 0;
     });
   }
   function closeLayer(L){
@@ -318,15 +350,24 @@ try {
     }
   }
   function apprTitle(L){ var c0 = L.querySelector(':scope > .gc-pu-card'); if (c0 && L.hasAttribute('data-gc-pu-bar')) { var t0 = c0.firstElementChild; if (t0 && !t0.classList.contains('gc-pu-hide') && txt(t0) === 'My Approvals') t0.classList.add('gc-pu-hide'); } }
+  /* what to look at: on a change, the body's new children (for 3 s: a panel can take a moment to show) and the open
+     pages; on the slow look, every child (a panel shown again with a class adds nothing to the page) */
+  var FRESH = [];
+  function fresh(n){ if (n.nodeType === 1 && n.parentNode === D.body && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) { n.__puAt = Date.now(); if (FRESH.indexOf(n) < 0) FRESH.push(n); } }
+  var allNext = true;
   function pageSweep(){
     Array.prototype.forEach.call(D.querySelectorAll('body > .gc-ra-sheet, body > .gc-fh-sheet'), sheetPage);
-    Array.prototype.forEach.call(D.body.children, function(L){ if (pageable(L)) { genericPage(L); apprTitle(L); } });
+    var now = Date.now(); FRESH = FRESH.filter(function(n){ return n.isConnected && now - n.__puAt < 3000; });
+    var look = allNext ? Array.prototype.slice.call(D.body.children) : FRESH.concat(Array.prototype.slice.call(D.querySelectorAll('body > .gc-pu-page'))); allNext = false;
+    look.forEach(function(L){ if (pageable(L)) { genericPage(L); apprTitle(L); } });
     /* GrayCo Photos: its screens light too (its own ‹ and sheets stay); the camera itself is left dark */
     var g = D.getElementById('gcuOv');
     if (g && shown(g)) { var cam = false; try { cam = !!(W._gcPhotos && W._gcPhotos.state && /^(camera|photo)$/.test(String(W._gcPhotos.state.screen || ''))) || !!g.querySelector('video'); } catch (e) {}
       g.classList.toggle('gc-pu-cam', cam); if (!cam) { if (!g.__puW) { watch(g); g.__puW = 1; } if (g.__puCam !== false) pend(g, true); } g.__puCam = cam; }
-    /* (a desk page opened from the Field — Leads, Schedule, Customers — is light already; its navy page background and
-       header are changed by the stylesheet above, which costs nothing per element) */
+    /* a desk page opened from the Field (Leads, Schedule, Customers…): its page background and header are light from the
+       stylesheet; a card drawn dark with an inline background is made light with its contents (found from the style
+       attribute alone; looked at again only when the page's size in elements changes). Dark buttons are actions: kept. */
+    part("desk", deskLight);
   }
 
   /* ── dark → light, in small slices (never a long task): backgrounds that are dark become a light tint of the same
@@ -345,7 +386,7 @@ try {
   function watch(root){
     if (ROOTS.indexOf(root) >= 0) return; ROOTS.push(root);
     try {
-      var o = new MutationObserver(function(ms){
+      var o = new MO(function(ms){
         if (!root.isConnected) { o.disconnect(); ROOTS.splice(ROOTS.indexOf(root), 1); return; }
         for (var i = 0; i < ms.length; i++) {
           var m = ms[i];
@@ -354,7 +395,7 @@ try {
         }
       });
       o.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-      OBS.push(o);
+      OBS.push(o); root.__puMo = o;
     } catch (e) {}
   }
   /* its class changed (picked / not picked, a state): our colors come off and it is looked at again as it is now */
@@ -397,7 +438,7 @@ try {
         /* read first (one style pass for the whole slice, 4 ms at most), then write */
         var batch = [], e;
         var R = [];
-        while (performance.now() - t0 < 4 && (e = next())) { var s = cs(e); R.push({ e: e, bg: s.backgroundColor, gi: s.backgroundImage, color: s.color, bw: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth], bc: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor] }); }
+        while (performance.now() - t0 < 2.5 && R.length < 80 && (e = next())) { var s = cs(e); R.push({ e: e, bg: s.backgroundColor, gi: s.backgroundImage, color: s.color, bw: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth], bc: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor] }); }
         if (!R.length) break;
         batch = R;
         R.forEach(function(r){
@@ -428,6 +469,22 @@ try {
     if (cur || Q.length) kickQ();   /* the rest after the browser has had a frame */
   }
   function light(root){ watch(root); pend(root, true); }
+  var deskSig = '|', deskN = 0;
+  function deskLight(){
+    var m = H.classList.contains('gc-pu-head') && !H.classList.contains('_gcNavLayer') ? D.querySelector('main') : null; if (!m) return;
+    /* when the page changes, and on every third full look (counting its elements is not free on a big page) */
+    var view = (function(){ try { return W.localStorage.getItem('grayco_view'); } catch (e) { return ''; } })();
+    if (view === deskSig.split('|')[1] && (deskN++ % 3)) return;
+    var sig = m.childElementCount + '|' + view + '|' + m.getElementsByTagName('*').length;
+    if (sig === deskSig) return; deskSig = sig;
+    if (ROOTS.indexOf(m) < 0) ROOTS.push(m);   /* (no observer on the desk page: it changes all the time) */
+    var list = m.querySelectorAll('[style*="background"]');
+    for (var i = 0; i < list.length && i < 600; i++) {
+      var e = list[i]; if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|IMG|SVG|svg)$/.test(e.tagName) || e.hasAttribute('data-gc-lit')) continue;
+      var c = rgb(e.style.backgroundColor) || rgb(e.style.background); if (!c || c[3] < 0.3 || keepColor(c) || hsl(c)[2] >= 0.3) continue;
+      pend(e, true);
+    }
+  }
 
   /* ── 4. the header: never swept as a notice; the pills ride in it; main follows its real height ── */
   var lastH = -1;
@@ -473,30 +530,35 @@ try {
     }
     if (host) pills.forEach(function(p){ if (p.parentNode !== host) { host.appendChild(p); PU.moves++; } });
     if (!hd) return;
+    var hk = VW + '|' + D.getElementsByClassName('gcautai-pill').length;
+    if (hd.__puHk === hk) return; hd.__puHk = hk;
     var h = hd.offsetHeight || 0;
     if (h && h !== lastH) { lastH = h; H.style.setProperty('--gc-pu-hh', h + 'px'); }
   }
 
   function cost(dt){ PU.cost.ms += dt; PU.cost.n++; if (dt > PU.cost.max) PU.cost.max = dt; }
   PU.cost = { ms: 0, n: 0, max: 0, light: 0, els: 0, runMax: 0 };
+  /* (how long each part took at most: __gcPhoneUI.state().cost.parts) */
+  var cur_ = null;
+  function part(name, f){ var t = performance.now(); try { f(); } catch (e) {} var d = performance.now() - t, P = PU.cost.parts || (PU.cost.parts = {}); if (!(P[name] >= d)) P[name] = Math.round(d * 10) / 10; if (cur_) cur_[name] = Math.round(d * 10) / 10; }
   function run(full){
-    var t0 = performance.now();
+    var t0 = performance.now(); cur_ = { full: !!full };
     try {
       var ph = phoneDev();
-      tog('gc-pu', ph || (W.innerWidth || 0) <= 640);
+      tog('gc-pu', ph || (VW || 0) <= 640);
       tog('gc-pu-app', ph && field());
-      head();
+      part('head', head);
       if (!ph || !D.body) return;
       if (full) PU.full = (PU.full || 0) + 1;
       if (field()) {
-        if (full) try { pageSweep(); } catch (e) { PU.err = String(e && e.stack || e).slice(0, 300); }
-        try { var tl = null; Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet'), function(x){ if (shown(x)) tl = x; });
+        if (full) part('pages', pageSweep);
+        try { var tl = null; Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet'), function(x){ if (x.style.display !== 'none') tl = x; });   /* (inline style only: no style pass) */
           tog('gc-pu-ownback', !!tl && (tl.hasAttribute('data-gc-pu-bar') || tl.classList.contains('gc-pu-sheet') || tl.classList.contains('gc-pu-page'))); } catch (e) {}
-        if (full) try { homeCard(); } catch (e) {}
-        try { stackSweep(); } catch (e) {}
+        if (full) part('home', homeCard);
+        part('stack', stackSweep);
       }
-      if (full) { try { safeSweep(); } catch (e) {} try { fabSweep(); } catch (e) {} }
-    } catch (e) {} finally { var dt = performance.now() - t0; cost(dt); if (dt > PU.cost.runMax) PU.cost.runMax = dt; }
+      if (full) { part('safe', safeSweep); part('fab', fabSweep); }
+    } catch (e) {} finally { var dt = performance.now() - t0; cost(dt); if (dt > PU.cost.runMax) { PU.cost.runMax = dt; cur_.total = Math.round(dt); PU.cost.slowest = cur_; } }
   }
   /* when: something is added to the page, the page's class changes, the window turns — one pass per frame at most; and a
      slow look every 2 s for what changes without either (a panel shown again with a class, a note that lights up) */
@@ -505,24 +567,43 @@ try {
   function soon(){
     PU.soon = (PU.soon || 0) + 1;
     if (soonT && Date.now() - soonAt < 500) return; soonAt = Date.now(); soonT = 1;
-    var tok = soonAt, go = function(){ if (soonT !== 1 || soonAt !== tok) return; soonT = 0; run(true); };
-    /* after the next frame is drawn (its layout is then clean, and reading it costs nothing) — or in 150 ms at the latest */
-    if (W.requestAnimationFrame && !D.hidden) W.requestAnimationFrame(function(){ ST.call(W, go, 0); });
-    ST.call(W, go, 150);
+    var tok = soonAt;
+    afterFrame(function(){ if (soonT !== 1 || soonAt !== tok) return; soonT = 0; run(true); });
+  }
+  /* run f right after the next frame is drawn: the page's style and layout are then up to date, so reading them makes
+     the browser do nothing extra (a read before that would make it do the frame's work early, inside this task) */
+  function afterFrame(f){
+    var done = false, go = function(){ if (done) return; done = true; f(); };
+    if (W.requestAnimationFrame && !D.hidden) { W.requestAnimationFrame(function(){ ST.call(W, go, 0); }); ST.call(W, go, 1000); }
+    else ST.call(W, go, 50);
   }
   run(true);
+  /* (the observers are kept on __gcPhoneUI: an observer nobody holds can be collected and then sees nothing) */
+  PU.mo = [];
   try {
-    new MutationObserver(function(ms){
-      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); soon(); return; } }
-    }).observe(D.body || H, { childList: true });
-    new MutationObserver(function(){ head(); soon(); }).observe(H, { attributes: true, attributeFilter: ['class'] });
+    /* a panel already in the page shown again (a class or a style on the body's own child): the same as a new one */
+    var ma = new MO(function(ms){
+      var hit = false;
+      for (var i = 0; i < ms.length; i++) { var t = ms[i].target; if (t.parentNode === D.body && !/^(gc-pu-sat|_gcAppHead|_gcNavBk|gc-fh-tabs)$/.test(t.id) && !/toast|gcautai-pill/.test(String(t.className || ''))) { fresh(t); hit = true; } }
+      if (hit) { safeUntil = Date.now() + 3000; soon(); }
+    });
+    var watchKid = function(n){ if (n.nodeType === 1 && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) try { ma.observe(n, { attributes: true, attributeFilter: ['class', 'style'] }); } catch (e) {} };
+    Array.prototype.forEach.call((D.body || H).children, watchKid); PU.mo.push(ma);
+    var mb = new MO(function(ms){
+      var hit = false;
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); fresh(a[k]); watchKid(a[k]); hit = true; } }
+      if (hit) { safeUntil = Date.now() + 3000; soon(); }
+    });
+    mb.observe(D.body || H, { childList: true }); PU.mo.push(mb);
+    var mh = new MO(function(){ head(); soon(); });
+    mh.observe(H, { attributes: true, attributeFilter: ['class'] }); PU.mo.push(mh);
   } catch (e) {}
   W.addEventListener('resize', soon);
   /* the light look every 2 s (classes, header, notes); the full look (panels, the status bar strip, buttons) every 6 s —
      anything added to the page gets the full look at once, above */
   var tick = 0;
-  SI.call(W, function(){ if (!D.hidden) run(++tick % 3 === 0); }, 2000);
-  SI.call(W, function(){ if (!D.hidden && H.classList.contains('gc-pu-app')) { var t0 = performance.now(); try { stackSweep(); } catch (e) {} cost(performance.now() - t0); } }, 700);
+  SI.call(W, function(){ if (D.hidden) return; var full = ++tick % 3 === 0; afterFrame(function(){ run(full); }); }, 2000);
+  SI.call(W, function(){ if (!D.hidden && H.classList.contains('gc-pu-app')) afterFrame(function(){ var t0 = performance.now(); try { stackSweep(); } catch (e) {} cost(performance.now() - t0); }); }, 700);
   PU.run = function(){ run(true); }; PU.light = light; PU.sat = sat; PU.ratio = function(a, b){ return ratio(rgb(a), rgb(b)); };
   PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), sat: sat(), hh: lastH, moves: PU.moves, kept: PU.kept, pads: PU.pads.slice(), tops: PU.tops, x44: PU.x44, pages: PU.pages, lit: PU.lit, stacked: PU.stacked, fabs: PU.fabs || 0, roots: ROOTS.length, soon: PU.soon, full: PU.full, err: PU.err, soonT: soonT, soonAge: Date.now() - soonAt, cost: PU.cost }; };
   try { console.log('[GC] PHONEUI: phone safe area, app pages, no desk top bar in Field, bigger Leads views — __gcPhoneUI.state()'); } catch (e) {}
