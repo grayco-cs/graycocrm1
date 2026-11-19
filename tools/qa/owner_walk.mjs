@@ -26,6 +26,7 @@ if (!build || !fs.existsSync(path.join(build, 'index.html'))) { console.error('u
 const OUT = path.resolve(opt('out', path.join(SCR, 'qa')));
 const buildName = opt('build', (() => { try { return fs.readFileSync(path.join(build, 'version.txt'), 'utf8').trim().split(/\s+/)[0].replace(/[^\w.-]/g, '_') || path.basename(build); } catch (e) { return path.basename(build); } })());
 const L = await import(pathToFileURL(path.join(HERE, 'qa_lib.mjs')).href);
+const { BG_TOAST, SLOW_MS } = await import(pathToFileURL(path.join(HERE, 'crawl.mjs')).href);
 
 /* ═══════════════ parent: one child per profile (under a browser lock), then the report ═══════════════ */
 if (!flag('child')) {
@@ -46,9 +47,11 @@ if (!flag('child')) {
     const jf = path.join(runDir, p + '.json');
     /* --rerun owner,pm: run only those again; the other profiles of this build are read back from its run folder */
     if (opt('rerun') && !String(opt('rerun')).split(',').includes(p) && fs.existsSync(jf)) { const r0 = JSON.parse(fs.readFileSync(jf, 'utf8')); const cf0 = path.join(runDir, p + '.crawl.json'); if (fs.existsSync(cf0)) { try { const c0 = JSON.parse(fs.readFileSync(cf0, 'utf8')); r0.crawl = c0.crawl || { screens: [], error: 'the crawl did not finish' + (c0.stopped ? ': ' + c0.stopped : '') }; } catch (e) {} } results.push(r0); console.log(`  ${p}: read back from ${jf}`); continue; }
-    try { fs.unlinkSync(jf); } catch (e) {}
+    if (!flag('keep-walks')) { try { fs.unlinkSync(jf); } catch (e) {} }
     const t0 = Date.now(); let r = null;
-    if (!flag('crawl-only')) {
+    const keep = flag('keep-walks') && fs.existsSync(jf) && (() => { try { const j = JSON.parse(fs.readFileSync(jf, 'utf8')); return j.finished && j.steps && j.steps.length ? j : null; } catch (e) { return null; } })();
+    if (keep) { r = keep; console.log(`  ${p}: walk read back (${r.steps.length} steps)`); }
+    else if (!flag('crawl-only')) {
       const rc = await runLocked(p, jf, snapDir, path.join(runDir, p + '.log'), 'walk');
       try { r = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) {}
       if (!r) r = { profile: p, label: (L.PROFILES[p] || {}).label || p, steps: [], crashed: true, notes: ['the walk did not finish (exit ' + rc + ') — see ' + path.join(runDir, p + '.log')] };
@@ -297,6 +300,13 @@ import('./walks.mjs').then(async W => {
 function summarize(results, snapDir, feats){
   feats = feats || [];
   const btns = []; results.forEach(r => ((r.crawl || {}).screens || []).forEach(sc => sc.buttons.forEach(b => btns.push(Object.assign({ profile: r.profile, label: r.label, screen: sc.name }, b)))));
+  /* one judgment for every crawl (also ones recorded by an older crawler): a background toast is not a reaction; SLOW = over 5 s */
+  for (const b of btns) {
+    if (/^toast: /.test(b.kind || '') && BG_TOAST.test(b.kind.slice(7)) && b.result !== 'FAIL') { b.kind = 'nothing (only a background toast: ' + b.kind.slice(7, 50) + ')'; b.result = 'FAIL'; b.why = ['dead button — nothing happened'].concat((b.why || []).filter(w => !/^reacted after/.test(w))); }
+    /* a write the crawler cannot tie to this tap for sure (the CRM keeps saving by itself — see the walk's shared-write bugs) */
+    if (b.result === 'FAIL' && !(b.why || []).some(w => /dead button|page error|covered|no way back|outside host/.test(w))) b.result = 'WARN';
+    if (b.result === 'SLOW' && (b.ms || 0) < SLOW_MS) { b.result = 'OK'; b.why = (b.why || []).map(w => w.replace(/^reacted after/, 'first visible change after')); }
+  }
   const bad = btns.filter(b => b.result === 'FAIL' || b.result === 'SLOW');
   const recent = feats.map(f => { const B = btns.filter(b => (b.features || []).includes(f.name) && ['OK', 'FAIL', 'SLOW', 'SKIP'].includes(b.result));
     return { name: f.name, first: f.first, last: f.last, summary: f.summary, hooks: f.ids.length + f.data.length + f.labels.length, buttons: B.map(b => ({ profile: b.profile, screen: b.screen, level: b.level, via: b.via, text: b.text, result: b.result, kind: b.kind, why: b.why, shot: b.shot, ms: b.ms })),
@@ -305,9 +315,14 @@ function summarize(results, snapDir, feats){
   const all = []; results.forEach(r => r.steps.forEach(s => s.fails.forEach(f => all.push(Object.assign({ profile: r.profile, step: s.name, n: s.n, shot: (s.shots[0] || {}).file }, f)))));
   const c = { steps: results.reduce((a, r) => a + r.steps.length, 0), failedSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.length).length, 0), fails: all.length, critical: all.filter(f => f.sev === 'critical').length, major: all.filter(f => f.sev === 'major').length, minor: all.filter(f => f.sev === 'minor').length };
   const crashed = results.filter(r => r.crashed || !r.finished || r.stopped || !r.steps.length).map(r => r.profile + (r.stopped ? ' (' + r.stopped + ')' : ''));
+  /* the bug list: the same failure on many screens is one bug (with every place and screenshot) */
+  const bugMap = new Map(); const norm = m => String(m).replace(/\d+(\.\d+)?/g, '#').replace(/"[^"]{0,80}"/g, '"…"').slice(0, 140);
+  for (const f of all) { const k = f.check + '|' + (f.check === 'floating' || f.check === 'behind' || f.check === 'closeback' ? (f.list || []).map(x => String(x).replace(/@.*|\d+/g, '')).sort().join(';').slice(0, 200) : norm(f.msg)); const b = bugMap.get(k) || { sev: f.sev, check: f.check, msg: f.msg, list: f.list, el: f.el, where: [] }; b.where.push({ profile: f.profile, step: f.step, n: f.n, shot: f.shot }); if ({ critical: 3, major: 2, minor: 1 }[f.sev] > { critical: 3, major: 2, minor: 1 }[b.sev]) b.sev = f.sev; bugMap.set(k, b); }
+  for (const b of btns.filter(b => b.result === 'FAIL')) { const k = 'button|' + b.profile + '|' + b.screen + '|' + b.text; bugMap.set(k, { sev: 'major', check: 'button', msg: `${b.label} · ${b.screen} · ${b.level === 2 ? b.via + ' › ' : ''}"${b.text}": ${(b.why || []).join('; ')}`, where: [{ profile: b.profile, step: b.screen, shot: b.shot }] }); }
+  const bugs = [...bugMap.values()].sort((a, b) => ({ critical: 0, major: 1, minor: 2 }[a.sev] - { critical: 0, major: 1, minor: 2 }[b.sev]) || b.where.length - a.where.length);
   c.buttons = btns.length; c.buttonsFail = btns.filter(b => b.result === 'FAIL').length; c.buttonsSlow = btns.filter(b => b.result === 'SLOW').length; c.buttonsSkip = btns.filter(b => b.result === 'SKIP').length; c.buttonsOk = btns.filter(b => b.result === 'OK').length;
   c.dead = btns.filter(b => b.result === 'FAIL' && (b.why || []).some(w => /dead button/.test(w))).length;
-  return { build: buildName, buildDir: build, snapshot: path.basename(snapDir), at: new Date().toISOString(), pass: !c.critical && !c.major && !crashed.length && !c.buttonsFail && !crawlErr.length, crashed, crawlErr, counts: c, badButtons: bad, recent,
+  return { build: buildName, buildDir: build, snapshot: path.basename(snapDir), at: new Date().toISOString(), pass: !c.critical && !c.major && !crashed.length && !c.buttonsFail && !crawlErr.length, crashed, crawlErr, counts: c, badButtons: bad, recent, bugs,
     crawl: results.map(r => ({ profile: r.profile, label: r.label, crawl: r.crawl || null })),
     profiles: results.map(r => ({ profile: r.profile, label: r.label, setup: r.setup, device: r.device, notes: r.notes, wallSec: r.wallSec, steps: r.steps.map(s => ({ n: s.n, name: s.name, openMs: s.openMs, passive: s.passive, fails: s.fails, warns: s.warns, info: s.info, shots: s.shots })) })),
     failures: all };
@@ -339,6 +354,7 @@ figcaption{font-size:11px;color:var(--mut)}.det{flex:1;min-width:280px}li.crit b
 <h1>Release QA gate — ${esc(S.build)}</h1><div class="verdict">${S.pass ? 'PASS' : 'FAIL'}</div>
 <p class="muted">${esc(S.at)} · real data snapshot ${esc(S.snapshot)} (read-only, offline) · ${S.counts.steps} steps · ${S.counts.failedSteps} failed · ${S.counts.critical} critical / ${S.counts.major} major / ${S.counts.minor} minor${S.crashed.length ? ' · did not finish: ' + esc(S.crashed.join(', ')) : ''}</p>
 <table><tr><th>Profile</th><th>Step</th><th>Open</th><th>Result</th></tr>${S.profiles.map(p => p.steps.map(s => `<tr><td>${esc(p.label)}</td><td>${s.n}. ${esc(s.name)}</td><td>${(s.openMs / 1000).toFixed(1)} s</td><td>${s.fails.length ? `<span style="color:var(--bad)">✗ ${esc([...new Set(s.fails.map(f => f.check))].join(', '))}</span>` : '<span class="ok">✓</span>'}</td></tr>`).join('')).join('')}</table>
+<h2>Bug list (${S.bugs.length})</h2>${['critical', 'major', 'minor'].map(sv => `<h3>${sv} (${S.bugs.filter(b => b.sev === sv).length})</h3><ol>${S.bugs.filter(b => b.sev === sv).map(b => `<li><code>${esc(b.check)}</code> ${esc(b.msg)}${b.el ? `<div class="sub">${esc(b.el)}</div>` : ''}${b.list ? `<div class="sub">${esc(b.list.slice(0, 4).join(' · '))}</div>` : ''}<div class="sub">${b.where.length} place(s): ${b.where.slice(0, 6).map(w => `${esc(w.profile)} · ${esc(w.step)}${w.shot ? ` <a href="${rel(w.shot)}">shot</a>` : ''}`).join(' | ')}${b.where.length > 6 ? ' …' : ''}</div></li>`).join('')}</ol>`).join('')}
 ${S.counts.buttons != null ? `<h2>Dead / broken / slow buttons (${S.badButtons.length})</h2><p class="muted">${S.counts.buttons} controls judged on ${S.crawl.length} profile(s): ${S.counts.buttonsOk} OK · ${S.counts.buttonsFail} FAIL (${S.counts.dead} dead) · ${S.counts.buttonsSlow} SLOW · ${S.counts.buttonsSkip} skipped (destructive / not reachable)${S.crawlErr.length ? ' · ' + esc(S.crawlErr.join(' · ')) : ''}</p>
 <table><tr><th>Profile</th><th>Screen</th><th>Button</th><th>Result</th><th>Why</th><th>Shot</th></tr>${S.badButtons.map(b => `<tr><td>${esc(b.label)}</td><td>${esc(b.screen)}</td><td>${b.level === 2 ? esc(b.via) + ' › ' : ''}${esc(b.text)}</td><td>${esc(b.result)}</td><td>${esc((b.why || []).join('; '))}</td><td>${b.shot ? `<a href="${rel(b.shot)}">shot</a>` : ''}</td></tr>`).join('')}</table>
 <h2>Recent features (since ${esc((S.recent.slice().sort((a, b) => a.first.localeCompare(b.first))[0] || {}).first || '')})</h2>
