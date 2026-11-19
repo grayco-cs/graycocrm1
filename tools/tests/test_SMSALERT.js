@@ -40,8 +40,9 @@ const person = (p) => Object.assign({ on: true }, p);
 const to = r => r.sent.map(x => x.to).sort();
 
 (async () => {
-  /* ── 1. owner defaults: Nick + Wesley, no admin setup, phones from their records ── */
+  /* ── 1. owner defaults: Owner 1 + Owner 2 (fixture admins), no admin setup, phones from their records ── */
   let r = rig();
+  await SA.loadOwners();   /* OWNERROLE: the defaults are Owner 1 + Owner 2 (by role: the earliest admins in the people list) */
   let set = SA.settings(null);
   assert.ok(set.defaults && set.people['nthomas@grayco-cs.com'].newAll && set.people['wjohnson@grayco-cs.com'].emerg && set.people[SA.ROLE_MIT].emerg);
   await SA.leads([{ id: 'L1', key: 'L1', title: 'Text message — Jane', source: 'Text message', contact: { name: 'Jane Doe', phone: '(901) 555-0100' } }],

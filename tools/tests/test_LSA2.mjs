@@ -3,7 +3,7 @@
 //      is folded into the first (🔁 note, lsaRepeats) and is not a second lead; another phone + another id → a new lead; a NON-LSA lead
 //      with the same phone is still its own lead; the weekly report leaves pending / bad LSA leads out of "new leads".
 //   B. the CRM: LSACOUNT (_gcLsaPend; Leads "New today · N this week" and the TV / Field numbers leave pending / bad LSA out, a good one
-//      counts), LSANUDGE (24 h, the PM; closes once marked), LSADISPUTE2 (2 days before the 30 days; ✓ Disputed in Ads on the lead's bar
+//      counts), LSANUDGE retired by LSAFLOW2 (silence = good — no nag), LSADISPUTE2 (2 days before the 30 days; ✓ Disputed in Ads on the lead's bar
 //      writes it and closes both To-Dos; a ticked "⚖️ Dispute" To-Do counts too), LSAPANEL (📊 LSA by month numbers).
 import { createRequire } from 'module';
 import path from 'path'; import fs from 'fs';
@@ -79,13 +79,12 @@ else ok('B1 Leads "New today · this week" (the KPI row is not drawn on this scr
 await A.ev(() => window._gcLsa2.sweep());
 let T = await A.ev(() => JSON.parse(localStorage.getItem('gc_office_tasks') || '[]').map(t => ({ id: t.id, l: t.label, a: t.assignee, d: t.done })));
 const g = id => T.find(t => t.id === id);
-ok('B2 👉 24-hour nudge for the PM on the pending LSA lead given 26 h ago', g('LSANUDGE_G1') && !g('LSANUDGE_G1').d && g('LSANUDGE_G1').a === 'Demo PM' && /24 hours: call and mark it 👍 Good or 👎 Bad/.test(g('LSANUDGE_G1').l), T);
-ok('B2 no nudge for the 3-hour-old one, the good one or the bad one', !g('LSANUDGE_G4') && !g('LSANUDGE_G2') && !g('LSANUDGE_G3'), T);
+ok('B2 LSAFLOW2 (silence = good): no 24-hour nudge for the PM, not even on the lead given 26 h ago', !T.some(t => /^LSANUDGE_/.test(t.id)), T);
 ok('B3 ⏰ 2 days left to dispute the bad lead decided 29 days ago', g('LSADISPUTE2_G3') && /2 days left to dispute Demo Bad in Google Ads/.test(g('LSADISPUTE2_G3').l), T);
 await A.ev(() => window._setLeads(prev => prev.map(l => l.id === 'G1' ? Object.assign({}, l, { lsaCheck: 'pm_good', lsaPmBy: 'Demo PM' }) : l))); await sleep(600);
 await A.ev(() => window._gcLsa2.sweep());
 T = await A.ev(() => JSON.parse(localStorage.getItem('gc_office_tasks') || '[]').map(t => ({ id: t.id, d: t.done })));
-ok('B2 the PM marks it → the nudge closes by itself', T.find(t => t.id === 'LSANUDGE_G1').d === true, T);
+ok('B2 still no nudge after the PM marks it', !T.some(t => /^LSANUDGE_/.test(t.id)), T);
 /* ✓ Disputed in Ads on the lead's bar */
 await A.ev(() => window._gcLeadsHub.open('G3'));
 const btn = await wait(() => !!document.querySelector('#gc-lsa-dispute [data-lsa2="btn"]'), null, 8000);

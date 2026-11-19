@@ -173724,6 +173724,7 @@ function paint(){
     + '<select data-pmg="senior" style="padding:6px;min-width:240px">' + peopleOpts(pms(), h ? h.email || h.name : '', '— Nobody yet —') + '</select> '
     + '<button type="button" class="gc-adm-btn" data-pmg-act="senior">Save Senior PM</button>'
     + leadRolesHtml()   /* patch HOT2 */
+    + (typeof W._gcOwnersHtml === 'function' ? W._gcOwnersHtml() : '')   /* OWNERROLE: Owner 1 / Owner 2 */
     + estAllHtml()   /* patch PROJLEAK */
     + (typeof W._gcApprDocAdminHtml === 'function' ? W._gcApprDocAdminHtml() : '')   /* patch APPRDOC */
     + '<h4 style="margin:16px 0 6px">👥 People and roles</h4>'
@@ -224104,8 +224105,9 @@ function textMarks(){
       var l = leads().find(function(x){ return x && (s(x.id) === s(d.id) || s(x.inboxId) === s(d.id) || s(x.leadInboxId) === s(d.id) || s(x.fromInbox) === s(d.id)); });
       if (!l || (l.lsaDecidedAt && s(l.lsaDecidedAt) >= s(d.at))) return;
       var patch = d.sent ? { pm: s(d.pm), pmEmail: s(d.pmEmail), assignedBy: s(d.by) + ' (text: send to PM)', assignedAt: s(d.at), lsaSentTo: s(d.pm), lsaDecidedAt: s(d.at), hold: l.hold ? Object.assign({}, l.hold, { state: 'approved', name: s(d.pm), email: s(d.pmEmail), doneAt: s(d.at), doneBy: s(d.by) + ' (text)' }) : l.hold }   /* LSASEND */
-        : d.pmBad ? { lsaCheck: 'pm_bad', lsaPmBy: s(d.by), lsaPmAt: s(d.at), lsaReason: s(d.reason), lsaDecidedAt: s(d.at) }   /* LSASEND: the PM's BAD waits for an admin */
+        : d.pmBad ? { lsaCheck: 'pm_bad', lsaPmBy: s(d.by), lsaPmAt: s(d.at), lsaReason: s(d.reason), lsaDecidedAt: s(d.at) }   /* LSASEND (old rows): the PM's BAD waited for an admin */
         : { lsaCheck: d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad', lsaDecidedBy: s(d.by) + ' (text)', lsaDecidedAt: s(d.at), lsaVia: 'text' };
+      if (d.disputed) Object.assign(patch, { lsaDisputedAt: s(d.disputedAt || d.at), lsaDisputedBy: s(d.disputedBy) });   /* LSAFLOW2: ✓ Disputed in Google (by anyone) — closed for everyone */
       if (d.sent || d.pmBad) {}
       else if (d.noAnswer) Object.assign(patch, { noAnswerAt: s(d.at), noAnswerCount: (+l.noAnswerCount || 0) + 1 });   /* LSANA: kept open */
       else if (!d.good) Object.assign(patch, { lsaReason: s(d.reason), stage: 'Lost', status: 'lost', lostReason: (d.isLsa === false ? 'Not a real lead (' : 'LSA — not a real lead (') + s(d.reason || 'bad') + ')' });
@@ -241246,7 +241248,7 @@ W._gcLeadContact = { has: has, ask: ask };
       (pending, no answer, the PM's mark waiting on the owner) or ✕ bad, it is left out of the lead counts: Leads "New today · this
       week", the TV / Field scorecards ("New leads"), the office TV goal, and the weekly report e-mail (scheduled-reports.js). It still
       shows on the Leads list — the PM must call it. window._gcLsaPend(lead) → true = not counted.
-   b. LSANUDGE: an LSA lead assigned to a PM and still not marked 👍 / 👎 24 hours after it was assigned → a high To-Do for that PM
+   b. LSANUDGE — retired by LSAFLOW2 (owner 11/19: silence = good; no nag for the PM). Was: an LSA lead assigned to a PM and still not marked 👍 / 👎 24 hours after it was assigned → a high To-Do for that PM
       "👉 Google LSA lead <name> — 24 hours: call and mark it Good or Bad". Closes by itself once it is marked (or closed).
    c. LSADISPUTE2: a bad LSA lead not yet disputed → "⏰ 2 days left to dispute <name> in Google Ads (by <date>)" 2 days before the
       30-day line (30 days from the owner's ✕ Bad). "✓ Disputed in Ads" on the lead's 📍 Google LSA bar (and ticking the "⚖️ Dispute
@@ -241295,10 +241297,8 @@ function sweep(){
     var T = tasks(), now = Date.now(), at = new Date().toISOString(), ch = 0, want = {};
     L.forEach(function(l){
       if (!l || !l.id || !isLsa(l)) return; var c = chk(l);
-      /* b. 24 hours with the PM, not marked */
-      var pm = pmOf(l), since = Date.parse(l.assignedAt || l.lsaSentAt || '') || born(l);
-      if (pm && !closed(l) && !wonOrJob(l) && /^(pending|no_answer|)$/.test(c) && since && now - since >= 24 * 3600e3)
-        want['LSANUDGE_' + l.id] = { id: 'LSANUDGE_' + l.id, kind: 'lsa_nudge', leadId: l.id, assignee: pm, prio: 'high', label: '👉 Google LSA lead ' + s(l.name || l.phone) + ' — 24 hours: call and mark it 👍 Good or 👎 Bad', note: 'It was given to ' + pm + ' ' + nice(since) + ' and is not marked yet. Open the lead → 👍 Good lead / 👎 Bad lead (📵 No answer if nobody picks up). Bad leads get disputed in Google Ads within 30 days.' };
+      /* b. LSAFLOW2 (owner 11/19: "If he doesn't reply anything, then it's a good lead"): no 24-hour nudge any more — silence = good.
+         An open old LSANUDGE To-Do closes by itself below (not wanted). */
       /* c. 2 days before the dispute line */
       var dl = deadline(l);
       if (c === 'bad' && !l.lsaDisputedAt && dl && now >= dl - 2 * 864e5)
@@ -241320,6 +241320,9 @@ function sweep(){
 function disputed(id){
   var at = new Date().toISOString();
   saveLead(id, { lsaDisputedAt: at, lsaDisputedBy: me() });
+  /* LSAFLOW2: on the server too — the office's / owners' To-Dos close, no more texts (the first one to dispute wins) */
+  try { var l0 = lead(id), ib = s(l0 && (l0.inboxId || l0.leadInboxId)) || (/^LEADIN-/.test(s(id)) ? 'LI-' + s(id).slice(7) : s(id));
+    W.fetch('/.netlify/functions/texts?lsamark=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId: ib, verdict: 'disputed' }) }).catch(function(){}); } catch (e) {}
   var T = tasks(), ch = false;
   T.forEach(function(y){ if (y && !y.done && (y.id === 'LSADISPUTE_' + id || y.id === 'LSADISPUTE2_' + id)) { y.done = true; y.doneAt = y.updatedAt = at; y.doneBy = me(); y.resolution = 'disputed in Google Ads'; ch = true; } });
   if (ch) saveTasks(T);
@@ -248628,7 +248631,7 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
 function admin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin/i.test(s(u.role)) || /owner/i.test(s(u.payType)); }
-function officeOnly(){ if (admin()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = me(); return /office/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(u.title)) || low(u.email) === 'office@grayco-cs.com'; }
+function officeOnly(){ if (admin()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = me(); return /office/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(u.title)); }   /* OWNERROLE: by role only */
 function staffOk(){ return admin() || officeOnly(); }
 function lsGet(k, d){ try { var v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } }
 function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
@@ -248660,7 +248663,7 @@ function coWrap(){
 (function tryCo(n){ if (!coWrap() && n < 120) ST.call(W, function(){ tryCo(n + 1); }, 500); })(0);
 
 /* ── b. the Google calls (server list) ── */
-var S = { items: [], pms: [], defaultPm: '', admin: false, at: 0, busy: null, err: '' };
+var S = { items: [], pms: [], defaultPm: '', defaultPmAuto: false, owners: [], admin: false, at: 0, busy: null, err: '' };
 function load(force){
   if (!staffOk()) return Promise.resolve(null);
   if (S.busy) return S.busy;
@@ -248668,14 +248671,15 @@ function load(force){
   S.busy = api('GET', 'lsaleads=1&days=30').then(function(j){
     S.busy = null; S.at = Date.now();
     if (!j || !j.ok) { S.err = s(j && j.error) || 'Could not read the Google calls.'; return S; }
-    S.err = ''; S.items = arr(j.items); S.pms = arr(j.pms); S.defaultPm = s(j.defaultPm); S.admin = !!j.admin; paintBtn(); paintList(); notifyOffice(); chips(); return S;
+    S.err = ''; S.items = arr(j.items); S.pms = arr(j.pms); S.defaultPm = s(j.defaultPm); S.defaultPmAuto = !!j.defaultPmAuto; S.owners = arr(j.owners); S.admin = !!j.admin; paintBtn(); paintList(); notifyOffice(); chips(); return S;
   }, function(){ S.busy = null; return S; });
   return S.busy;
 }
 function byInbox(id){ return S.items.find(function(x){ return x && s(x.id) === s(id); }) || null; }
 function needsIntake(x){ return !!x && x.call !== false && !x.intake && /^(pending|)$/.test(s(x.check)) && !x.pm && !x.dismissed && !x.merged; }
-var CHK = { pending: ['⏳', 'not marked yet', '#92400e', '#fef3c7'], good: ['👍', 'GOOD', '#166534', '#dcfce7'], bad: ['👎', 'BAD', '#991b1b', '#fee2e2'], pm_bad: ['🔎', 'BAD? waiting for an admin', '#9a3412', '#ffedd5'], no_answer: ['📵', 'no answer yet', '#334155', '#e2e8f0'] };
-function chkChip(x){ var c = CHK[s(x.check)] || CHK.pending; return '<span style="display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:800;color:' + c[2] + ';background:' + c[3] + '">' + c[0] + ' ' + esc(c[1]) + '</span>'; }
+var CHK = { pending: ['⏳', 'not marked yet', '#92400e', '#fef3c7'], good: ['👍', 'GOOD', '#166534', '#dcfce7'], bad: ['👎', 'BAD — dispute in Google', '#991b1b', '#fee2e2'], pm_bad: ['🔎', 'BAD? (old: waiting for an admin)', '#9a3412', '#ffedd5'], no_answer: ['📵', 'no answer yet', '#334155', '#e2e8f0'], disputed: ['⚖️', 'BAD — disputed in Google ✓', '#334155', '#e2e8f0'] };
+function ownersTxt(){ var n = S.owners.map(function(o){ return s(o.name).split(' ')[0]; }).filter(Boolean); return n.length ? n.join(' and ') : 'The owners'; }   /* OWNERROLE: names from the people list */
+function chkChip(x){ var c = (x.disputed ? CHK.disputed : null) || CHK[s(x.check)] || CHK.pending; return '<span style="display:inline-block;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:800;color:' + c[2] + ';background:' + c[3] + '">' + c[0] + ' ' + esc(c[1]) + '</span>'; }
 function codeChip(x){ return '<span title="Reply GOOD ' + esc(x.code) + ' / BAD ' + esc(x.code) + ' by text" style="display:inline-block;border-radius:6px;padding:1px 7px;font:800 12px ui-monospace,Menlo,monospace;background:#1b1640;color:#fff">' + esc(x.code) + '</span>'; }
 function onList(x){ var lid = leadIdOf(x.id); return crmLeads().find(function(l){ return l && (s(l.id) === lid || s(l.inboxId) === s(x.id)); }) || null; }
 function tomb(x){ try { return !!(W._gcIsTombstoned && W._gcIsTombstoned('leads', leadIdOf(x.id))); } catch (e) { return false; } }
@@ -248700,10 +248704,12 @@ function rowHtml(x, o){
     : (tomb(x) ? '<span style="font-size:12.5px;color:#b91c1c">Not on the Leads list — it was deleted.</span>' + (admin() && W._gcLDEL && W._gcLDEL.restore ? '<button type="button" data-lc-back="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #166534;background:#f0fdf4;color:#166534">↩ Put back on Leads</button>' : '') : '<span style="font-size:12.5px;color:#64748b">Coming onto the Leads list…</span>');
   var open = /^(pending|no_answer|pm_bad|)$/.test(s(x.check));
   var acts = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center">'
-    + (needsIntake(x) ? '<button type="button" data-lc-in="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #b45309;background:#f59e0b;color:#1b1640">📝 Fill in the lead</button>' : '')
-    + (open ? '<select data-lc-pm="' + esc(x.id) + '" aria-label="PM" style="min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 8px;font:14px Inter,Arial,sans-serif;max-width:200px">' + pmOptions(x.pmEmail || defaultPmEmail()) + '</select>'
-      + '<button type="button" data-lc-go="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #166534;background:#166534;color:#fff">➡ Send to PM (GOOD)</button>'
-      + '<button type="button" data-lc-bad="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #fca5a5;background:#fee2e2;color:#991b1b">👎 Bad</button>' : '')
+    + (needsIntake(x) ? '<button type="button" data-lc-in="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #cbd5e1;background:#fff;color:#241968">📝 Notes (optional)</button>' : '')   /* LSAFLOW2: the office's notes are optional */
+    + (open && S.admin ? '<select data-lc-pm="' + esc(x.id) + '" aria-label="PM" style="min-height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 8px;font:14px Inter,Arial,sans-serif;max-width:200px">' + pmOptions(x.pmEmail || defaultPmEmail()) + '</select>'
+      + '<button type="button" data-lc-go="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #166534;background:#166534;color:#fff">➡ Send to PM (GOOD)</button>' : '')   /* LSAFLOW2: assigning is the owners' job */
+    + (open ? '<button type="button" data-lc-bad="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #fca5a5;background:#fee2e2;color:#991b1b">👎 Bad</button>' : '')
+    + (s(x.check) === 'bad' && !x.disputed ? '<a href="' + esc(/^https:\/\//.test(s(x.link)) ? x.link : 'https://ads.google.com/localservices/leads') + '" target="_blank" rel="noopener" style="' + BTN + 'display:inline-flex;align-items:center;text-decoration:none;border:1px solid #991b1b;background:#991b1b;color:#fff">⚖️ Dispute in Google ↗</a>'
+      + '<button type="button" data-lc-disp="' + esc(x.id) + '" style="' + BTN + 'border:1px solid #166534;background:#f0fdf4;color:#166534">✓ Disputed in Google</button>' : '')
     + where + '</div><div data-lc-msg style="font-size:12.5px;color:#b91c1c"></div>';
   return '<div data-lc-row="' + esc(x.id) + '" style="border-top:1px solid #e2e8f0;padding:10px 0">' + head + (bits.length ? '<div style="font-size:13px;color:#334155;margin-top:3px">' + bits.join(' · ') + '</div>' : '')
     + (rec ? '<div data-rec-id="' + esc(x.id) + '" style="margin-top:6px;padding:8px 10px;border-radius:9px;border:1px solid #c7d2fe;background:#f8fafc">' + rec + '</div>' : '') + intake + acts + '</div>';
@@ -248716,8 +248722,10 @@ function listHtml(){
 }
 function setHtml(){
   if (!S.admin) return '';
+  var o2 = S.owners.filter(function(o){ return o.slot === 2; })[0];   /* OWNERROLE: the default is Owner 2, by role */
   return '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;color:#334155">⚙ Default PM for Google LSA leads <select data-lc-def style="min-height:34px;border:1px solid #cbd5e1;border-radius:8px;font:13px Inter,Arial,sans-serif">'
-    + '<option value="">— none —</option>' + S.pms.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === S.defaultPm ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>';
+    + '<option value="@owner2"' + (S.defaultPmAuto ? ' selected' : '') + '>Owner 2' + (o2 ? ' (' + esc(o2.name) + ')' : '') + ' — default</option>'
+    + '<option value=""' + (!S.defaultPmAuto && !S.defaultPm ? ' selected' : '') + '>— none —</option>' + S.pms.map(function(p){ return '<option value="' + esc(p.id) + '"' + (!S.defaultPmAuto && p.id === S.defaultPm ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>';
 }
 function panel(){
   var old = D.getElementById('gc-lc-ov'); if (old) old.remove();
@@ -248727,13 +248735,15 @@ function panel(){
     + '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"><b style="font-size:17px">📞 Google calls &amp; leads (30 days)</b><span style="display:flex;gap:8px;flex-wrap:wrap">'
     + (W._gcLsa2 && W._gcLsa2.panel ? '<button type="button" data-lc-month style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer">📊 By month</button>' : '')
     + '<button type="button" data-lc-x style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer">Close</button></span></div>'
-    + '<div style="color:#64748b;font-size:12.5px;margin:4px 0 6px">Wesley and Nick get each call by text right away (after hours: 7:00 AM). Send it to a PM here or reply GOOD &lt;code&gt; &lt;PM&gt; by text — the same thing.</div>'
+    + '<div data-lc-who style="color:#64748b;font-size:12.5px;margin:4px 0 6px">' + whoHtml() + '</div>'
     + '<div data-lc-set>' + setHtml() + '</div><div data-lc-list>' + listHtml() + '</div></div>';
   D.body.appendChild(ov);
   load(true);
   return ov;
 }
+function whoHtml(){ return esc(ownersTxt()) + ' get each call by text right away (after hours: 7:00 AM) and assign it: here (owners) or GOOD &lt;code&gt; &lt;PM&gt; by text — the PM is texted. A BAD sends the Google dispute link to the PM, the owners and the office.'; }   /* OWNERROLE */
 function paintList(){
+  var wh = D.querySelector('#gc-lc-ov [data-lc-who]'); if (wh) { var hw = whoHtml(); if (wh.__h !== hw) { wh.__h = hw; wh.innerHTML = hw; } }
   [D.querySelector('#gc-lc-ov [data-lc-list]'), D.querySelector('#gc-lsa2-ov [data-lc-list]')].forEach(function(el){
     if (!el) return; if (el.contains(D.activeElement) && /SELECT|INPUT|TEXTAREA/.test(D.activeElement.tagName)) return;
     var h = listHtml(); if (el.__h !== h) { el.__h = h; el.innerHTML = h; } });
@@ -248812,18 +248822,19 @@ function bad(id){
   var why = W.prompt('Why is it a bad lead? (spam, wrong service, out of area, no answer ever …)', ''); if (why == null) return;
   api('POST', 'lsaassign=1', { leadId: id, verdict: 'bad', reason: s(why) || 'no reason given' }).then(function(j){
     if (!j || !j.ok) { rowMsg(id, s(j && j.error) || 'Could not save — try again.'); return; }
-    toast(admin() ? (j.code || '') + ': BAD — closed; dispute it in Google within 30 days.' : 'Sent to the admins to confirm BAD.');
+    toast((j.code || '') + ': BAD — the owners get the Google dispute link; the office has the To-Do. Tap ✓ Disputed in Google once it is done.');   /* LSAFLOW2 */
     load(true);
   });
 }
 D.addEventListener('click', function(e){
-  var t = e.target && e.target.closest ? e.target.closest('#gc-lc-btn,[data-lc-x],[data-lc-month],[data-lc-go],[data-lc-bad],[data-lc-in],[data-lc-open],[data-lc-back]') : null; if (!t) return;
+  var t = e.target && e.target.closest ? e.target.closest('#gc-lc-btn,[data-lc-x],[data-lc-month],[data-lc-go],[data-lc-bad],[data-lc-disp],[data-lc-in],[data-lc-open],[data-lc-back]') : null; if (!t) return;
   e.preventDefault(); e.stopPropagation();
   if (t.id === 'gc-lc-btn') { panel(); return; }
   if (t.hasAttribute('data-lc-x')) { var o = D.getElementById('gc-lc-ov'); if (o) o.remove(); return; }
   if (t.hasAttribute('data-lc-month')) { var o2 = D.getElementById('gc-lc-ov'); if (o2) o2.remove(); W._gcLsa2.panel(); ST.call(W, intoMonth, 50); return; }
   if (t.hasAttribute('data-lc-go')) { var id = t.getAttribute('data-lc-go'), sel = t.parentElement.querySelector('[data-lc-pm]'); assign(id, sel ? sel.value : '', t); return; }
   if (t.hasAttribute('data-lc-bad')) { bad(t.getAttribute('data-lc-bad')); return; }
+  if (t.hasAttribute('data-lc-disp')) { var did = t.getAttribute('data-lc-disp'); t.disabled = true; api('POST', 'lsamark=1', { leadId: did, verdict: 'disputed' }).then(function(j){ toast(j && j.ok ? (j.already ? 'Already marked disputed.' : (j.code || '') + ': ✓ disputed in Google — closed for everyone.') : s(j && j.error) || 'Could not save — try again.'); load(true); }); return; }   /* LSAFLOW2 */
   if (t.hasAttribute('data-lc-in')) { intake(t.getAttribute('data-lc-in')); return; }
   if (t.hasAttribute('data-lc-open')) { var o3 = D.getElementById('gc-lc-ov'); if (o3) o3.remove(); try { if (W._setView) W._setView('leads'); } catch (x) {} ST.call(W, function(){ try { W._gcLeadsHub.open(t.getAttribute('data-lc-open')); } catch (x) {} }, 300); return; }
   if (t.hasAttribute('data-lc-back')) { var ib = t.getAttribute('data-lc-back'); if (!W.confirm('Put this Google lead back on the Leads list?')) return; try { var r = W._gcLDEL.restore([leadIdOf(ib)]); toast(r && r.restored ? 'Put back on the Leads list.' : 'It is no longer in the recently deleted leads (30 days).'); } catch (x) { toast('Could not put it back.'); } ST.call(W, paintList, 800); return; }
@@ -248844,7 +248855,7 @@ function intake(id){
   var IN = 'width:100%;box-sizing:border-box;min-height:42px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font:15px Inter,Arial,sans-serif;margin-top:3px';
   var rb = function(v, l){ return '<button type="button" data-in-r="' + v + '" aria-pressed="false" style="flex:1;' + BTN + 'border:2px solid #cbd5e1;background:#fff;color:#0f172a">' + l + '</button>'; };
   ov.innerHTML = '<div role="dialog" aria-label="Fill in the Google lead" style="background:#fff;color:#0f172a;border-radius:14px;width:min(560px,100%);padding:14px 16px;box-sizing:border-box">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">📞 Google call — fill in the lead</b><button type="button" data-in-x aria-label="Close" style="border:0;background:none;font-size:22px;cursor:pointer">✕</button></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">📞 Google call — notes for the owners</b><button type="button" data-in-x aria-label="Close" style="border:0;background:none;font-size:22px;cursor:pointer">✕</button></div>'
     + '<div style="font-size:13px;color:#475569;margin:2px 0 8px">' + codeChip(x) + ' ' + esc([s(i.callAtLabel), s(i.dur), s(i.job)].filter(Boolean).join(' · ')) + '</div>'
     + '<div style="display:flex;gap:6px">' + rb('good', '👍 Good') + rb('bad', '👎 Bad') + rb('unsure', '❓ Not sure') + '</div>'
     + '<label style="display:block;margin-top:10px;font-size:13px;font-weight:700">What they need (address, urgency…)<textarea data-in-desc rows="3" style="' + IN + ';padding:8px 10px;min-height:76px"></textarea></label>'
@@ -248853,9 +248864,13 @@ function intake(id){
     + '<label style="font-size:13px;font-weight:700">Name<input data-in-name value="' + esc(nm) + '" style="' + IN + '"></label>'
     + '<label style="font-size:13px;font-weight:700">Number<input data-in-ph type="tel" inputmode="tel" value="' + esc(tidy(ph)) + '" style="' + IN + '"></label></div>'
     + '<label style="display:block;margin-top:8px;font-size:13px;font-weight:700">Address<input data-in-addr value="" style="' + IN + '"></label>'
-    + '<label style="display:block;margin-top:12px;font-size:13px;font-weight:700">PM<select data-in-pm style="' + IN + '">' + pmOptions(pre) + '</select></label>'
-    + '<button type="button" data-in-go="pm" style="width:100%;margin-top:10px;min-height:52px;border-radius:11px;border:0;background:#166534;color:#fff;font:800 17px Inter,Arial,sans-serif;cursor:pointer">➡ Send to PM</button>'
-    + '<div style="text-align:center;margin-top:8px"><button type="button" data-in-go="admin" style="border:1px solid #cbd5e1;background:#fff;color:#241968;border-radius:8px;padding:6px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Send to admin to assign</button></div>'
+    /* LSAFLOW2 (owner 11/19: "we [the owners] assign to a PM"): for the office this is optional notes — one "Save notes for the owners" button,
+       no PM picker; an owner sees the PM picker (Owner 2 preselected unless Lead settings say otherwise) */
+    + (admin() ? '<label style="display:block;margin-top:12px;font-size:13px;font-weight:700">PM<select data-in-pm style="' + IN + '">' + pmOptions(pre) + '</select></label>'
+      + '<button type="button" data-in-go="pm" style="width:100%;margin-top:10px;min-height:52px;border-radius:11px;border:0;background:#166534;color:#fff;font:800 17px Inter,Arial,sans-serif;cursor:pointer">➡ Send to PM</button>'
+      + '<div style="text-align:center;margin-top:8px"><button type="button" data-in-go="admin" style="border:1px solid #cbd5e1;background:#fff;color:#241968;border-radius:8px;padding:6px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Save notes only</button></div>'
+      : '<div style="font-size:12.5px;color:#475569;margin-top:10px">Optional. ' + esc(ownersTxt()) + ' already have the text and assign the PM.</div>'
+      + '<button type="button" data-in-go="admin" style="width:100%;margin-top:8px;min-height:52px;border-radius:11px;border:0;background:#241968;color:#fff;font:800 17px Inter,Arial,sans-serif;cursor:pointer">💾 Save notes for the owners</button>')
     + '<div data-in-msg style="font-size:13px;color:#b91c1c;margin-top:6px"></div></div>';
   D.body.appendChild(ov);
   var R = { rating: '' };
@@ -248866,8 +248881,8 @@ function intake(id){
     var mic = t.closest && t.closest('[data-in-mic]');
     if (mic) { try { var SR = W.SpeechRecognition || W.webkitSpeechRecognition, rec = new SR(), ta = ov.querySelector('[data-in-desc]'); rec.lang = 'en-US'; rec.interimResults = false; rec.onresult = function(ev){ var tx = ''; for (var k = 0; k < ev.results.length; k++) tx += ev.results[k][0].transcript; ta.value = (s(ta.value) ? s(ta.value) + ' ' : '') + tx; }; rec.onend = function(){ mic.textContent = '🎤 Dictate'; }; rec.start(); mic.textContent = '🎤 Listening…'; } catch (x2) { toast('Dictation is not available on this device.'); } return; }
     var go = t.closest && t.closest('[data-in-go]'); if (!go) return;
-    var msg = ov.querySelector('[data-in-msg]'), act = go.getAttribute('data-in-go'), pm = s(ov.querySelector('[data-in-pm]').value);
-    if (!R.rating) { msg.textContent = 'Tap 👍 Good, 👎 Bad or ❓ Not sure first.'; return; }
+    var msg = ov.querySelector('[data-in-msg]'), act = go.getAttribute('data-in-go'), pmEl = ov.querySelector('[data-in-pm]'), pm = pmEl ? s(pmEl.value) : '';
+    if (!R.rating) R.rating = 'unsure';   /* LSAFLOW2: optional */
     if (act === 'pm' && R.rating !== 'bad' && !pm) { msg.textContent = 'Pick the PM (or send it to an admin).'; return; }
     go.disabled = true; var was = go.textContent; go.textContent = 'Sending…';
     api('POST', 'lsaintake=1', { leadId: x.id, rating: R.rating, desc: s(ov.querySelector('[data-in-desc]').value), name: s(ov.querySelector('[data-in-name]').value), phone: s(ov.querySelector('[data-in-ph]').value), address: s(ov.querySelector('[data-in-addr]').value), action: act, pmEmail: pm })
@@ -248875,7 +248890,7 @@ function intake(id){
         go.disabled = false; go.textContent = was;
         if (!j || !j.ok) { msg.textContent = s(j && j.error) || 'Could not send — try again.'; return; }
         ov.remove(); seen(x.id);
-        toast(R.rating === 'bad' ? 'Marked BAD — the admins are asked to confirm.' : j.pm ? 'Sent to ' + j.pm + ' — the admins are told.' : 'Sent to the admins to assign.');
+        toast(R.rating === 'bad' ? 'Marked BAD — the owners get the Google dispute link; dispute it from your To-Do.' : j.pm ? 'Sent to ' + j.pm + ' — the PM is texted.' : 'Notes saved — the owners have them.');
         load(true);
       });
   });
@@ -248889,8 +248904,8 @@ function notifyOffice(){
     var x = S.items.find(function(y){ return needsIntake(y) && !m[y.id] && y.at && now - Date.parse(y.at) < 4 * 3600e3; }); if (!x) return;
     var p = D.createElement('div'); p.id = 'gc-in-pop'; p.setAttribute('data-gc-keep', '1'); p.setAttribute('role', 'alert');
     p.style.cssText = 'position:fixed;right:12px;bottom:12px;left:auto;z-index:2147483400;max-width:min(380px,calc(100vw - 24px));background:#1b1640;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.35);font:15px Inter,Arial,sans-serif';
-    p.innerHTML = '<b>📞 Google call — fill in the lead</b><div style="font-size:13.5px;margin:4px 0 8px;opacity:.9">' + esc((s(x.name).replace(/^Google LSA caller.*$/i, '') || 'A Google caller') + (x.phone ? ' ' + tidy(x.phone) : '')) + '</div>'
-      + '<div style="display:flex;gap:8px"><button type="button" data-pop-go style="flex:1;min-height:42px;border-radius:9px;border:0;background:#f59e0b;color:#1b1640;font:800 15px Inter,Arial,sans-serif;cursor:pointer">📝 Fill in</button><button type="button" data-pop-later style="min-height:42px;border-radius:9px;border:1px solid #fff;background:none;color:#fff;padding:0 12px;cursor:pointer">Later</button></div>';
+    p.innerHTML = '<b>📞 Google call — add notes (optional)</b><div style="font-size:13.5px;margin:4px 0 8px;opacity:.9">' + esc((s(x.name).replace(/^Google LSA caller.*$/i, '') || 'A Google caller') + (x.phone ? ' ' + tidy(x.phone) : '')) + '</div>'
+      + '<div style="display:flex;gap:8px"><button type="button" data-pop-go style="flex:1;min-height:42px;border-radius:9px;border:0;background:#f59e0b;color:#1b1640;font:800 15px Inter,Arial,sans-serif;cursor:pointer">📝 Notes</button><button type="button" data-pop-later style="min-height:42px;border-radius:9px;border:1px solid #fff;background:none;color:#fff;padding:0 12px;cursor:pointer">Later</button></div>';
     D.body.appendChild(p);
     p.addEventListener('click', function(e){ var g = e.target.closest && e.target.closest('[data-pop-go],[data-pop-later]'); if (!g) return; seen(x.id); p.remove(); if (g.hasAttribute('data-pop-go')) intake(x.id); });
   } catch (e) {}
@@ -248921,6 +248936,136 @@ ST.call(W, function(){ load(false); fromHash(); }, 6000);
 W.addEventListener('hashchange', fromHash);
 W._gcLsaCalls = { load: function(){ return load(true); }, items: function(){ return S.items.slice(); }, open: panel, intake: intake, assign: assign, chips: chips, state: function(){ return { n: S.items.length, open: S.items.filter(needsIntake).length, defaultPm: S.defaultPm, pms: S.pms.length, err: S.err, at: S.at }; }, seedOutreach: seedOutreach };
 try { console.log('[GC] 📞 Google calls on Leads + office intake + outreach seed (patch LSALEADS) — _gcLsaCalls'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-lsaflow2">
+/* __GC_PATCH_LSAFLOW2__ — 📍 THE PM'S 👍 GOOD / 👎 BAD ON HIS GOOGLE LSA LEAD (owner 11/19)
+   "Then we assign to a PM and they call the lead. They will then, in the Leads section of the app, say if the lead is good or not … The PM
+   can also reply bad lead on there and then he'll get a bad-lead LSA link. If he doesn't reply anything, then it's a good lead."
+   The open Google LSA lead of the PM it is assigned to (phone and desk) shows a bar with big buttons:
+     👍 Good lead  — saved (optional: silence is good — no nag);
+     👎 Bad lead   — asks why → BAD at once: the PM gets the Google dispute link by text, the owners get it too, the office a To-Do;
+     then ⚖️ Dispute in Google ↗ (the lead's own Google link) and ✓ Disputed in Google (closes it for everyone — the first one wins).
+   Server: texts.js ?lsamine (my Google leads) / ?lsamark { leadId, verdict: good | bad | disputed, reason } — the lead's PM, an admin or
+   the office only (_lib/smsalert.js lsaMark). Admins and the office keep the 📞 Google calls bar (LSALEADS) on every Google lead.
+   API: window._gcLsaPm = { load, mine, mark(id, verdict, reason), bar } */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_LSAFLOW2__) return; W.__GC_PATCH_LSAFLOW2__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ var u = {}; try { u = JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) {} var em = ''; try { em = s(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {} return { email: low(em || u.email), name: s(u.name) }; }
+function leads(){ return arr(W._crm && W._crm.leads); }
+function isLsa(l){ var ex = (l && l.leadExtra) || {}; return !!l && (!!l.lsaCheck || !!ex.lsaCheck || /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].join(' '))); }
+function inboxIdOf(l){ var id = s(l && l.id); return s(l && (l.inboxId || l.leadInboxId)) || (/^LEADIN-/.test(id) ? 'LI-' + id.slice(7) : id); }
+function toast(msg){ var t = D.createElement('div'); t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Inter,Arial,sans-serif;z-index:2147483600;max-width:90vw';
+  D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4200); }
+function api(method, q, body){
+  return W.fetch('/.netlify/functions/texts?' + q, method === 'GET' ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__s = r.status; return j; }); }, function(){ return { ok: false, error: 'No signal — try again.' }; });
+}
+var S = { items: [], at: 0, busy: null };
+function load(force){
+  if (!me().email) return Promise.resolve(S);
+  if (S.busy) return S.busy;
+  if (!force && Date.now() - S.at < 60000) return Promise.resolve(S);
+  S.busy = api('GET', 'lsamine=1').then(function(j){ S.busy = null; S.at = Date.now(); if (j && j.ok) S.items = arr(j.items); bar(true); return S; }, function(){ S.busy = null; return S; });
+  return S.busy;
+}
+function mineOf(l){ var ib = inboxIdOf(l); return S.items.find(function(x){ return x && s(x.id) === ib; }) || null; }
+function isMyLead(l){ var m = me(); if (mineOf(l)) return true; return !!m.email && (low(l.pmEmail) === m.email || (!!m.name && low(l.pm) === low(m.name))); }
+function saveLead(id, patch){
+  var now = new Date().toISOString();
+  var f = function(list){ var out = arr(list).map(function(l){ return l && s(l.id) === s(id) ? Object.assign({}, l, patch, { updatedAt: now }) : l; }); try { if (W._gcApplySync) W._gcApplySync('leads', out); } catch (e) {} return out; };
+  try { if (typeof W._setLeads === 'function') W._setLeads(f); else if (W._crm) W._crm.leads = f(W._crm.leads); } catch (e) {}
+}
+var BIG = 'flex:1 1 140px;min-height:52px;border-radius:12px;font:800 17px Inter,Arial,sans-serif;cursor:pointer;';
+function state(l){ var x = mineOf(l) || {}; var chk = s(x.check || l.lsaCheck || (l.leadExtra || {}).lsaCheck) || 'pending';
+  return { chk: chk, disputed: s(x.disputed || l.lsaDisputedAt), by: s(x.disputedBy || l.lsaDisputedBy), code: s(x.code), link: /^https:\/\//.test(s(x.link)) ? s(x.link) : (/^https:\/\//.test(s(l.lsaLink || (l.leadExtra || {}).lsaLink)) ? s(l.lsaLink || l.leadExtra.lsaLink) : 'https://ads.google.com/localservices/leads'), pmOk: !!l.lsaPmOkAt }; }
+function html(l){
+  var st = state(l), id = esc(l.id);
+  var head = '<div style="font-size:12px;font-weight:800;color:#1e3a8a;margin-bottom:6px">📍 YOUR GOOGLE LSA LEAD' + (st.code ? ' · ' + esc(st.code) : '') + '</div>';
+  if (st.chk === 'bad' && st.disputed) return head + '<div style="font-weight:800;color:#166534">✓ Disputed in Google' + (st.by ? ' by ' + esc(st.by) : '') + ' — closed.</div>';
+  if (st.chk === 'bad') return head + '<div style="font-size:14px;color:#991b1b;margin-bottom:8px">👎 Marked BAD. Dispute it in Google (pick the reason), then tap ✓ — that closes it for everyone.</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px"><a data-pmb="link" href="' + esc(st.link) + '" target="_blank" rel="noopener" style="' + BIG + 'display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:#991b1b;color:#fff;border:0">⚖️ Dispute in Google ↗</a>'
+    + '<button type="button" data-pmb="disputed" data-id="' + id + '" style="' + BIG + 'border:2px solid #166534;background:#f0fdf4;color:#166534">✓ Disputed in Google</button></div>';
+  return head + '<div style="font-size:13.5px;color:#334155;margin-bottom:8px">Called them? Tap 👎 if it is not a real lead (you get the Google dispute link). ' + (st.chk === 'good' && st.pmOk ? 'You marked it 👍 Good.' : 'No answer needed for a good lead.') + '</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px"><button type="button" data-pmb="good" data-id="' + id + '" aria-pressed="' + (st.pmOk ? 'true' : 'false') + '" style="' + BIG + 'border:2px solid #166534;background:' + (st.pmOk ? '#166534;color:#fff' : '#f0fdf4;color:#166534') + '">👍 Good lead</button>'
+    + '<button type="button" data-pmb="bad" data-id="' + id + '" style="' + BIG + 'border:2px solid #991b1b;background:#fef2f2;color:#991b1b">👎 Bad lead</button></div>';
+}
+function bar(force){
+  try {
+    var d = D.getElementById('gcl-drawer'); if (!d || !d.getClientRects().length) return;
+    var H = W._gcLeadsHub, id = H && H.ui && H.ui().open, l = id && leads().find(function(y){ return y && s(y.id) === s(id); }), have = d.querySelector('#gc-lsa-pm');
+    if (!l || !isLsa(l) || !isMyLead(l)) { if (have) have.remove(); if (l && isLsa(l) && !S.at) load(false); return; }
+    var h = html(l);
+    if (have && have.__h === h && !force) return;
+    if (have && have.contains(D.activeElement) && !force) return;
+    if (!have) { have = D.createElement('div'); have.id = 'gc-lsa-pm'; have.setAttribute('data-gc-keep', '1');
+      have.style.cssText = 'margin:0 0 10px;padding:10px 12px;border-radius:12px;border:2px solid #93c5fd;background:#eff6ff;font:14px Inter,Arial,sans-serif;color:#0f172a;box-sizing:border-box;max-width:100%';
+      var after = d.querySelector('#gc-lsa-dispute'); if (after && after.parentElement === d) after.insertAdjacentElement('afterend', have); else d.insertBefore(have, d.firstChild); }
+    have.__h = h; have.innerHTML = h; have.setAttribute('data-id', s(l.id));
+  } catch (e) {}
+}
+function mark(id, verdict, reason){
+  var l = leads().find(function(y){ return y && s(y.id) === s(id); }); if (!l) return Promise.resolve({ ok: false });
+  return api('POST', 'lsamark=1', { leadId: inboxIdOf(l), verdict: verdict, reason: reason || '' }).then(function(j){
+    if (!j || !j.ok) { toast(s(j && j.error) || 'Could not save — try again.'); return j; }
+    var at = new Date().toISOString(), who = me().name || me().email;
+    if (verdict === 'good') { saveLead(l.id, { lsaCheck: 'good', lsaPmOkAt: at, lsaDecidedAt: at, lsaDecidedBy: who }); toast('👍 Good — thanks. Nothing else to do.'); }
+    if (verdict === 'bad') { saveLead(l.id, { lsaCheck: 'bad', lsaReason: s(reason), lsaDecidedAt: at, lsaDecidedBy: who, stage: 'Lost', status: 'lost', lostReason: 'LSA — not a real lead (' + (s(reason) || 'bad') + ')' }); toast('👎 BAD — the Google dispute link is on its way by text (and on this lead). Dispute it, then tap ✓ Disputed.'); }
+    if (verdict === 'disputed') { saveLead(l.id, { lsaCheck: 'bad', lsaDisputedAt: (j.saved && j.saved.item && j.saved.item.lsaDisputedAt) || at, lsaDisputedBy: (j.already && j.saved && j.saved.item && j.saved.item.lsaDisputedBy) || who }); toast(j.already ? 'Already marked disputed — closed.' : '✓ Disputed in Google — closed for everyone.'); }
+    var x = mineOf(l); if (x) { if (verdict === 'good') x.check = 'good'; else { x.check = 'bad'; if (verdict === 'disputed') x.disputed = x.disputed || at; } }
+    bar(true); load(true); return j;
+  });
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('#gc-lsa-pm [data-pmb]') : null; if (!b || b.getAttribute('data-pmb') === 'link') return;
+  e.preventDefault(); e.stopPropagation();
+  var v = b.getAttribute('data-pmb'), id = b.getAttribute('data-id');
+  if (v === 'bad') { var why = W.prompt('Why is it not a real lead? (spam, selling something, wrong service, out of area …)', ''); if (why == null) return; b.disabled = true; mark(id, 'bad', s(why) || 'no reason given'); return; }
+  b.disabled = true; mark(id, v);
+}, true);
+SI.call(W, function(){ if (!D.hidden) bar(false); }, 1000);
+SI.call(W, function(){ if (!D.hidden) load(false); }, 60000);
+ST.call(W, function(){ load(false); }, 7000);
+/* ── OWNERROLE (owner 11/19: "when I say [their names], code it as owner 1 / owner 2"): Admin → Admin settings → 👥 Team roles → 👑 Owner 1 /
+   Owner 2 — two pickers of the admin users, saved by user id (server: texts.js ?owners, the server kv "gc_owner_roles"). Not set → the
+   earliest-created admin is Owner 1, the next Owner 2. The owners get the Google lead texts; Owner 2 is the default PM for Google leads. ── */
+var OWN = { at: 0, busy: null, owners: [], admins: [], saved: null, err: '' };
+function ownLoad(force){
+  if (OWN.busy) return OWN.busy; if (!force && OWN.at && Date.now() - OWN.at < 60000) return Promise.resolve(OWN);
+  OWN.busy = api('GET', 'owners=1').then(function(j){ OWN.busy = null; OWN.at = Date.now(); if (j && j.ok) { OWN.owners = arr(j.owners); OWN.admins = arr(j.admins); OWN.saved = j.saved || null; OWN.err = ''; } else OWN.err = s(j && j.error) || 'Could not read the owners.'; ownPaint(); return OWN; }, function(){ OWN.busy = null; return OWN; });
+  return OWN.busy;
+}
+function ownSel(slot){ var cur = OWN.owners.filter(function(o){ return o.slot === slot; })[0], sv = OWN.saved && OWN.saved['owner' + slot];
+  return '<select data-own="' + slot + '" style="padding:6px;min-width:220px"><option value=""' + (!sv ? ' selected' : '') + '>By role (default)' + (cur && !sv ? ': ' + esc(cur.name) : '') + '</option>'
+    + OWN.admins.map(function(a){ return '<option value="' + esc(a.id) + '"' + (sv && s(sv) === s(a.id) ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select>'; }
+function ownInner(){
+  if (!OWN.at) return '<div style="color:#64748b">Loading…</div>';
+  if (OWN.err && !OWN.admins.length) return '<div style="color:#b91c1c">' + esc(OWN.err) + '</div>';
+  return '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><label>Owner 1 ' + ownSel(1) + '</label><label>Owner 2 ' + ownSel(2) + '</label>'
+    + '<button type="button" class="gc-adm-btn" data-own-act="save">Save owners</button></div>'
+    + '<div style="color:#475569;margin-top:4px;font-size:12.5px">Now: ' + (OWN.owners.length ? OWN.owners.map(function(o){ return 'Owner ' + o.slot + ' = <b>' + esc(o.name) + '</b>'; }).join(' · ') : 'no admin yet') + '. The owners get the Google lead texts and assign the PM; Owner 2 is the default PM for Google leads (Lead settings can change it).</div>';
+}
+function ownPaint(){ var el = D.getElementById('gc-own-box'); if (!el) return; if (el.contains(D.activeElement) && /SELECT/.test(D.activeElement.tagName)) return; var h = ownInner(); if (el.__h !== h) { el.__h = h; el.innerHTML = h; } }
+W._gcOwnersHtml = function(){ ST.call(W, function(){ ownLoad(false).then(ownPaint); ownPaint(); }, 0);
+  return '<h4 style="margin:16px 0 6px">👑 Owner 1 / Owner 2</h4><div style="color:#475569;margin-bottom:6px">Picked from the admins. Not picked → the earliest-created admin is Owner 1, the next one Owner 2.</div><div id="gc-own-box">' + ownInner() + '</div>'; };
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('#gc-own-box [data-own-act]') : null; if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  var v = function(n){ var el = D.querySelector('#gc-own-box [data-own="' + n + '"]'); return el ? s(el.value) : ''; };
+  if (v(1) && v(1) === v(2)) { toast('Owner 1 and Owner 2 must be two different people.'); return; }
+  b.disabled = true;
+  api('POST', 'owners=1', { owner1: v(1), owner2: v(2) }).then(function(j){ b.disabled = false; if (!j || !j.ok) { toast(s(j && j.error) || 'Could not save — try again.'); return; }
+    OWN.owners = arr(j.owners); OWN.admins = arr(j.admins); OWN.saved = j.saved || null; OWN.at = Date.now(); ownPaint(); toast('Saved: ' + OWN.owners.map(function(o){ return 'Owner ' + o.slot + ' = ' + o.name; }).join(', ') + '.'); });
+}, true);
+W._gcLsaPm = { load: function(){ return load(true); }, owners: function(){ return ownLoad(true); }, mine: function(){ return S.items.slice(); }, mark: mark, bar: function(){ bar(true); } };
+try { console.log('[GC] 📍 the PM\'s 👍 / 👎 on his Google LSA lead (patch LSAFLOW2) — _gcLsaPm'); } catch (e) {}
 })(window);
 </script>
 <script id="gc-patch-papers">
