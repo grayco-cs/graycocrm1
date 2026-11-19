@@ -38,7 +38,7 @@ if (!flag('child')) {
   /* the recent features and the controls they added (git history of the repo; cached per commit) */
   var featFile = path.join(runDir, 'features.json');
   { const FT = await import(pathToFileURL(path.join(HERE, 'features.mjs')).href); const repo = opt('repo', fs.existsSync(path.join(build, '.git')) ? build : path.resolve(HERE, '../..'));
-    const ref = opt('ref', 'origin/main'); let sha = ''; try { sha = execFileSync('git', ['-C', repo, 'rev-parse', ref], { encoding: 'utf8' }).trim(); } catch (e) {}
+    const ref = opt('ref', repo === build ? 'HEAD' : 'origin/main'); let sha = ''; try { sha = execFileSync('git', ['-C', repo, 'rev-parse', ref], { encoding: 'utf8' }).trim(); } catch (e) {}
     const cache = path.join(OUT, 'features-' + (sha || 'x').slice(0, 12) + '-' + opt('since', '2026-10-29') + '.json');
     if (!fs.existsSync(cache)) { console.log('feature inventory from ' + repo + ' ' + ref + ' …'); fs.writeFileSync(cache, JSON.stringify(FT.inventory(repo, { ref, since: opt('since', '2026-10-29') }))); }
     fs.copyFileSync(cache, featFile); }
@@ -69,7 +69,7 @@ if (!flag('child')) {
     }
     results.push(r);
   }
-  const summary = summarize(results, snapDir, JSON.parse(fs.readFileSync(featFile, 'utf8')));
+  const summary = await summarize(results, snapDir, JSON.parse(fs.readFileSync(featFile, 'utf8')));
   const rep = path.join(OUT, `report-${buildName}.html`), js = path.join(OUT, `report-${buildName}.json`);
   fs.writeFileSync(js, JSON.stringify(summary, null, 1));
   fs.writeFileSync(rep, renderHTML(summary, rep));
@@ -297,11 +297,13 @@ import('./walks.mjs').then(async W => {
 });
 
 /* ═══════════════ the report ═══════════════ */
-function summarize(results, snapDir, feats){
+async function summarize(results, snapDir, feats){
   feats = feats || [];
   const btns = []; results.forEach(r => ((r.crawl || {}).screens || []).forEach(sc => sc.buttons.forEach(b => btns.push(Object.assign({ profile: r.profile, label: r.label, screen: sc.name }, b)))));
   /* one judgment for every crawl (also ones recorded by an older crawler): a background toast is not a reaction; SLOW = over 5 s */
+  const FT = await import(pathToFileURL(path.join(HERE, 'features.mjs')).href); const fm = FT.matcher(feats);
   for (const b of btns) {
+    b.features = fm({ ids: b.ids || [], data: b.data || [], text: b.text });
     if (/^toast: /.test(b.kind || '') && BG_TOAST.test(b.kind.slice(7)) && b.result !== 'FAIL') { b.kind = 'nothing (only a background toast: ' + b.kind.slice(7, 50) + ')'; b.result = 'FAIL'; b.why = ['dead button — nothing happened'].concat((b.why || []).filter(w => !/^reacted after/.test(w))); }
     /* a write the crawler cannot tie to this tap for sure (the CRM keeps saving by itself — see the walk's shared-write bugs) */
     if (b.result === 'FAIL' && !(b.why || []).some(w => /dead button|page error|covered|no way back|outside host/.test(w))) b.result = 'WARN';
@@ -310,6 +312,7 @@ function summarize(results, snapDir, feats){
   const bad = btns.filter(b => b.result === 'FAIL' || b.result === 'SLOW');
   const recent = feats.map(f => { const B = btns.filter(b => (b.features || []).includes(f.name) && ['OK', 'FAIL', 'SLOW', 'SKIP'].includes(b.result));
     return { name: f.name, first: f.first, last: f.last, summary: f.summary, hooks: f.ids.length + f.data.length + f.labels.length, buttons: B.map(b => ({ profile: b.profile, screen: b.screen, level: b.level, via: b.via, text: b.text, result: b.result, kind: b.kind, why: b.why, shot: b.shot, ms: b.ms })),
+      screens: results.flatMap(r => ((r.crawl || {}).screens || []).filter(sc => (sc.recent || []).includes(f.name)).map(sc => ({ profile: r.profile, screen: sc.name, opened: sc.opened !== false, n: sc.buttons.filter(b => ['OK', 'FAIL', 'SLOW', 'WARN'].includes(b.result)).length, fail: btns.filter(b => b.profile === r.profile && b.screen === sc.name && b.result === 'FAIL').length }))),
       status: !B.length ? (f.ids.length + f.data.length + f.labels.length ? 'NOT SEEN' : 'NO UI') : B.some(b => b.result === 'FAIL') ? 'FAIL' : B.some(b => b.result === 'SLOW') ? 'SLOW' : 'OK' }; });
   const crawlErr = results.filter(r => r.crawl && r.crawl.error).map(r => r.profile + ': ' + r.crawl.error);
   const all = []; results.forEach(r => r.steps.forEach(s => s.fails.forEach(f => all.push(Object.assign({ profile: r.profile, step: s.name, n: s.n, shot: (s.shots[0] || {}).file }, f)))));
@@ -358,7 +361,7 @@ figcaption{font-size:11px;color:var(--mut)}.det{flex:1;min-width:280px}li.crit b
 ${S.counts.buttons != null ? `<h2>Dead / broken / slow buttons (${S.badButtons.length})</h2><p class="muted">${S.counts.buttons} controls judged on ${S.crawl.length} profile(s): ${S.counts.buttonsOk} OK · ${S.counts.buttonsFail} FAIL (${S.counts.dead} dead) · ${S.counts.buttonsSlow} SLOW · ${S.counts.buttonsSkip} skipped (destructive / not reachable)${S.crawlErr.length ? ' · ' + esc(S.crawlErr.join(' · ')) : ''}</p>
 <table><tr><th>Profile</th><th>Screen</th><th>Button</th><th>Result</th><th>Why</th><th>Shot</th></tr>${S.badButtons.map(b => `<tr><td>${esc(b.label)}</td><td>${esc(b.screen)}</td><td>${b.level === 2 ? esc(b.via) + ' › ' : ''}${esc(b.text)}</td><td>${esc(b.result)}</td><td>${esc((b.why || []).join('; '))}</td><td>${b.shot ? `<a href="${rel(b.shot)}">shot</a>` : ''}</td></tr>`).join('')}</table>
 <h2>Recent features (since ${esc((S.recent.slice().sort((a, b) => a.first.localeCompare(b.first))[0] || {}).first || '')})</h2>
-<table><tr><th>Feature</th><th>Added</th><th>Status</th><th>Buttons (OK / FAIL / why)</th></tr>${S.recent.map(f => `<tr><td><b>${esc(f.name)}</b><div class="sub">${esc(f.summary)}</div></td><td>${esc(f.first)}${f.last !== f.first ? ' – ' + esc(f.last) : ''}</td><td>${esc(f.status)}</td><td>${f.buttons.length ? `<ul class="sub">${f.buttons.slice(0, 40).map(b => `<li>${esc(b.result)} · ${esc(b.profile)} · ${esc(b.screen)} · ${b.level === 2 ? esc(b.via) + ' › ' : ''}"${esc(b.text)}" ${esc(b.kind || '')}${b.why && b.why.length ? ' — ' + esc(b.why.join('; ')) : ''}${b.shot ? ` <a href="${rel(b.shot)}">shot</a>` : ''}</li>`).join('')}${f.buttons.length > 40 ? `<li>… ${f.buttons.length - 40} more</li>` : ''}</ul>` : f.status === 'NOT SEEN' ? `<span class="sub">none of its ${f.hooks} controls showed on the crawled screens</span>` : '<span class="sub">no UI control in its changes</span>'}</td></tr>`).join('')}</table>` : ''}
+<table><tr><th>Feature</th><th>Added</th><th>Status</th><th>Buttons (OK / FAIL / why)</th></tr>${S.recent.map(f => `<tr><td><b>${esc(f.name)}</b><div class="sub">${esc(f.summary)}</div></td><td>${esc(f.first)}${f.last !== f.first ? ' – ' + esc(f.last) : ''}</td><td>${esc(f.status)}</td><td>${f.screens && f.screens.length ? `<div class="sub">screens: ${f.screens.map(x => `${esc(x.profile)} · ${esc(x.screen)}: ${x.opened ? `${x.n} buttons, ${x.fail} FAIL` : 'could not be opened'}`).join(' | ')}</div>` : ''}${f.buttons.length ? `<ul class="sub">${f.buttons.slice(0, 40).map(b => `<li>${esc(b.result)} · ${esc(b.profile)} · ${esc(b.screen)} · ${b.level === 2 ? esc(b.via) + ' › ' : ''}"${esc(b.text)}" ${esc(b.kind || '')}${b.why && b.why.length ? ' — ' + esc(b.why.join('; ')) : ''}${b.shot ? ` <a href="${rel(b.shot)}">shot</a>` : ''}</li>`).join('')}${f.buttons.length > 40 ? `<li>… ${f.buttons.length - 40} more</li>` : ''}</ul>` : f.status === 'NOT SEEN' ? `<span class="sub">none of its ${f.hooks} controls showed on the crawled screens</span>` : '<span class="sub">no UI control in its changes</span>'}</td></tr>`).join('')}</table>` : ''}
 ${S.profiles.map(prof).join('')}
 ${S.crawl.map(c => c.crawl ? `<section><h2>Every button — ${esc(c.label)}</h2>${(c.crawl.screens || []).map(sc => `<h3>${esc(sc.name)} ${sc.opened === false ? '<span style="color:var(--bad)">— could not be opened</span>' : ''} <span class="muted">${sc.buttons.length} controls ${sc.notes.length ? '· ' + esc(sc.notes.join('; ')) : ''}</span> ${sc.shot ? `<a href="${rel(sc.shot)}">screen</a>` : ''}</h3>
 <table><tr><th>L</th><th>Button</th><th>Feature</th><th>Result</th><th>What happened</th><th>ms</th><th>Back</th><th>Shot</th></tr>${sc.buttons.map(b => `<tr><td>${b.level}</td><td>${b.level === 2 ? esc(b.via) + ' › ' : ''}${esc(b.text)}</td><td>${esc((b.features || []).join(', '))}</td><td style="color:${b.result === 'FAIL' ? 'var(--bad)' : b.result === 'OK' ? 'var(--ok)' : 'inherit'}">${esc(b.result)}</td><td>${esc(b.kind || '')}${b.why && b.why.length ? ' — ' + esc(b.why.join('; ')) : ''}</td><td>${b.ms == null ? '' : b.ms}</td><td>${esc(b.back || '')}</td><td>${b.shot ? `<a href="${rel(b.shot)}">shot</a>` : ''}</td></tr>`).join('')}</table>`).join('')}</section>` : '').join('')}

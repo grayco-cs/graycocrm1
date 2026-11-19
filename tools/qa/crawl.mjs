@@ -95,7 +95,7 @@ export async function crawlProfile(X, screens, opt){
   /* tap path[0..n-2] to reach the panel, then judge path[n-1] */
   async function tryOne(scr, pathD, level){
     const d = pathD[pathD.length - 1];
-    const res = { level, text: d.text, key: d.key, nth: d.nth, via: pathD.slice(0, -1).map(x => x.text).join(' › '), features: match(d), result: 'OK', kind: '', why: [], ms: null, sends: [], writes: [] };
+    const res = { level, text: d.text, ids: (d.ids || []).slice(0, 4), data: d.data || [], key: d.key, nth: d.nth, via: pathD.slice(0, -1).map(x => x.text).join(' › '), features: match(d), result: 'OK', kind: '', why: [], ms: null, sends: [], writes: [] };
     if (DESTRUCTIVE.test(d.text)) { res.result = 'SKIP'; res.why.push('destructive — listed, not tapped'); return res; }
     if (!(await fresh(scr))) { res.result = 'FAIL'; res.why.push('could not reopen the screen "' + scr.name + '"'); return res; }
     for (const p of pathD.slice(0, -1)) { p.__noBars = !curBars; const a = await aim(p); if (!a) { res.result = 'SKIP'; res.why.push('the panel did not open again (' + p.text + ')'); return res; } await X.tapAt(a.x, a.y); await sleep(1200); }
