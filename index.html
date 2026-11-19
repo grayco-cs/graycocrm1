@@ -117369,7 +117369,8 @@ function blend(keep, add){
       var seen = {}, files = [];
       fa.concat(fb).forEach(function(f){
         var fk = norm(f && (f.name||'')) + '|' + s(f && f.size);
-        if(seen[fk]) return; seen[fk] = 1; files.push(f);
+        if(seen[fk]){ var i0 = seen[fk] - 1, f0 = files[i0]; if(f && f.aiRead && f0 && !f0.aiRead) files[i0] = Object.assign({}, f0, { aiRead: f.aiRead, readBy: f.readBy, readAt: f.readAt }); return; }   /* patch COIAPPR: a confirmed COI / W-9 stays confirmed */
+        seen[fk] = files.length + 1; files.push(f);
       });
       out.files = files;
     }
@@ -155402,6 +155403,163 @@ W._gcMMT = { state: function(){ return { view: CUR.v, sec: X && X.UI.sec, tabs: 
 try { console.log('[GC] patch MMTABS: the Marketing Manager\'s tabs + admins\' to-dos for him — _gcMMT.state()'); } catch (e) {}
 })();
 </script><!-- /MMTABS -->
+<script id="gc-patch-gqlinks">
+/* __GC_PATCH_GQLINKS__ ═══════════════════════════════════════════════════════
+   GrayCo — 🔗 GOOGLE QUICK LINKS (patch GQLINKS, owner 11/19: "I want easy links to my LSA, AdWords, all the Google Ads things I
+   need, so Malcolm can have quick easy access to them").
+   · A strip at the top of 📣 Marketing (its home, and the 🔗 Marketing logins section): one tap opens, in a new tab,
+       Local Services (LSA) dashboard · LSA leads · Google Ads · Keyword Planner · Business Profile · Analytics · Search Console ·
+       Tag Manager · the Google review link (the one Marketing → Google already uses),
+     each from the CRM's own stored link when there is one (🔗 Marketing logins: Search Console's grayco-cs.com property, the
+     LSA leads page …; an admin's edit below wins), and the LSA customer ID (555-434-6278 — the number in Google's e-mails)
+     as a label with 📋 Copy. Links and a label only: no password, key or sign-in is kept in the CRM.
+   · Who: the Marketing Manager, admins and the office (by role; a PM's Marketing page does not show it).
+     Admins: ✏ Edit links — change any link, add your own (Label | https://…), set the customer ID label; saved in the marketing
+     settings (gc_mkt_v1 → cfg.main.quickLinks), so every computer shows the same list.
+   · GrayCo Field: ☰ More → Office → 🔗 Google quick links (admins; the Marketing Manager has no Field app — his phone opens
+     Marketing, where the strip is on top).
+   Console: _gcGQL.links(), .cid(), .sheet(), .can()
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_GQLINKS__) return; W.__GC_PATCH_GQLINKS__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC GQLINKS]', e && e.message || e); } catch (x) {} }
+function X(){ return W._gcMktExt || null; }
+function okUrl(u){ u = s(u); return /^https:\/\/[^\s\[\]<>"']+$/i.test(u) ? u : ''; }
+var CID = '555-434-6278';
+/* k → the stored 🔗 Marketing logins entry it prefers (patch MMTABS' window._gcMktLogins) */
+var DEF = [
+  { k: 'lsa', ic: '📍', l: 'LSA dashboard', url: 'https://ads.google.com/localservices/', d: 'Google Local Services Ads: budget, hours, service area, Google Guaranteed' },
+  { k: 'lsaleads', ic: '📞', l: 'LSA leads', url: 'https://ads.google.com/localservices/leads', d: 'Every LSA call / message: listen, rate, dispute a junk lead', login: 'lsa' },
+  { k: 'gads', ic: '🎯', l: 'Google Ads', url: 'https://ads.google.com/', d: 'Search ads: campaigns, budgets, keywords, conversions', login: 'gads' },
+  { k: 'kwp', ic: '🔑', l: 'Keyword Planner', url: 'https://ads.google.com/aw/keywordplanner/home', d: 'Search volume and bids for new keywords' },
+  { k: 'gbp', ic: '🏢', l: 'Business Profile', url: 'https://business.google.com/', d: 'The Google Maps listing: posts, photos, hours, review replies', login: 'gbp' },
+  { k: 'ga', ic: '📊', l: 'Analytics', url: 'https://analytics.google.com/', d: 'Website visitors and where they came from', login: 'ga' },
+  { k: 'gsc', ic: '🔎', l: 'Search Console', url: 'https://search.google.com/search-console', d: 'How grayco-cs.com shows in Google search', login: 'gsc' },
+  { k: 'gtm', ic: '🏷', l: 'Tag Manager', url: 'https://tagmanager.google.com/', d: 'The website tags (Analytics, Ads conversions)' },
+  { k: 'review', ic: '⭐', l: 'Review link', url: '', d: 'The short link to send customers for a Google review', login: 'review' }
+];
+function cfgQ(){ try { var c = X() && X().cfg ? X().cfg() : null; var q = c && c.quickLinks; return q && typeof q === 'object' ? q : {}; } catch (e) { return {}; } }
+function stored(k){ var x = arr(W._gcMktLogins).filter(function(y){ return y && y.k === k; })[0]; return x ? okUrl(x.url) : ''; }
+function reviewLink(){
+  var x = X(), c = {}; try { c = x && x.cfg ? x.cfg() || {} : {}; } catch (e) {}
+  var ls = ''; try { ls = localStorage.getItem('gc_google_review_url') || ''; } catch (e) {}
+  return okUrl(c.reviewLink) || okUrl(W._GOOGLE_REVIEW_LINK) || okUrl(ls) || okUrl(x && x.B && x.B.reviewLink) || stored('review') || 'https://grayco-cs.com/review';
+}
+/* the list: an admin's link → the stored login → the default; then the admins' own extra links */
+function links(){
+  var q = cfgQ(), u = q.urls && typeof q.urls === 'object' ? q.urls : {};
+  var out = DEF.map(function(d){
+    var url = okUrl(u[d.k]) || (d.k === 'review' ? reviewLink() : (d.login && stored(d.login)) || d.url);
+    return { k: d.k, ic: d.ic, l: d.l, url: url, d: d.d };
+  });
+  arr(q.extra).forEach(function(x, i){ var url = okUrl(x && x.url), l = s(x && x.l).slice(0, 40); if (url && l) out.push({ k: 'x' + i, ic: '🔗', l: l, url: url, d: '', extra: true }); });
+  return out;
+}
+function cid(){ var v = s(cfgQ().cid); return /^\d{3}-\d{3}-\d{4}$/.test(v) ? v : CID; }   /* a redacted copy (the Marketing Manager's) falls back to the label */
+function role(){ try { return X() && X().role ? X().role() : ''; } catch (e) { return ''; } }
+function isMM(){ try { return typeof W._gcIsMM === 'function' && !!W._gcIsMM(); } catch (e) { return false; } }
+function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+/* the Marketing Manager, admins and the office (Marketing's own role: admin / office / marketing; a PM is 'pm') */
+function can(){ if (isMM()) return true; var r = role(); return r === 'admin' || r === 'office' || r === 'marketing'; }
+function canEdit(){ return !isMM() && realAdmin() && role() === 'admin'; }
+function canField(){ return isMM() || (realAdmin() && role() === 'admin'); }   /* ☰ More in GrayCo Field: admins (+ marketing) */
+var UI = { edit: false };
+
+var css = D.createElement('style'); css.id = 'gc-gql-css';
+css.textContent = '.gql{background:#fff;border:2px solid #1a73e8;border-radius:14px;padding:12px 14px;margin:0 0 14px;font-family:Inter,-apple-system,Segoe UI,Arial,sans-serif;color:#0f172a}' +
+  '.gql-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;justify-content:space-between;margin:0 0 10px}.gql-h b{font-size:16px;color:#174ea6}' +
+  '.gql-cid{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#334155;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 6px 4px 12px}.gql-cid code{font:700 14px ui-monospace,Menlo,Consolas,monospace;color:#0f172a;user-select:all}' +
+  '.gql-cid button,.gql-ed{border:1px solid #cbd5e1;background:#fff;color:#174ea6;border-radius:999px;padding:4px 10px;font-weight:700;font-size:12px;cursor:pointer}' +
+  '.gql-l{display:flex;flex-wrap:wrap;gap:8px}.gql-a{display:inline-flex;align-items:center;gap:6px;background:#1a73e8;color:#fff !important;text-decoration:none !important;border-radius:10px;padding:10px 14px;font-weight:800;font-size:14px;min-height:44px;box-sizing:border-box}' +
+  '.gql-a:hover{background:#174ea6}.gql-a.x{background:#fff;color:#174ea6 !important;border:1px solid #1a73e8}.gql-n{color:#64748b;font-size:12px;margin:8px 0 0}' +
+  '.gql-f{margin-top:10px;border-top:1px dashed #cbd5e1;padding-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}.gql-f label{font-size:12px;font-weight:700;color:#475569;display:flex;flex-direction:column;gap:3px}' +
+  '.gql-f input,.gql-f textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;width:100%;box-sizing:border-box}.gql-fb{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}' +
+  '.gql-fb button{border:none;border-radius:8px;padding:9px 14px;font-weight:800;cursor:pointer;background:#1a73e8;color:#fff}.gql-fb button.o{background:#fff;color:#174ea6;border:1px solid #cbd5e1}' +
+  '#gc-gql-ov{position:fixed;inset:0;z-index:100250;background:rgba(15,23,42,.5);display:flex;align-items:flex-end;justify-content:center}#gc-gql-ov .gql{width:100%;max-width:620px;margin:0;border-radius:16px 16px 0 0;max-height:88vh;overflow:auto;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}' +
+  '@media(min-width:700px){#gc-gql-ov{align-items:center}#gc-gql-ov .gql{border-radius:16px}}';
+(D.head || D.documentElement).appendChild(css);
+
+function html(where){
+  if (!can()) return '';
+  var L = links(), ed = where === 'mkt' && canEdit();
+  var h = '<!--gql--><div class="gql" data-gql="' + esc(where) + '"><div class="gql-h"><b>🔗 Google quick links</b>' +
+    '<span class="gql-cid">LSA customer ID <code data-gql-cid>' + esc(cid()) + '</code><button type="button" data-gql-copy="' + esc(cid()) + '" title="Copy the customer ID">📋 Copy</button></span>' +
+    (ed ? '<button type="button" class="gql-ed" data-gql-edit>' + (UI.edit ? 'Close editor' : '✏ Edit links') + '</button>' : '') +
+    (where === 'sheet' ? '<button type="button" class="gql-ed" data-gql-x aria-label="Close">✕</button>' : '') + '</div>' +
+    '<div class="gql-l">' + L.map(function(x){ return '<a class="gql-a' + (x.extra ? ' x' : '') + '" data-gql-k="' + esc(x.k) + '" href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer" title="' + esc(x.d || x.l) + '">' + esc(x.ic) + ' ' + esc(x.l) + ' ↗</a>'; }).join('') + '</div>' +
+    '<div class="gql-n">Opens Google in a new tab — sign in with your own GrayCo Google account. Links only: no password is kept in the CRM.</div>';
+  if (ed && UI.edit) {
+    var q = cfgQ(), u = q.urls || {};
+    h += '<div class="gql-f" data-gql-form>' + DEF.map(function(d){ var cur = L.filter(function(x){ return x.k === d.k; })[0] || {}; return '<label>' + esc(d.ic + ' ' + d.l) + '<input data-gql-u="' + esc(d.k) + '" value="' + esc(okUrl(u[d.k])) + '" placeholder="' + esc(cur.url) + '"></label>'; }).join('') +
+      '<label>Customer ID label<input data-gql-cidin value="' + esc(cid()) + '" placeholder="555-434-6278"></label>' +
+      '<label style="grid-column:1/-1">More links — one per line: Label | https://…<textarea data-gql-extra rows="3">' + esc(arr(q.extra).map(function(x){ return s(x.l) + ' | ' + s(x.url); }).join('\n')) + '</textarea></label>' +
+      '<div class="gql-fb"><button type="button" data-gql-save>Save links</button><button type="button" class="o" data-gql-edit>Cancel</button><span class="gql-n" style="margin:0;align-self:center">Empty = the standard link. https:// only.</span></div></div>';
+  }
+  return h + '</div><!--/gql-->';
+}
+function strip(h){ return String(h || '').replace(/<!--gql-->[\s\S]*?<!--\/gql-->/g, ''); }
+function copy(t){
+  var x = X(); var p;
+  try { p = x && x.copyText ? Promise.resolve(x.copyText(t)) : (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject(new Error('no clipboard'))); } catch (e) { p = Promise.reject(e); }
+  return p.then(function(){ toast('Copied ' + t); }, function(){ toast('Customer ID: ' + t); });
+}
+function toast(m){ try { var x = X(); if (x && x.toast && D.querySelector('.gmt')) { x.toast(m); return; } } catch (e) {} try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;z-index:100400'; D.body.appendChild(t); later(function(){ t.remove(); }, 2600); } catch (e) {} }
+function redraw(){ try { var x = X(); if (x && x.draw && x.UI && x.UI.root && x.UI.root.isConnected) { x.UI.editing = UI.edit; x.draw(); } } catch (e) { warn(e); } var ov = D.getElementById('gc-gql-ov'); if (ov) ov.innerHTML = html('sheet'); }
+function save(box){
+  if (!canEdit()) return;
+  var urls = {}, bad = [];
+  box.querySelectorAll('[data-gql-u]').forEach(function(i){ var v = s(i.value); if (!v) return; if (okUrl(v)) urls[i.getAttribute('data-gql-u')] = v; else bad.push(v); });
+  var extra = [];
+  s((box.querySelector('[data-gql-extra]') || {}).value).split(/\n+/).forEach(function(line){ if (!s(line)) return; var m = /^(.*?)\s*\|\s*(\S+)\s*$/.exec(line); if (m && s(m[1]) && okUrl(m[2])) extra.push({ l: s(m[1]).slice(0, 40), url: m[2] }); else bad.push(line); });
+  var c = s((box.querySelector('[data-gql-cidin]') || {}).value);
+  if (c && !/^\d{3}-\d{3}-\d{4}$/.test(c)) bad.push(c);
+  if (bad.length) { toast('Not saved — check: ' + bad[0].slice(0, 60) + ' (https:// links; customer ID like 555-434-6278)'); return; }
+  try { X().setCfg({ quickLinks: { urls: urls, extra: extra.slice(0, 20), cid: c || CID } }); } catch (e) { warn(e); toast('Not saved: ' + (e && e.message)); return; }
+  UI.edit = false; redraw(); toast('Saved — every computer shows these links.');
+}
+/* clicks inside a strip (Marketing's own data-a handler never sees these: no data-a) */
+D.addEventListener('click', function(ev){
+  var t = ev.target && ev.target.closest && ev.target.closest('[data-gql-copy],[data-gql-edit],[data-gql-save],[data-gql-x]'); if (!t || !t.closest('.gql')) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (t.hasAttribute('data-gql-copy')) { copy(t.getAttribute('data-gql-copy')); return; }
+  if (t.hasAttribute('data-gql-x')) { var ov = D.getElementById('gc-gql-ov'); if (ov) ov.remove(); return; }
+  if (t.hasAttribute('data-gql-edit')) { if (!canEdit()) return; UI.edit = !UI.edit; redraw(); return; }
+  if (t.hasAttribute('data-gql-save')) save(t.closest('.gql'));
+}, true);
+/* a stand-alone sheet (GrayCo Field ☰ More) */
+function sheet(){
+  if (!can()) { toast('Google quick links are for marketing and admins.'); return null; }
+  var ov = D.getElementById('gc-gql-ov'); if (ov) ov.remove();
+  ov = D.createElement('div'); ov.id = 'gc-gql-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'Google quick links');
+  ov.innerHTML = html('sheet');
+  ov.addEventListener('click', function(ev){ if (ev.target === ov) ov.remove(); });
+  D.body.appendChild(ov); return ov;
+}
+/* ── in 📣 Marketing: the top of its home and of 🔗 Marketing logins (re-wrapped if a later patch wraps them, so it stays on top) ── */
+function wrapView(V, name){
+  var f = V[name]; if (typeof f !== 'function' || f.__gql) return;
+  var w = function(){ var h = f.apply(this, arguments); return html('mkt') + strip(h); };
+  w.__gql = true; V[name] = w;
+}
+var tries = 0, done = false;
+(function boot(){
+  var x = X();
+  if (x && x.VIEWS) {
+    try { wrapView(x.VIEWS, 'home'); if (x.VIEWS.logins) wrapView(x.VIEWS, 'logins'); } catch (e) { warn(e); }
+    if (!done && x.UI && x.UI.root && x.UI.root.isConnected && (x.UI.sec === 'home' || x.UI.sec === 'logins') && !x.UI.root.querySelector('.gql') && can()) { done = true; try { x.redrawSoon(); } catch (e) {} }
+  }
+  if (tries++ < 150) later(boot, 800);
+})();
+W._gcGQL = { links: links, cid: cid, sheet: sheet, can: can, canEdit: canEdit, canField: canField, html: html, defaults: function(){ return DEF.map(function(d){ return { k: d.k, l: d.l, url: d.url }; }); } };
+try { console.log('[GC] patch GQLINKS: 🔗 Google quick links on Marketing (+ Field ☰ More) — _gcGQL.links()'); } catch (e) {}
+})(window, document);
+</script>
 <script id="gc-patch-mktfeat">
 /* ==========================================================================
    GrayCo CRM — patch MKTFEAT __GC_PATCH_MKTFEAT__ : marketing features (owner 30 Oct 2026, approved)
@@ -158605,7 +158763,7 @@ function confirmSubRead(ov, rd, subId, form, meta){
       '<div class="gcautai-row"><button class="gcautai-btn go" id="_gcSdOk">✅ Fill the sub record</button><button class="gcautai-btn" id="_gcSdNo">Not now</button></div>' : '<div class="gcautai-row"><button class="gcautai-btn" id="_gcSdNo">Close</button></div>') +
     '<div class="gcautai-msg" id="_gcSdMsg"></div>';
   var q = function(x){ return ov.body.querySelector(x); };
-  q('#_gcSdNo').onclick = function(){ if (rd.status === 'new' && (rd.kind !== 'coi' && rd.kind !== 'w9')) fn('sub-doc-read', { act: 'done', id: rd.id, dismiss: true }); ov.close(); };
+  q('#_gcSdNo').onclick = function(){ if (rd.status === 'new' && (rd.kind !== 'coi' && rd.kind !== 'w9')) fn('sub-doc-read', { act: 'done', id: rd.id, dismiss: true }); if (rd.kind !== 'coi' && rd.kind !== 'w9' && !form) dropSubDoc(s(rd.ref || (meta && meta.ref)), true); ov.close(); };   /* patch COIAPPR: not a COI / W-9 → off the list */
   if (q('#_gcSdOk')) q('#_gcSdOk').onclick = function(){
     var sid = q('#_gcSdSub').value; if (!sid) { q('#_gcSdMsg').className = 'gcautai-msg gcautai-bad'; q('#_gcSdMsg').textContent = 'Pick the sub.'; return; }
     var r = applySubRead(rd, sid, form, meta);
@@ -158660,7 +158818,13 @@ function reapplySubExtras(){
 }
 SI(reapplySubExtras, 4000);
 /* COI / W-9 filed on a sub's documents (the CRM's sub docs, the sub portal) that nobody read yet: offer them */
-var SEENDOC = {};
+var SEENDOC = {}, SEENK = 'gc_subdoc_seen';   /* patch COIAPPR: what was closed as "not a COI or W-9" stays off this computer's list */
+try { var _sd = JSON.parse(lsGet(SEENK) || '{}') || {}; Object.keys(_sd).forEach(function(k){ SEENDOC[k] = 1; }); } catch (e) {}
+function dropSubDoc(ref, keep){
+  ref = s(ref); if (!ref) return; SEENDOC[ref] = 1; SDQ = SDQ.filter(function(z){ return z.ref !== ref; });
+  if (keep) { try { var o = JSON.parse(lsGet(SEENK) || '{}') || {}; o[ref] = Date.now(); var ks = Object.keys(o); if (ks.length > 300) ks.sort(function(x, y){ return o[x] - o[y]; }).slice(0, ks.length - 300).forEach(function(k){ delete o[k]; }); lsSet(SEENK, JSON.stringify(o)); } catch (e) {} }
+  paintPills();
+}
 function subDocQueue(){
   if (!isOffice()) return;
   var cands = [];
@@ -158678,7 +158842,7 @@ function scanSubDocs(){
   if (!myEmail() || !isOffice()) return;
   var c = subDocQueue() || [];
   fn('sub-doc-read?list=1', null, 'GET').then(function(j){
-    var waiting = arr(j.items);
+    var waiting = arr(j.items).filter(function(w){ return !SEENDOC[w.ref]; });   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
     SDQ = waiting.concat(c.filter(function(x){ return !waiting.some(function(w){ return w.ref === x.f.ref; }); }).map(function(x){ return { pending: true, ref: x.f.ref, name: x.f.name, subId: x.sub.id, cat: x.f.cat }; }));
     paintPills();
   });
@@ -158689,14 +158853,22 @@ function openSubDocs(){
   ov.body.innerHTML = SDQ.length ? SDQ.map(function(x, i){ var sb = subById(x.subId) || {}; return '<div class="gcautai-act" data-i="' + i + '" style="cursor:pointer"><div class="t">' + (x.kind === 'w9' || /w-?9/i.test(s(x.cat) + s(x.name)) ? '🧾' : '🛡') + ' ' + esc(sb.name || x.fields && (x.fields.businessName || x.fields.insuredName) || 'Sub') + '</div><div style="font-size:12px;color:#9fb3c8">' + esc(x.name) + (x.pending ? ' · not read yet — tap to read it' : ' · read, waiting for you') + '</div></div>'; }).join('') : '<div>Nothing waiting.</div>';
   ov.body.onclick = function(e){
     var c = e.target.closest && e.target.closest('[data-i]'); if (!c) return; ov.body.onclick = null;
-    var x = SDQ[+c.getAttribute('data-i')]; SEENDOC[x.ref] = 1;
-    if (!x.pending) { confirmSubRead(ov, x, x.subId, null, null); return; }
-    ov.body.innerHTML = '<div class="gcautai-msg">Reading…</div>';
-    fn('sub-doc-read', { ref: x.ref, name: x.name, subId: x.subId, kind: /w-?9/i.test(s(x.cat) + s(x.name)) ? 'w9' : 'coi', source: 'sub-docs' }).then(function(j){
-      if (!j.ok) { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(j.error) + '</div>'; return; }
-      confirmSubRead(ov, j.read, x.subId, null, { ref: x.ref, name: x.name });
-    });
+    var x = SDQ[+c.getAttribute('data-i')];   /* patch COIAPPR: a tap no longer hides it — "Not now" leaves it waiting */
+    subDocGo(ov, x);
   };
+}
+/* patch COIAPPR: one item — read it if nobody did yet, then the values to confirm (✅ Approvals opens this) */
+function subDocGo(ov, x){
+  if (!x.pending) { confirmSubRead(ov, x, x.subId, null, null); return; }
+  ov.body.innerHTML = '<div class="gcautai-msg">Reading…</div>';
+  fn('sub-doc-read', { ref: x.ref, name: x.name, subId: x.subId, kind: /w-?9/i.test(s(x.cat) + s(x.name)) ? 'w9' : 'coi', source: 'sub-docs' }).then(function(j){
+    if (!j.ok) { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(j.error) + '</div>'; return; }
+    confirmSubRead(ov, j.read, x.subId, null, { ref: x.ref, name: x.name });
+  });
+}
+function openSubDoc(ref){
+  var x = SDQ.filter(function(z){ return z.ref === s(ref); })[0]; if (!x) return false;
+  subDocGo(sheet('📄 COI / W-9 to confirm', ''), x); return true;
 }
 
 /* ── a small sheet ── */
@@ -158924,8 +159096,11 @@ function openPayMatches(){
 function paintPills(){
   try {
     var show = myEmail() && isOffice() && !D.getElementById('gc-auth-email');
-    var n1 = PM.list.filter(function(m){ return m.status === 'new'; }).length, n2 = SDQ.length;
-    [['_gcPayPill', n1, '💵 ' + n1 + ' payment' + (n1 === 1 ? '' : 's') + ' match invoices', openPayMatches, 0], ['_gcSubDocPill', n2, '📄 ' + n2 + ' COI / W-9 to confirm', openSubDocs, 44]].forEach(function(c){
+    var n1 = PM.list.filter(function(m){ return m.status === 'new'; }).length;
+    /* patch COIAPPR (owner 11/19): no "📄 COI / W-9 to confirm" pill on any screen — the items are in ✅ Approvals */
+    var sp = D.getElementById('_gcSubDocPill'); if (sp) sp.remove();
+    try { var sg = SDQ.map(function(z){ return z.ref + (z.pending ? 'p' : 'r'); }).join('|'); if (sg !== W.__gcSdqSig) { W.__gcSdqSig = sg; D.dispatchEvent(new CustomEvent('gc:subdocs-changed', { detail: { n: SDQ.length } })); } } catch (e) {}
+    [['_gcPayPill', n1, '💵 ' + n1 + ' payment' + (n1 === 1 ? '' : 's') + ' match invoices', openPayMatches, 0]].forEach(function(c){
       var b = D.getElementById(c[0]);
       if (!show || !c[1]) { if (b) b.remove(); return; }
       if (!b) { b = D.createElement('button'); b.id = c[0]; b.className = 'gcautai-pill'; b.setAttribute('data-gc-keep', '1'); D.body.appendChild(b); }
@@ -158941,7 +159116,8 @@ W._gcAUTAI = {
   mic: function(pid, preset){ return openMic(pid, preset); }, closeMic: closeMic,
   route: function(text, pid){ return fn('voice-intake', { action: 'route', text: text, projectId: pid || '', jobs: jobList(), people: peopleNames(), today: today() }); },
   apply: apply, addMatches: addMatches, payMatches: function(){ scanPayments(); return PM.list.slice(); }, findMatches: findMatches, openPayMatches: openPayMatches, confirmPayment: confirmPayment,
-  subDocs: function(){ return SDQ.slice(); }, scanSubDocs: scanSubDocs, readSubFile: readSubFile, applySubRead: applySubRead, confirmSubRead: confirmSubRead, sheet: sheet,
+  subDocs: function(){ return SDQ.slice(); }, scanSubDocs: scanSubDocs, openSubDoc: openSubDoc, openSubDocs: openSubDocs, dropSubDoc: dropSubDoc,   /* patch COIAPPR */
+  readSubFile: readSubFile, applySubRead: applySubRead, confirmSubRead: confirmSubRead, sheet: sheet,
   readReceipt: readReceipt, jobFor: jobFor, catFor: catFor, mirrorPosts: mirrorPosts, speechUsable: speechUsable,
   state: function(){ return { log: LOG.slice(-30), payMatches: PM.list.length, subDocs: SDQ.length, caps: CAPS, mic: !!D.getElementById('_gcMicBtn') }; }
 };
@@ -169722,7 +169898,9 @@ function build0(){
   if (!sc.preview) X.forEach(function(a){ add(rowExp(a, false, now)); });
   if (!sc.preview && realAdmin()) PAYRUNS.forEach(function(r){ if (r && r.status === 'pending') add(rowPay(r, now)); });   /* patch INLINEAPPR */
   /* patch BPAPPR: rows other modules add (🏗 Bid portal: sub sign-ups, old plan requests) — window._gcApxExtra = [function(scope, now){ return rows; }] */
-  if (!sc.preview) arr(W._gcApxExtra).forEach(function(f){ try { var xs = arr(f(sc, now)); if (xs.some(function(r){ return /^bp:su:/.test(r.key); })) out = out.filter(function(r){ return !/bidsite_/.test(s(r.key)); }); xs.forEach(add); } catch (e) { warn(e); } });
+  if (!sc.preview) arr(W._gcApxExtra).forEach(function(f){ try { var xs = arr(f(sc, now)); if (xs.some(function(r){ return /^bp:su:/.test(r.key); })) out = out.filter(function(r){ return !/bidsite_/.test(s(r.key)); });
+    var dr = {}; xs.forEach(function(r){ if (r && r.drop) dr[s(r.drop)] = 1; }); if (Object.keys(dr).length) out = out.filter(function(r){ return !dr[s(r.key).replace(/#\d+$/, '')]; });   /* patch COIAPPR: the rich row replaces the plain set row */
+    xs.forEach(add); } catch (e) { warn(e); } });
   if (sc.kind === 'office') pmOptRows(out, add, Q, now);   /* patch APOFFICE2 */
   return { scope: sc, rows: coKeep(denyFilter(out)), now: now };   /* patch COLEAK2 */
 }
@@ -170384,7 +170562,7 @@ function btns(r, where){
   if (r.approve && adBlock(r)) h += '<button type="button" class="apx-b go" disabled title="Admin setting: approvals need a document">✅ Approve — attach the document first</button>';   /* patch APPRDOC: the require setting */
   else h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
   h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'op');   /* patch APXNOTE */
-  if (r.approve && r.src !== 'pay' && r.src !== 'mat' && r.src !== 'bp' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
+  if (r.approve && r.src !== 'pay' && r.src !== 'mat' && r.src !== 'bp' && r.src !== 'coi' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
   /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
   var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
   if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
@@ -211820,7 +211998,8 @@ var A = {
   receipt:   { ic: '🧾', l: 'Snap a receipt', show: function(){ return typeof W._gcFieldLogExpense === 'function'; }, run: function(p){ W._gcFieldLogExpense(p || undefined); } },   /* patch FIELDMORE: on the job in hand */
   maint:     { ic: '🛠', l: 'Maintenance', view: 'maint', show: function(){ try { return typeof W._gcMaintCanSee === 'function' && !!W._gcMaintCanSee(); } catch (e) { return false; } }, run: function(){ go('maint'); } },   /* patch MAINTTAB's tab (admin / office / PM) */
   search:    { ic: '🔍', l: 'Search', show: function(){ return typeof W._gcUniversalSearch === 'function'; }, run: function(){ W._gcUniversalSearch(); } },
-  camera:    { ic: '📷', l: 'Camera', show: function(){ return !!(W._gcPhotos && W._gcPhotos.open); }, run: function(p){ fmCamera(p); } }   /* patch FIELDMORE: GrayCo Photos' camera */
+  camera:    { ic: '📷', l: 'Camera', show: function(){ return !!(W._gcPhotos && W._gcPhotos.open); }, run: function(p){ fmCamera(p); } },   /* patch FIELDMORE: GrayCo Photos' camera */
+  gql:       { ic: '🔗', l: 'Google quick links', show: function(){ try { return !!(W._gcGQL && W._gcGQL.canField()); } catch (e) { return false; } }, run: function(){ W._gcGQL.sheet(); } }   /* patch GQLINKS: LSA, Google Ads, Business Profile … */
 };
 /* __GC_PATCH_FIELDMORE__ — ☰ More in GrayCo Field: AT THE JOB (big tiles, the role's field actions, the job type's first)
    and OFFICE (rows). The job in hand: the job page that is open, else the person's job scheduled today. */
@@ -211832,7 +212011,7 @@ var FM_JOB = {
   crew:   ['camera', 'receipt', 'log', 'punch'],
   office: ['camera', 'receipt', 'photos', 'todo', 'search']
 };
-var FM_OFF = { admin: ['claims', 'match', 'maint'], pm: ['leads', 'estimates', 'maint'], est: ['appr', 'leads', 'estimates'], ins: ['appr'], crew: [], office: ['leads', 'maint'] };
+var FM_OFF = { admin: ['claims', 'match', 'maint', 'gql'], pm: ['leads', 'estimates', 'maint'], est: ['appr', 'leads', 'estimates'], ins: ['appr'], crew: [], office: ['leads', 'maint'] };
 var FM_FIRST = {
   ins: ['camera', 'claims', 'drying', 'receipt', 'sched', 'log'],
   com: ['sched', 'log', 'camera', 'receipt', 'sub'],
@@ -234227,6 +234406,162 @@ W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ refresh(true); }, 4000);
 W._gcBpAppr = { rows: function(){ return rows({ kind: 'admin' }, Date.now()); }, refresh: function(){ refresh(true); }, sheet: sheet, sameSheet: sameSheet, jobs: function(){ return JOBS.slice(); } };
 try { console.log('[GC] patch BPAPPR: 🏗 Bid portal items in ✅ Approvals — _gcBpAppr.rows()'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-coiappr">
+/* __GC_PATCH_COIAPPR__ ═══════════════════════════════════════════════════════
+   GrayCo — 📄 SUB COI / W-9 TO CONFIRM lives in ✅ Approvals (patch COIAPPR, owner 11/19: "button is on every screen, it
+   shouldn't, but approvals for what COIs should be in portal approvals").
+   · The floating teal "📄 N COI / W-9 to confirm" pill is gone (patch AUTAI's paintPills no longer draws it).
+   · Every COI / W-9 waiting for a person — read by the server (sub-doc-read.js: uploaded in the sub portal, dropped on the sub
+     form) or filed on a sub's documents (CRM or sub portal, not read yet) — is ONE list (patch AUTAI's SDQ, de-duplicated by the
+     file), and each item is:
+       – a row "Sub COI / W-9 to confirm" in the desk ✅ Approvals tab and the 📌 To-Do pin (rich row: the sub, the file, 📄 Read &
+         confirm, 📄 The file), for admins and the office;
+       – an entry in the ONE approval set (window._gcApprovalSet → groups.other): the green APPROVE / Approvals badge counts it,
+         and GrayCo Field's ✅ Approvals (My Approvals → "Other approvals") lists it with 📄 Read & confirm.
+     Read & confirm = the same flow as before (patch AUTAI: read it if needed → the values → ✅ Fill the sub record → applySubRead).
+     A confirmed item leaves the list at once (the file is marked read on the sub — r36q — and the server read is closed);
+     "Not a COI or W-9" → Close takes it off this computer's list for good; "Not now" leaves it waiting.
+   · Who: admins and the office (by role; an admin's 👁 View as a PM / estimator … does not see them). Kill switch: none needed —
+     with patch AUTAI off there is nothing to list.
+   Console: _gcCoiAppr.items(), .rows(), .open(ref)
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_COIAPPR__) return; W.__GC_PATCH_COIAPPR__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function warn(e){ try { console.warn('[GC COIAPPR]', e && e.message || e); } catch (x) {} }
+function A(){ return W._gcAUTAI || null; }
+function users(){ return arr(W._crm && W._crm.users); }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function rp(){ try { return W._gcRP && W._gcRP.status ? W._gcRP.status() : null; } catch (e) { return null; } }
+/* admins and the office, by role (an admin previewing another role sees that role's approvals) */
+function canSee(){
+  if (!myEmail()) return false;
+  var st = rp();
+  if (st && st.admin && st.viewAs) return /^Office/i.test(s(st.viewAs));
+  if (realAdmin()) return true;
+  if (st && /^office/i.test(s(st.role))) return true;
+  var e = myEmail(), u = users().filter(function(x){ return x && low(x.email) === e; })[0];
+  return !!(u && /office|admin/i.test(s(u.role)));
+}
+function coOk(){ try { return !(W._gcCo && W._gcCo.filter && W._gcCo.filter() !== 'all' && W._gcCo.filter() !== 'construction'); } catch (e) { return true; } }
+function subOf(id){ return arr(W._crm && W._crm.subs).filter(function(x){ return x && String(x.id) === String(id); })[0] || null; }
+function idOf(ref){ var m = /([0-9a-f]{64})/i.exec(s(ref)); return 'subdoc_' + (m ? m[1].slice(0, 20) : s(ref).replace(/[^A-Za-z0-9]/g, '').slice(-24)); }
+function isW9(x){ return x.kind === 'w9' || (!x.kind && /w-?9/i.test(s(x.cat) + ' ' + s(x.name))); }
+/* the one list (patch AUTAI's queue): { id, ref, sub, file, kind, pending, at } */
+function items(){
+  if (!canSee() || !coOk()) return [];
+  var a = A(); if (!a || typeof a.subDocs !== 'function') return [];
+  var seen = {};
+  return arr(a.subDocs()).filter(function(x){ if (!x || !s(x.ref) || seen[x.ref]) return false; seen[x.ref] = 1; return true; }).map(function(x){
+    var sb = subOf(x.subId) || {}, f = x.fields || {};
+    var sub = s(sb.name || sb.company) || s(f.businessName || f.insuredName || f.legalName) || 'Sub';
+    var file = (arr(sb.files).filter(function(z){ return z && z.ref === x.ref; })[0]) || {};
+    return { id: idOf(x.ref), ref: s(x.ref), sub: sub, subId: s(x.subId), file: s(x.name) || s(file.name) || 'document', kind: isW9(x) ? 'w9' : 'coi', pending: !!x.pending,
+      at: Date.parse(x.at || file.at || file.uploadedAt || 0) || 0, portal: /sub-?portal|portal/i.test(s(x.source) + ' ' + s(file.source) + ' ' + s(file.by)) };
+  });
+}
+function title(it){ return (it.kind === 'w9' ? '🧾 W-9' : '🛡 COI') + ' to confirm — ' + it.sub + ': ' + it.file; }
+function note(it){ return (it.pending ? 'not read yet — tap Read & confirm' : 'read, waiting for you to confirm') + (it.portal ? ' · from the sub portal' : ''); }
+function open(ref){
+  var a = A(); if (!a) return false;
+  try { if (typeof a.openSubDoc === 'function' && a.openSubDoc(ref)) return true; } catch (e) { warn(e); }
+  try { if (typeof a.openSubDocs === 'function') { a.openSubDocs(); return true; } } catch (e) { warn(e); }
+  return false;
+}
+function viewFile(ref){
+  try { if (typeof W._gcFileUrl === 'function') { Promise.resolve(W._gcFileUrl(ref)).then(function(u){ if (u) W.open(u, '_blank', 'noopener'); }, function(e){ warn(e); }); return; } } catch (e) { warn(e); }
+  open(ref);
+}
+/* ── 1. the ONE approval set (badge, To-Do chip, Field "Other approvals") ── */
+function setAdd(r){
+  try {
+    if (!r || !r.groups) return r;
+    var L = items(); if (!L.length) return r;
+    var g = r.groups.other = arr(r.groups.other), have = {}; g.forEach(function(x){ have[s(x && x.id)] = 1; });
+    var n = 0;
+    L.forEach(function(it){ if (have[it.id] || have['td:' + it.id]) return; have[it.id] = 1; n++;
+      g.push({ id: it.id, title: title(it), sub: note(it), coi: true, act: { l: '📄 Read & confirm', f: function(){ open(it.ref); } } }); });
+    if (n) { r.total = (r.total || 0) + n; r.tip = (s(r.tip) ? s(r.tip) + ' · ' : '') + n + ' sub COI / W-9 to confirm'; }
+  } catch (e) { warn(e); }
+  return r;
+}
+function wrapSet(){
+  var f = W._gcApprovalSet; if (typeof f !== 'function' || f.__gcCoiAppr) return;
+  var w = function(){ return setAdd(f.apply(this, arguments)); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcCoiAppr = true; W._gcApprovalSet = w;
+  fresh();
+}
+/* ── 2. the ✅ Approvals tab's rows (patch APX: window._gcApxExtra; "drop" = the plain set row this one replaces) ── */
+function rows(sc){
+  if (sc && sc.kind && sc.kind !== 'admin' && sc.kind !== 'office') return [];
+  return items().map(function(it){
+    return { key: 'coi:' + it.id, id: it.id, src: 'coi', group: 'coi', kind: 'sub_coi', kindL: 'Sub COI / W-9 to confirm', icon: it.kind === 'w9' ? '🧾' : '🛡', title: title(it),
+      pid: '', job: '🔧 ' + it.sub + ' · ' + it.file, pm: '', step: 'admin', waits: 'Admins or the office', since: it.at, clock: '', amount: 0, mine: true, escalated: false, chain: note(it),
+      approve: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, open: null, doc: { l: '📄 The file', f: function(){ viewFile(it.ref); } }, edit: null, drop: 'td:' + it.id };
+  });
+}
+var sig = '';
+function fresh(){
+  try { if (typeof W._gcApprovalSetFresh === 'function') W._gcApprovalSetFresh(); } catch (e) {}
+  try { if (W._gcAPX && W._gcAPX.draw) W._gcAPX.draw(); } catch (e) {}
+}
+function watch(){
+  wrapSet();
+  try { var n = items().map(function(x){ return x.id + (x.pending ? 'p' : 'r'); }).join('|'); if (n !== sig) { sig = n; fresh(); } } catch (e) { warn(e); }
+}
+/* ── 3. a confirmed COI / W-9 stays confirmed through every sync merge. The union merge keeps the newer copy of a sub whole: a
+   computer that never confirmed anything (a PM opening the CRM re-saves the sub list it folded from `subs` + `vendors`, freshly
+   stamped) pushed its copy without the file's read mark over the cloud's, and the item came back on every computer. Here, when
+   two copies of a sub meet (subs / vendors), a file either copy marks read (r36q) keeps that mark in the merged copy. ── */
+function fileKey(f){ return f && typeof f === 'object' ? (s(f.ref) || s(f.data).slice(0, 200) || ('n:' + low(f.name))) : ''; }
+function readMarks(lists){
+  var m = {};
+  lists.forEach(function(l){ arr(l).forEach(function(r){
+    if (!r || typeof r !== 'object' || r.id == null) return;
+    arr(r.files).forEach(function(f){ var k = fileKey(f); if (k && f.aiRead) { var id = s(r.id); (m[id] = m[id] || {})[k] = f; } });
+  }); });
+  return m;
+}
+function keepRead(out, marks){
+  if (!Array.isArray(out)) return out;
+  var res = null;
+  for (var i = 0; i < out.length; i++) {
+    var r = out[i]; if (!r || typeof r !== 'object' || r.id == null) continue;
+    var mk = marks[s(r.id)]; if (!mk || !Array.isArray(r.files)) continue;
+    var ch = false, files = r.files.map(function(f){ var k = fileKey(f), g = k && mk[k]; if (!g || !f || f.aiRead) return f; ch = true; return Object.assign({}, f, { aiRead: g.aiRead, readBy: g.readBy, readAt: g.readAt }); });
+    if (ch) { res = res || out.slice(); res[i] = Object.assign({}, r, { files: files }); }
+  }
+  return res || out;
+}
+var SUBKEYS = { subs: 1, vendors: 1 };
+function wrapUnion(){
+  var f = W._gcUnionMerge; if (typeof f !== 'function' || f.__gcCoiRead) return;
+  var w = function(key, a, b){
+    var out = f.apply(this, arguments);
+    if (!SUBKEYS[key]) return out;
+    try { return keepRead(out, readMarks([a, b])); } catch (e) { warn(e); return out; }
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcCoiRead = true; W._gcUnionMerge = w;
+}
+/* other scripts wrap _gcUnionMerge too (some after a delay): stay on top for the first minutes */
+wrapUnion(); (function(){ var n = 0, iv = SI.call(W, function(){ wrapUnion(); if (++n > 60) clearInterval(iv); }, 2000); })();
+W._gcCoiKeepRead = function(list, others){ return keepRead(list, readMarks([list].concat(arr(others)))); };
+
+W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
+wrapSet(); SI.call(W, watch, 2000);
+D.addEventListener('gc:subdocs-changed', function(){ later(watch, 50); });
+W._gcCoiAppr = { items: items, rows: function(){ return rows({ kind: 'admin' }); }, open: open, canSee: canSee };
+try { console.log('[GC] patch COIAPPR: sub COI / W-9 to confirm are in ✅ Approvals (no floating pill) — _gcCoiAppr.items()'); } catch (e) {}
 })(window, document);
 </script>
 <script id="gc-patch-apprnosend">
