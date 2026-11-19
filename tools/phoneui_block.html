@@ -82,6 +82,8 @@ try {
     /* behind the Field pages: the page's own background light too — a Field page that draws itself again (My Approvals after
        its data comes in) showed the desk's navy behind it for a moment, a third of the phone screen */
     'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
+    /* 🆘 Problem reports and its other cards: clear of the status bar and the home bar (its ✕ sat under the clock) */
+    'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
