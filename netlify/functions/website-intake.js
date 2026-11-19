@@ -734,6 +734,7 @@ async function ownNumbers(){
   try { const d = await core().kvRead(['users']); arr(d.users).forEach(u => { if (u && typeof u === 'object') [u.phone, u.cell, u.mobile, u.cellPhone, u.mobilePhone, u.workPhone].forEach(add); }); } catch (e) {}
   try { add(require('./_lib/callorder.js').companyPhone()); } catch (e) {}
   ['TWILIO_FROM', 'TWILIO_FROM_ALERTS', 'TWILIO_FROM_LEADS', 'TWILIO_RING_TO'].forEach(k => add(process.env[k]));
+  try { const LN = require('./_lib/localnums.js'); LN.list(await L().kvGet(LN.KEY), k => String(process.env[k] == null ? '' : process.env[k]).trim()).forEach(n => add(n.number)); } catch (e) {}   /* patch LOCALNUMS: our local text numbers are ours too */
   try { const v = await L().kvGet('gc_sms_numbers'); (Array.isArray(v) ? v : arr(v && v.numbers)).forEach(n => add(n && (n.number || n.phone || n))); } catch (e) {}
   return out;
 }

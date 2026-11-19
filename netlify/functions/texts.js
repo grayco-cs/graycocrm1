@@ -10,6 +10,8 @@
 //   GET/POST ?alerts=1 → admins: 📱 Text alerts to cell phones (patch SMSALERT; _lib/smsalert.js)
 //   POST ?try=1      → admins: { text, pid? } — which answer would go back (nothing is sent)
 //   GET/POST ?fieldcall=1 → staff: 📞 call a job's customer from the GrayCo number (patch FIELDCALL, _lib/fieldcall.js)
+//   GET  ?fromfor=1&to= → staff: the number a text to this person would go out on ("Sending from (662) …", patch LOCALNUMS)
+//   GET/POST ?localnums=1 → admins: 📱 Local text numbers (state, area codes, Twilio number, label — numbers only)
 //   GET  ?callchain=1 → admins: 📞 Call order (patch CALLCHAIN, _lib/callorder.js): the saved order (or the defaults), the
 //                      people with a phone, who would ring now, the last 50 calls (patch CALLSCREEN: menu answer, outcome);
 //                      POST ?callchain=1 { settings } → save it (order, ring seconds, screening, blocked numbers)
@@ -66,12 +68,14 @@ async function send(who, b){
      held at the send itself) and the answer says so. A text to a staff cell goes now; an admin's sendNow (emergency) goes now. */
   const CQ = require('./_lib/custquiet.js');
   const staffTo = staffPhone(CD, to), override = b.sendNow === true && !!who.admin;
-  const set = await getSettings(), from = RT.fromFor(purpose, set, env);
+  const set = await getSettings(), pk = await pickFrom(to, purpose, set, !!staffTo), from = pk.from;   /* patch LOCALNUMS: the customer's local number (sticky / area code), else as before */
   const at = nowIso(), id = 'SMSO_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const r = await CQ.run(override ? 'override' : staffTo ? 'staff' : 'customer', () => MC().sendSms(to, text, from), { jobMsgId: id, by: low(who.email) });
   if (!r.ok) return { code: 502, body: { ok: false, error: 'Twilio did not send it' + (r.status ? ' (' + r.status + ')' : r.why ? ' (' + r.why + ')' : '') + '.' } };
+  try { await LNS().afterSend(to, pk); } catch (e) {}   /* patch LOCALNUMS: this customer stays on this number */
   const held = r.held || null;
   const msg = { id, pid, authorId: low(who.email), authorName: s(who.name || who.email) + ' 📱 (text to ' + S.tidy(to) + ')' + (held ? ' · ⏰ Scheduled 7:00 AM' : ''), text, tags: [], at, source: 'sms', channel: 'sms', dir: 'out', smsTo: to, smsFromNum: RT.phone10(from), purpose };
+  if (pk.local) msg.viaLocal = require('./_lib/localnums.js').via(pk.number);   /* patch LOCALNUMS */
   if (held) { msg.heldUntil = held.releaseAt; msg.cqId = held.id; }
   try { await MC().stateCas(x => { x.lastOut = x.lastOut && typeof x.lastOut === 'object' ? x.lastOut : {}; x.lastOut[to] = { email: low(who.email), name: s(who.name), pid, at }; return true; }); } catch (e) {}   /* patch SMSROUTE: their reply comes back to this employee */
   const has = l => l.some(m => m && s(m.id) === id);
@@ -79,6 +83,15 @@ async function send(who, b){
   try { await require('./_lib/textlead.js').onOutbound({ ph: to, text, who: s(who.name || who.email), id }); } catch (e) {}   /* patch TEXTLEAD: on the lead's conversation too */
   if (pid) { try { await require('./_lib/comms.js').addMessage(pid, { id: 'sms_' + id, kind: 'text', dir: 'out', at, from: s(who.email), fromName: s(who.name), to: [S.tidy(to)], text }); } catch (e) {} }
   return { code: 200, body: held ? { ok: true, id, message: msg, held: true, scheduled: true, releaseAt: held.releaseAt, cqId: held.id, say: CQ.SAY } : { ok: true, id, message: msg } };
+}
+/* patch LOCALNUMS: the store (gc_kv "gc_sms_local" + the sticky map) and the From for a person's text to a customer:
+   subs, billing / insurance / other lines and staff cells keep their own number; customers and leads get the local number */
+function LNS(){ return require('./_lib/localnums.js').make({ env, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f) }); }
+async function pickFrom(to, purpose, set, staffTo){
+  const RT = require('./_lib/smsroute.js'), base = RT.fromFor(purpose, set, env);
+  const main = { from: base, number: RT.phone10(base), local: null, why: 'main' };
+  if (staffTo || ['customers', 'leads', 'main'].indexOf(purpose || 'customers') < 0) return main;
+  try { const r = await LNS().fromFor(to, { fallback: base, ours: RT.numbers(set, env).map(x => x.number) }); return r && r.from ? r : main; } catch (e) { return main; }
 }
 /* patch CUSTQUIET: is this number a GrayCo employee's cell (the CRM's people list)? A text to staff is not a customer text. */
 function staffPhone(CD, to){
@@ -99,6 +112,33 @@ exports.handler = async function(event){
       if (who.admin) await publishNumbers(set);   /* patch SMSROUTE: Netlify numbers show up without a save */
       let live; if (qs.live && who.admin) { try { live = await require('./_lib/twstatus.js').check({ env, numbers: require('./_lib/smsroute.js').numbers(set, env).map(x => ({ number: x.number, label: s(x.label || x.purpose) })) }); } catch (e) { live = { ready: MC().ready(), error: 'check failed' }; } }   /* patch TWLIVE: read-only */
       return J(200, { ok: true, ready: MC().ready(), number: number(), numbers: require('./_lib/smsroute.js').numbers(set, env), autoOn: set.autoOn, paused, live, webhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=sms' }, C);
+    }
+    /* patch LOCALNUMS: "Sending from (662) …" in the text bar — the same pick the send makes (nothing is sent) */
+    if (m === 'GET' && qs.fromfor) {
+      const RT = require('./_lib/smsroute.js'), LN = require('./_lib/localnums.js'), to = RT.phone10(qs.to);
+      if (to.length !== 10) return J(200, { ok: true, number: '', label: '' }, C);
+      let CD = null; try { CD = await core().kvRead(['subs', 'vendors', 'projects', 'customers', 'leads', 'users']); } catch (e) {}
+      let purpose = 'customers'; try { purpose = CD ? RT.purposeFor(CD, to) : 'customers'; } catch (e) {}
+      const r = await pickFrom(to, purpose, await getSettings(), staffPhone(CD, to));
+      return J(200, { ok: true, number: LN.tidy(r.number), via: LN.via(r.number), local: !!r.local, state: r.local ? r.local.state : '', why: r.why, label: LN.label(r) }, C);
+    }
+    /* patch LOCALNUMS: Admin → 📱 Local text numbers (admins; phone numbers only — never a key or token) */
+    if (qs.localnums) {
+      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the local text numbers.' }, C);
+      const LN = require('./_lib/localnums.js');
+      const out = async saved => { const set = await getSettings(); return J(200, { ok: true, list: LN.clean(saved), netlify: LN.fromEnv(env), example: LN.EXAMPLE, states: LN.STATES, a2p: LN.A2P_NOTE,
+        main: number(), ready: MC().ready(), webhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=sms',
+        clash: LN.clean(saved).filter(x => require('./_lib/smsroute.js').isOurs(x.number, set, env)).map(x => LN.tidy(x.number)) }, C); };
+      if (m === 'GET') { let v = null; try { v = await L().kvGet(LN.KEY); } catch (e) {} return out(v); }
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const list = LN.clean(b.list), bad = list.filter(x => !x.codes.length);
+        if (bad.length) return J(400, { ok: false, error: 'Add at least one area code for ' + LN.tidy(bad[0].number) + '.' }, C);
+        const v = { list, by: low(who.email), at: nowIso() };
+        await L().kvCas(LN.KEY, () => v);
+        return out(v);
+      }
+      return J(405, { ok: false, error: 'Method not allowed.' }, C);
     }
     if (m === 'POST' && qs.send) {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
@@ -209,4 +249,4 @@ exports.handler = async function(event){
     return J(400, { ok: false, error: 'Bad request.' }, C);
   } catch (e) { return J(503, { ok: false, error: 'Texting is busy — try again (' + s(e && e.message) + ').' }, C); }
 };
-exports._t = { send, number, staffPhone };
+exports._t = { send, number, staffPhone, pickFrom };
