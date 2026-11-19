@@ -241,7 +241,7 @@ export function pageAudit(opt){
   if (behind.length) out.fails.push({ check: 'behind', msg: `${behind.length} visible button(s) cannot be tapped: covered by another element`, list: behind.slice(0, 12).map(z => `${z.x} is behind ${z.y} @${z.at}`) });
   // 4. close / back buttons: inside the safe area and tappable
   const CB = /^(✕|×|✖|x|close|back|‹|←|⟵|< ?back|‹ ?back|done|cancel)\b|^‹|^←|^✕|^×/i;
-  const cbs = buttons.filter(b => CB.test(txt(b)) || /close|back/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.title || '')));
+  const cbs = buttons.filter(b => !/^[‹←]?\s*(prev|next|previous)\b/i.test(txt(b)) && CB.test(txt(b)) || /close|back/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.title || '')));
   const cbBad = [];
   for (const b of cbs) { const r = b.getBoundingClientRect(); if (r.bottom <= 0 || r.top >= vh) continue; const why = []; if (opt.phone && r.top < safe.top - 1) why.push(`top ${Math.round(r.top)} px is under the status bar (safe top ${safe.top})`); if (opt.phone && r.bottom > vh - safe.bottom + 1 && r.top > vh / 2) why.push(`bottom ${Math.round(r.bottom)} px is under the home bar`); const c = clip(b); const h = c && document.elementFromPoint((c.L + c.R) / 2, (c.T + c.B) / 2); if (!c || !owns(b, h)) { const fl = h && fullLayer(h); if (!(fl && !fl.contains(b)) && !(h && edgeBar(h) && !edgeBar(b))) why.push('not hit-testable' + (h ? ' (hit ' + P(txt(h), h) + ')' : '')); } if (opt.phone && (r.width < 30 || r.height < 30)) why.push(`small target ${Math.round(r.width)}x${Math.round(r.height)}`); if (why.length) cbBad.push(P(txt(b), b) + ': ' + why.join('; ')); }
   out.info.closeBack = cbs.length;

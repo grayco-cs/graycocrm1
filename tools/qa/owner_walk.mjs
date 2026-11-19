@@ -238,7 +238,10 @@ async function open(roleKey, extraInit){
      the first document pull and what they send up) — no shared upload for 15 s, at most 3 minutes, on the fast link, untimed.
      What that first sync sent is reported (setup.firstSync), not hidden: it is what a NEW device / cleared phone sends. */
   { const fs0 = H.writes.length, t0s = Date.now(); let last = Date.now(), n = fs0;
-    while (Date.now() - t0s < 180000) { await sleep(1000); const sh = H.writes.slice(n).filter(w => w.table === 'gc_kv' && !OWN.test(w.key)); n = H.writes.length; if (sh.length) last = Date.now(); else if (Date.now() - last > 15000) break; }
+    let nr = S.link.log.length;
+    while (Date.now() - t0s < 180000) { await sleep(1000); const sh = H.writes.slice(n).filter(w => w.table === 'gc_kv' && !OWN.test(w.key)); n = H.writes.length;
+      const rd = S.link.log.slice(nr).filter(r => /\/rest\/v1\/gc_kv/.test(r.path)).length; nr = S.link.log.length;   /* the first document pull reads hundreds of rows */
+      if (sh.length || rd > 3) last = Date.now(); else if (Date.now() - last > 15000) break; }
     const fsw = H.writes.slice(fs0).filter(w => w.table === 'gc_kv' && !OWN.test(w.key));
     R.setup.firstSync = { sec: Math.round((Date.now() - t0s) / 1000), uploads: fsw.length, identical: fsw.filter(w => w.same).length, docRows: fsw.filter(w => /^doc:/.test(w.key)).length, lists: [...new Set(fsw.filter(w => !/^doc:/.test(w.key)).map(w => w.key))].slice(0, 30) }; }
   const cold = S.link.log.slice();
