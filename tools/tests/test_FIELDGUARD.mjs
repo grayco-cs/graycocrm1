@@ -167,9 +167,11 @@ try {
   const st2 = await ad.ev(() => window.__gcFG && window.__gcFG.state());
   ok(st2 && st2.guarded === false, 'the admin\'s desk is not guarded', st2);
   const t2 = Date.now();
-  await ad.ev(async () => { const L = await window.idbGet('projects'); const now = new Date().toISOString(); L.forEach(p => { p.updatedAt = now; }); await window.idbSet('projects', L); window._gcSyncDirty(['projects']); });
+  /* a desk is not gated: its change goes up. (APPLAG SAMEKV: a list that differs from the cloud's only in save stamps is not a
+     change on any device — so the desk's edit here is a real one, with every job restamped as well) */
+  await ad.ev(async () => { const L = await window.idbGet('projects'); const now = new Date().toISOString(); L.forEach(p => { p.updatedAt = now; }); L.find(p => p.id === 'P4').notes = 'Changed on the desk'; await window.idbSet('projects', L); window._gcSyncDirty(['projects']); });
   let w2 = null; for (let i = 0; i < 70 && !w2; i++) { await sleep(500); w2 = H.writes.find(w => w.key === 'projects' && w.at >= t2); }
-  ok(!!w2, 'an admin\'s upload of projects goes up as before (no gate on the desk)');
+  ok(!!w2 && ((H.cget('projects') || []).find(p => p.id === 'P4') || {}).notes === 'Changed on the desk', 'an admin\'s upload of projects goes up as before (no gate on the desk)');
   ok(!ad.errs.length, 'no page errors (admin)', ad.errs.slice(0, 5));
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 finally { for (const c of OPEN) { try { await c.close(); } catch (e) {} } }
