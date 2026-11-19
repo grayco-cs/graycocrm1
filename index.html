@@ -62912,6 +62912,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var tomb={}; try{ tomb=JSON.parse(localStorage.getItem('gc_tombstones')||'{}')||{}; }catch(e){ tomb={}; }
         var merged=mergeTaskLists(local, cloud).filter(function(x){ return !(x && x.id && tomb[k+':'+x.id]); });
         var mergedRaw=JSON.stringify(merged);
+        if(cloud!=null && mergedRaw===cloud) return true;   /* APPLAG: the cloud already has exactly this — not sent again (684 KB) */
         return rawPush(k, mergedRaw).then(function(ok){
           if(!ok) throw new Error('cloud write refused');
           var cur=localStorage.getItem(k);
@@ -62928,9 +62929,13 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       if(localStorage.getItem(k)==null) return;
       try{ if(window.__gcFG && typeof window.__gcFG.isHeld==='function' && window.__gcFG.isHeld(k)) return; }catch(_h){}   /* APPLAG: a phone's field guard keeps it back — not read and merged for nothing */
       if(k!=='gc_office_tasks'){ rawPush(k, localStorage.getItem(k)); return; }    /* the category order: a list of names, as before */
-      _pushChain=_pushChain.then(function(){
+      /* APPLAG: one waiting push is enough — it reads this computer's list when its turn comes (measured: 9 pushes of the
+         684 KB list queued at once, each reading the cloud copy and sending it) */
+      if(push.__waiting) return; push.__waiting=true;
+      _pushChain=_pushChain.then(function(){ push.__waiting=false;
         window.__gcOTPush={ state:'pushing', at:Date.now() };
-        return Promise.race([ mergedPush(k), new Promise(function(res, rej){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, function(){ rej(new Error('timed out')); }, 10000); }) ]);
+        var _otMs=10000; try{ _otMs=Math.min(180000, 10000+Math.round((localStorage.getItem(k)||'').length/10)); }catch(e){}   /* APPLAG: 10 s was for a small list — the 684 KB one, read and sent on one bar, "timed out" every time and was pushed again on top */
+        return Promise.race([ mergedPush(k), new Promise(function(res, rej){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, function(){ rej(new Error('timed out')); }, _otMs); }) ]);
       }).then(function(){ _dirty=false; window.__gcOTPush={ state:'sent', at:Date.now() }; }, function(e){ _dirty=true; window.__gcOTPush={ state:'retry: '+String(e&&e.message||e), at:Date.now() }; });   /* not sent: tried again shortly */
     }catch(e){}
   }
