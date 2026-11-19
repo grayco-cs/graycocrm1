@@ -68,8 +68,11 @@ const _D = {
   fileLead: (f, extra) => WI()._lib.fileLead(f, extra),
   alertLead: rec => WI()._lib.alertLead(rec),
   gmail: () => require('./gmail.js'),
-  fromEmail: mail => WI().fromEmail(mail)
+  fromEmail: mail => WI().fromEmail(mail),
+  /* LSADIRECT (owner 11/19): the number / a recording / the transcript reached an LSA lead after its text → one short follow-up text */
+  followUp: async ids => { const out = []; for (const id of [].concat(ids || []).filter(Boolean).slice(0, 10)) { try { out.push(await require('./smsalert.js').lsaFollowUp(id)); } catch (e) { out.push({ error: s(e && e.message) }); } } return out; }
 };
+async function fu(ids){ try { const l = [].concat(ids || []).filter(Boolean); return l.length ? await _D.followUp(l) : []; } catch (e) { return []; } }
 
 /* ── time ── */
 /* a wall-clock time in Central (America/Chicago) → ms */
@@ -216,6 +219,7 @@ async function applyApi(gl){
     if (r.action === 'added') { out.filed++; out.ids.push(s(r.id)); if (recent) { try { await _D.alertLead(Object.assign({}, r.rec)); out.alerted++; } catch (e) {} } }
     else if (r.action === 'merged') { out.enriched++; out.ids.push(s(r.id)); }
   }
+  out.followUp = await fu(out.ids.filter((id, i, a) => a.indexOf(id) === i));   /* LSADIRECT */
   return out;
 }
 
@@ -241,19 +245,20 @@ function applyCall(x, row, how){
 }
 async function matchCalls(days){
   const calls = await callLog(); if (!calls.length) return { matched: 0 };
-  const since = _D.now() - (days || 3) * 864e5; let n = 0;
+  const since = _D.now() - (days || 3) * 864e5; let n = 0; const ids = [];
   await _D.kvCas(INBOX, v => {
-    const list = arr(v); let changed = false; n = 0;
+    const list = arr(v); let changed = false; n = 0; ids.length = 0;
     list.forEach(x => {
       if (!x || x.deleted || x.mergedInto || !isLsa(x) || !(leadAt(x) >= since)) return;
       const ex = obj(x.leadExtra), sid = s(ex.lsaCallSid || ex.callSid);
       let row = sid ? calls.find(c => c && c.sid === sid) : null;
       if (!row && leadPhone(x).length !== 10) { const t = callAtOf(x); if (isFinite(t)) row = callFor(calls, t); }
-      if (row && applyCall(x, row)) { changed = true; n++; }
+      if (row && applyCall(x, row)) { changed = true; n++; ids.push(s(x.id)); }
     });
     return changed ? list : undefined;
   });
-  return { matched: n };
+  const f = await fu(ids);   /* LSADIRECT */
+  return { matched: n, followUp: f };
 }
 
 /* ── 3. Wesley's mailbox (read-only Gmail) ── */
@@ -294,7 +299,8 @@ async function onRecording(p, qs){
     v.calls = l.slice(-200); return v;
   });
   const leads = await attachRow(row || { sid: callSid, from: phone10(p.From), at: rec.at, recs: [rec] });
-  return { ok: true, rsid, kind, leads };
+  const followUp = await fu(leads);   /* LSADIRECT: "the call / voicemail is over" — the recording follows the text */
+  return { ok: true, rsid, kind, leads, followUp };
 }
 /* a call log row → its leads: the lead that names this call, else an LSA lead whose Google time matches this call */
 async function attachRow(row){
@@ -361,6 +367,7 @@ async function transcribeLead(leadId, o){
   const t = await transcribeAudio(a); if (!t.ok) return t;
   const tr = Object.assign({ text: clip(t.text, 12000), summary: await summarize(t.text), at: new Date(_D.now()).toISOString(), by: s(o.by) || 'automatic' }, src);
   await _D.kvCas(INBOX, v => { const l = arr(v), y = l.find(z => z && s(z.id) === s(leadId)); if (!y) return undefined; y.leadExtra = Object.assign({}, obj(y.leadExtra), { callTranscript: tr }); return l; });
+  await fu([s(leadId)]);   /* LSADIRECT: the summary follows (only when nothing was sent with the recording) */
   return { ok: true, transcript: tr };
 }
 /* new recordings with no transcript yet (scheduled; a few per run) */

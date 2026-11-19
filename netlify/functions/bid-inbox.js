@@ -1662,6 +1662,15 @@ exports.handler = async function(event){
 
   /* patch MAILFIX: 📬 Mail received — the last 50 e-mails to invoices@ / receipts@ / leads@ / bids@ (GET), run one again (POST
      { op: 'rerun', id }: Resend still holds it; a dropped invoice is read again, its file never blocked as "the same file") */
+  /* OUTSEED (owner 11/19: "The company outreach is empty — it has hundreds"): the 🏢 Company outreach list (gc_kv gc_outreach_list) was
+     never filled — the 607-company GrayCo Multifamily Outreach Tracker lived only in the unmerged /leads/ app (seed.json). Signed-in staff
+     (not the Marketing Manager, as for RoofScout) get it here; the page merges it in once (it never overwrites what a person typed). */
+  if (qs.outreachseed && event.httpMethod === 'GET') {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (/marketing/i.test(s(who.role))) return J(403, { error: 'Not for this role.' }, C);
+    const seed = require('./_lib/outreach-seed.json');
+    return J(200, { ok: true, built: s(seed.built), items: arr(seed.leads) }, C);
+  }
   if (qs.mailrecv && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
     if (!(who.admin || who.office || /^office/.test(s(who.role)))) return J(403, { error: 'Only an admin or the office sees the mail received.' }, C);   /* patch OFFICEFULL: who.office */
