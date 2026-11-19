@@ -155,7 +155,7 @@ if (want(3)) {
 
   /* 3b · someone is TYPING in a box: the update waits while they type, and runs once the box is left */
   {
-    const TYPE = `(() => { addEventListener('DOMContentLoaded', () => { if (sessionStorage.getItem('__typed')) return; const t = document.createElement('textarea'); t.id = 'qa-box'; t.style.cssText = 'position:fixed;top:120px;left:10px;z-index:2147483647;width:200px;height:60px'; document.body.appendChild(t); t.focus(); let n = 0; const iv = setInterval(() => { t.value += 'x'; t.dispatchEvent(new Event('input', { bubbles: true })); if (++n >= 16) { clearInterval(iv); sessionStorage.setItem('__typed', '1'); t.blur(); } }, 500); }); })()`;
+    const TYPE = `(() => { addEventListener('DOMContentLoaded', () => { if (sessionStorage.getItem('__typed')) return; const t = document.createElement('textarea'); t.id = 'qa-box'; t.style.cssText = 'position:fixed;top:120px;left:10px;z-index:2147483647;width:200px;height:60px'; document.body.appendChild(t); t.focus(); let n = 0; const iv = setInterval(() => { t.focus(); t.value += 'x'; t.dispatchEvent(new Event('input', { bubbles: true })); if (++n >= 16) { clearInterval(iv); sessionStorage.setItem('__typed', '1'); t.blur(); } }, 500); }); })()`;
     const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW, TYPE] }); const pc = C.page();
     let nc = 0, tReload = 0; const tc = Date.now(); pc.on('domcontentloaded', () => { nc++; if (!tReload) tReload = Date.now() - tc; });
     const c0 = nc; tReload = 0;
