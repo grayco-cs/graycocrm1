@@ -1674,7 +1674,7 @@ async function pBidJobs(sub){
   const plans = {};
   if (ids.length) {
     const H2 = HUB(), rows = await H2.listRows([H2.eq('collection', 'plans'), H2.inList('id', ids)]);
-    const items = {}; rows.forEach(function(r){ items[s(r.id)] = arr(r.data && r.data.items).slice(0, 60).map(function(f){ return { name: clip(f.name, 160) || 'Plan', category: clip(f.category, 60), type: clip(f.type, 60), fileRef: s(f.fileRef) }; }).filter(function(f){ return f.fileRef; }); });
+    const items = {}; rows.forEach(function(r){ items[s(r.id)] = H2.subPlans(r.data && r.data.items, sc.jobs[s(r.id)] && sc.jobs[s(r.id)].data).slice(0, 60).map(function(f){ return { name: clip(f.name, 160) || 'Plan', category: clip(f.category, 60), type: clip(f.type, 60), fileRef: s(f.fileRef) }; }).filter(function(f){ return f.fileRef; }); });
     try { await H2.signAll(items); } catch (e) {}
     Object.keys(items).forEach(function(id){ plans[id] = items[id].map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: f.name, category: f.category, type: f.type, url: f.dataUrl } : null; }).filter(Boolean); });
   }

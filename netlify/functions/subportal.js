@@ -92,7 +92,28 @@ function subJobView(j, trades){
   if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope', 'files']); })   /* patch PLANREQ-C: + the trade's scope files */
     .filter(function(ts){ return s(ts.scope) || (Array.isArray(ts.files) && ts.files.length); });   /* patch QAA: a trade with no scope written yet is not an empty box on the sub's page (the trades are listed under "We are bidding") */
   if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
+  /* patch BIDVIS (owner 11/19: "just the plans, addendums and scopes"): no invitation to bid / solicitation / bid form, no bid board's page,
+     unless an admin ticked "Visible to subs" (_lib/subvis.js); the Lead Inbox's source link and its notes lines with those links go too */
+  const V = SV(), hidLinks = arr(v.plansLinks).filter(function(l){ return !V.visible(l, 'link'); });
+  if (Array.isArray(v.plansLinks)) v.plansLinks = V.list(v.plansLinks, 'link');
+  if (Array.isArray(v.plans)) v.plans = V.list(v.plans, 'plan');
+  if (Array.isArray(v.specDocs)) v.specDocs = V.list(v.specDocs, 'spec');
+  if (Array.isArray(v.scopeDocs)) v.scopeDocs = V.list(v.scopeDocs, 'scope');
+  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return Array.isArray(ts.files) ? Object.assign({}, ts, { files: V.list(ts.files, 'scope') }) : ts; });
+  if (Array.isArray(v.addenda)) v.addenda = v.addenda.map(function(a){ return Array.isArray(a.files) ? Object.assign({}, a, { files: V.list(a.files, 'addendum') }) : a; });
+  if (v.notes) v.notes = V.notesFor(v.notes, hidLinks.concat(s(j.sourceLink) && !arr(v.plansLinks).some(function(l){ return s(l.url) === s(j.sourceLink); }) ? [{ url: j.sourceLink }] : []));
+  delete v.sourceLink; delete v.leadInbox; delete v._estAuto;
   return v;
+}
+function SV(){ return require('./_lib/subvis.js'); }
+/* patch BIDVIS: a job's plan files a sub may open — the admin's toggle is kept on the job's plan list (job.plans, by name) */
+function subPlans(items, job){
+  const meta = arr(job && job.plans);
+  return arr(items).filter(function(f){
+    const m = meta.find(function(x){ return s(x.name) === s(f.name); });
+    const flag = m && typeof m.subsVisible === 'boolean' ? m.subsVisible : f.subsVisible;
+    return SV().visible(Object.assign({}, f, { subsVisible: flag, category: s(f.category) || s(m && m.category) }), 'plan');
+  });
 }
 // What a subcontractor may change on their own profile. Never role, approval, e-mail or the CRM link.
 const SUB_PROFILE_FIELDS = ['name', 'phone', 'contactTitle', 'company', 'dbaName', 'businessAddress', 'businessCity',
@@ -376,6 +397,37 @@ async function staffUsers(){
   });
 }
 
+/* patch BIDEST (owner 11/19: "Estimator on bid portal should always default to [the Senior Estimator] when they are commercial bids, so his number is next
+   to the PM number"): a commercial bid job (project type commercial or not set) with no estimator — or one no longer on GrayCo's staff —
+   shows the Senior Estimator (the CRM's setting: Admin → 🧮 Senior Estimator / the one person with the Estimator role, _lib/estimator.js),
+   never a name in the code. Only the view: _estAuto marks it, and a save keeps the job's own (empty) estimator until an admin picks one
+   on ✎ Edit Job Details. */
+function commercialJob(j){ const t = low(j && j.projectType); return !t || t === 'commercial'; }
+async function seniorEst(ctx){
+  if (ctx && ctx.senior !== undefined) return ctx.senior;
+  let out = null;
+  try {
+    const email = low(await defaultEstimatorEmail(true));
+    const staff = await staffList();
+    const rows = (await listRows([eq('collection', 'users')])).filter(function(r){ return r.data && r.data.role === 'admin' && staff.some(function(x){ return x.email === low(r.email); }); });
+    const hit = rows.find(function(r){ return low(r.email) === email; });
+    out = { id: okEmail(email) && hit ? s(hit.id) : '', email: email, adminIds: rows.map(function(r){ return s(r.id); }) };
+  } catch (e) { out = { id: '', email: '', adminIds: [] }; }
+  if (ctx) ctx.senior = out;
+  return out;
+}
+async function estFill(list, ctx){
+  if (!arr(list).some(commercialJob)) return list;
+  const se = await seniorEst(ctx);
+  if (!se.id) return list;
+  return list.map(function(j){
+    if (!j || !commercialJob(j)) return j;
+    const id = s(j.estimatorId);
+    if (id && se.adminIds.indexOf(id) > -1) return j;
+    return Object.assign({}, j, { estimatorId: se.id, _estAuto: true });
+  });
+}
+
 async function loadKey(who, key, ctx){
   const parts = key.split(':');
   const head = parts[0];
@@ -387,11 +439,12 @@ async function loadKey(who, key, ctx){
   }
   if (COLLECTIONS.indexOf(key) > -1) {
     if (who.isAdmin) {
-      if (key === 'users') return staffUsers();
+      if (key === 'users') { const us = await staffUsers(), se = await seniorEst(ctx);   /* patch BIDEST: who the Senior Estimator is (the edit form's default) */
+        return us.map(function(u){ return se.id && u && u.id === se.id && u.role === 'admin' ? Object.assign({}, u, { seniorEstimator: true }) : u; }); }
       if (key === 'jobs') {   /* patch BIDPO: the CRM's PO on every job (+ what an admin needs to link one) */
         const list = (await listRows([eq('collection', 'jobs')])).map(function(r){ return r.data; });
         const ps = await poSync(list, { by: who.email });
-        return ps.jobs.map(function(j){ return poView(j, j && ps.info[j.id], ps.data); });
+        return estFill(ps.jobs.map(function(j){ return poView(j, j && ps.info[j.id], ps.data); }), ctx);   /* patch BIDEST */
       }
       return (await listRows([eq('collection', key)])).map(function(r){ return r.data; });
     }
@@ -404,7 +457,7 @@ async function loadKey(who, key, ctx){
     }
     if (key === 'jobs') { const tr = who.profile && Array.isArray(who.profile.trades) ? who.profile.trades : [];   /* patch SYS2 */
       const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });   /* patch BIDPO: the CRM's PO (never a new one from a sub's load) */
-      return ps.jobs.map(function(j){
+      return (await estFill(ps.jobs, ctx)).map(function(j){   /* patch BIDEST: the Senior Estimator next to the PM */
         const v = subJobView(j, tr);
         if (ps.data && !(v.siteWalk && v.siteWalk.date)) { try { const w = BPO().crmSiteWalk(j, ps.data); if (w) v.siteWalk = { date: w.date, time: w.time, location: w.location, mandatory: w.mandatory }; } catch (e) {} }   /* the CRM's site walk when the bid site has none */
         return v;
@@ -428,7 +481,8 @@ async function loadKey(who, key, ctx){
     return [];   // estimates, activity, links: GrayCo only
   }
   if (head === 'plans' && parts.length === 2) {
-    if (!who.isAdmin) { const sc = ctx.scope || (ctx.scope = await subScope(who)); if (!sc.jobs[parts[1]]) return []; }
+    if (!who.isAdmin) { const sc = ctx.scope || (ctx.scope = await subScope(who)); if (!sc.jobs[parts[1]]) return [];
+      const r0 = await getRow('plans', parts[1]); return r0 ? subPlans(r0.data.items, sc.jobs[parts[1]].data) : []; }   /* patch BIDVIS */
     const r = await getRow('plans', parts[1]);
     return r ? arr(r.data.items) : [];
   }
@@ -545,6 +599,8 @@ async function saveCollection(who, key, upsert, del, ctx){
           const publish = rec._publish === true; delete rec._publish;
           if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });
           /* patch BIDPO: nobody types a PO on the bid site — it and the CRM link are the server's (🔗 Link to CRM job is its own action) */
+          if (rec._estAuto === true) rec.estimatorId = old ? s(old.estimatorId) : '';   /* patch BIDEST: the shown default is not saved as a pick */
+          delete rec._estAuto;
           delete rec._po; const detailsSave = rec._detailsSave === true || typeof rec._detailsSave === 'number'; delete rec._detailsSave;
           PO_FIELDS.forEach(function(k){ if (old && old[k] !== undefined) rec[k] = old[k]; else delete rec[k]; });
           if (poD && arr(poD.projects).length && !isGone(rec)) { const pr = BPO().apply(rec, poD, { jobs: poAll.concat(rows.map(function(x){ return x.data; })), by: who.email }); Object.keys(rec).forEach(function(k){ if (!(k in pr.job)) delete rec[k]; }); Object.assign(rec, pr.job); }
@@ -1858,7 +1914,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

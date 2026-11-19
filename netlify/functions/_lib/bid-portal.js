@@ -103,6 +103,8 @@ function make(d){
     arr(item.notes).slice(-6).forEach(n => out.push(s(n)));
     return out.join('\n').slice(0, 6000);
   }
+  function keepVis(list, old){ if (!Array.isArray(list)) return list; const by = {}; arr(old).forEach(x => { if (x && typeof x.subsVisible === 'boolean') by[s(x.name)] = x.subsVisible; });
+    return arr(list).map(x => x && (s(x.name) in by) && typeof x.subsVisible !== 'boolean' ? Object.assign({}, x, { subsVisible: by[s(x.name)] }) : x); }
   function jobRecord(item, prev, plansMeta, specs){
     const dd = due(item);
     const base = prev || { id: jobIdFor(item), poNumber: '', projectId: '', pmId: '', estimatorId: '', bidResultsSharing: 'private', tradeScopes: [], scopeDocs: [],
@@ -111,7 +113,7 @@ function make(d){
       title: s(item.title).slice(0, 200), address: where(item), bidDueDate: dd.day, bidDueTime: dd.time,
       scope: (prev && prev.crmScope) ? prev.scope : s(item.scope), notes: notesFor(item, !!(prev && prev.draft === false)) + (prev && arr(prev.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + prev.crmNotes.map(n => '• ' + n).join('\n') : ''), tradesSought: arr(item.trades).join(', '),
       grayCoRole: item.gc ? 'sub' : (prev && prev.grayCoRole) || 'gc', sourceLink: srcLink(item),
-      plans: plansMeta, specDocs: specs,
+      plans: keepVis(plansMeta, prev && prev.plans), specDocs: keepVis(specs, prev && prev.specDocs),   /* patch BIDVIS: an admin's "Visible to subs" tick stays */
       leadInbox: { id: item.id, source: s(item.source), type: s(item.type), bidNumber: s(item.bidNumber), alsoOn: arr(item.alsoOn), rev: item.rev || 1 },
       updatedAt: nowIso()
     });

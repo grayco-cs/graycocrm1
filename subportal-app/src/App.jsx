@@ -143,6 +143,7 @@ const T = {
     plansAsked: 'Request sent — we will e-mail you when the plans are ready.', plansAskedNote: 'Plans requested — we will e-mail you as soon as they are here.', plansReadyNote: 'The plans are ready (we e-mailed you).',
     plansRequestedBy: 'Plans requested by {n} sub(s)', plansAllTold: 'all told', uploadPlansZip: 'Upload plans, specs or scopes', plansUploading: 'Uploading…', plansZipHint: 'Any file — PDF, Word, Excel, PowerPoint, pictures, DWG, or a ZIP (unpacked; folders become categories) — up to 50 MB each. Each file is sorted by trade: a scope goes on its trade, a sheet like E-101 is linked to Electrical.',
     plansUploaded: '{n} plan file(s) added.', plansTold: '{n} sub(s) e-mailed that the plans are ready.', plansSkipped: 'left out',
+    selectPerson: '— Select —', subsVisOn: 'Visible to subs', subsVisOff: 'Hidden from subs', subsVisHint: 'Subs and suppliers see this only when ticked. The invitation to bid, the solicitation and bid forms start hidden; plans, specs, addenda and scopes start shown.',
     draftBadge: 'Draft', draftHint: 'From the CRM Lead Inbox. Subcontractors cannot see it until you publish it.', publishDraft: 'Publish to bid portal', draftPublished: 'Published — subs can see it now.', draftNeedsDue: 'Add a bid due date first (Edit Job Details).',
     won: 'Won', lost: 'Lost',
     planArchive: 'Plan Archive', archivedPlans: 'Archived plans (won jobs)',
@@ -443,6 +444,7 @@ const T = {
     plansAsked: 'Pedido enviado — le avisaremos por correo cuando estén los planos.', plansAskedNote: 'Planos pedidos — le avisaremos por correo en cuanto estén.', plansReadyNote: 'Los planos ya están (le enviamos un correo).',
     plansRequestedBy: 'Planos pedidos por {n} subcontratista(s)', plansAllTold: 'todos avisados', uploadPlansZip: 'Subir planos, especificaciones o alcances', plansUploading: 'Subiendo…', plansZipHint: 'Cualquier archivo — PDF, Word, Excel, PowerPoint, fotos, DWG o un ZIP (se separa; las carpetas son categorías) — hasta 50 MB cada uno. Cada archivo se ordena por oficio.',
     plansUploaded: '{n} plano(s) agregados.', plansTold: '{n} subcontratista(s) avisados.', plansSkipped: 'no incluidos',
+    selectPerson: '— Elegir —', subsVisOn: 'Visible para subs', subsVisOff: 'Oculto para subs', subsVisHint: 'Los subs y proveedores lo ven solo si está marcado. La invitación a licitar, la convocatoria y los formularios de oferta empiezan ocultos; planos, especificaciones, adendas y alcances, visibles.',
     draftBadge: 'Borrador', draftHint: 'Del buzón de oportunidades del CRM. Los subcontratistas no lo ven hasta que usted lo publique.', publishDraft: 'Publicar en el portal de licitaciones', draftPublished: 'Publicado — los subcontratistas ya lo ven.', draftNeedsDue: 'Primero ponga la fecha límite (Editar trabajo).',
     won: 'Ganado', lost: 'Perdido',
     planArchive: 'Archivo de Planos', archivedPlans: 'Planos archivados (trabajos ganados)',
@@ -2098,6 +2100,46 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   );
 }
 
+/* patch BIDEST: the people who can be a job's PM / estimator (GrayCo staff on the bid site), the Senior Estimator (the CRM's
+   Admin → 🧮 Senior Estimator setting, marked by the server), and a commercial bid job (type commercial or not set) */
+function staffPick(users) { return (users || []).filter(u => u && u.role === 'admin'); }
+function seniorEstimatorOf(users) { return staffPick(users).find(u => u.seniorEstimator) || null; }
+function commercialJob(j) { const v = String((j && j.projectType) || '').toLowerCase(); return !v || v === 'commercial'; }
+/* ✎ Edit Job Details: a PM / estimator id that is not one of the people in the list is no pick at all (the select used to SHOW the
+   first person while the form held '' — "Please select an Estimator." with an estimator on screen); a commercial job with none → the Senior Estimator */
+function pickOrDefault(id, users, job, isEst) {
+  const list = staffPick(users);
+  if (id && list.some(u => u.id === id)) return id;
+  if (isEst && commercialJob(job)) { const se = seniorEstimatorOf(users); if (se) return se.id; }
+  return '';
+}
+/* patch BIDVIS: the same default as netlify/functions/_lib/subvis.js — the invitation to bid / solicitation / bid form / a bid board's
+   page start HIDDEN from subs; plans, specs, addenda and GrayCo's scopes start shown. An admin's "Visible to subs" tick wins. */
+const SV_HIDE = /\b(solicitations?|invitations?(\s+(to|for)\s+bids?)?|invite\s+to\s+bid|itb|ifb|rfp|rfq|rfb|bid\s*forms?|proposal\s*forms?|forms?\s+of\s+(bid|proposal)|notices?\s+(to|of)\s+(bidders|contractors|bid|solicitation)|notice\s*&\s*documents|bid\s+notices?|advertisement(\s+for\s+bids)?|legal\s+notices?|instructions?\s+to\s+bidders|bid\s+bonds?|bidders?'?\s+(list|registration)|bid\s+tabulations?|bid\s+invite)\b/i;
+const SV_PLAN = /\b(plans?|drawings?|sheets?|blueprints?|addend\w*|specs?|specifications?|project\s+manual|scopes?)\b/i;
+const SV_HOST = /(^|\.)(buildingconnected\.com|sam\.gov|bidnetdirect\.com|bonfirehub\.com|demandstar\.com|publicpurchase\.com|planetbids\.com|ionwave\.net|bidsync\.com|periscopeholdings\.com)$/i;
+function svSolicitation(item, kind) {
+  if (!item || kind === 'scope' || kind === 'addendum') return false;
+  const clean = a => a.map(x => String(x == null ? '' : x).trim()).join(' ').replace(/[_\-.]+/g, ' ');
+  const text = clean([item.name, item.label, item.category, item.title]), own = clean([item.name, item.label, item.title]);
+  if (SV_HIDE.test(text) && !SV_PLAN.test(own)) return true;
+  if (kind === 'link' && !SV_PLAN.test(own)) { let h = ''; try { h = new URL(item.url).host; } catch (e) {}
+    if (/^(government|buildingconnected|bid\s*board)$/i.test(String(item.board || '').trim()) || SV_HOST.test(h)) return true; }
+  return false;
+}
+function subsVisible(item, kind) { return item && item.subsVisible === true ? true : item && item.subsVisible === false ? false : !svSolicitation(item, kind); }
+function VisToggle({ t, item, kind, onChange }) {
+  const on = subsVisible(item, kind);
+  return (
+    <label data-subvis={on ? 'on' : 'off'} title={t.subsVisHint} onClick={e => e.stopPropagation()}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+        padding: '4px 8px', borderRadius: 999, border: `1px solid ${on ? styles.green : styles.border}`, color: on ? styles.green : styles.text2, background: '#fff' }}>
+      <input type="checkbox" checked={on} onChange={e => onChange(e.target.checked)} style={{ margin: 0 }} />
+      {on ? t.subsVisOn : t.subsVisOff}
+    </label>
+  );
+}
+
 /*DOCPILLS*/ /* Olympus-style document buttons: PLANS · SPECS · ADDENDUM #n · PLAN ROOM */
 function docGroups(job) {
   const plans = [], specs = [], add = {}, out = [];
@@ -2762,6 +2804,12 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
     showToast('Job reopened.');
   }
 
+  /* patch BIDVIS: an admin's "Visible to subs" tick on a plan file, spec / scope file or plan-room link (kept on the job) */
+  function setVis(field, item, v) {
+    setJobs(jobs.map(j => j.id === job.id ? { ...j, [field]: (j[field] || []).map(x => x === item || (x && item && ((x.id && x.id === item.id) || (!x.id && x.name && x.name === item.name && x.url === item.url))) ? { ...x, subsVisible: !!v } : x) } : j));
+    showToast(v ? t.subsVisOn + ' ✓' : t.subsVisOff);
+  }
+
   // ---- EDIT JOB ----
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -2770,8 +2818,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       title: job.title || '',
       address: job.address || '',
       bidDueDate: job.bidDueDate || '',
-      pmId: job.pmId || '',
-      estimatorId: job.estimatorId || '',
+      pmId: pickOrDefault(job.pmId, users, job, false),
+      estimatorId: pickOrDefault(job.estimatorId, users, job, true),   /* patch BIDEST */
       /* patch BIDPO: no PO / CRM id typed here; the site walk + questions deadline (the CRM's site walk when the bid site has none) */
       ...(() => { const w = (job.siteWalk && job.siteWalk.date) ? job.siteWalk : ((job._po && job._po.crmSiteWalk) || {});
         return { swDate: w.date || '', swTime: w.time || '', swMandatory: !!w.mandatory, swLocation: w.location || '', swFromCrm: !(job.siteWalk && job.siteWalk.date) && !!w.date }; })(),
@@ -2798,7 +2846,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       address: editForm.address.trim(),
       bidDueDate: editForm.bidDueDate,
       pmId: editForm.pmId,
-      estimatorId: editForm.estimatorId,
+      estimatorId: editForm.estimatorId, _estAuto: false,   /* patch BIDEST: picked here = the job's own estimator */
       siteWalk: editForm.swDate
         ? { ...(job.siteWalk || {}), date: editForm.swDate, time: editForm.swTime || '', mandatory: !!editForm.swMandatory, location: (editForm.swLocation || '').trim() || editForm.address.trim() }
         : ((job.siteWalk && job.siteWalk.date) ? { ...job.siteWalk, date: '', time: '', location: '', mandatory: false } : job.siteWalk),
@@ -3027,17 +3075,19 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <Field label={t.projectManager} required>
-              <select style={inputStyle} value={editForm.pmId}
+              <select style={inputStyle} value={editForm.pmId} data-edit-pm="1"
                 onChange={e => setEditForm({ ...editForm, pmId: e.target.value })}>
-                {users.filter(u => u.role === 'admin').map(u => (
+                {!editForm.pmId && <option value="">{t.selectPerson}</option>}
+                {staffPick(users).map(u => (
                   <option key={u.id} value={u.id}>{u.name}{u.title ? ` — ${u.title}` : ''}</option>
                 ))}
               </select>
             </Field>
             <Field label={t.estimator} required>
-              <select style={inputStyle} value={editForm.estimatorId}
+              <select style={inputStyle} value={editForm.estimatorId} data-edit-est="1"
                 onChange={e => setEditForm({ ...editForm, estimatorId: e.target.value })}>
-                {users.filter(u => u.role === 'admin').map(u => (
+                {!editForm.estimatorId && <option value="">{t.selectPerson}</option>}
+                {staffPick(users).map(u => (
                   <option key={u.id} value={u.id}>{u.name}{u.title ? ` — ${u.title}` : ''}</option>
                 ))}
               </select>
@@ -3251,7 +3301,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         borderRadius: 6, textDecoration: 'none', fontWeight: 600, fontSize: 13,
                         border: `1.5px solid ${styles.border}`,
                       }}>
-                        <Mail size={14} /> {t.emailPM}
+                        <Mail size={14} /> <span data-contact-email="1">{person.email}</span>
                       </a>
                     )}
                   </div>
@@ -3296,6 +3346,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                             <div style={{ fontSize: 11, color: styles.text2 }}>{sizeLabel}</div>
                           </div>
                         </div>
+                        {isAdmin && <VisToggle t={t} item={doc} kind="scope" onChange={v => setVis('scopeDocs', doc, v)} />}
                         <Btn size="sm" icon={Download} onClick={() => {
                           openFile(doc.dataUrl, doc.name);
                           logDownload(doc.name);
@@ -3332,6 +3383,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                             <div style={{ fontSize: 11, color: styles.text2 }}>{sizeLabel}</div>
                           </div>
                         </div>
+                        {isAdmin && <VisToggle t={t} item={doc} kind="spec" onChange={v => setVis('specDocs', doc, v)} />}
                         <Btn size="sm" icon={Download} onClick={() => {
                           openFile(doc.dataUrl, doc.name);
                           logDownload(doc.name);
@@ -3482,7 +3534,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         <div style={{ fontSize: 12, color: styles.text2 }}>{(plan.size / 1024).toFixed(0)} KB</div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {isAdmin && <VisToggle t={t} item={plan} kind="plan" onChange={v => setVis('plans', plan, v)} />}
                       {/* Takeoff button — only shown for PDF plans */}
                       {(plan.name.toLowerCase().endsWith('.pdf') || plan.type === 'application/pdf') && (
                         <Btn size="sm" variant="ghost" onClick={() => {
@@ -3513,9 +3566,12 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               <h3 style={sectionTitleStyle} id="bid-planlinks"><FileText size={18} /> {t.planLinks}</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {job.plansLinks.map((l, i) => (
-                  <a key={l.id || i} href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
+                  <div key={l.id || i} data-planlink={i} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
                     🔗 {t.openPlans || 'Open plans'} ↗ — {l.label || t.openLink}{l.version ? ` · ${t.versionL} ${l.version}` : ''}{l.date ? ` · ${new Date(l.date + 'T12:00:00').toLocaleDateString()}` : ''}
                   </a>
+                  {isAdmin && <VisToggle t={t} item={l} kind="link" onChange={v => setVis('plansLinks', l, v)} />}
+                  </div>
                 ))}
               </div>
             </Card>
@@ -4784,7 +4840,8 @@ function TradeScopesEditor({ t, tradeScopes, setTradeScopes, showToast }) {
    ============================================================ */
 function AddJob({ t, jobs, setJobs, user, users, showToast, setView }) {
   const [form, setForm] = useState({
-    title: '', address: '', bidDueDate: '', pmId: user.id, estimatorId: user.id,
+    title: '', address: '', bidDueDate: '', pmId: user.id, estimatorId: (seniorEstimatorOf(users) || user).id,   /* patch BIDEST: a new (commercial) bid job → the Senior Estimator */
+   
     visibility: 'public', bidResultsSharing: 'private',
     grayCoRole: 'gc', tradesSought: '',
     scope: '', specifications: '', notes: '',
