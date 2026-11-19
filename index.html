@@ -32783,6 +32783,12 @@ function calcPly(){try{
 var _gcSlotSaveT=null;
 function _gcSaveSlots(){
   try{
+    /* QA gate 11/19: saved on every click outside the builder, every blur and every closed sheet — with a new ts each time,
+       so an untouched builder went up to the cloud again and again. Only a real change of the open slots is saved now. */
+    var _core=JSON.stringify({slots:openSlots,active:activeSlot});
+    if(_gcSaveSlots._last==null){ try{ var _o=JSON.parse(localStorage.getItem('gc_builder_slots')||'null'); if(_o && JSON.stringify({slots:_o.slots,active:_o.active})===_core) _gcSaveSlots._last=_core; }catch(e){} }
+    if(_core===_gcSaveSlots._last) return;
+    _gcSaveSlots._last=_core;
     var _ts=Date.now(); window._gcSlotsTs=_ts;
     var payload=JSON.stringify({slots:openSlots,active:activeSlot,ts:_ts});
     // localStorage backup, capped so it can never fill storage
@@ -63189,6 +63195,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var merged=mergeTaskLists(local, cloud).filter(function(x){ return !(x && x.id && tomb[k+':'+x.id]); });
         var mergedRaw=JSON.stringify(merged);
         if(cloud!=null && mergedRaw===cloud) return true;   /* APPLAG: the cloud already has exactly this — not sent again (684 KB) */
+        if(cloud!=null && sameTasks(merged, cloud)) return true;   /* QA gate 11/19: the same to-dos in another order / key order — not a change (733 KB from the owner's phone) */
         return rawPush(k, mergedRaw).then(function(ok){
           if(!ok) throw new Error('cloud write refused');
           var cur=localStorage.getItem(k);
@@ -63223,6 +63230,16 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // un-ticked it. A manual decision is final; it must never be reverted by a
   // sync. Rules: union by id (a task on either side is kept), and for a task on
   // both sides the one that was touched most recently wins.
+  /* the same to-dos, by id, each with the same fields and values (order of the list and of each to-do's keys aside) */
+  function canon(v){ if(Array.isArray(v)) return '['+v.map(canon).join(',')+']'; if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(function(k){ return JSON.stringify(k)+':'+canon(v[k]); }).join(',')+'}'; return JSON.stringify(v===undefined?null:v); }
+  function sameTasks(merged, cloudRaw){
+    try{
+      var c=JSON.parse(cloudRaw||'[]'); if(!Array.isArray(c) || c.length!==merged.length) return false;
+      var m={}; for(var i=0;i<c.length;i++){ var t=c[i]; if(!t || !t.id || m[t.id]!=null) return false; m[t.id]=canon(t); }
+      for(var j=0;j<merged.length;j++){ var u=merged[j]; if(!u || !u.id || m[u.id]!==canon(u)) return false; }
+      return true;
+    }catch(e){ return false; }
+  }
   function taskTime(t){
     return String((t && (t.updatedAt || t.doneAt || t.addedAt || '')) || '');
   }
@@ -94600,7 +94617,11 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     if(!proj) return null;
 
     var q=await queue();
-    if(q.some(function(c){ return c.pid===projectId && c.status!=='void'; })) return null; // already queued
+    /* COMMDUP (QA gate 11/19): one record per job, whatever its status. Every new device / session (a phone whose full
+       localStorage cannot keep gc_commission_seen) queued every completed job again with a random id, and the copies of all
+       devices were merged into the cloud list: 584 records for 51 jobs (up to 13 each), ~1 KB more on every open. A voided
+       one stays voided (never brought back as owed), and the id is the job's, so two devices queueing it at once make ONE. */
+    if(q.some(function(c){ return c && c.pid===projectId; })) return null; // already queued (or voided)
 
     var closedOn = opts.closedOn || proj.completionDate || proj.endDate || ymd(new Date());
     var earnedPeriod = window._gcPayPeriodContaining(closedOn);
@@ -94610,7 +94631,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     var payPeriod = window._gcPayPeriodFor(ymd(payEnd));
 
     var rec={
-      id:'CM'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+      id:'CM-'+String(projectId),
       pid:projectId, job:proj.name||'', pm:proj.pm||'', 
       amount: parseFloat(opts.amount)||0,
       closedOn: closedOn,
