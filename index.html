@@ -86338,7 +86338,11 @@ window._gcForceFixSchedule = async function(silent){
         /* APPLAG: an upload is a save waiting to go (a person's, made earlier) — never held by the quiet hours: held, it answered
            "503", and the phone said "Saved on this phone — not sent to the office yet" all evening until the next tap */
         var _qm = 'GET'; try{ _qm = String((opts && opts.method) || (url && typeof url === 'object' && url.method) || 'GET').toUpperCase(); }catch(e){}
-        if(!manual && (_qm === 'GET' || _qm === 'HEAD') && window._gcQuietHoursHold && window._gcQuietHoursHold()){
+        if(_qm !== 'GET' && _qm !== 'HEAD') state.lastWriteTry = Date.now();
+        /* APPLAG2: nor a read while a save is on its way — several uploads read the cloud copy first (the job-list union, the
+           to-do merge); held, that read failed the save ("upload refused", the amber note) at 7 am with nobody tapping */
+        var _qp = false; try{ _qp = Date.now() - (state.lastWriteTry || 0) < 180000 || (window._gcUnsent && window._gcUnsent().length) || (window._gcSending && window._gcSending().length) || (window._gcSyncQ && window._gcSyncQ.waiting().length); }catch(e){}
+        if(!manual && !_qp && (_qm === 'GET' || _qm === 'HEAD') && window._gcQuietHoursHold && window._gcQuietHoursHold()){
           return Promise.resolve(new Response(null, { status: 503, statusText: 'quiet hours' }));
         }
         if(!manual && Date.now() < state.backoffUntil){
