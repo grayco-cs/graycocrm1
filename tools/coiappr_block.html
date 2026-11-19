@@ -1,0 +1,117 @@
+<script id="gc-patch-coiappr">
+/* __GC_PATCH_COIAPPR__ ═══════════════════════════════════════════════════════
+   GrayCo — 📄 SUB COI / W-9 TO CONFIRM lives in ✅ Approvals (patch COIAPPR, owner 11/19: "button is on every screen, it
+   shouldn't, but approvals for what COIs should be in portal approvals").
+   · The floating teal "📄 N COI / W-9 to confirm" pill is gone (patch AUTAI's paintPills no longer draws it).
+   · Every COI / W-9 waiting for a person — read by the server (sub-doc-read.js: uploaded in the sub portal, dropped on the sub
+     form) or filed on a sub's documents (CRM or sub portal, not read yet) — is ONE list (patch AUTAI's SDQ, de-duplicated by the
+     file), and each item is:
+       – a row "Sub COI / W-9 to confirm" in the desk ✅ Approvals tab and the 📌 To-Do pin (rich row: the sub, the file, 📄 Read &
+         confirm, 📄 The file), for admins and the office;
+       – an entry in the ONE approval set (window._gcApprovalSet → groups.other): the green APPROVE / Approvals badge counts it,
+         and GrayCo Field's ✅ Approvals (My Approvals → "Other approvals") lists it with 📄 Read & confirm.
+     Read & confirm = the same flow as before (patch AUTAI: read it if needed → the values → ✅ Fill the sub record → applySubRead).
+     A confirmed item leaves the list at once (the file is marked read on the sub — r36q — and the server read is closed);
+     "Not a COI or W-9" → Close takes it off this computer's list for good; "Not now" leaves it waiting.
+   · Who: admins and the office (by role; an admin's 👁 View as a PM / estimator … does not see them). Kill switch: none needed —
+     with patch AUTAI off there is nothing to list.
+   Console: _gcCoiAppr.items(), .rows(), .open(ref)
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_COIAPPR__) return; W.__GC_PATCH_COIAPPR__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function warn(e){ try { console.warn('[GC COIAPPR]', e && e.message || e); } catch (x) {} }
+function A(){ return W._gcAUTAI || null; }
+function users(){ return arr(W._crm && W._crm.users); }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function rp(){ try { return W._gcRP && W._gcRP.status ? W._gcRP.status() : null; } catch (e) { return null; } }
+/* admins and the office, by role (an admin previewing another role sees that role's approvals) */
+function canSee(){
+  if (!myEmail()) return false;
+  var st = rp();
+  if (st && st.admin && st.viewAs) return /^Office/i.test(s(st.viewAs));
+  if (realAdmin()) return true;
+  if (st && /^office/i.test(s(st.role))) return true;
+  var e = myEmail(), u = users().filter(function(x){ return x && low(x.email) === e; })[0];
+  return !!(u && /office|admin/i.test(s(u.role)));
+}
+function coOk(){ try { return !(W._gcCo && W._gcCo.filter && W._gcCo.filter() !== 'all' && W._gcCo.filter() !== 'construction'); } catch (e) { return true; } }
+function subOf(id){ return arr(W._crm && W._crm.subs).filter(function(x){ return x && String(x.id) === String(id); })[0] || null; }
+function idOf(ref){ var m = /([0-9a-f]{64})/i.exec(s(ref)); return 'subdoc_' + (m ? m[1].slice(0, 20) : s(ref).replace(/[^A-Za-z0-9]/g, '').slice(-24)); }
+function isW9(x){ return x.kind === 'w9' || (!x.kind && /w-?9/i.test(s(x.cat) + ' ' + s(x.name))); }
+/* the one list (patch AUTAI's queue): { id, ref, sub, file, kind, pending, at } */
+function items(){
+  if (!canSee() || !coOk()) return [];
+  var a = A(); if (!a || typeof a.subDocs !== 'function') return [];
+  var seen = {};
+  return arr(a.subDocs()).filter(function(x){ if (!x || !s(x.ref) || seen[x.ref]) return false; seen[x.ref] = 1; return true; }).map(function(x){
+    var sb = subOf(x.subId) || {}, f = x.fields || {};
+    var sub = s(sb.name || sb.company) || s(f.businessName || f.insuredName || f.legalName) || 'Sub';
+    var file = (arr(sb.files).filter(function(z){ return z && z.ref === x.ref; })[0]) || {};
+    return { id: idOf(x.ref), ref: s(x.ref), sub: sub, subId: s(x.subId), file: s(x.name) || s(file.name) || 'document', kind: isW9(x) ? 'w9' : 'coi', pending: !!x.pending,
+      at: Date.parse(x.at || file.at || file.uploadedAt || 0) || 0, portal: /sub-?portal|portal/i.test(s(x.source) + ' ' + s(file.source) + ' ' + s(file.by)) };
+  });
+}
+function title(it){ return (it.kind === 'w9' ? '🧾 W-9' : '🛡 COI') + ' to confirm — ' + it.sub + ': ' + it.file; }
+function note(it){ return (it.pending ? 'not read yet — tap Read & confirm' : 'read, waiting for you to confirm') + (it.portal ? ' · from the sub portal' : ''); }
+function open(ref){
+  var a = A(); if (!a) return false;
+  try { if (typeof a.openSubDoc === 'function' && a.openSubDoc(ref)) return true; } catch (e) { warn(e); }
+  try { if (typeof a.openSubDocs === 'function') { a.openSubDocs(); return true; } } catch (e) { warn(e); }
+  return false;
+}
+function viewFile(ref){
+  try { if (typeof W._gcFileUrl === 'function') { Promise.resolve(W._gcFileUrl(ref)).then(function(u){ if (u) W.open(u, '_blank', 'noopener'); }, function(e){ warn(e); }); return; } } catch (e) { warn(e); }
+  open(ref);
+}
+/* ── 1. the ONE approval set (badge, To-Do chip, Field "Other approvals") ── */
+function setAdd(r){
+  try {
+    if (!r || !r.groups) return r;
+    var L = items(); if (!L.length) return r;
+    var g = r.groups.other = arr(r.groups.other), have = {}; g.forEach(function(x){ have[s(x && x.id)] = 1; });
+    var n = 0;
+    L.forEach(function(it){ if (have[it.id] || have['td:' + it.id]) return; have[it.id] = 1; n++;
+      g.push({ id: it.id, title: title(it), sub: note(it), coi: true, act: { l: '📄 Read & confirm', f: function(){ open(it.ref); } } }); });
+    if (n) { r.total = (r.total || 0) + n; r.tip = (s(r.tip) ? s(r.tip) + ' · ' : '') + n + ' sub COI / W-9 to confirm'; }
+  } catch (e) { warn(e); }
+  return r;
+}
+function wrapSet(){
+  var f = W._gcApprovalSet; if (typeof f !== 'function' || f.__gcCoiAppr) return;
+  var w = function(){ return setAdd(f.apply(this, arguments)); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcCoiAppr = true; W._gcApprovalSet = w;
+  fresh();
+}
+/* ── 2. the ✅ Approvals tab's rows (patch APX: window._gcApxExtra; "drop" = the plain set row this one replaces) ── */
+function rows(sc){
+  if (sc && sc.kind && sc.kind !== 'admin' && sc.kind !== 'office') return [];
+  return items().map(function(it){
+    return { key: 'coi:' + it.id, id: it.id, src: 'coi', group: 'coi', kind: 'sub_coi', kindL: 'Sub COI / W-9 to confirm', icon: it.kind === 'w9' ? '🧾' : '🛡', title: title(it),
+      pid: '', job: '🔧 ' + it.sub + ' · ' + it.file, pm: '', step: 'admin', waits: 'Admins or the office', since: it.at, clock: '', amount: 0, mine: true, escalated: false, chain: note(it),
+      approve: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, open: null, doc: { l: '📄 The file', f: function(){ viewFile(it.ref); } }, edit: null, drop: 'td:' + it.id };
+  });
+}
+var sig = '';
+function fresh(){
+  try { if (typeof W._gcApprovalSetFresh === 'function') W._gcApprovalSetFresh(); } catch (e) {}
+  try { if (W._gcAPX && W._gcAPX.draw) W._gcAPX.draw(); } catch (e) {}
+}
+function watch(){
+  wrapSet();
+  try { var n = items().map(function(x){ return x.id + (x.pending ? 'p' : 'r'); }).join('|'); if (n !== sig) { sig = n; fresh(); } } catch (e) { warn(e); }
+}
+W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
+wrapSet(); SI.call(W, watch, 2000);
+D.addEventListener('gc:subdocs-changed', function(){ later(watch, 50); });
+W._gcCoiAppr = { items: items, rows: function(){ return rows({ kind: 'admin' }); }, open: open, canSee: canSee };
+try { console.log('[GC] patch COIAPPR: sub COI / W-9 to confirm are in ✅ Approvals (no floating pill) — _gcCoiAppr.items()'); } catch (e) {}
+})(window, document);
+</script>
