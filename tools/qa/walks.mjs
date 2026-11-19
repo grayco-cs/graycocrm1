@@ -126,9 +126,14 @@ async function owner(X){
     if (!r) { const b = await X.locate({ rx: '^25 ?%' }); if (!b) throw new Error('could not find a 25% choice or a progress slider'); await X.tapAt(b.x, b.y); }
     st.info.progressBy = r || 'button';
     await sleep(500);
+    const w0 = X.H.writes.length;
     const sv = await X.locate({ rx: '^(💾 ?)?(Save|Update|Done|Save progress|✓ Save)' }); if (sv) await X.tapAt(sv.x, sv.y);
-    const saved = await until(() => X.H.writes.some(w => w.key === 'projects' || /^projects__/.test(w.key)), 20000);
-    if (!saved) st.fails.push({ check: 'stuck', msg: 'the progress change did not reach the (offline) cloud within 20 s' });
+    /* only a write AFTER this change counts (an earlier upload of the job list passed this check by itself), and the job list
+       (~555 KB) needs its time on this link: ~30 s up at 150 kbps after the CRM's own batching (≤ 20 s) */
+    const t0p = Date.now();
+    const saved = await until(() => X.H.writes.slice(w0).some(w => w.key === 'projects' || /^projects__/.test(w.key)), 90000);
+    st.info.progressUploadSec = saved ? Math.round((Date.now() - t0p) / 1000) : null;
+    if (!saved) st.fails.push({ check: 'stuck', msg: 'the progress change did not reach the (offline) cloud within 90 s' });
     return true;
   });
   // Leads
