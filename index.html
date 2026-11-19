@@ -244227,3 +244227,109 @@ W._gcJobReq = { canAdd: canAdd, canHold: canHold, canRemove: canRemove, isPM: is
 try { console.log('[GC] ＋ required papers on one job (patch JOBREQ) — _gcJobReq'); } catch (e) {}
 })(window);
 </script>
+<script id="gc-patch-phoneui">
+/* __GC_PATCH_PHONEUI__ — GrayCo Field on a phone looks like an app (tools/patch_PHONEUI.py).
+   Owner 11/19 (iPhone, Field, Leads opened from the Field home): "Top search bar and changing companies shouldn't be in
+   there, it needs to look like an app, and those buttons list calendar etc need to be a little bigger so I know what they are."
+   What was wrong:
+   · the desk top bar (#_masterSearch: 🏢 company switcher + "Search jobs, subs, invoices…") showed under the Field header;
+   · the Field page header (#_gcAppHead: ‹ + title) was taken for a "notice" by the two-second notice sweep (it is fixed at the
+     top with one button) and removed every 2 s, then drawn again a second later — so the header blinked, and while it was
+     gone NAV painted its own sticky "‹ Back" pill, which then sat on top of the header's ‹ and the title ("‹ Back ds");
+   · main was padded a fixed 64 px, so on an iPhone (notch: safe-area-inset-top) the first lines sat under the header;
+   · the red 💬 job-messages button sat on the top bar (Messages is on every Field job page already);
+   · the Leads views (Board · List · Calendar · Map · Outreach · RoofScout · LSA …) and the filter chips (All · Bids ·
+     Residential · Insurance …) were one cut-off strip that scrolled sideways;
+   · the "📄 N COI / W-9 to confirm" / "💵 N payments match invoices" pills floated over the page.
+   On a phone in GrayCo Field (any person, admins too):
+   1. the desk top bar and the 💬 bubble are hidden; the Field header stays (it is marked data-gc-keep) and is a native app
+      header: "‹ Back" on the left, the page title next to it, fully visible; NAV's floating Back stands down while the
+      header is showing (a sheet opened over the page still gets it); main starts right under the header (its real height,
+      notch included);
+   2. the pills ride at the right end of that header (small, ellipsis when tight), not over the page; on the Field home they
+      stay small just above the bottom bar;
+   3. Leads: the views are a 3-across grid of 48 px buttons with the whole label; the filter chips wrap into rows (≥ 44 px),
+      nothing scrolls sideways; the chosen one stays dark. The views / chips grid also applies to any phone-width screen.
+   A computer (desk, wider than 640 px, not in Field): nothing changes.
+   Console: __gcPhoneUI.state()   Off: localStorage gc_phoneui_off = '1'. */
+(function(){
+'use strict';
+var W = window, D = document;
+try {
+  if (W.__gcPhoneUI) return;
+  try { if (W.localStorage && W.localStorage.getItem('gc_phoneui_off') === '1') return; } catch (e) {}
+  var H = D.documentElement;
+  var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+  var PU = W.__gcPhoneUI = { moves: 0, kept: 0 };
+
+  function phoneDev(){
+    var ua = String((W.navigator && W.navigator.userAgent) || ''), w = W.innerWidth || 0;
+    return /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(ua) || (/iPad|Android/i.test(ua) && w < 900) || (w > 0 && w < 820);
+  }
+  function tog(c, on){ if (H.classList.contains(c) !== !!on) H.classList.toggle(c, !!on); }
+
+  var CSS =
+    /* 1. the app: no desk top bar, no 💬 bubble up there */
+    'html.gc-pu-app #_masterSearch{display:none!important}' +
+    'html.gc-pu-app #_gcJobMsgFab{display:none!important}' +
+    /* the Field header as a native app header */
+    'html.gc-pu-app #_gcAppHead{gap:6px!important;padding:calc(6px + env(safe-area-inset-top,0px)) 10px 6px 4px!important;min-height:0!important;box-sizing:border-box!important}' +
+    'html.gc-pu-app #_gcAppBack{display:inline-flex!important;align-items:center;gap:2px;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px 0 6px!important;border-radius:22px!important;color:#60a5fa!important;font-size:30px!important;line-height:1!important;-webkit-tap-highlight-color:transparent}' +
+    'html.gc-pu-app #_gcAppBack::after{content:"Back";font:600 17px/1 -apple-system,Inter,Arial,sans-serif;margin-left:3px;position:relative;top:1px}' +
+    'html.gc-pu-app #_gcAppBack:active{background:rgba(96,165,250,.15)!important}' +
+    'html.gc-pu-app #_gcAppTitle{flex:0 0 auto;white-space:nowrap;font-size:19px!important;line-height:1.2}' +
+    /* NAV's floating Back is not needed while the header (with its own Back) is on the screen */
+    'html.gc-pu-head:not(._gcNavLayer) #_gcNavBk{display:none!important}' +
+    /* content right under the header */
+    'html.gc-pu-app.gc-pu-head main{padding-top:calc(var(--gc-pu-hh,56px) + 8px)!important}' +
+    /* 2. the pills: in the header (right end), small */
+    'html.gc-pu-app #_gcAppHead .gcautai-pill{position:static!important;margin:0 0 0 auto!important;flex:0 1 auto;min-width:0;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:7px 11px!important;font-size:12px!important;box-shadow:none!important;min-height:32px}' +
+    'html.gc-pu-app #_gcAppHead .gcautai-pill ~ .gcautai-pill{margin-left:6px!important}' +
+    'html.gc-pu-app body > .gcautai-pill{padding:6px 10px!important;font-size:12px!important;bottom:calc(104px + env(safe-area-inset-bottom,0px))!important}' +
+    /* 3. Leads on a phone: views = a grid of real buttons, chips wrap */
+    'html.gc-pu #gc-leads-hub .gclu-views{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%!important;overflow:visible!important;border:0!important;border-radius:0!important;background:transparent!important;box-sizing:border-box}' +
+    'html.gc-pu #gc-leads-hub .gclu-views > button{display:flex!important;align-items:center;justify-content:center;text-align:center;min-width:0;min-height:48px!important;height:auto!important;margin:0!important;padding:6px 4px!important;border:1px solid #d6d3ea!important;border-radius:12px!important;background:#fff;color:#241968;font:700 14px/1.2 -apple-system,Inter,Arial,sans-serif!important;white-space:normal!important;overflow-wrap:anywhere;word-break:normal;box-sizing:border-box;flex:none!important}' +
+    'html.gc-pu #gc-leads-hub .gclu-views > button.on{background:#241968!important;color:#fff!important;border-color:#241968!important;box-shadow:0 0 0 2px #fff inset,0 2px 6px rgba(36,25,104,.35)}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips{flex-wrap:wrap!important;overflow:visible!important;gap:6px!important;padding-bottom:0!important}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips > *{flex:1 1 auto!important;min-width:0;max-width:100%;min-height:44px!important;box-sizing:border-box}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips > .gclu-chip,html.gc-pu #gc-leads-hub .gclu-chips > .gclu-within{display:inline-flex;align-items:center;justify-content:center;white-space:normal;font-size:14px!important;padding:6px 12px!important}' +
+    'html.gc-pu #gc-leads-hub .gclu-chips > .gclu-chip.on{box-shadow:0 2px 6px rgba(36,25,104,.35)}';
+  var st = D.createElement('style'); st.id = 'gc-phoneui-css'; st.textContent = CSS; (D.head || H).appendChild(st);
+
+  /* the header: never swept as a notice; the pills ride in it; main follows its real height */
+  var lastH = -1;
+  function head(){
+    var hd = D.getElementById('_gcAppHead');
+    if (hd && hd.getAttribute('data-gc-keep') !== '1') { hd.setAttribute('data-gc-keep', '1'); PU.kept++; }
+    var app = H.classList.contains('gc-pu-app');
+    tog('gc-pu-head', app && !!hd);
+    if (!app || !hd) return;
+    ['_gcSubDocPill', '_gcPayPill'].forEach(function(id){
+      var p = D.getElementById(id); if (p && p.parentNode !== hd) { hd.appendChild(p); PU.moves++; }
+    });
+    var h = hd.offsetHeight || 0;
+    if (h && h !== lastH) { lastH = h; H.style.setProperty('--gc-pu-hh', h + 'px'); }
+  }
+  function sync(){
+    try {
+      var ph = phoneDev(), field = H.classList.contains('_fieldmode');
+      tog('gc-pu', ph || (W.innerWidth || 0) <= 640);
+      tog('gc-pu-app', ph && field);
+      head();
+    } catch (e) {}
+  }
+  sync();
+  try {
+    new MutationObserver(function(ms){
+      for (var i = 0; i < ms.length; i++) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) { var n = a[k]; if (n.nodeType === 1 && (n.id === '_gcAppHead' || /gcautai-pill/.test(String(n.className || '')))) { head(); return; } } }
+    }).observe(D.body || H, { childList: true });
+    new MutationObserver(function(){ sync(); }).observe(H, { attributes: true, attributeFilter: ['class'] });
+  } catch (e) {}
+  W.addEventListener('resize', sync);
+  SI.call(W, function(){ if (!D.hidden) sync(); }, 1000);
+  PU.sync = sync;
+  PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), hh: lastH, moves: PU.moves, kept: PU.kept }; };
+  try { console.log('[GC] PHONEUI: Field on a phone looks like an app (no desk top bar, native header, bigger Leads views) — __gcPhoneUI.state()'); } catch (e) {}
+} catch (e) { try { console.warn('[GC] PHONEUI', e); } catch (x) {} }
+})();
+</script>
