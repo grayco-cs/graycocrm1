@@ -116,7 +116,7 @@ try {
   await O.page().locator('.gcfp-docs .gcfp-doc[data-k="doc"][data-id="D1"]').evaluate(e => e.click());
   ok(!(await pg) && !!(await O.ev(() => !!document.querySelector('#gc-viewer [data-gv="back"]'))), 'tapping a file opens it as a page in the CRM with ‹ Back — no new tab, no pop-up (patch DOCOPEN)');
   await O.ev(() => { const b = document.querySelector('#gc-viewer [data-gv="back"]'); if (b) b.click(); });
-  for (const x of O.pages.slice(1)) await x.close().catch(() => {});
+  for (const x of (O.ctx.pages ? O.ctx.pages() : []).slice(1)) await x.close().catch(() => {});   /* harness_N has no O.pages */
   ok(await noSide(O), 'Documents: no sideways scroll');
   ok(!O.errs.length, 'phone: no page errors', O.errs.slice(0, 3));
   await O.b.close(); W.length = 0;

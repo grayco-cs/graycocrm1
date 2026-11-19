@@ -117,22 +117,22 @@ async function account(email, who){
       const grid = document.querySelector('#_gcJobDash .gcfp-grid'); const key = b => b.getAttribute('data-fm') || b.getAttribute('data-fp') || b.getAttribute('data-fn') || b.className;
       const kids = [...grid.children]; const groups = {}; let cur = null;
       kids.forEach(x => { if (x.classList.contains('gcfm-k')) { cur = x.textContent; groups[cur] = []; } else if (cur && x.tagName === 'BUTTON') groups[cur].push(key(x)); });
-      return { kind: grid.getAttribute('data-fm-kind'), top: kids.filter(x => x.tagName === 'BUTTON' && !x.classList.contains('gcfm-ov') && !x.hasAttribute('data-fm-more')).map(key),
-        groups, more: !!grid.querySelector('[data-fm-more]'), hiddenOk: kids.filter(x => x.classList.contains('gcfm-ov')).every(x => getComputedStyle(x).display === 'none'),
+      /* patch JOBINFO (owner 11/19 "don't do add more, just make all of them"): no More toggle, every tile shows; "top" = the type's own tiles (✏️ Job info, tile 1, aside), data-ji-rest = the ones that were under More */
+      return { kind: grid.getAttribute('data-fm-kind'), top: kids.filter(x => x.tagName === 'BUTTON' && !x.classList.contains('gcfm-ov') && !x.hasAttribute('data-fm-more') && !x.hasAttribute('data-ji-rest') && x.getAttribute('data-fn') !== 'info' && !x.classList.contains('gc-pmf-jt')).map(key),   /* PMFIELD's job-type buttons sit at the 3rd place: with ✏️ Job info first that is after the type's first tile */
+        groups, more: !grid.querySelector('[data-fm-more]'), hiddenOk: kids.filter(x => x.tagName === 'BUTTON').every(x => getComputedStyle(x).display !== 'none'), firstInfo: (kids[0] || {}).getAttribute && kids[0].getAttribute('data-fn') === 'info',
         label: (grid.previousElementSibling || {}).textContent, all: kids.filter(x => x.tagName === 'BUTTON').map(key) };
     });
     console.log(`    ${who} job ${pid} (${g.kind}): TOP ${g.top.join(', ')} | MORE FOR THIS JOB ${Object.keys(g.groups).map(k => k + ': ' + g.groups[k].join(', ')).join(' · ')}`);
     ok(g.kind === e.kind && new RegExp({ ins: 'Insurance claim', com: 'Commercial', res: 'Residential' }[e.kind]).test(g.label || ''), `${who} ${pid}: the job page knows it is ${e.kind} (FOR THIS JOB · type)`, g);
     ok(e.top0.every((k, i) => g.top[i] === k || (who === 'PM' && !g.all.includes(k))), `${who} ${pid}: the type's tiles on top (${e.top0.join(', ')} …)`, g.top);
-    ok(g.more && g.hiddenOk, `${who} ${pid}: "➕ More for this job" holds the rest, closed until tapped`, g);
+    ok(g.more && g.hiddenOk && g.firstInfo, `${who} ${pid}: no "More for this job" toggle — every tile shows, ✏️ Job info first (JOBINFO)`, g);
     ok(!e.hidden.some(k => g.all.includes(k)), `${who} ${pid}: never-applies tiles are not offered (${e.hidden.join(', ')})`, g.all);
     ok(['progress', 'info', 'update', 'photo', 'docs', 'create', 'invoice', 'money'].every(k => g.all.includes(k)), `${who} ${pid}: every existing tile is still there (top or More for this job)`, g.all);
     ok(!g.all.includes('jobfin') && g.all.filter(k => k === 'money').length === 1, `${who} ${pid}: one money tile (FIELDTAP2: Job Financials folded into Financials, Invoices & COs)`, g.all);
     await c.page().screenshot({ path: SHOTS + `fieldmore_${who.toLowerCase()}_${pid}_job.png` });
-    await c.page().locator('#_gcJobDash [data-fm-more]').first().evaluate(b => b.click()); await sleep(500);
-    const open = await c.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > .gcfm-ov')].every(x => getComputedStyle(x).display !== 'none'));
-    ok(open, `${who} ${pid}: tapping More for this job shows the groups`);
-    await c.ev(() => { const g = document.querySelector('#_gcJobDash .gcfm-k'); if (g) g.scrollIntoView({ block: 'start' }); });
+    const open = await c.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].every(x => getComputedStyle(x).display !== 'none'));
+    ok(open, `${who} ${pid}: the rest of the tiles show below the type's own (no toggle)`);
+    await c.ev(() => { const g = document.querySelector('#_gcJobDash .gcfp-grid > [data-ji-rest]'); if (g) g.scrollIntoView({ block: 'start' }); });
     await c.page().screenshot({ path: SHOTS + `fieldmore_${who.toLowerCase()}_${pid}_job_more.png` });
     // the added tiles open their action
     const extras = await c.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid [data-fm]')].map(b => b.getAttribute('data-fm')));

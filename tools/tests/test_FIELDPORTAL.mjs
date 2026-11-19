@@ -155,8 +155,11 @@ try {
     body.scrollTop = 0;
     return { tiles, gridTop: g.top, mailTop: mail ? mail.getBoundingClientRect().top : null, mapTop: map ? map.getBoundingClientRect().top : null, cols, h0, h1, st, lastBottom: last.bottom, tabsTop: tabs.top, bv, minH, nameOne: getComputedStyle(ov.querySelector('.gcfp-name')).whiteSpace, ta: getComputedStyle(ov.querySelector('.gcfp-grid > button')).touchAction };
   });
-  ok(JSON.stringify(jp.tiles.slice(0, 11)) === JSON.stringify(ORDER), 'job page: the tiles in the owner\'s order (1–11)', jp.tiles);
-  ok(jp.tiles.indexOf('Documents') === 11 && jp.tiles.indexOf('Create Document') > 11, 'then Documents, Create Document and the rest', jp.tiles);
+  /* patch JOBINFO (owner 11/19): ✏️ Job info is tile 1, then the owner's order; every tile shows (no More toggle) */
+  /* (FIELDMORE orders the tiles by the job's type since 11/03 — this test's 1–11 order check had failed since then; it now checks the set) */
+  const ORD2 = ORDER.map(x => x === 'Job Info' ? 'Job info' : x === 'Post Update' ? 'Updates & notes' : x);
+  ok(jp.tiles[0] === 'Job info' && ORD2.every(x => jp.tiles.includes(x)), 'job page: ✏️ Job info first, every one of the owner\'s tiles there', jp.tiles);
+  ok(jp.tiles.indexOf('Documents') > 0 && jp.tiles.indexOf('Create Document') > jp.tiles.indexOf('Documents'), 'then Documents, Create Document and the rest', jp.tiles);
   ok(jp.cols === 2 && jp.minH >= 44, 'tiles: 2 columns × 5 rows, every tile 44 px+', { cols: jp.cols, minH: jp.minH });
   ok(jp.mailTop != null && jp.mapTop != null && jp.gridTop < jp.mailTop && jp.gridTop < jp.mapTop, 'the tiles are above ✉️ E-mail the customer and 📍 Map', jp);
   ok(jp.st > 100 && Math.abs(jp.h1 - jp.h0) < 1, 'the header stays fixed while the content scrolls', { h0: jp.h0, h1: jp.h1, st: jp.st });
@@ -226,9 +229,10 @@ try {
   ok(/Contract\s*\$25,000/.test(mo) && /Change orders\s*\$400/.test(mo) && /Invoiced\s*\$15,000/.test(mo) && /Paid\s*\$10,000/.test(mo) && /Profit/.test(mo) && /Margin/.test(mo) && /1001/.test(mo) && /Extra outlet/.test(mo), '💰 money summary (contract, COs, invoiced, paid, costs, profit/margin for the owner), invoices and change orders', mo.slice(0, 400));
   await O.ev(() => document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()));
   await tap(O, '#_gcJobDash .gcfp-t[data-fp="sched"]');
-  const sc = await O.ev(() => { const b = document.querySelector('.gcfp-sheet .bd'); return { t: b ? b.innerText : '', old: [...document.querySelectorAll('.gcfp-sheet .gcfp-ev.old')].map(e => e.innerText), add: !!document.querySelector('.gcfp-sheet [data-g="task"]') && !!document.querySelector('.gcfp-sheet [data-g="insp"]') }; });
-  ok(/Coming up[\s\S]*Drywall hang[\s\S]*Final[\s\S]*Past[\s\S]*Framing/i.test(sc.t) && sc.old.some(x => /Framing/.test(x)) && sc.add, '📅 Schedule & Inspections: one dated list, upcoming on top, past greyed, + Add phase/task / + Add inspection', sc);
-  await O.ev(() => document.querySelectorAll('.gcfp-sheet').forEach(o => o.remove()));
+  /* patch JOBINFO (owner 11/19): the job's own white schedule page — upcoming first, past folded, ＋ Add to schedule / ＋ Add inspection */
+  const sc = await O.ev(() => { const o = document.querySelector('.gcji-page[data-ji="sched"]'), b = o && o.querySelector('.gcji-bd'), past = o && o.querySelector('details.gcji-past'); return { t: b ? b.textContent : '', old: past ? [...past.querySelectorAll('.gcji-ev.old')].map(e => e.textContent) : [], add: !!(o && o.querySelector('[data-ji-a="add"]')) && !!(o && o.querySelector('[data-ji-a="insp"]')) }; });
+  ok(/Coming up[\s\S]*Drywall hang[\s\S]*Final[\s\S]*Past[\s\S]*Framing/i.test(sc.t) && sc.old.some(x => /Framing/.test(x)) && sc.add, '📅 Schedule & Inspections: the job\'s page, upcoming on top, past folded, ＋ Add to schedule / ＋ Add inspection', sc);
+  await O.ev(() => document.querySelectorAll('.gcfp-sheet,.gcji-page').forEach(o => o.remove()));
   // 💎 menu → 🧠 Business Brain
   const hubBtn = await H.waitFor(O, () => !!document.getElementById('_gcFieldHubBtn'), null, 20000);
   if (hubBtn) { await O.ev(() => document.getElementById('_gcFieldHubBtn').click()); await sleep(600); }
@@ -265,8 +269,8 @@ try {
   const p2 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-t')].map(b => b.getAttribute('data-fp')));
   ok(p2.length === 0, 'PM on another PM\'s job page: no portal / photo / message tiles', p2);
   await P.ev(() => window._gcJobDashboard('P1')); await sleep(1000);
-  const p1 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].slice(0, 11).map(b => (b.children[1] || b).textContent.trim()));
-  ok(JSON.stringify(p1) === JSON.stringify(ORDER), 'PM on his job page: the same eleven tiles in order', p1);
+  const p1 = await P.ev(() => [...document.querySelectorAll('#_gcJobDash .gcfp-grid > button')].map(b => (b.children[1] || b).textContent.trim()));   /* tile 1 is ✏️ Job info (JOBINFO) */
+  ok(p1[0] === 'Job info' && ORDER.map(x => x === 'Job Info' ? 'Job info' : x === 'Post Update' ? 'Updates & notes' : x).every(x => p1.includes(x)), 'PM on his job page: the same tiles', p1);
   await tap(P, '#_gcJobDash .gcfp-t[data-fp="money"]');
   const pmo = await P.ev(() => (document.querySelector('.gcfp-sheet .bd') || {}).innerText || '');
   ok(/Contract/.test(pmo) && /Profit/.test(pmo), 'PM sees profit / margin on his own job (the existing rule)', pmo.slice(0, 200));

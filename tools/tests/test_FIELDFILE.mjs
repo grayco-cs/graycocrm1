@@ -117,8 +117,9 @@ try {
   await openJob(O);
   /* DEVMODE: since FIELDMORE the Job Info tile can sit in the job page's overflow (class gcfm-ov, not shown) — tap it when shown, else click it */
   { const jl = pg.locator('#_gcJobDash ._jdAct[data-fn="info"]').first(); if (await jl.isVisible().catch(() => false)) await jl.tap(); else await jl.evaluate(b => b.click()); } await sleep(800);
-  const info = await O.ev(() => { const el = [...document.querySelectorAll('body > div')].reverse().find(d => /PO NUMBER/.test(d.innerText || '')); const card = el && el.firstElementChild; return el ? { bg: getComputedStyle(card).backgroundColor } : null; });
-  ok(!!info && info.bg === 'rgb(15, 36, 64)', '📋 Job Info still opens the Job Info sheet (dark navy is its normal look)', info);
+  /* patch JOBINFO (owner 11/19, "no navy on phones"): ✏️ Job info is the Job Profile as a full white page you can edit */
+  const info = await O.ev(() => { const el = document.querySelector('.gcji-page[data-ji="info"]'); return el ? { bg: getComputedStyle(el).backgroundColor, form: !!el.querySelector('.gcji-form'), scope: !!el.querySelector('#_jpScopeText') } : null; });
+  ok(!!info && info.bg === 'rgb(255, 255, 255)' && info.form && info.scope, '✏️ Job info opens the Job Profile as a white page (form + Scope of Work)', info);
   await pg.screenshot({ path: SHOTS + 'fieldfile_jobinfo.png' });
   ok(await O.ev(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) <= window.innerWidth + 1), 'no sideways scroll');
   ok(!O.errs.length, 'phone: no page errors', O.errs.slice(0, 3));
