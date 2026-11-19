@@ -100,14 +100,17 @@ try {
   const td = await sev(A, () => { window._gcTD2.paint(); const st = window._gcTD2.state(); return { titles: st.items.map(x => x.title), hidden: window._gcLeadWatch.hidden() }; });
   const has = rx => td.titles.some(x => rx.test(x));
   ok(has(/Lead at risk: Sample Home A/) && has(/Lead at risk: Sample Home B/), 'the leads at risk are To-Dos (Leads & bids)', td.titles);
-  ok(has(/Update progress: New Job/) && has(/Overdue invoice/) && has(/Approve: portal docs/) && has(/COI|Sample Sub/) && has(/deck color/), 'kept: the new job\'s To-Do, the overdue invoice, the approval, the sub\'s COI, the hand-written one from October', td.titles);
+  ok(has(/Update progress: New Job/) && has(/Approve: portal docs/) && has(/COI|Sample Sub/) && has(/deck color/), 'kept: the new job\'s To-Do, the approval, the sub\'s COI, the hand-written one from October', td.titles);
+  const kp = await sev(A, () => { const L = window._gcLeadWatch; return { ar: L.keep({ thing: 'ar|IVOLD', src: 'tab', title: 'Overdue invoice' }), roll: L.keep({ roll: 'ar-old', thing: 'roll|ar-old' }), coll: L.keep({ src: 'st', rec: { id: 'x10_call_2026-11_p:P1', label: '📞 Call X — $1 over 60 days' } }),
+    drop: L.todoDrop({ src: 'tab', thing: 'ar|IVOLD', pid: 'POLD', title: 'Overdue invoice' }) }; });
+  ok(kp.ar && kp.roll && kp.coll && kp.drop === false, 'money owed is always kept: an overdue invoice on an older job, the 30+ days roll-up, the collections call', kp);
   ok(!has(/Update progress: Older Job/) && !has(/Emergency — call now: Sample Old/) && !has(/demo board/) && !has(/Fix and resend/), 'not shown: the older job\'s, the old lead\'s, the old setup seed, the old "↩ Fix and resend"', td.titles);
   ok(td.hidden.n >= 4, 'the count of what is not shown', td.hidden);
   const note = await sev(A, () => { window._setView('todo'); return new Promise(r => setTimeout(() => { const n = document.querySelector('.lw-old'); r(n ? n.innerText : ''); }, 2500)); });
   ok(/automatic To-Dos? about records from before 11\/19 (is|are) not shown/.test(note), 'the desk note says how many are not shown', note);
   await sev(A, () => window._gcLeadWatch.showOld(true)); await sleep(800);
   const shown = await sev(A, () => { window._gcTD2.paint(); return window._gcTD2.state().items.map(x => x.title); });
-  ok(shown.some(x => /Update progress: Older Job/.test(x)), '"Show them" brings them back (this page session)');
+  ok(shown.some(x => /Emergency — call now: Sample Old/.test(x)) && shown.some(x => /demo board/.test(x)), '"Show them" brings them back (this page session; PAPERS\' older-job drops stay PAPERS\')', shown);
   await sev(A, () => window._gcLeadWatch.showOld(false));
 
   console.log('E. GOOD → a job in Projects (bidding); BAD → never a job');
