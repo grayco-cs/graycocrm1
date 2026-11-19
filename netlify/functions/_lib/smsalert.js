@@ -1356,6 +1356,17 @@ async function bidDueText(kind, x){
 async function approvals(email, n){
   return notify({ type: 'approvals', text: n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you.', link: site() + '/#todo', thread: 'appr', mine: [email], daily: true });
 }
+/* APPRONCE (owner 11/19): can this person get a staff text (a cell on their text-alerts row or CRM record, not switched off, not opted out)?
+   The 7 AM digest uses it: while the 5-minute approval pings are on, their 8 AM "Still waiting on you" text is the one reminder */
+async function textable(email){
+  email = low(email); if (env('SMS_ALERTS_OFF') === '1' || !staffEmail(email)) return false;
+  const set = await load(); let pp = {}; try { pp = await _D.people(); } catch (e) { pp = {}; }
+  const sp = set.people[email]; if (sp && sp.on === false) return false;
+  const x = staffList(pp).find(y => y.email === email); if (!x) return false;
+  const ph = phone10((sp && sp.phone) || x.phone); if (ph.length !== 10) return false;
+  let opt = {}; try { opt = await _D.optouts(); } catch (e) { opt = {}; }
+  return !opt[ph];
+}
 /* admin / system (gc-backup, crm-health) — once a day per kind; held through quiet hours */
 async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
@@ -1802,5 +1813,5 @@ async function lsaAgeCheck(){
   return out;
 }
 
-module.exports = { jobReady, lsaQualifiedG, goodLadder, escStart, pmAppt, LSA_DISPUTE_WINDOW_H, LSA_WARN_LEFT_H, lsaEscTick, goodCust, pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { jobReady, lsaQualifiedG, goodLadder, escStart, pmAppt, LSA_DISPUTE_WINDOW_H, LSA_WARN_LEFT_H, lsaEscTick, goodCust, pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, textable, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

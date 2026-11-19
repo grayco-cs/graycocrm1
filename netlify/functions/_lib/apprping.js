@@ -20,12 +20,26 @@
    → done (a full read at least every 30 minutes).
    State: gc_kv "gc_appr_ping" = { sig, at, seen: { email: { key: { at, n } } }, last: { email: iso }, covered: { email: { key: name } },
      came: { key: { at, title, kind, to: [emails], goneAt? } } (14 days — the 📊 Approvals this week view), daily: { email: ymd } }
-   Off switch: Netlify APPR_PING_OFF=1. */
+   Off switch: Netlify APPR_PING_OFF=1.
+   APPRONCE (owner 11/19: "I don't need 3 reminders for this stuff" — the same items came as "new" at 10:25, 10:35 and 1:25):
+     · an approval is texted ONCE, when it first appears (bundled with what came within the same few minutes), never again as
+       "new". The cause: the "seen" list kept only what was in the list on that run, and the CRM-only approvals (an admin's open
+       CRM page reports them; that report counts for 30 minutes) drop out whenever the page is closed / hidden or one report
+       leaves an item out — when it came back it was "new" again. Now what was sent is remembered by item for 30 days after it
+       is gone, under a STEADY key (ck: a Form 941 is one item whether the server list or the page reports it; a page alert
+       that carries a count — "2 new job messages", "(8)" — is one item whatever the count; the page's "Payroll waiting on your
+       approval" alert is the payroll run itself when that run is in the list).
+     · what is still waiting: ONE reminder a day, the first run from 8 AM Central (8:00–8:59) — "Still waiting on you: N
+       approvals" + the link, when something texted on an earlier day still waits — Monday–Friday (a weekend only for an urgent one); new items due at that moment ride along in it.
+       The 7 AM digest (_lib/auto-digest.js) no longer texts while these pings are on (this 8 AM text is the one).
+     · never two digests to a person within 10 minutes; a run holds a lease (gc_kv "gc_appr_ping_lock", 4 minutes) so two
+       overlapping runs can never both send. */
 'use strict';
 const A = require('./auto-common.js');
 const { s, low, arr, esc, clip, staffEmail } = A;
-const STATE = 'gc_appr_ping', FEED = 'gc_appr_feed', AUDIT = 'gc_appr_audit';
+const STATE = 'gc_appr_ping', FEED = 'gc_appr_feed', AUDIT = 'gc_appr_audit', LOCK = 'gc_appr_ping_lock';
 const GAP_MS = 10 * 60e3, FULL_MS = 30 * 60e3, FEED_MS = 30 * 60e3, CAME_MS = 14 * 864e5;
+const KEEP_MS = 30 * 864e5, FEED_REMIND_MS = 24 * 3600e3, LEASE_MS = 4 * 60e3, REMIND_H = 8;   /* APPRONCE */
 const SIG_KEYS = ['gc_approval_queue', 'gc_sub_approvals', 'gc_expense_approvals', 'payrollRuns', 'gc_payroll_approvals', FEED, 'gc_away'];
 const FEED_PREFIX = /^(f941:|td:|pay:|inv:|bp:|to:|mat:)/;   /* the CRM-only kinds an admin's page reports (ap2 / sub / exp come from the server lists) */
 const D = { now: function(){ return Date.now(); }, collect: function(now){ return require('./auto-digest.js').collect(now); },
@@ -56,47 +70,66 @@ function SQ(){ return require('./staffquiet.js'); }
 function quiet(now, set){ return SQ().quiet(now, set || SQ().DEF); }
 /* an approval is never a call-out; only one marked emergency goes inside the quiet window */
 function urgent(it){ const r = (it && it.raw) || {}; return r.emergency === true || !!(r.meta && r.meta.emergency === true); }
+/* APPRONCE: the steady key an item is remembered by (the link still uses its own key) */
+function ck(k){
+  k = s(k);
+  if (/^td:f941:/.test(k)) return k.slice(3);   /* the page's Form 941 = the server's */
+  if (/^(td:otd:alert_|x:)/.test(k)) return low(k).replace(/\(\s*\d+\s*\)/g, '').replace(/\d+/g, '#').replace(/\b(\w{3,}?)s\b/g, '$1').replace(/\s+/g, ' ').trim();   /* a count is not a new item */
+  return k;
+}
+/* APPRONCE: one person's list for notifications — one per steady key; the page's "Payroll waiting …" alert is the payroll run when that is in the list */
+function noteList(items){
+  const out = [], have = {}, pay = items.some(function(x){ return /^pay:/.test(s(x.key)); });
+  items.forEach(function(it){ const c = ck(it.key); if (have[c]) return; if (pay && /^td:otd:alert_.*payroll/.test(c)) return; have[c] = 1; it.ck = c; out.push(it); });
+  return out;
+}
 function keyOf(it){ if (it.key) return s(it.key); const r = it.raw || {}; return r.id ? 'ap2:' + s(r.id) : 'x:' + s(it.title); }
 function linkOf(it, base){ return s(it.link) || base + '/#apx=' + encodeURIComponent(keyOf(it)); }
 
 /* everything waiting, per person (already routed for away), with a key on each item */
-async function gather(now){
+async function gather(now, o){
+  o = o || {};
   const got = await D.collect(now);
   const base = got.base || A.crmBase(), data = got.data || {};
   const box = {}; Object.keys(got.box || {}).forEach(function(e){ box[low(e)] = (got.box[e] || []).map(function(it){ it.key = keyOf(it); return it; }); });
   let admins = []; try { admins = C().adminEmails(data).filter(staffEmail); } catch (e) {}
-  const extra = {}; admins.forEach(function(e){ extra[e] = []; });
-  const addAdmins = function(it){ admins.forEach(function(e){ if (!extra[e].some(function(x){ return x.key === it.key; })) extra[e].push(it); }); };
+  const extra = {}, stale = {}; admins.forEach(function(e){ extra[e] = []; stale[e] = []; });
+  const addAdmins = function(it, to){ to = to || extra; admins.forEach(function(e){ if (!to[e].some(function(x){ return x.key === it.key; })) to[e].push(it); }); };
   /* Form 941 waiting on review (admins) */
   let pa = []; try { pa = arr((await C().kvRead(['gc_payroll_approvals'])).gc_payroll_approvals); } catch (e) {}
   pa.forEach(function(x){ if (x && x.kind === 'f941' && x.status === 'waiting') addAdmins({ key: 'f941:' + s(x.id), title: '🧾 Form 941 for Q' + s(x.q) + ' ' + s(x.year) + ': review and approve', sub: 'due ' + s(x.due), raw: { kind: 'f941', createdAt: x.createdAt, urgency: 'soon' } }); });
   /* what admins' open CRM pages reported (fresh only) */
   let feed = {}; try { feed = obj(await kvGet(FEED)); } catch (e) {}
   Object.keys(feed).forEach(function(by){
-    const f = obj(feed[by]); if (admins.indexOf(low(by)) < 0 || now - (Date.parse(f.at) || 0) > FEED_MS) return;
-    arr(f.items).forEach(function(x){ const k = s(x.key); if (!FEED_PREFIX.test(k)) return; addAdmins({ key: k, title: clip(x.title, 140) || k, sub: clip(x.sub, 80), raw: { kind: s(x.kind) || 'todo', createdAt: x.since } }); });
+    const f = obj(feed[by]), age = now - (Date.parse(f.at) || 0); if (admins.indexOf(low(by)) < 0 || age > FEED_REMIND_MS) return;
+    /* APPRONCE: a report 30 min – 24 h old only counts in the 8 AM "still waiting" number (the page is closed overnight) */
+    arr(f.items).forEach(function(x){ const k = s(x.key); if (!FEED_PREFIX.test(k)) return; addAdmins({ key: k, title: clip(x.title, 140) || k, sub: clip(x.sub, 80), raw: { kind: s(x.kind) || 'todo', createdAt: x.since } }, age > FEED_MS ? stale : extra); });
   });
   /* the server lists win for a key they also have */
-  Object.keys(extra).forEach(function(e){ const l = box[e] = box[e] || []; extra[e].forEach(function(it){ if (!l.some(function(x){ return x.key === it.key; })) l.push(it); }); });
+  const has = function(l, it){ return l.some(function(x){ return x.key === it.key || ck(x.key) === ck(it.key); }); };   /* APPRONCE: a Form 941 from both = one */
+  Object.keys(extra).forEach(function(e){ const l = box[e] = box[e] || []; extra[e].forEach(function(it){ if (!has(l, it)) l.push(it); }); });
+  const boxAll = {}; Object.keys(box).forEach(function(e){ boxAll[e] = box[e].slice(); });
+  Object.keys(stale).forEach(function(e){ const l = boxAll[e] = boxAll[e] || []; stale[e].forEach(function(it){ if (!has(l, it)) l.push(Object.assign({}, it, { stale: true })); }); });
   /* away: the away person gets nothing; what waited on them alone → their cover (marked coverFor) */
   let map = {}; try { map = await AW().activeNow(now); } catch (e) {}
-  const routed = AW().routeBox(box, map);
-  return { box: routed, base: base, map: map, nameOf: got.nameOf || {}, admins: admins };
+  const routed = AW().routeBox(box, map), routedAll = AW().routeBox(boxAll, map);
+  return { box: routed, all: routedAll, base: base, map: map, nameOf: got.nameOf || {}, admins: admins };
 }
-function compose(list, base){
+function compose(list, base, o){
+  if (o && o.remind) { const nn = o.remind; return { title: 'Still waiting on you: ' + nn + ' approval' + (nn === 1 ? '' : 's'), body: list.slice(0, 3).map(function(x){ return clip(x.title, 60); }).join(' · ') + (list.length > 3 ? ' · +' + (list.length - 3) + ' more' : ''), url: base + '/#apx=mine', count: nn, remind: true }; }   /* APPRONCE: the 8 AM reminder */
   const n = list.length, cover = list.filter(function(x){ return x.coverFor; })[0];
   const note = cover ? ' (' + s(cover.coverFor).split(/\s+/)[0] + ' is away — you are covering)' : '';
   if (n === 1) return { title: '✅ Approval waiting' + note, body: clip(list[0].title, 120) + (list[0].sub ? ' — ' + clip(list[0].sub, 60) : ''), url: linkOf(list[0], base), count: 1 };
   return { title: '✅ ' + n + ' new approvals' + note, body: list.slice(0, 4).map(function(x){ return clip(x.title, 60); }).join(' · ') + (n > 4 ? ' · +' + (n - 4) + ' more' : ''), url: base + '/#apx=mine', count: n };
 }
-async function deliver(email, list, base){
-  const m = compose(list, base);
+async function deliver(email, list, base, o){
+  const m = compose(list, base, o);
   /* QUIET: what was held overnight for this person goes in the same ONE notification */
   let held = []; try { held = (await SQ().take([email]))[email] || []; } catch (e) { held = []; }
   if (held.length) { const d = await SQ().deliver(email, held, list.map(function(x){ return { title: x.title + (x.coverFor ? ' (for ' + s(x.coverFor).split(/\s+/)[0] + ')' : ''), url: linkOf(x, base) }; }), base); return { how: d.how, m: m, held: held.length }; }
   const p = await D.push([email], { title: m.title, body: m.body, url: m.url, tag: 'gc-appr', count: m.count });
   if (p && Array.isArray(p.to) && p.to.map(low).indexOf(email) >= 0) return { how: 'push', m: m };
-  let t = null; try { t = await D.text(email, m.title.replace(/^✅ /, '') + ': ' + m.body, m.url); } catch (e) { t = null; }
+  let t = null; try { t = await D.text(email, m.remind ? m.title : m.title.replace(/^✅ /, '') + ': ' + m.body, m.url); } catch (e) { t = null; }
   if (t && t.sent) return { how: 'text', m: m };
   const html = A.shell(m.title, '<ul style="padding-left:18px">' + list.slice(0, 30).map(function(x){ return '<li style="margin:4px 0"><a href="' + esc(linkOf(x, base)) + '" style="color:#0F1D2F;font-weight:bold">' + esc(clip(x.title, 140)) + '</a>' + (x.sub ? ' <span style="color:#55626F">— ' + esc(x.sub) + '</span>' : '') + (x.coverFor ? ' <i>(for ' + esc(x.coverFor) + ')</i>' : '') + '</li>'; }).join('') + '</ul><p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><p style="font-size:12px;color:#55626F">Want these on your phone instead? GrayCo Field → the green 🔔 card (or ☰ More → ⚙ Settings → 🔔 Phone notifications).</p>');
   const r = await D.mail(email, m.title + ' — GrayCo CRM', html);
@@ -120,41 +153,97 @@ async function summaries(st, map, now, base){
   }
   return out;
 }
+/* APPRONCE: the run's lease — gc_kv "gc_appr_ping_lock" (an insert that is ignored when the row is there; an expired one is
+   taken over by a conditional update; then read back: ours or not). Two overlapping runs: only one sends. */
+async function lease(id){
+  const now = D.now(), stamp = new Date(now).toISOString(), val = { owner: id, at: stamp };
+  const mine = async function(){ try { return obj(await kvGet(LOCK)).owner === id; } catch (e) { return false; } };
+  const r = await fetch(C().sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: C().H({ Prefer: 'resolution=ignore-duplicates,return=minimal' }), body: JSON.stringify({ key: LOCK, value: val, updated_at: stamp }) });
+  if (!r || !r.ok) return { ok: false };
+  if (await mine()) return { ok: true, stamp: stamp };
+  const cut = new Date(now - LEASE_MS).toISOString();
+  await fetch(C().sbUrl() + '/rest/v1/gc_kv?key=eq.' + LOCK + '&updated_at=lt.' + encodeURIComponent(cut), { method: 'PATCH', headers: C().H({ Prefer: 'return=minimal' }), body: JSON.stringify({ value: val, updated_at: stamp }) }).catch(function(){});
+  return (await mine()) ? { ok: true, stamp: stamp } : { ok: false };
+}
+async function unlease(id, stamp){
+  try { await fetch(C().sbUrl() + '/rest/v1/gc_kv?key=eq.' + LOCK + '&updated_at=eq.' + encodeURIComponent(stamp), { method: 'PATCH', headers: C().H({ Prefer: 'return=minimal' }), body: JSON.stringify({ value: { owner: '', was: id, at: stamp }, updated_at: new Date(0).toISOString() }) }); } catch (e) {}
+}
+/* APPRONCE: the seen list by steady key (an older state's keys are folded in: what was sent stays sent) */
+function seenOf(v){
+  const out = {}; Object.keys(obj(v)).forEach(function(k){ const x = obj(v[k]), c = ck(k), was = out[c];
+    if (!was) out[c] = Object.assign({}, x); else { if (x.n) was.n = 1; if (s(x.at) && (!was.at || s(x.at) < s(was.at))) was.at = x.at; if (!x.gone) delete was.gone; } });
+  return out;
+}
 async function run(opts){
   opts = opts || {};
   if (s(process.env.APPR_PING_OFF) === '1') return { ok: true, off: true };
+  const id = 'R' + D.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const L = await lease(id).catch(function(){ return { ok: false }; });
+  if (!L.ok) return { ok: true, busy: true };   /* another run is on it */
+  try { return await run1(opts); } finally { await unlease(id, L.stamp); }
+}
+async function run1(opts){
   await A.loadStaff();
   const now = D.now();
   let st = {}; try { st = obj(await kvGet(STATE)); } catch (e) { return { ok: false, error: 'state unreadable' }; }
-  ['seen', 'last', 'covered', 'came', 'daily'].forEach(function(k){ st[k] = obj(st[k]); });
+  ['seen', 'last', 'covered', 'came', 'daily', 'remind'].forEach(function(k){ st[k] = obj(st[k]); });
+  Object.keys(st.seen).forEach(function(e){ st.seen[e] = seenOf(st.seen[e]); });
   const sg = await sig().catch(function(){ return ''; });
-  const anyPending = Object.keys(st.seen).some(function(e){ return Object.keys(obj(st.seen[e])).some(function(k){ return !obj(st.seen[e][k]).n; }); });
+  const anyPending = Object.keys(st.seen).some(function(e){ return Object.keys(st.seen[e]).some(function(k){ const x = obj(st.seen[e][k]); return !x.n && !x.gone; }); });
   let mapQuick = {}; try { mapQuick = await AW().activeNow(now); } catch (e) {}
-  const sumDue = central(now).hour >= 18 && Object.keys(mapQuick).some(function(e){ return mapQuick[e].summary === true && st.daily[e] !== central(now).ymd; });
+  const cN = central(now);
+  const sumDue = cN.hour >= 18 && Object.keys(mapQuick).some(function(e){ return mapQuick[e].summary === true && st.daily[e] !== cN.ymd; });
   const QS = await SQ().settings(), quietNow = quiet(now, QS);
-  if (!opts.force && sg && st.sig === sg && !anyPending && !sumDue && now - (Date.parse(st.at) || 0) < FULL_MS) { let mo = null; if (!quietNow) { try { mo = await SQ().flush({ now: now }); } catch (e) {} } return { ok: true, unchanged: true, morning: mo }; }
+  const remindHour = !quietNow && cN.hour === REMIND_H, remindDue = remindHour && Object.keys(st.seen).some(function(e){ return st.remind[e] !== cN.ymd; });
+  if (!opts.force && sg && st.sig === sg && !anyPending && !sumDue && !remindDue && now - (Date.parse(st.at) || 0) < FULL_MS) { let mo = null; if (!quietNow) { try { mo = await SQ().flush({ now: now }); } catch (e) {} } return { ok: true, unchanged: true, morning: mo }; }
   const g = await gather(now), first = !st.at, iso = new Date(now).toISOString();
   const rep = { ok: true, first: first, people: 0, sent: [], held: [] };
   const live = {};
-  for (const e of Object.keys(g.box)) {
-    const items = g.box[e]; if (!items.length || !staffEmail(e)) continue;
+  const gapped = function(e){ const l = Date.parse(st.last[e]) || 0; return l <= now && now - l < GAP_MS; };
+  const gAll = obj(g.all), who = Object.keys(g.box).concat(Object.keys(gAll).filter(function(e){ return !g.box[e]; }));
+  for (const e of who) {
+    const items = noteList(g.box[e] || []); if ((!items.length && !(gAll[e] || []).length) || !staffEmail(e)) continue;
     rep.people++;
-    const seen = obj(st.seen[e]), nextSeen = {};
-    items.forEach(function(it){ live[it.key] = it; const was = seen[it.key]; nextSeen[it.key] = was ? was : { at: iso, n: first ? 1 : 0 }; });
-    const fresh = items.filter(function(it){ return !nextSeen[it.key].n; });
-    if (fresh.length) {
-      const hold = (quietNow && !fresh.some(urgent)) ? 'quiet hours' : ((function(l){ return l <= now && now - l < GAP_MS; })(Date.parse(st.last[e]) || 0) ? 'bundling' : '');
+    const seen = st.seen[e] = obj(st.seen[e]), here = {};
+    items.forEach(function(it){ live[it.key] = it; here[it.ck] = 1; const was = seen[it.ck];
+      if (!was) seen[it.ck] = { at: iso, n: first ? 1 : 0 }; else if (was.gone) delete was.gone; });   /* APPRONCE: back again = not new */
+    const fresh = items.filter(function(it){ return !seen[it.ck].n; });
+    /* APPRONCE: the one morning reminder (what was sent on an earlier day and still waits); new ones due now ride along */
+    let reminded = false;
+    if (remindHour && st.remind[e] !== cN.ymd) {
+      const all = noteList(gAll[e] || items);
+      const old = all.filter(function(it){ const x = seen[ck(it.key)]; return x && x.n && central(Date.parse(x.sent || x.at) || now).ymd < cN.ymd; });   /* sent on an earlier day and still waiting */
+      const wk = !/^(Sat|Sun)$/.test(cN.wd);
+      if (!old.length || !(wk || all.some(urgent))) st.remind[e] = cN.ymd;   /* nothing already sent still waits / a weekend (none urgent): no reminder today */
+      else if (gapped(e)) rep.held.push({ email: e, n: all.length, why: 'bundling' });
+      else {
+        const d = await deliver(e, all, g.base, { remind: all.length });
+        fresh.forEach(function(it){ seen[it.ck].n = 1; seen[it.ck].how = d.how; seen[it.ck].sent = iso; });
+        st.remind[e] = cN.ymd; st.last[e] = iso; reminded = true;
+        rep.sent.push({ email: e, n: all.length, how: d.how, url: d.m.url, title: d.m.title, remind: true });
+      }
+    }
+    if (fresh.length && !reminded) {
+      const hold = (quietNow && !fresh.some(urgent)) ? 'quiet hours' : (gapped(e) ? 'bundling' : '');
       if (hold) rep.held.push({ email: e, n: fresh.length, why: hold });
       else {
         const d = await deliver(e, fresh, g.base);
-        fresh.forEach(function(it){ nextSeen[it.key].n = 1; nextSeen[it.key].how = d.how; });
+        fresh.forEach(function(it){ seen[it.ck].n = 1; seen[it.ck].how = d.how; seen[it.ck].sent = iso; });
         st.last[e] = iso; rep.sent.push({ email: e, n: fresh.length, how: d.how, url: d.m.url, title: d.m.title });
       }
     }
-    st.seen[e] = nextSeen;
+    Object.keys(seen).forEach(function(k){ if (!here[k] && !seen[k].gone) seen[k].gone = iso; });
     const cov = {}; items.forEach(function(it){ if (it.coverFor) cov[it.key] = it.coverFor; }); st.covered[e] = cov;
   }
-  Object.keys(st.seen).forEach(function(e){ if (!g.box[e] || !g.box[e].length) { delete st.seen[e]; delete st.covered[e]; } });
+  /* APPRONCE: what is gone is remembered 30 days (it may come back: not new then) */
+  Object.keys(st.seen).forEach(function(e){
+    const m = st.seen[e], none = !g.box[e] || !noteList(g.box[e]).length;
+    if (none) { delete st.covered[e]; Object.keys(m).forEach(function(k){ if (!m[k].gone) m[k].gone = iso; }); }
+    Object.keys(m).forEach(function(k){ if (m[k].gone && now - (Date.parse(m[k].gone) || now) > KEEP_MS) delete m[k]; });
+    if (!Object.keys(m).length) delete st.seen[e];
+  });
+  if (remindHour) Object.keys(st.seen).forEach(function(e){ if (who.indexOf(e) < 0) st.remind[e] = cN.ymd; });   /* nothing waiting on them */
+  Object.keys(st.remind).forEach(function(e){ if (st.remind[e] < A.central(now - 7 * 864e5).ymd) delete st.remind[e]; });
   /* came in / done (the week view) */
   Object.keys(live).forEach(function(k){
     const it = live[k], c = st.came[k];
@@ -206,4 +295,4 @@ async function week(now){
   let away = []; try { away = AW().upcoming(await AW().load(true), now); } catch (e) {}
   return { ok: true, at: new Date(now).toISOString(), came: inList.length, handled: done, waiting: waiting, stuck: waiting.filter(function(c){ return c.waitH >= 24; }), away: away, covered: obj(st.covered), pings: Object.keys(obj(st.last)).map(function(e){ return { email: e, last: st.last[e] }; }) };
 }
-module.exports = { STATE, FEED, AUDIT, SIG_KEYS, FEED_PREFIX, D, run, gather, compose, feed, audit, week, quiet };
+module.exports = { STATE, FEED, AUDIT, LOCK, SIG_KEYS, FEED_PREFIX, D, run, gather, compose, feed, audit, week, quiet, ck, noteList };

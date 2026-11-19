@@ -247,6 +247,7 @@ await t('the PO in the text is the CRM\'s PO for the job', async () => {
 });
 
 console.log('PMs check their approvals every day');
+process.env.APPR_NOON_ON = '1';   /* APPRONCE: the noon reminder is off by default; these tests are for when it is on */
 const NOON = require(path.join(FN, '_lib/appr-noon.js')), AC = require(path.join(FN, '_lib/auto-common.js')), DG = require(path.join(FN, '_lib/auto-digest.js'));
 const BOX = { 'pat.pm@grayco-cs.com': [{ title: 'Sub invoice', link: 'x' }, { title: 'Change order', link: 'y' }], 'ivy.pm@grayco-cs.com': [{ title: 'A', link: 'z' }], 'nobody@grayco-cs.com': [] };
 const wed = '2026-10-28', sat = '2026-10-31';
