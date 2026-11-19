@@ -196,6 +196,16 @@ try {
   ok(sawSending, 'while it is on its way the list counts as "sending" (_gcSending)');
   ok(!after.unsent.length && !after.sending.length, 'once it landed nothing is "not sent" or "sending"', after);
 
+  /* 4b. SAMEKV: the same row sent twice (any device, any uploader) goes up once */
+  const sk0 = await c.ev(() => window.__gcSame.state()), tE = Date.now();
+  await c.ev(async () => { const c = { u: localStorage.getItem('grayco_sb_url'), k: localStorage.getItem('grayco_sb_key') }; const v = Array.from({ length: 120 }, (_, i) => ({ id: 'X' + i, note: 'made-up row '.repeat(8) }));
+    const send = () => window.fetch(c.u.replace(/\/$/, '') + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: 'gc_perfrep_applagtest', value: v, updated_at: new Date().toISOString() }) });
+    await send(); await new Promise(r => setTimeout(r, 15000)); await send(); });
+  await sleep(3000);
+  const sk1 = await c.ev(() => window.__gcSame.state()), twice = NET.log.filter(e => e.t >= tE && e.m === 'POST' && e.keys.includes('gc_perfrep_applagtest')).length;
+  console.log('    the same row twice: ' + JSON.stringify({ posts: twice, before: sk0, after: sk1 }));
+  ok(twice === 1 && sk1.skipped === sk0.skipped + 1, 'SAMEKV: the same 10 KB row sent twice goes up once (the second is skipped after a ~100-byte check)', { twice, sk0, sk1 });
+
   /* 5. the note, and the request bound */
   await sleep(10000);
   const notes = await c.ev(() => window.__al.note.slice(0, 5));
