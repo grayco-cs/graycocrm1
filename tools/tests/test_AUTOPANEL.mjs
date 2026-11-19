@@ -34,7 +34,7 @@ globalThis.Date = FakeDate;
 
 /* ── the cloud: the prod-shaped mirror (read only copy), or a small made-up set — the browser harness's own gc_kv, so the
    page (part B) and the real function handlers (officefix_bridge) share it ── */
-const HARNESS = process.env.GC_HARNESS || SP + '/wUPG/harness.mjs';
+const HARNESS = process.env.GC_HARNESS || (fs.existsSync(SP + '/wUPG/harness.mjs') ? SP + '/wUPG/harness.mjs' : SP + '/wN/harness_N.mjs');   /* wUPG is gone from this machine: the offline harness_N has the same cloud / ACCOUNTS */
 const H = await import(pathToFileURL(HARNESS).href);
 const cloud = H.cloud;
 function loadCloud(){
