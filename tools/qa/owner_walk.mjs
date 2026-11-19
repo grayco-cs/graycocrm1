@@ -234,6 +234,13 @@ async function open(roleKey, extraInit){
   const home = await until(() => A.ev(ph => ph ? !!document.querySelector('#_gcJobPick.gc-fh') : !!(window._crm && document.querySelector('#root *')), phone), 120000);
   const data = await until(() => A.ev(async () => { try { return ((window.idbGet && await window.idbGet('projects')) || []).length; } catch (e) { return 0; } }), 180000);
   await sleep(8000);
+  /* a device in daily use, not a brand-new one: the walk starts once this device's first sync has settled (the first pull,
+     the first document pull and what they send up) — no shared upload for 15 s, at most 3 minutes, on the fast link, untimed.
+     What that first sync sent is reported (setup.firstSync), not hidden: it is what a NEW device / cleared phone sends. */
+  { const fs0 = H.writes.length, t0s = Date.now(); let last = Date.now(), n = fs0;
+    while (Date.now() - t0s < 180000) { await sleep(1000); const sh = H.writes.slice(n).filter(w => w.table === 'gc_kv' && !OWN.test(w.key)); n = H.writes.length; if (sh.length) last = Date.now(); else if (Date.now() - last > 15000) break; }
+    const fsw = H.writes.slice(fs0).filter(w => w.table === 'gc_kv' && !OWN.test(w.key));
+    R.setup.firstSync = { sec: Math.round((Date.now() - t0s) / 1000), uploads: fsw.length, identical: fsw.filter(w => w.same).length, docRows: fsw.filter(w => /^doc:/.test(w.key)).length, lists: [...new Set(fsw.filter(w => !/^doc:/.test(w.key)).map(w => w.key))].slice(0, 30) }; }
   const cold = S.link.log.slice();
   const coldWire = cold.reduce((a, r) => a + r.down, 0);
   R.setup.signIn = { ok: okIn, home: !!home, projects: data || 0, ms: Date.now() - t0 };
@@ -360,6 +367,7 @@ function renderHTML(S, file){
   const prof = p => !p.device ? '' : `<section><h2>${esc(p.label)} <span class="muted">(${esc(p.setup && p.setup.account ? p.setup.account.name + ' · ' + p.setup.account.crmRole : '')})</span></h2>
     <p class="muted">${esc(p.device.viewport.width + '×' + p.device.viewport.height)} @${p.device.dsf}x · ${p.device.net ? `${p.device.net.down} kbps down / ${p.device.net.up} up / ${p.device.net.rtt} ms RTT` : 'fast network'} · CPU ×${p.device.cpu}${p.device.safe && p.device.safe.top ? ` · safe area ${p.device.safe.top}/${p.device.safe.bottom}` : ''} · ${p.steps.length} steps · ${p.wallSec || '?'} s</p>
     ${p.setup && p.setup.firstOpen ? `<p>First open of this build (download, untimed setup): <b>${p.setup.firstOpen.wireMB} MB</b> over the wire (${p.setup.firstOpen.rawMB} MB unpacked, ${p.setup.firstOpen.requests} requests)${p.setup.firstOpen.estSec ? ` — about <b>${p.setup.firstOpen.estSec} s</b> on this link` : ''}. ${p.setup.ls ? `localStorage: ${p.setup.ls.keys} keys, ${p.setup.ls.chars.toLocaleString()} chars.` : ''}</p>` : ''}
+    ${p.setup && p.setup.firstSync ? `<p class="muted">This device's first sync (untimed setup, before the walk): ${p.setup.firstSync.uploads} shared upload(s) in ${p.setup.firstSync.sec} s — ${p.setup.firstSync.docRows} doc:* rows, ${p.setup.firstSync.identical} identical to the cloud; lists: ${esc(p.setup.firstSync.lists.join(', '))}</p>` : ''}
     ${p.notes && p.notes.length ? `<ul>${p.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${p.steps.map(s => `<div class="step ${s.fails.length ? 'bad' : 'good'}"><h3>${s.fails.length ? '✗' : '✓'} ${s.n}. ${esc(s.name)} <span class="muted">${(s.openMs / 1000).toFixed(1)} s · ${s.info.net ? s.info.net.kvRequests + ' gc_kv req · ' + s.info.net.downKB + ' KB down' : ''}${s.info.longTasks ? ' · long tasks ' + s.info.longTasks.n + ' (worst ' + s.info.longTasks.worst + ' ms)' : ''}</span></h3>
       <div class="row"><div class="shots">${s.shots.filter(x => x.file).map(x => `<figure><a href="${rel(x.file)}"><img loading="lazy" src="${rel(x.file)}"></a><figcaption>${esc(x.label)}</figcaption></figure>`).join('')}</div>
