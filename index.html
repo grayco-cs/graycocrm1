@@ -2735,7 +2735,11 @@ var HB = null;
 
 /* 3. sampling profile of the stalled seconds (Chromium / Edge, only when the page is served with Document-Policy: js-profiling) */
 var P = null, pStart = 0;
-function startProf(){ try { if (MOBILE || typeof W.Profiler !== 'function') return; P = new W.Profiler({ sampleInterval: 20, maxBufferSize: 8000 }); pStart = performance.now(); } catch (e) { P = null; } }
+/* patch QAFIX-PROF: the profiler is off unless asked for on this computer (localStorage gc_perfrep_prof = '1'): calling
+   new Profiler() where the page is not served with Document-Policy: js-profiling logged "Document policy violation:
+   js-profiling is not allowed in this document" on every desk load (QA r36q). Long tasks / LoAF reports are unchanged. */
+function profAsked(){ try { return localStorage.getItem('gc_perfrep_prof') === '1'; } catch (e) { return false; } }
+function startProf(){ try { if (MOBILE || typeof W.Profiler !== 'function' || !profAsked()) return; P = new W.Profiler({ sampleInterval: 20, maxBufferSize: 8000 }); pStart = performance.now(); } catch (e) { P = null; } }
 function digest(tr, wins){
   var frames = tr.frames || [], stacks = tr.stacks || [], res = tr.resources || [], self = {}, incl = {}, n = 0;
   function fname(i){ var f = frames[i] || {}; var r = f.resourceId != null ? s(res[f.resourceId]).replace(/^https?:\/\/[^/]+/, '').slice(0, 30) : ''; return (s(f.name) || '(anon)') + ' ' + r + ':' + (f.line || 0); }
