@@ -165,7 +165,8 @@
       var busy = '';
       try {
         var a = D.activeElement, editing = a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()));
-        if (editing && Date.now() - lastType < 60000) busy = 'typing';
+        var lk = Math.max(lastType, lastKey);
+        if ((editing && Date.now() - (lk || autoT0) < 60000) || Date.now() - lk < 3000) busy = 'typing';
         if (!busy && W._gcSending && W._gcSending().length && Date.now() - autoT0 < 180000) busy = 'sending';
       } catch (e) {}
       if (!busy) { B.autoUpd = ms(); dirty = true; autoToast(); NST.call(W, function(){ if (!update()) { autoT0 = 0; } }, 2000); return; }

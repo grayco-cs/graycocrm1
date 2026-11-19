@@ -133,6 +133,7 @@ try {
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
   function auto(){ L(); if (autoImpl) autoImpl(); return !!autoImpl; }
+  var lastKey = 0; try { ['keydown', 'input'].forEach(function(t){ D.addEventListener(t, function(){ lastKey = Date.now(); }, true); }); } catch (e) {}
   function update(){ L(); return updateImpl ? updateImpl() : false; }
   function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };

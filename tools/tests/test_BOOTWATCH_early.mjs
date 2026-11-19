@@ -19,7 +19,7 @@ ok(src.includes('<script type="text/plain" id="gc-bw-late">\n' + LATE + '\n</scr
 ok(code.length < 18000, 'the early script is small (' + code.length + ' characters)');
 { const tmp = path.join(os.tmpdir(), 'bootwatch_idem_' + process.pid + '.html'); fs.writeFileSync(tmp, src);
   const out = execFileSync('python3', [path.join(here, '..', 'patch_BOOTWATCH.py'), tmp]).toString(); ok(/already patched/.test(out) && fs.readFileSync(tmp, 'utf8') === src, 'patch is idempotent'); fs.unlinkSync(tmp); }
-ok(/_gcBootWatch && window\._gcBootWatch\.banner\(\)\) return;/.test(src) && /_gcBootWatch\.update\(\)\) return; }catch\(e\)\{\} location\.reload\(true\);/.test(src) && /_gcBootWatch\.live\(60000\)/.test(src), 'the CRM\'s own update bar: no second bar, the same update, the answer already fetched');
+ok(/_gcBootWatch\.auto && window\._gcBootWatch\.auto\(\)\) return;/.test(src) && !/id="gc-update-now"/.test(src) && /_gcBootWatch\.live\(60000\)/.test(src), 'AUTOUPD: the CRM\'s own version look hands off to the update that runs by itself (no "Yes, update" bar), the answer already fetched');
 ok(/'claude-proxy': 1, bootwatch: 1 \}/.test(src), 'the Marketing Manager\'s page may report too');
 ok(!/password/i.test((code + LATE).replace(/\/\*[\s\S]*?\*\//g, '').replace(/'[^']*password[^']*'/gi, '')), 'the script never reads a password field (no code touches one)');
 ok(!/gc-auth-password/.test(code), '… not even by id');
