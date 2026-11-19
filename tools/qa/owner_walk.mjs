@@ -211,7 +211,9 @@ async function step(name, o, fn){
   if (down > PROF.maxStepMB * 1048576) st.fails.push({ check: 'bytes', msg: `downloaded ${(down / 1048576).toFixed(1)} MB in this step (limit ${PROF.maxStepMB} MB on ${PROF.label})`, list: st.info.net.biggest });
   const wr = H.writes.slice(w0).filter(w => w.table === 'gc_kv'); const shared = wr.filter(w => !OWN.test(w.key));
   st.info.writes = { all: wr.length, shared: [...new Set(shared.map(w => w.key))], sameValue: shared.filter(w => w.same).length };
-  if (shared.length && o.passive) st.fails.push({ check: 'sharedwrite', msg: `shared list(s) uploaded with no change made on this screen: ${st.info.writes.shared.slice(0, 8).join(', ')}` + (st.info.writes.sameValue ? ` (${st.info.writes.sameValue} identical to the cloud)` : ''), list: shared.slice(0, 8).map(w => `${w.key} ${Math.round(w.len / 1024)} KB${w.same ? ' (unchanged)' : ''}`) });
+  /* a write the screen makes by design when it is opened (o.expect: e.g. opening Job messages marks its "new messages" approval read) */
+  if (o.expect) { const ex = shared.filter(w => o.expect.test(w.key)); if (ex.length) st.info.expectedWrites = [...new Set(ex.map(w => w.key))]; }
+  if (shared.filter(w => !(o.expect && o.expect.test(w.key))).length && o.passive) st.fails.push({ check: 'sharedwrite', msg: `shared list(s) uploaded with no change made on this screen: ${st.info.writes.shared.slice(0, 8).join(', ')}` + (st.info.writes.sameValue ? ` (${st.info.writes.sameValue} identical to the cloud)` : ''), list: shared.slice(0, 8).map(w => `${w.key} ${Math.round(w.len / 1024)} KB${w.same ? ' (unchanged)' : ''}`) });
   if (A) st.info.functions = A.fn.slice(f0).map(f => f.name).slice(0, 12);
   st.fails.forEach(f => { f.sev = f.sev || SEV[f.check] || 'minor'; });
   R.steps.push(st); save();

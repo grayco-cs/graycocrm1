@@ -111,11 +111,11 @@ async function owner(X){
   });
   const tiles = [['Job info', 'Job Info'], ['Schedule', 'Schedule'], ['Documents', 'Documents'], ['Customer portal', 'Customer portal'], ['Messages', '^\\W*Messages?$']];
   for (const [nm, rx] of tiles) {
-    await step(`Job page → ${nm}`, {}, async st => {
+    await step(`Job page → ${nm}`, nm === 'Messages' ? { expect: /^gc_apx_decided_approvals$/ } : {}, async st => {
       if (!(await A().ev(() => !!document.querySelector('#_gcJobDash')))) { await goHome(); await openJobPage(X, K, st, job || {}); }
       return K.jobTile(st, rx);
     });
-    await step(`Back from ${nm}`, { scroll: false }, async st => { await back(st); await sleep(600); return true; });
+    await step(`Back from ${nm}`, nm === 'Messages' ? { scroll: false, expect: /^gc_apx_decided_approvals$/ } : { scroll: false }, async st => { await back(st); await sleep(600); return true; });
   }
   // update progress to 25 %
   await step('Job page → Update progress to 25%', { passive: false, timed: false }, async st => {
@@ -194,11 +194,11 @@ async function pm(X){
     return true;
   });
   await step('Back from the photo', { scroll: false }, async st => { try { await back(st); } catch (e) {} try { await A().ev(() => window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open && window._gcPhotos.close()); } catch (e) {} return true; });
-  await step('💬 Messages', {}, async st => {
+  await step('💬 Messages', { expect: /^gc_apx_decided_approvals$/ }, async st => {
     if (!(await A().ev(() => !!document.querySelector('#_gcJobDash')))) { await goHome(); await openJobPage(X, K, st, job || {}); }
     return K.jobTile(st, '^\\W*Messages?$');
   });
-  await step('Back to 🏠 Home', { scroll: false }, async st => { try { await back(st); } catch (e) {} await goHome(); return !!(await fieldHome()); });
+  await step('Back to 🏠 Home', { scroll: false, expect: /^gc_apx_decided_approvals$/ }, async st => { try { await back(st); } catch (e) {} await goHome(); return !!(await fieldHome()); });
 }
 
 /* ═════ the office at a desk ═════ */
