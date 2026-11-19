@@ -265,13 +265,16 @@ function customerMerges(lists, amap){
 }
 
 /* ── apply / undo (pure: new lists + a log with every field it changed) ── */
+var stamp = '';
 function setF(rec, patch, log, list){
   var before = {}; Object.keys(patch).forEach(function(k){ before[k] = rec[k] === undefined ? null : rec[k]; });
   var n = Object.assign({}, rec); Object.keys(patch).forEach(function(k){ if (patch[k] === undefined || patch[k] === null) delete n[k]; else n[k] = patch[k]; });
+  if (stamp) { before.updatedAt = rec.updatedAt === undefined ? null : rec.updatedAt; n.updatedAt = stamp; }   /* newer → every device / merge takes it */
   log.push({ list: list, id: s(rec.id), before: before, after: patch }); return n;
 }
 function apply(lists, pl, meta){
   meta = meta || {}; var at = meta.at || new Date().toISOString(), by = meta.by || 'office', log = [];
+  stamp = at;
   var A = {}; (pl.archive || []).forEach(function(x){ A[x.id] = x; }); var M = {}; (pl.merge || []).forEach(function(x){ M[x.id] = x; });
   var invs = arr(lists.invs).map(function(v){
     var a = A[s(v.id)], m = M[s(v.id)]; if (!a && !m) return v;
@@ -293,12 +296,14 @@ function apply(lists, pl, meta){
   });
   return { invs: invs, projects: projects, customers: customers, log: { id: meta.id || ('IL' + Date.parse(at).toString(36)), at: at, by: by, kind: 'cleanup', changes: log } };
 }
-function undo(lists, entry){
+function undo(lists, entry, at){
+  var stamp2 = at || '';
   var by = {}; (entry && entry.changes || []).forEach(function(c){ (by[c.list] = by[c.list] || {})[c.id] = (by[c.list][c.id] || []).concat([c]); });
   var res = {};
   ['invs', 'projects', 'customers'].forEach(function(k){
     res[k] = arr(lists[k]).map(function(r){ var cs = (by[k] || {})[s(r.id)]; if (!cs) return r; var n = Object.assign({}, r);
-      cs.slice().reverse().forEach(function(c){ Object.keys(c.before).forEach(function(f){ if (c.before[f] === null) delete n[f]; else n[f] = c.before[f]; }); }); return n; });
+      /* a field that was not there comes back as null (not deleted), so a device that merges records key by key cannot keep the cleanup's value */
+      cs.slice().reverse().forEach(function(c){ Object.keys(c.before).forEach(function(f){ if (f === 'updatedAt') return; n[f] = c.before[f]; }); }); n.updatedAt = stamp2 || new Date().toISOString(); return n; });
   });
   return res;
 }

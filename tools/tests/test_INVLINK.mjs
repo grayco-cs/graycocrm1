@@ -78,8 +78,8 @@ ok(poCells.length >= 6 && !poCells.some(t => /^view$/i.test(t)), 'the PO column 
 ok(poCells.includes('—'), 'an invoice with no job and no PO shows "—"', poCells);
 ok(await A.ev(() => !!document.getElementById('gc-il-btn')), 'the office sees 🔗 Check invoice ↔ job links on ▥ Invoices', await A.ev(() => (document.getElementById('gc-il-btn') || {}).textContent));
 await A.ev(() => { const b = Array.from(document.querySelectorAll('button')).find(x => /^Supplier Invoices/.test(x.textContent.trim())); b && b.click(); }); await sleep(2500);
-const supTxt = await A.ev(() => { const t = Array.from(document.querySelectorAll('table')).find(x => /ON TIME/i.test(x.textContent) || /SUB/.test((x.tHead || {}).textContent || '')); return t ? t.textContent : document.body.innerText.slice(0, 3000); });
-ok(/Farrell Calhoun Demo/.test(supTxt) && !/Demo Plumbing/.test(supTxt), 'the Supplier tab lists the paint store, not the plumber', supTxt.slice(0, 400));
+const supRows = await A.ev(() => { const t = Array.from(document.querySelectorAll('table')).find(x => /On Time\?/i.test((x.tHead || x).textContent || '')); return t && t.tBodies[0] ? Array.from(t.tBodies[0].rows).map(r => Array.from(r.cells).map(c => c.innerText.trim()).join(' | ')) : []; });
+ok(supRows.some(r => /012128755/.test(r)) && !supRows.some(r => /#1303/.test(r)), 'the Supplier tab lists the paint store\'s bill, not the plumber\'s', supRows);
 ok(await A.ev(() => /Westdemo/.test((document.getElementById('gc-il-unclear') || {}).textContent || '')), '"Is this a sub?" asks about the unclear payee');
 await A.ev(() => { const b = Array.from(document.querySelectorAll('button')).find(x => /^Sub Invoices/.test(x.textContent.trim())); b && b.click(); }); await sleep(2000);
 const opts = await A.ev(() => Array.from(document.querySelectorAll('select')).map(s => Array.from(s.options).slice(0, 3).map(o => o.textContent)).filter(o => o[0] === 'Assign...'));

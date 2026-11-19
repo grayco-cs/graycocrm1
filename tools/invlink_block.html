@@ -113,7 +113,7 @@ function applyCleanup(){
 function undoCleanup(entryId){
   return logLoad().then(function(L){
     var e = L.filter(function(x){ return x.id === entryId; })[0]; if (!e || e.undone) return false;
-    var res = CORE.undo({ invs: invList(), projects: projects(), customers: customers() }, e), touched = {};
+    var res = CORE.undo({ invs: invList(), projects: projects(), customers: customers() }, e, nowIso()), touched = {};
     arr(e.changes).forEach(function(c){ touched[c.list] = 1; });
     if (touched.invs) saveList('invs', res.invs, 'QuickBooks-only cleanup — undo');
     if (touched.projects) saveList('projects', res.projects, 'QuickBooks-only cleanup — undo');
@@ -216,8 +216,8 @@ function open(tab){
 }
 function close(){ if (UI.el) { UI.el.remove(); UI.el = null; } }
 D.addEventListener('click', function(e){
-  var t = e.target && e.target.closest ? e.target.closest('#gc-il [data-il], #gc-il [data-il-tab], #gc-il-btn, #gc-il-unclear [data-k]') : null; if (!t) { if (e.target && e.target.id === 'gc-il') close(); return; }
-  if (t.id === 'gc-il-btn') { open('links'); return; }
+  var t = e.target && e.target.closest ? e.target.closest('#gc-il [data-il], #gc-il [data-il-tab], #gc-il-btn, #gc-il-btn2, #gc-il-unclear [data-k]') : null; if (!t) { if (e.target && e.target.id === 'gc-il') close(); return; }
+  if (t.id === 'gc-il-btn' || t.id === 'gc-il-btn2') { open('links'); return; }
   if (t.hasAttribute('data-k')) { var nm = t.getAttribute('data-name'), k = t.getAttribute('data-k'); try { if (W._gcSupplierInv && W._gcSupplierInv.setKind) W._gcSupplierInv.setKind(nm, k); else { var o = overrides(); o[low(nm)] = k; lsSet('gc_payee_kind', JSON.stringify(o)); } } catch (x) {} retab(); return; }
   if (t.hasAttribute('data-il-tab')) { UI.tab = t.getAttribute('data-il-tab'); render(); return; }
   var a = t.getAttribute('data-il'), row = t.closest('[data-il-row]'), id = row ? row.getAttribute('data-il-row') : '';
@@ -259,6 +259,11 @@ function paint(){
   try {
     var btn = D.getElementById('gc-il-btn'), tb = null, bs = D.querySelectorAll('button');
     for (var i = 0; i < bs.length && i < 4000; i++) { if (/^Client Invoices \(\d+\)$/.test(s(bs[i].textContent))) { tb = bs[i].parentElement; break; } }
+    /* Accounting: the same button above its tabs (Overview · Sub Invoices · Bills · … · By Project) */
+    var ab = null, b2 = D.getElementById('gc-il-btn2');
+    if (allowed()) for (var j = 0; j < bs.length && j < 4000; j++) { if (s(bs[j].textContent) === 'By Project' && bs[j].parentElement && /Overview/.test(bs[j].parentElement.textContent)) { ab = bs[j].parentElement; break; } }
+    if (ab) { if (!b2) { b2 = D.createElement('button'); b2.type = 'button'; b2.id = 'gc-il-btn2'; b2.className = 'gc-il-open'; b2.setAttribute('data-gc-keep', '1'); b2.textContent = '🔗 Check invoice ↔ job links'; style(); b2.style.cssText = 'border:1px solid #1d4ed8;background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:6px 12px;font:600 13px Inter,Arial,sans-serif;cursor:pointer;margin:0 0 10px;min-height:34px'; } if (b2.nextElementSibling !== ab) ab.parentElement.insertBefore(b2, ab); }
+    else if (b2) b2.remove();
     if (!tb || !allowed()) { if (btn) btn.remove(); var u0 = D.getElementById('gc-il-unclear'); if (u0) u0.remove(); return; }
     var c = counts(), n = c.links + c.cleanup, lab = '🔗 Check invoice ↔ job links' + (n ? ' (' + n + ')' : '');
     if (!btn) { btn = D.createElement('button'); btn.type = 'button'; btn.id = 'gc-il-btn'; btn.setAttribute('data-gc-keep', '1'); style(); }

@@ -132,8 +132,12 @@ ok(RC.CU_EAH._mergedInto === 'CU_EAN' && RC.CU_EAH.archived === true && (RC.CU_E
 ok(C.custKey('EAH Demo Holdings', C.aliasMap(res.customers)) === C.custKey('EAN Demo Holdings', C.aliasMap(res.customers)), 'the alias makes a future "EAH" invoice match EAN');
 const pl2 = C.plan({ invs: res.invs, projects: res.projects, customers: res.customers }, { today: '2026-11-19' });
 ok(pl2.totals.records === 0 && pl2.customerMerge.filter(x => x.dropIds.length).length === 0, 'apply twice: nothing left to do', pl2.totals);
-const un = C.undo({ invs: res.invs, projects: res.projects, customers: res.customers }, res.log);
-ok(JSON.stringify(un.invs) === JSON.stringify(INVS) && JSON.stringify(un.projects) === JSON.stringify(PROJ) && JSON.stringify(un.customers) === JSON.stringify(CUST), 'Undo: every invoice, job and customer is back exactly as it was');
+const un = C.undo({ invs: res.invs, projects: res.projects, customers: res.customers }, res.log, '2026-11-19T17:00:00.000Z');
+const clean = l => JSON.stringify(l.map(r => { const o = {}; Object.keys(r).sort().forEach(k => { if (r[k] !== null && k !== 'updatedAt') o[k] = r[k]; }); return o; }));
+const sorted = l => JSON.stringify(l.map(r => { const o = {}; Object.keys(r).sort().forEach(k => { if (k !== 'updatedAt') o[k] = r[k]; }); return o; }));
+ok(clean(un.invs) === sorted(INVS) && clean(un.projects) === sorted(PROJ) && clean(un.customers) === sorted(CUST), 'Undo: every invoice, job and customer is back as it was (a field that was not there comes back empty)');
+ok(un.invs.find(v => v.id === 'C_BATH').updatedAt === '2026-11-19T17:00:00.000Z' && res.invs.find(v => v.id === 'C_BATH').updatedAt === '2026-11-19T16:00:00.000Z', 'apply / undo stamp updatedAt, so every device takes the newer record');
+ok(!C.isArchived(un.invs.find(v => v.id === 'C_BATH')), 'after Undo the copy counts again');
 
 /* 7. past jobs */
 ok(C.isPastJob(PROJ[1]) && C.isPastJob(PROJ[0]) && !C.isPastJob(PROJ[9]), 'past job: finished, or made before 2026-11-19 (ROTC, made 10/20, too); a job made 11/20 is current');
