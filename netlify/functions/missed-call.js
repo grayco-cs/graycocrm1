@@ -691,6 +691,8 @@ exports.handler = async function(event){
   try {
     if (ev === 'voice') { let bl = ''; try { bl = await require('./_lib/salesguard.js').def().blocked({ phone: p.From }, { via: 'call' }); } catch (e) {} if (bl) return twiml('<Reject reason="busy"/>'); }   /* patch SALESBLOCK: a blocked number is rejected (busy) */
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
+    if (ev === 'recording') { try { await require('./_lib/lsarec.js').onRecording(p, qs); } catch (e) {} return twiml(''); }   /* LSAREC: Twilio's recording callback (a recorded call / a voicemail) → the call log + its lead */
+    if (ev === 'vmdone') return twiml(SAYV + 'Thank you. Goodbye.</Say><Hangup/>');   /* LSAREC: the voicemail ended */
     if (ev === 'ecall') return twiml(await EC().twimlCall(s(qs.id), parseInt(qs.step, 10) || 0));   /* patch EMERGCALL: our outbound call answered */
     if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
     if (ev === 'fcall') return twiml(require('./_lib/fieldcall.js').twiml(qs.to, env('TWILIO_FROM')));   /* patch FIELDCALL: staff answered → the customer, from the GrayCo number */
@@ -746,4 +748,36 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { AH_TEXT, EC, callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+/* ── LSAREC (owner 11/19: "can you also have the recording for us, the voicemail or phone recording from Brittany") ──
+   Two ⚡ Automations switches, both OFF by default (an admin turns them on):
+     · call_recording — every <Dial> of a call that came in records both sides from the moment someone answers
+       (record-from-answer-dual); the caller first hears "This call may be recorded." (Tennessee is a one-party-consent
+       state; the notice is good practice). Only calls that ring through the GrayCo Twilio number can be recorded — a call
+       Brittany answers on the office line's own phone service never reaches Twilio.
+     · call_voicemail — nobody answered: instead of "Goodbye" the caller may leave a message (2 minutes at most).
+   Twilio posts each finished recording to ?event=recording (signed like every hop); _lib/lsarec.js puts the recording id on
+   the call log row and on the lead(s) of that call. The audio stays in Twilio — staff play it through call-recording.js. */
+const REC_NOTICE = 'This call may be recorded.';
+const VM_ASK = 'Thanks for calling GrayCo Construction Services. Sorry we missed you. Please leave a short message after the tone with your name and what you need, then hang up. Someone from our team will get back to you shortly.';
+function vmTwiml(sid){
+  return SAYV + esc(VM_ASK) + '</Say><Record maxLength="120" timeout="6" playBeep="true" trim="trim-silence" action="' + esc(hookUrl('vmdone')) + '" method="POST" recordingStatusCallback="'
+    + esc(hookUrl('recording', { p: sid, k: 'vm' })) + '" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"/>' + SAYV + 'Thank you. Goodbye.</Say><Hangup/>';
+}
+async function recPost(event, r){
+  if (!r || r.statusCode !== 200 || !/xml/.test(s(r.headers && r.headers['Content-Type'])) || !ready()) return r;
+  const qs = event.queryStringParameters || {}, ev = s(qs.event) || 'voice';
+  if (!/^(voice|menu|what|dialdone|chain)$/.test(ev)) return r;
+  let body = s(r.body); const BYE = '<Say voice="Polly.Joanna">' + esc(SAY) + '</Say><Hangup/>';
+  const hasDial = /<Dial[\s>]/.test(body), bye = body.indexOf(BYE) >= 0, greet = ev === 'voice' && /<Gather[\s>]/.test(body);
+  if (!hasDial && !bye && !greet) return r;
+  const sid = s(params(event).CallSid); if (!/^CA[0-9a-f]{32}$/.test(sid)) return r;
+  const AUTO = require('./_lib/automations.js');
+  const rec = (hasDial || greet) && await AUTO.isOn('call_recording'), vm = bye && await AUTO.isOn('call_voicemail');
+  if (rec && hasDial) body = body.replace(/<Dial(?![^>]*\brecord=)/g, '<Dial record="record-from-answer-dual" recordingStatusCallback="' + esc(hookUrl('recording', { p: sid, k: 'call' })) + '" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"');
+  if (rec && ev === 'voice') body = body.replace('<Response>', '<Response>' + SAYV + esc(REC_NOTICE) + '</Say>');
+  if (vm) body = body.replace(BYE, vmTwiml(sid));
+  return body === r.body ? r : Object.assign({}, r, { body });
+}
+const handle0 = exports.handler;
+exports.handler = async function(event){ const r = await handle0(event); try { return await recPost(event || {}, r); } catch (e) { return r; } };
+exports._test = { recPost, vmTwiml, REC_NOTICE, AH_TEXT, EC, callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };

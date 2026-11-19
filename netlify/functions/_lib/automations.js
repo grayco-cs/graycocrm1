@@ -44,6 +44,8 @@ var ROWS = [
   ['emergency_line', 'safety', 'B', 1, 1, 'server', 'Emergency line', 'Emergency words or "press 1" phone and text staff until someone answers.'],
   ['oncall_paging', 'safety', 'B', 1, 1, 'server', 'On-call paging + escalation', 'An after-hours emergency pages the on-call person; nobody accepts → the next person, then all admins.'],
   ['staff_text_alerts', 'safety', 'B', 1, 1, 'server', 'Staff text alerts', 'Text alerts to staff cells (new lead, emergency, missed call); replies relayed.'],
+  ['call_recording', 'safety', 'C', 0, 0, 'server', 'Record office-line calls', 'Calls through the GrayCo Twilio number are recorded once someone answers (the caller first hears “This call may be recorded”). Staff play them on the lead.'],
+  ['call_voicemail', 'safety', 'C', 0, 0, 'server', 'Voicemail on missed calls', 'When nobody answers, the caller can leave a message (2 min). It is saved on the lead, staff only.'],
   /* ── lead intake, sync, backups ── */
   ['website_intake', 'sync', 'C', 1, 1, 'server', 'Website leads', 'Website forms and the roof price widget go into the Lead Inbox.'],
   ['lead_intake', 'sync', 'C', 1, 1, 'server', 'Partner lead intake (lead companies)', 'Leads posted by lead partners come into the CRM.'],
@@ -60,6 +62,8 @@ var ROWS = [
   ['gdocs_sync', 'sync', 'D', 0, 1, 'server', 'Google Docs list', 'The team’s new Google Docs show in the CRM (no e-mail).'],
   ['photo_tags', 'sync', 'D', 0, 1, 'server', 'Photo AI tags', 'AI tags on new photos (read-only).'],
   ['ads_insights', 'sync', 'D', 0, 1, 'server', 'Ads and social numbers', 'Google Ads, Meta and social likes / reach / clicks are read in.'],
+  ['lsa_sync', 'sync', 'C', 0, 1, 'server', 'Google LSA calls → leads', 'Every 10 min: Google Local Services calls get the caller’s number, job type, length and recording (Google Ads API, the office call log, Wesley’s mailbox); a call that is not a lead yet becomes one.'],
+  ['call_transcribe', 'sync', 'D', 0, 1, 'server', 'Transcribe call recordings', 'A new call recording or voicemail is turned into text with a short summary on the lead (needs a transcription key).'],
   ['text_thread_copy', 'sync', 'D', 0, 1, 'server', 'Texted lead → job conversation copy', 'A texted lead that became a job gets its text conversation and notes copied onto the job.'],
   /* ── staff alerts ── */
   ['bid_alerts_staff', 'staff', 'B', 0, 1, 'server', 'Bid-due and speed-to-lead alerts', '"Bid due in 1 h / today / tomorrow", "assign this lead", "reach out", RoofScout lead mail.'],
