@@ -49,6 +49,7 @@ try {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || String(input);
       var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      if (/\/rest\/v1\/gc_kv(\?|$)/.test(url) && !(m === 'POST' && init && typeof init.body === 'string' && init.body.length >= MIN)) { var pa = inner.apply(this, arguments); try { pa.then(function(r){ if (r && r.status) S.lastAnswer = Date.now(); }, function(){}); } catch (e) {} return pa; }   /* the line is alive while the database answers (sbWrite's give-up) */
       if (m !== 'POST' || !/\/rest\/v1\/gc_kv(\?|$)/.test(url) || !init || typeof init.body !== 'string' || init.body.length < MIN || (init.signal && init.signal.aborted)) return inner.apply(this, arguments);
       var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
       var rows = Array.isArray(b) ? b : [b];
@@ -63,7 +64,7 @@ try {
         var a2 = args;
         if (keepRows.length !== rows.length) { var i2 = Object.assign({}, init, { body: JSON.stringify(Array.isArray(b) ? keepRows : keepRows[0]) }); a2 = [input, i2]; }
         S.sent++;
-        return inner.apply(self, a2).then(function(r){ if (r && r.ok) learn(keepInfo); return r; });
+        return inner.apply(self, a2).then(function(r){ if (r && r.status) S.lastAnswer = Date.now(); if (r && r.ok) learn(keepInfo); return r; });
       };
       if (!cand.length) return send(rows, info);
       S.checked++;

@@ -152,7 +152,7 @@ try {
   const fg0 = await c.ev(() => window.__gcFG.state());
   const tB = Date.now();
   await c.ev(async () => { const L = await window.idbGet('projects'); for (let i = 0; i < 5; i++) window._gcSbPush('projects', L); });
-  let landed = false; for (let i = 0; i < 300 && !landed; i++) { await sleep(1000); landed = ((H.cget('projects') || []).find(x => x.id === 'P5') || {}).notes === (await c.ev(async () => ((await window.idbGet('projects')).find(x => x.id === 'P5') || {}).notes)); }
+  let landed = false; for (let i = 0; i < 480 && !landed; i++) { await sleep(1000); landed = ((H.cget('projects') || []).find(x => x.id === 'P5') || {}).notes === (await c.ev(async () => ((await window.idbGet('projects')).find(x => x.id === 'P5') || {}).notes)); }
   await sleep(5000);
   const projPosts = NET.log.filter(e => e.t >= tB && e.m === 'POST' && e.keys.includes('projects')).length;
   const fg1 = await c.ev(() => window.__gcFG.state());

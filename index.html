@@ -323,6 +323,7 @@ try {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || String(input);
       var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      if (/\/rest\/v1\/gc_kv(\?|$)/.test(url) && !(m === 'POST' && init && typeof init.body === 'string' && init.body.length >= MIN)) { var pa = inner.apply(this, arguments); try { pa.then(function(r){ if (r && r.status) S.lastAnswer = Date.now(); }, function(){}); } catch (e) {} return pa; }   /* the line is alive while the database answers (sbWrite's give-up) */
       if (m !== 'POST' || !/\/rest\/v1\/gc_kv(\?|$)/.test(url) || !init || typeof init.body !== 'string' || init.body.length < MIN || (init.signal && init.signal.aborted)) return inner.apply(this, arguments);
       var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
       var rows = Array.isArray(b) ? b : [b];
@@ -337,7 +338,7 @@ try {
         var a2 = args;
         if (keepRows.length !== rows.length) { var i2 = Object.assign({}, init, { body: JSON.stringify(Array.isArray(b) ? keepRows : keepRows[0]) }); a2 = [input, i2]; }
         S.sent++;
-        return inner.apply(self, a2).then(function(r){ if (r && r.ok) learn(keepInfo); return r; });
+        return inner.apply(self, a2).then(function(r){ if (r && r.status) S.lastAnswer = Date.now(); if (r && r.ok) learn(keepInfo); return r; });
       };
       if (!cand.length) return send(rows, info);
       S.checked++;
@@ -52217,7 +52218,14 @@ function _sbwPump(key){
      threw that work away and started it again */
   var t0 = job.tmo || 30000, body = job.body, hard = body.length < 50000 ? t0 : 300000;
   var ac = null; try{ ac = new AbortController(); }catch(e){}
-  var hardT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ try{ if(ac) ac.abort(); }catch(e){} }, hard);
+  /* a big list's upload is given up only when the line is dead: while the database still answers other requests (a busy,
+     slow line — this one waits behind them), it keeps waiting, up to 20 minutes in all */
+  var hardN = 0, hardT = null, arm = function(){ hardT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){
+    var alive = false; try{ alive = body.length >= 50000 && navigator.onLine !== false && window.__gcSame && Date.now() - (window.__gcSame.lastAnswer || 0) < 60000; }catch(e){}
+    if(alive && ++hardN < 4){ arm(); return; }
+    try{ if(ac) ac.abort(); }catch(e){}
+  }, hard); };
+  arm();
   var p;
   try{
     p = fetch(SB_URL+'/rest/v1/gc_kv', Object.assign({
