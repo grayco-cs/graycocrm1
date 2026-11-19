@@ -13,6 +13,14 @@
 //     /usage); each ZIP only from the day after the last day pulled; everything returned is kept, so browsing never spends credits.
 //     The contractor's phone / e-mail / website / license (GET /contractors, 1 credit) only when a person presses "Get phone / e-mail";
 //     kept for good in gc_permit_contractors. It stops at once on 401 / 402 / 403 / 429. (Little Rock's own open data site is retired.)
+// patch PERMITS3 (owner-approved items 2–6, 11/19) — three more FREE public feeds, read with the Nashville one (no key, read-only):
+//   · Memphis / Shelby Co. — Develop 901's "DPD Building Permits" ArcGIS feed on the City of Memphis Open Data Hub (daily; the
+//     weekly Develop 901 download To-Do now only comes when this feed fails or goes stale — _lib/permit-records.js);
+//   · Little Rock — the city's permit CSV on littlerock.gov (only a new file is read, and only its newest ~2.5 MB);
+//   · Collierville — the town's Development Activity layer (site plans / planned developments: planning leads before the permit).
+//   Every stored permit also gets a score 0–100 + a short "why" (_lib/permits.js score(): value, company fit, permit type, who
+//   pulled it, distance from GrayCo and from the nearest active job, how recent) and its kinds (new / addition / build-out / fire …),
+//   so the Leads page's 🏗 Permits tab can sort the best first. list {sort:'score'} sorts the same way here.
 // Matches are kept in the service-only lead-inbox table (gc_lead_inbox_kv, never synced to a browser):
 //   gc_permit_settings  the filters (⚙ Filters, admins / office)   gc_permit_status  per source: last run, read, matched, error
 //   gc_permit_leads     matched permits, newest first, one per source + permit id, the last 1500 (state new / lead / dismissed)
@@ -34,6 +42,8 @@
 // list re-checks everything stored with today's filters (owner 11/12: "$1 million+ GC jobs … no residential"): what no longer fits
 // is marked "filtered" and shows only under "Not matching the filters"; a permit made a lead and an "import everything" list stay.
 //   settings-get / settings-set {settings}  (set: admins and the office)
+//   areas-set {custom:[[name, [ZIPs], on]], on:{<group name>: true|false}}  (patch PERMITS3: Owner setup → 🏗️ Permit areas — an
+//                                        admin's own counties / ZIPs; ticking a group puts its ZIPs on the Shovels pull list)
 //   set-state {id, state:'lead'|'dismissed'|'new', leadId?}
 // PERMITS_OFF=1 stops the daily run.
 'use strict';
@@ -52,7 +62,8 @@ const D = {
   kvCas: function(k, f){ return inbox()._lib.kvCas(k, f); },
   staffAuth: function(e){ return inbox()._test.staffAuth(e); },
   env: function(k){ return process.env[k] == null ? '' : String(process.env[k]).trim(); },
-  now: function(){ return Date.now(); }
+  now: function(){ return Date.now(); },
+  jobs: async function(){ return (await require('./portal.js')._core.kvRead(['projects'])).projects; }   /* patch PERMITS3: the active jobs' map points (read only) */
 };
 function s(v){ return v == null ? '' : String(v).trim(); }
 function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
@@ -76,14 +87,45 @@ async function getJson(url, opts, ms){
     return { status: r.status, ok: !!r.ok, json: j };
   } finally { if (timer) clearTimeout(timer); }
 }
+/* patch PERMITS3: a text page / a file — at most maxBytes are read (a range read of a big CSV; the body is cut off there either way) */
+async function getText(url, opts, ms, maxBytes){
+  let ctl = null, timer = null;
+  try { if (typeof AbortController === 'function') { ctl = new AbortController(); timer = setTimeout(function(){ try { ctl.abort(); } catch (e) {} }, ms || 12000); } } catch (e) {}
+  try {
+    const r = await D.fetch(url, Object.assign({ headers: { 'User-Agent': UA } }, opts || {}, ctl ? { signal: ctl.signal } : {}));
+    let text = '';
+    if (r.body && typeof r.body.getReader === 'function' && maxBytes) {
+      const rd = r.body.getReader(), parts = []; let n = 0;
+      while (n < maxBytes) { const x = await rd.read(); if (x.done) break; parts.push(Buffer.from(x.value)); n += x.value.length; }
+      try { await rd.cancel(); } catch (e) {}
+      text = Buffer.concat(parts).slice(0, maxBytes).toString('utf8');
+    } else { text = typeof r.text === 'function' ? await r.text() : ''; if (maxBytes && text.length > maxBytes) text = text.slice(0, maxBytes); }
+    return { status: r.status, ok: !!r.ok, text: text };
+  } finally { if (timer) clearTimeout(timer); }
+}
 async function settings(){ return P.clean(await D.kvGet(K.SETTINGS)); }
 function shovelsKey(){ return D.env('SHOVELS_API_KEY'); }
-function tag(p, c){ return Object.assign(p, { reasons: c.reasons, hint: c.hint, bucket: c.bucket, cos: c.cos || [c.hint], category: c.category || '', envWords: c.envWords || [] }); }   /* patch LEADBOTH: + cos / ☢️ category */
+function tag(p, c, ctx){
+  Object.assign(p, { reasons: c.reasons, hint: c.hint, bucket: c.bucket, cos: c.cos || [c.hint], category: c.category || '', envWords: c.envWords || [] });   /* patch LEADBOTH: + cos / ☢️ category */
+  return scored(p, c, ctx);
+}
+/* patch PERMITS3: the kinds, the lead / asbestos flags and the score on the stored permit (the Leads page's 🏗 Permits tab reads them) */
+const SCORE_F = ['score', 'scoreWhy', 'scoreParts', 'miles', 'milesAbout', 'jobMiles', 'pulledBy', 'kinds', 'leadRisk', 'asbestosRisk'];
+function scored(p, c, ctx){
+  ctx = ctx || {};
+  p.kinds = arr0(c.kinds); p.leadRisk = !!c.leadRisk; p.asbestosRisk = !!c.asbestosRisk;
+  const sc = P.score(p, c, { nowMs: ctx.nowMs || D.now(), jobs: ctx.jobs || [] });
+  Object.assign(p, sc); p.scoredAt = centralDay(ctx.nowMs || D.now());
+  return p;
+}
+function arr0(v){ return Array.isArray(v) ? v.slice() : []; }
+async function scoreCtx(){ let jobs = []; try { jobs = P.jobPoints(await D.jobs()); } catch (e) { jobs = []; } return { nowMs: D.now(), jobs: jobs }; }
 
 /* ── Nashville (free) ── */
 /* the ArcGIS where clause: the date, and — when nothing small is ticked — the minimum value and "commercial or multifamily" right at
    the source (owner 11/12: "$1 million+ GC jobs … no residential"); _lib/permits.js classify() still checks every permit */
 const ENV_Q = '(' + ['ASBESTOS', 'ABATEMENT', 'MOLD', 'MOULD', 'LEAD BASED', 'LEAD-BASED', 'LEAD PAINT', 'HAZMAT', 'HAZARDOUS', 'MICROBIAL', 'REMEDIATION'].map(w => "UPPER(Purpose) LIKE '%" + w + "%'").join(' OR ') + " OR UPPER(Permit_Subtype_Description) LIKE '%ABATEMENT%')";   /* patch LEADBOTH */
+const DMG_Q = '(' + ['FIRE DAMAGE', 'FIRE REPAIR', 'DAMAGED BY FIRE', 'SMOKE DAMAGE', 'WATER DAMAGE', 'FLOOD', 'STORM', 'HAIL', 'TORNADO', 'TREE FELL', 'FALLEN TREE', 'TREE DAMAGE', 'WIND DAMAGE'].map(w => "UPPER(Purpose) LIKE '%" + w + "%'").join(' OR ') + " OR UPPER(Permit_Type_Description) LIKE '%FIRE DAMAGE%')";   /* patch PERMITS3 */
 function nashWhere(S, since){
   const inc = S.include, parts = ["Date_Issued >= TIMESTAMP '" + since + " 00:00:00'"];
   const small = inc.repair || inc.roofing || inc.demolition;
@@ -91,11 +133,13 @@ function nashWhere(S, since){
   if (!small && S.minValue > 0) big.push('Const_Cost >= ' + Math.round(S.minValue));
   if (!small && !inc.residentialRehab && !inc.residentialNew)
     big.push("(Permit_Type_Description LIKE '%Commercial%'" + (inc.multifamily ? " OR Permit_Subtype_Description LIKE '%Multifamily%' OR Permit_Subtype_Description LIKE '%Apartment%' OR Permit_Subtype_Description LIKE '%Condominium%'" : '') + ')');
-  /* patch LEADBOTH: ☢️ asbestos / lead / mold permits at any value and any kind (the big-job rule OR the words) */
-  if (big.length && inc.environmental) parts.push('((' + big.join(' AND ') + ') OR ' + ENV_Q + ')'); else Array.prototype.push.apply(parts, big);
+  /* patch LEADBOTH: ☢️ asbestos / lead / mold permits at any value and any kind (the big-job rule OR the words)
+     patch PERMITS3: Mitigation's fire / water / storm damage repairs the same way (any value) */
+  const ors = (inc.environmental ? [ENV_Q] : []).concat(inc.mitigation ? [DMG_Q] : []);
+  if (big.length && ors.length) parts.push('((' + big.join(' AND ') + ') OR ' + ors.join(' OR ') + ')'); else Array.prototype.push.apply(parts, big);
   return parts.join(' AND ');
 }
-async function runNashville(S, found, t0){
+async function runNashville(S, found, t0, ctx){
   const st = { on: true, ok: false, lastRun: nowIso(), read: 0, matched: 0, error: '' };
   const since = centralDay(D.now() - S.maxAgeDays * 864e5);
   const now = D.now();
@@ -106,11 +150,71 @@ async function runNashville(S, found, t0){
       if (!r.ok || !r.json) throw new Error('Nashville answered ' + r.status);
       if (r.json.error) throw new Error('Nashville: ' + clip(r.json.error.message || JSON.stringify(r.json.error), 120));
       const feats = arr(r.json.features);
-      feats.forEach(function(f){ const p = P.fromNashville(f); if (!p) return; st.read++; const c = P.classify(p, S, now); if (c.match) { st.matched++; found.push(tag(p, c)); } });
+      feats.forEach(function(f){ const p = P.fromNashville(f); if (!p) return; st.read++; const c = P.classify(p, S, now); if (c.match) { st.matched++; found.push(tag(p, c, ctx)); } });
       if (feats.length < 1000 && !r.json.exceededTransferLimit) break;
       off += feats.length;
     }
     st.ok = true;
+  } catch (e) { st.error = clip(e && e.message || e, 200); }
+  st.ms = D.now() - t0; st.window = since + ' → today';
+  return st;
+}
+
+/* ── patch PERMITS3: Memphis / Shelby Co. (Develop 901's public ArcGIS feed — free; read with its own window: it is updated ~weekly) ── */
+function feedS(S, f){ return Object.assign({}, S, { maxAgeDays: Math.max(S.maxAgeDays, (S[f] && S[f].windowDays) || S.maxAgeDays) }); }
+async function runMemphis(S, found, t0, ctx){
+  const st = { on: true, ok: false, lastRun: nowIso(), read: 0, matched: 0, error: '', newest: '' };
+  const S2 = feedS(S, 'memphis'), since = centralDay(D.now() - S2.maxAgeDays * 864e5), now = D.now();
+  try {
+    for (let off = 0, page = 0; page < 5; page++) {
+      const q = { where: "Issued_Date >= TIMESTAMP '" + since + " 00:00:00' AND Sub_Type <> 'CER'", outFields: P.MEM_FIELDS.join(','), orderByFields: 'Issued_Date DESC', resultOffset: String(off), resultRecordCount: '1000', returnGeometry: 'false', f: 'json' };
+      const r = await getJson(P.MEM_URL + '?' + new URLSearchParams(q).toString(), {}, 15000);
+      if (!r.ok || !r.json) throw new Error('Memphis answered ' + r.status);
+      if (r.json.error) throw new Error('Memphis: ' + clip(r.json.error.message || JSON.stringify(r.json.error), 120));
+      const feats = arr(r.json.features);
+      feats.forEach(function(f){ const p = P.fromMemphis(f); if (!p) return; st.read++; if (p.issued > st.newest) st.newest = p.issued; const c = P.classify(p, S2, now); if (c.match) { st.matched++; found.push(tag(p, c, ctx)); } });
+      if (feats.length < 1000 && !r.json.exceededTransferLimit) break;
+      off += feats.length;
+    }
+    st.ok = true;
+    if (!st.newest) st.note = 'No permits in the last ' + S2.maxAgeDays + ' days — the feed may be stale.';
+  } catch (e) { st.error = clip(e && e.message || e, 200); }
+  st.ms = D.now() - t0; st.window = since + ' → today';
+  if (st.ok) st.lastOk = st.lastRun;
+  return st;
+}
+/* ── patch PERMITS3: Little Rock (the city's permit CSV — only a NEW file, only its newest ~2.5 MB) ── */
+async function runLittleRock(S, found, t0, ctx, prev){
+  prev = obj(prev);
+  const st = { on: true, ok: false, lastRun: nowIso(), read: 0, matched: 0, error: '', file: prev.file || '', fileRead: prev.fileRead || '', newest: prev.newest || '', lastOk: prev.lastOk || '' };
+  const S2 = feedS(S, 'littlerock'), now = D.now();
+  try {
+    const pg = await getText(P.LR_PAGE, {}, 10000, 600000);
+    if (!pg.ok) throw new Error('littlerock.gov answered ' + pg.status);
+    const url = P.lrLatest(pg.text);
+    if (!url) throw new Error('No permit file linked on the City of LR Data page.');
+    st.file = url;
+    if (prev.fileRead === url && prev.ok) { st.ok = true; st.lastOk = st.lastRun; st.skipped = true; st.note = 'No newer file from the city (' + (/(\d{8})\.csv$/i.exec(url) || ['', '?'])[1] + ').'; st.ms = D.now() - t0; return st; }
+    const r = await getText(url, { headers: { 'User-Agent': UA, Range: 'bytes=0-' + (P.LR_BYTES - 1) } }, 15000, P.LR_BYTES);
+    if (!r.ok) throw new Error('Little Rock file answered ' + r.status);
+    P.fromLittleRockCsv(r.text, url).forEach(function(p){ st.read++; const d = p.issued || p.filed; if (d > st.newest) st.newest = d; const c = P.classify(p, S2, now); if (c.match) { st.matched++; found.push(tag(p, c, ctx)); } });
+    if (!st.read) throw new Error('The Little Rock file had no permit rows.');
+    st.ok = true; st.fileRead = url; st.lastOk = st.lastRun;
+  } catch (e) { st.error = clip(e && e.message || e, 200); }
+  st.ms = D.now() - t0;
+  return st;
+}
+/* ── patch PERMITS3: Collierville (the town's Development Activity layer — planning applications before the permit) ── */
+async function runCollierville(S, found, t0, ctx){
+  const st = { on: true, ok: false, lastRun: nowIso(), read: 0, matched: 0, error: '' };
+  const S2 = feedS(S, 'collierville'), since = centralDay(D.now() - S2.maxAgeDays * 864e5), now = D.now();
+  try {
+    const q = { where: "PermitDate >= TIMESTAMP '" + since + " 00:00:00'", outFields: P.COLL_FIELDS.join(','), orderByFields: 'PermitDate DESC', resultRecordCount: '1000', returnGeometry: 'false', f: 'json' };
+    const r = await getJson(P.COLL_URL + '?' + new URLSearchParams(q).toString(), {}, 12000);
+    if (!r.ok || !r.json) throw new Error('Collierville answered ' + r.status);
+    if (r.json.error) throw new Error('Collierville: ' + clip(r.json.error.message || JSON.stringify(r.json.error), 120));
+    arr(r.json.features).forEach(function(f){ const p = P.fromCollierville(f); if (!p) return; st.read++; const c = P.classify(p, S2, now); if (c.match) { st.matched++; found.push(tag(p, c, ctx)); } });
+    st.ok = true; st.lastOk = st.lastRun;
   } catch (e) { st.error = clip(e && e.message || e, 200); }
   st.ms = D.now() - t0; st.window = since + ' → today';
   return st;
@@ -166,7 +270,7 @@ async function usage(st){
   } catch (e) {}
   return 0;
 }
-async function runShovels(S, found, prev, deadline, t0, opts){
+async function runShovels(S, found, prev, deadline, t0, opts, ctx){
   opts = opts || {}; prev = obj(prev);
   const keep = { spent: trimLedger(prev.spent), zips: obj(prev.zips), nextZip: +prev.nextZip || 0, usage: prev.usage, lastPull: prev.lastPull, lastOk: prev.lastOk };
   const base = Object.assign(keep, { zipsTotal: S.shovels.zips.length, perRun: S.shovels.perRun, budget: S.shovels.budget, auto: S.shovels.auto });
@@ -211,8 +315,8 @@ async function runShovels(S, found, prev, deadline, t0, opts){
         items.forEach(function(it){
           const p = P.fromShovels(it, z); if (!p) return;
           const c = P.classify(p, S, now);
-          if (c.match) { st.matched++; found.push(tag(p, c)); }
-          else found.push(Object.assign(p, { reasons: [], hint: 'construction', bucket: c.bucket, nomatch: true, why: c.why }));   /* paid for: kept, shown under "Pulled, not matching" */
+          if (c.match) { st.matched++; found.push(tag(p, c, ctx)); }
+          else found.push(scored(Object.assign(p, { reasons: [], hint: 'construction', bucket: c.bucket, nomatch: true, why: c.why }), c, ctx));   /* paid for: kept, shown under "Pulled, not matching" */
         });
         cursor = items.length ? s(r.json.next_cursor) : '';
         if (!cursor) { done = true; break; }
@@ -293,7 +397,7 @@ async function zipSearch(q){
 const SAME = ['type', 'subtype', 'desc', 'value', 'issued', 'filed', 'address', 'city', 'usState', 'zip', 'contractor', 'contractorPhone', 'contractorEmail', 'contractorWebsite', 'contractorLicense', 'contractorAddress', 'owner', 'yearBuilt', 'hint', 'bucket', 'nomatch'];
 function sortKey(x){ return s(x.issued || x.filed || '').slice(0, 10) + '|' + s(x.firstSeen); }
 async function store(found){
-  const added = { nashville: 0, shovels: 0 };
+  const added = { nashville: 0, shovels: 0, memphis: 0, littlerock: 0, collierville: 0 };
   if (!found.length) return added;
   const at = nowIso();
   await D.kvCas(K.LEADS, function(cur){
@@ -303,7 +407,10 @@ async function store(found){
       const k = P.keyOf(p), ex = by[k];
       if (ex) {
         const diff = SAME.some(function(f){ return JSON.stringify(ex[f]) !== JSON.stringify(p[f] == null ? ex[f] : p[f]); }) || JSON.stringify(ex.reasons) !== JSON.stringify(p.reasons);
-        if (!diff) return;
+        if (!diff) {   /* patch PERMITS3: a new score (it moves as a permit gets older) is kept without "updated" */
+          if (SCORE_F.some(function(f){ return p[f] !== undefined && JSON.stringify(ex[f]) !== JSON.stringify(p[f]); })) { SCORE_F.forEach(function(f){ if (p[f] !== undefined) ex[f] = p[f]; }); ex.scoredAt = p.scoredAt; changed = true; }
+          return;
+        }
         Object.keys(p).forEach(function(f){ if (p[f] != null && p[f] !== '' && f !== 'state' && f !== 'firstSeen') ex[f] = p[f]; });
         if (!p.nomatch) { delete ex.nomatch; delete ex.why; }
         ex.updatedAt = at; changed = true; return;
@@ -337,7 +444,7 @@ async function importRows(body, who){
   const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
   if (!rows.length) return { ok: false, error: 'No rows to import.' };
   const S = await settings(), S2 = Object.assign({}, S, { maxAgeDays: 3650 });   /* a list can be weeks old: no age limit on imports */
-  const now = D.now(), found = [], out = { ok: true, read: 0, matched: 0, skipped: 0, source: label };
+  const now = D.now(), found = [], out = { ok: true, read: 0, matched: 0, skipped: 0, source: label }, ctx = await scoreCtx();
   rows.forEach(function(r){
     r = r && typeof r === 'object' ? r : {};
     const number = clip(r.number, 60), address = clip(r.address, 160);
@@ -347,11 +454,12 @@ async function importRows(body, who){
       type: clip(r.type, 120), subtype: '', desc: clip(r.desc, 900), value: value, issued: issued, filed: '', address: address, city: clip(r.city, 60), usState: clip(r.state, 2).toUpperCase() || 'TN',
       zip: s(r.zip).slice(0, 5), contractor: clip(r.contractor, 160), contractorPhone: clip(r.phone, 40), contractorEmail: /@/.test(s(r.email)) ? clip(r.email, 120) : '', owner: clip(r.owner, 160),
       status: clip(r.status, 40), imported: { at: nowIso(), by: clip(who.name || who.email, 80) }, link: '' };
+    p.pulledBy = P.pulledByOf(p.contractor, p.owner);   /* patch PERMITS3 */
     if (body.all === true) p.keepAll = true;   /* "Import everything": the filters never hide these */
     out.read++;
     const c = P.classify(p, S2, now);
-    if (c.match) { out.matched++; found.push(tag(p, c)); }
-    else found.push(Object.assign(p, { reasons: [], hint: 'construction', bucket: c.bucket, nomatch: true, why: c.why }));   /* the office chose this list: kept, under "Not matching the filters" */
+    if (c.match) { out.matched++; found.push(tag(p, c, ctx)); }
+    else found.push(scored(Object.assign(p, { reasons: [], hint: 'construction', bucket: c.bucket, nomatch: true, why: c.why }), c, ctx));   /* the office chose this list: kept, under "Not matching the filters" */
   });
   const added = await store(found);
   out.added = (added[src] || 0); out.updated = out.read - out.added;
@@ -374,18 +482,29 @@ async function run(opts){
   const S = await settings();
   const found = [];
   const out = {};
+  const ctx = await scoreCtx();   /* patch PERMITS3: the active jobs, for the score */
   try {
-    if (opts.shovelsOnly !== true) out.nashville = S.nashville.on ? await runNashville(S, found, t0) : { on: false, note: 'Turned off in ⚙ Filters.' };
-    if (opts.nashvilleOnly !== true) out.shovels = await runShovels(S, found, prevStatus.shovels, deadline, t0, { manual: opts.manualShovels === true });
+    if (opts.shovelsOnly !== true) {   /* patch PERMITS3: the free feeds side by side */
+      const off = { on: false, note: 'Turned off in ⚙ Filters.' };
+      const got = await Promise.all([
+        S.nashville.on ? runNashville(S, found, t0, ctx) : off,
+        S.memphis.on ? runMemphis(S, found, t0, ctx) : off,
+        S.littlerock.on ? runLittleRock(S, found, t0, ctx, prevStatus.littlerock) : off,
+        S.collierville.on ? runCollierville(S, found, t0, ctx) : off]);
+      out.nashville = got[0]; out.memphis = got[1]; out.littlerock = got[2]; out.collierville = got[3];
+    }
+    if (opts.nashvilleOnly !== true) out.shovels = await runShovels(S, found, prevStatus.shovels, deadline, t0, { manual: opts.manualShovels === true }, ctx);
   } catch (e) { out.error = clip(e && e.message || e, 200); }
-  let added = { nashville: 0, shovels: 0 };
+  let added = { nashville: 0, shovels: 0, memphis: 0, littlerock: 0, collierville: 0 };
   try { added = await store(found); } catch (e) { out.error = 'Could not save the permits (' + clip(e && e.message || e, 100) + ')'; }
   if (out.nashville && out.nashville.on !== false) out.nashville.added = added.nashville || 0;
+  ['memphis', 'littlerock', 'collierville'].forEach(function(k){ if (out[k] && out[k].on !== false) out[k].added = added[k] || 0; });   /* patch PERMITS3 */
   if (out.shovels && out.shovels.lastPull && !out.shovels.skipped && !out.shovels.manualOnly) out.shovels.added = added.shovels || 0;
   let status = null;
   await D.kvCas(K.STATUS, function(v){
     v = obj(v);
     if (out.nashville) v.nashville = out.nashville;
+    ['memphis', 'littlerock', 'collierville'].forEach(function(k){ if (out[k]) v[k] = out[k]; });   /* patch PERMITS3 */
     if (out.shovels) { const cur = obj(v.shovels); out.shovels.spent = Object.assign({}, obj(cur.spent), out.shovels.spent); out.shovels.spent30 = spent30(out.shovels.spent); v.shovels = out.shovels; }   /* a contractor look-up during the pull keeps its credits */
     v.lastRun = nowIso(); v.lastBy = s(opts.by) || 'schedule'; if (out.error) v.error = out.error; else delete v.error;
     delete v.running; status = v; return v;
@@ -393,6 +512,8 @@ async function run(opts){
   return { ok: !out.error, status: status, added: added, found: found.length, error: out.error || '' };
 }
 
+/* patch PERMITS3: the sources, for the screens */
+const SOURCES = { nashville: 'Nashville / Davidson Co. (Metro open data)', memphis: 'Memphis / Shelby Co. (Develop 901 open data)', littlerock: 'Little Rock (city permit file)', collierville: 'Collierville (development applications)', shovels: 'Shovels (paid)' };
 /* ── the CRM's calls ── */
 async function staffAction(body, who, headers){
   const action = s(body.action);
@@ -402,14 +523,19 @@ async function staffAction(body, who, headers){
     const all = arr(items), n = { new: 0, lead: 0, dismissed: 0, filtered: 0 };
     /* the filters of today on everything stored: what no longer fits is marked "filtered" (shown only under "Not matching");
        a list imported with "import everything" and a permit a person made a lead stay as they are */
-    const Sx = Object.assign({}, S, { maxAgeDays: 3650 }), nowMs = D.now();
+    const Sx = Object.assign({}, S, { maxAgeDays: 3650 }), nowMs = D.now(), ctx = await scoreCtx();
     all.forEach(function(x){
-      if (!x.keepAll && x.state !== 'lead') { const c = P.classify(x, Sx, nowMs); if (c.match) { x.reasons = c.reasons; x.hint = c.hint; x.bucket = c.bucket; x.cos = c.cos || [c.hint]; x.category = c.category || ''; x.envWords = c.envWords || []; delete x.nomatch; delete x.filtered; } else { x.filtered = c.why; } }
+      let c = null;
+      if (!x.keepAll && x.state !== 'lead') { c = P.classify(x, Sx, nowMs); if (c.match) { x.reasons = c.reasons; x.hint = c.hint; x.bucket = c.bucket; x.cos = c.cos || [c.hint]; x.category = c.category || ''; x.envWords = c.envWords || []; delete x.nomatch; delete x.filtered; } else { x.filtered = c.why; } }
+      else if (!x.nomatch) { c = P.classify(x, Sx, nowMs); c.match = true; }   /* a lead / an "import everything" row: scored as a match */
+      if (c) scored(x, x.filtered || x.nomatch ? Object.assign({}, c, { match: false }) : c, ctx);   /* patch PERMITS3: today's score (it moves with the age) */
       if (x.filtered || x.nomatch) n.filtered++; else n[x.state] = (n[x.state] || 0) + 1;
     });
+    if (s(body.sort) === 'score') all.sort(function(a, b){ return ((+b.score || 0) - (+a.score || 0)) || (sortKey(a) < sortKey(b) ? 1 : sortKey(a) > sortKey(b) ? -1 : 0); });   /* patch PERMITS3: the best first */
     const stO = obj(st); if (stO.shovels) { stO.shovels = Object.assign({}, stO.shovels, { spent30: spent30(stO.shovels.spent), left: budgetLeft(S, stO.shovels) }); delete stO.shovels.zips; }
     return reply(200, headers, { ok: true, items: all.slice(0, Math.min(LIST_MAX, +body.limit || LIST_MAX)), total: all.length, counts: n, status: stO, settings: S,
-      active: { nashville: S.nashville.on, shovels: !!shovelsKey() && S.shovels.on }, shovelsConfigured: !!shovelsKey(), admin: admin });
+      active: { nashville: S.nashville.on, memphis: S.memphis.on, littlerock: S.littlerock.on, collierville: S.collierville.on, shovels: !!shovelsKey() && S.shovels.on }, shovelsConfigured: !!shovelsKey(), admin: admin,
+      kinds: P.KIND_LABEL, sources: SOURCES });
   }
   if (action === 'run') {   /* ↻ Run now: Nashville (free); Shovels only when its daily pull is on and has not run today */
     const r = await run({ by: s(who.email) || 'staff', budgetMs: 8500 });
@@ -437,7 +563,22 @@ async function staffAction(body, who, headers){
     const r = await zipSearch(body.q);
     return reply(r.ok ? 200 : (r.code || 400), headers, r);
   }
-  if (action === 'settings-get') return reply(200, headers, { ok: true, settings: await settings(), defaults: P.defaults(), include: P.INCLUDE, uses: P.USES.map(function(u){ return [u[0], u[1]]; }), zipGroups: P.ZIP_GROUPS, tags: P.SHOVELS_TAGS, admin: admin, shovelsConfigured: !!shovelsKey(), dodgeConfigured: !!D.env('DODGE_API_KEY') });
+  if (action === 'settings-get') { const S0 = await settings(); return reply(200, headers, { ok: true, settings: S0, defaults: P.defaults(), include: P.INCLUDE, uses: P.USES.map(function(u){ return [u[0], u[1]]; }), zipGroups: P.allGroups(S0), builtInGroups: P.ZIP_GROUPS.length, tags: P.SHOVELS_TAGS, admin: admin, shovelsConfigured: !!shovelsKey(), dodgeConfigured: !!D.env('DODGE_API_KEY'), kinds: P.KIND_LABEL, sources: SOURCES }); }
+  if (action === 'areas-set') {   /* patch PERMITS3: Owner setup → 🏗️ Permit areas (an admin's own counties / ZIPs; a ticked group's ZIPs go on the Shovels list) */
+    if (!admin) return reply(403, headers, { ok: false, error: 'Only an owner, an admin or the office can change the permit areas.' });
+    const cur = await settings(), custom = body.custom === undefined ? cur.customGroups : P.groupsClean(body.custom), on = body.on && typeof body.on === 'object' ? body.on : {};
+    let zips = cur.shovels.zips.slice();
+    P.allGroups({ customGroups: custom }).forEach(function(g){
+      const v = on[g[0]];
+      if (v === true) g[1].forEach(function(z){ if (zips.indexOf(z) < 0) zips.push(z); });
+      else if (v === false) zips = zips.filter(function(z){ return g[1].indexOf(z) < 0; });
+    });
+    custom.forEach(function(g){ if (typeof on[g[0]] === 'boolean') g[2] = on[g[0]]; });
+    const S = P.clean(Object.assign({}, cur, { customGroups: custom, shovels: Object.assign({}, cur.shovels, { zips: zips }) }));
+    S.updatedAt = nowIso(); S.updatedBy = clip(who.name || who.email, 80);
+    await D.kvCas(K.SETTINGS, function(){ return S; });
+    return reply(200, headers, { ok: true, settings: S, zipGroups: P.allGroups(S) });
+  }
   if (action === 'import') {   /* 📥 a permit list a person downloaded (Develop 901 / Accela, an MSCCE records reply …) */
     if (!admin) return reply(403, headers, { ok: false, error: 'Only an owner, an admin or the office can import permits.' });
     const r = await importRows(body, who);
@@ -464,7 +605,7 @@ async function staffAction(body, who, headers){
   if (action === 'settings-set') {
     if (!admin) return reply(403, headers, { ok: false, error: 'Only an owner, an admin or the office can change the permit filters.' });
     const cur = await settings(), nv = body.settings && typeof body.settings === 'object' ? body.settings : {};
-    const S = P.clean(Object.assign({}, cur, nv, { nashville: Object.assign({}, cur.nashville, nv.nashville || {}), shovels: Object.assign({}, cur.shovels, nv.shovels || {}) }));   /* ⚙ Filters and Integrations → Shovels each send their own part */
+    const S = P.clean(Object.assign({}, cur, nv, { nashville: Object.assign({}, cur.nashville, nv.nashville || {}), memphis: Object.assign({}, cur.memphis, nv.memphis || {}), littlerock: Object.assign({}, cur.littlerock, nv.littlerock || {}), collierville: Object.assign({}, cur.collierville, nv.collierville || {}), shovels: Object.assign({}, cur.shovels, nv.shovels || {}) }));   /* ⚙ Filters and Integrations → Shovels each send their own part (PERMITS3: + the new feeds) */
     S.updatedAt = nowIso(); S.updatedBy = clip(who.name || who.email, 80);
     await D.kvCas(K.SETTINGS, function(){ return S; });
     return reply(200, headers, { ok: true, settings: S });
@@ -501,4 +642,4 @@ exports.handler = async function(event){
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong: ' + clip(e && e.message || e, 120) }); }
 };
 exports.run = run;
-exports._test = { nashWhere: nashWhere, importRows: importRows, D: D, K: K, run: run, store: store, runNashville: runNashville, runShovels: runShovels, plan: plan, budgetLeft: budgetLeft, spent30: spent30, contractorLookup: contractorLookup, centralDay: centralDay, STOP: STOP, KEEP: KEEP };
+exports._test = { runMemphis: runMemphis, runLittleRock: runLittleRock, runCollierville: runCollierville, getText: getText, SOURCES: SOURCES, nashWhere: nashWhere, importRows: importRows, D: D, K: K, run: run, store: store, runNashville: runNashville, runShovels: runShovels, plan: plan, budgetLeft: budgetLeft, spent30: spent30, contractorLookup: contractorLookup, centralDay: centralDay, STOP: STOP, KEEP: KEEP };

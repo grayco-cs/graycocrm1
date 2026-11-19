@@ -194739,9 +194739,10 @@ var ITEMS = [
   { id: 'oncall', g: 'soon', t: 'Enter the on-call rotation', how: '💧 Mitigation → 📟 On call → who is on call each week. Nobody is paged for after-hours emergencies until it is filled in.' },
   { id: 'goal', g: 'soon', t: 'Set the yearly revenue goal', how: '⚙ Admin → 🎯 Company goal → Set. It shows on the TV scoreboard.' },
   { id: 'twostep', g: 'soon', t: 'Two-step login for Wesley and Nick', how: 'Each of you: myaccount.google.com → Security → 2-Step Verification → Get started.' },
-  { id: 'permits_shovels', g: 'later', t: 'Optional, later: Shovels permit data for Memphis / DeSoto / Little Rock', how: 'Only if you want permits from places with no free feed (Nashville already comes in free). ⚙ Admin settings → Integrations → 🏗️ Shovels: it is Off · for later. To use it: sign up at shovels.ai (the free API key has 500 credits per 30 days; one credit = one record), copy the API key, Netlify → Site configuration → Environment variables → SHOVELS_API_KEY → Trigger deploy; then in that Shovels card switch it on, set the credit budget and the ZIP codes, press Estimate, then Pull from Shovels now. Pulls stay manual from the CRM until you turn on the daily pull there.', auto: 'shovels_key' },   /* patch PERMITS */
+  { id: 'permits_shovels', g: 'later', t: 'Optional, later: Shovels permit data for DeSoto / Jonesboro / the other counties', how: 'Only if you want permits from places with no free feed (Nashville, Memphis / Shelby, Little Rock and Collierville already come in free). ⚙ Admin settings → Integrations → 🏗️ Shovels: it is Off · for later. To use it: sign up at shovels.ai (the free API key has 500 credits per 30 days; one credit = one record), copy the API key, Netlify → Site configuration → Environment variables → SHOVELS_API_KEY → Trigger deploy; then in that Shovels card switch it on, set the credit budget and the ZIP codes, press Estimate, then Pull from Shovels now. Pulls stay manual from the CRM until you turn on the daily pull there.', auto: 'shovels_key' },   /* patch PERMITS */
   { id: 'permits_filters', g: 'soon', t: 'Pick which permits you want in 🏗️ Permitted jobs', how: '🏗️ Permitted jobs → ⚙ Filters: permit types, minimum value, ZIP codes.' },   /* patch PERMITS */
-  { id: 'mscce_request', g: 'soon', t: 'Shelby County permits: the monthly MSCCE records request (e-mail)', how: 'Shelby County has no free permit feed. The CRM can e-mail Memphis & Shelby County Code Enforcement once a month asking for last month\'s permit list (Excel / CSV with the contractor\'s name and phone). It is OFF. Call MSCCE at 901-222-8300 and ask which e-mail takes public-records requests, then Open → enter it, check the From address and the preview → Send now once → turn on Monthly. Replies come to office@ and an Office To-Do says "import it". Every Monday the office also gets a To-Do to download Develop 901\'s permits.', open: '_gcMsccOpen', openLabel: 'Open settings' },   /* patch PERMITS2 */
+  { id: 'permit_areas', g: 'soon', t: '🏗️ Permit areas: add counties or ZIP codes', how: 'Free permit feeds already cover Nashville, Memphis / Shelby Co. (Develop 901), Little Rock and Collierville. For every other area (DeSoto, Tipton, Fayette, Marshall MS, Crittenden AR / West Memphis, Jonesboro …) tick its county here, or add your own county / ZIP codes — the ticked areas are what Shovels pulls once it is on (Integrations → 🏗️ Shovels). Tipton, Fayette, Marshall and Crittenden are listed and OFF.', open: '_gcPermitAreasOpen', openLabel: 'Open' },   /* patch PERMITS3 */
+  { id: 'mscce_request', g: 'soon', t: 'Shelby County permits: the monthly MSCCE records request (e-mail)', how: 'Shelby County permits now come in free every day (Develop 901 open data); this is a backup. The CRM can e-mail Memphis & Shelby County Code Enforcement once a month asking for last month\'s permit list (Excel / CSV with the contractor\'s name and phone). It is OFF. Call MSCCE at 901-222-8300 and ask which e-mail takes public-records requests, then Open → enter it, check the From address and the preview → Send now once → turn on Monthly. Replies come to office@ and an Office To-Do says "import it". On a Monday when the Develop 901 feed is not working, the office also gets a To-Do to download Develop 901\'s permits by hand.', open: '_gcMsccOpen', openLabel: 'Open settings' },   /* patch PERMITS2 */
   { id: 'dodge', g: 'later', t: 'Look into Dodge (paid) — get pricing / API access', how: 'Dodge Construction Network (construction.com) has project leads before permits, bid dates and plan rooms (paid). Ask Dodge for pricing and API access for Shelby / DeSoto / Pulaski / Davidson; if you sign up, put the key in Netlify as DODGE_API_KEY → Trigger deploy. ⚙ Admin settings → Integrations → Dodge shows it (off · for later).', auto: 'dodge_key', open: '_gcDodgeOpen', openLabel: 'Open' },   /* patch PERMITS2 */
   { id: 'gdrive', g: 'soon', t: 'Google Drive for big plan sets (files over 50 MB)', how: '1) Google Cloud console → a project → enable the Google Drive API → IAM → Service accounts → Create → Keys → Add key → JSON (a file downloads). 2) Google Drive → New → Shared drive "GrayCo Jobs" → Manage members → add the service account\'s e-mail as Content manager. 3) Netlify → Site configuration → Environment variables: GDRIVE_SA_JSON = the whole text of the JSON key file; GDRIVE_ROOT_ID = the Shared drive\'s id (the last part of its address) → Deploys → Trigger deploy.', auto: 'gdrive' },   /* patch GDRIVE */
   { id: 'estimates_inbox', g: 'later', t: 'Optional: estimates@ inbox', how: 'If customers or GCs should e-mail plans and estimates in: admin.google.com → Groups → create estimates@grayco-cs.com with the estimators, turn ON "Allow members outside your organization", add member estimates@in.grayco-cs.com. Anyone at GrayCo can already e-mail estimates@in.grayco-cs.com directly.' },
@@ -229691,7 +229692,7 @@ function coOf(id){ try { if (W._gcCo && W._gcCo.get) { var c = W._gcCo.get(id); 
 function coBadge(id){ var c = coOf(id); return '<span class="gc-pj-co" style="background:' + esc(c[1]) + '">' + esc(c[2] + ' ' + c[0]) + '</span>'; }
 var REASONS = [['fire', '🔥 Fire / smoke', /fire\/smoke/], ['water', '💧 Water / flood', /water\/flood/], ['storm', '🌪 Storm / hail / wind', /storm/], ['collapse', '🏚 Collapse', /collapse/], ['env', '☣ Mold / asbestos / lead', /mold\/asbestos/],
   ['demo', 'Demolition', /^Demolition/], ['roof', 'Roof', /^Roof/], ['comm', 'Commercial', /^Commercial/], ['multi', 'Multifamily', /^Multifamily/], ['res', 'Residential', /^Residential/], ['repair', 'Repair', /^Repair$/], ['pre78', 'Built before 1978', /pre-1978|[Bb]uilt 1[0-9]{3}/]];
-function srcKey(x){ return x.src === 'nashville' ? 'nashville' : 'shovels:' + s(x.areaLong || x.area); }
+function srcKey(x){ return x.src === 'shovels' ? 'shovels:' + s(x.areaLong || x.area) : s(x.src) || 'other'; }   /* patch PERMITS3: Memphis / Little Rock / Collierville / imports are their own sources */
 function srcName(x){ return x.src === 'nashville' ? 'Nashville' : s(x.area || x.areaLong) || 'Shovels'; }
 function addr(x){ return [s(x.address), s(x.city), [s(x.usState), s(x.zip)].filter(Boolean).join(' ')].filter(Boolean).join(', '); }   /* usState: x.state is new / lead / dismissed */
 function mapUrl(x){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr(x)); }
@@ -229715,6 +229716,7 @@ function shown(){
   });
   var by = f.sort;
   if (by === 'value') l.sort(function(a, b){ return (+b.value || 0) - (+a.value || 0); });
+  else if (by === 'score') l.sort(function(a, b){ return (+b.score || 0) - (+a.score || 0); });   /* patch PERMITS3: the best first (server score 0–100) */
   else if (by === 'area') l.sort(function(a, b){ return srcName(a) < srcName(b) ? -1 : srcName(a) > srcName(b) ? 1 : 0; });
   else if (by === 'who') l.sort(function(a, b){ return whoKey(a) < whoKey(b) ? -1 : whoKey(a) > whoKey(b) ? 1 : 0; });
   return l;
@@ -229743,9 +229745,9 @@ function srcLine(name, st, kind){
     if (st.active === false) return '<div class="src off" data-pj-src="shovels"><b>Shovels</b> — ' + esc(st.note || 'off') + '</div>';
     if (!st.lastRun) return '<div class="src" data-pj-src="shovels"><b>Shovels</b> — connected; first run tomorrow morning (or ↻ Run now).</div>';
   }
-  if (kind === 'nashville' && st.on === false) return '<div class="src off" data-pj-src="nashville"><b>' + esc(name) + '</b> — turned off in ⚙ Filters.</div>';
+  if (kind !== 'shovels' && st.on === false) return '<div class="src off" data-pj-src="' + kind + '"><b>' + esc(name) + '</b> — turned off in ⚙ Filters.</div>';   /* PERMITS3: every free feed */
   if (!st.lastRun) return '<div class="src" data-pj-src="' + kind + '"><b>' + esc(name) + '</b> — not run yet. ↻ Run now.</div>';
-  var extra = kind === 'shovels' ? (st.zipsTotal ? ' · ZIPs today ' + (st.zipsToday || 0) + '/' + st.zipsTotal : '') + (st.credits && st.credits.used != null ? ' · credits ' + st.credits.used + (st.credits.limit ? ' of ' + st.credits.limit : '') + ' (30 days)' : '') + (st.skipped ? ' · ' + esc(st.note) : '') : '';
+  var extra = kind === 'shovels' ? (st.zipsTotal ? ' · ZIPs today ' + (st.zipsToday || 0) + '/' + st.zipsTotal : '') + (st.credits && st.credits.used != null ? ' · credits ' + st.credits.used + (st.credits.limit ? ' of ' + st.credits.limit : '') + ' (30 days)' : '') + (st.skipped ? ' · ' + esc(st.note) : '') : (st.note ? ' · ' + esc(st.note) : '') + (st.newest ? ' · newest ' + esc(st.newest) : '');
   return '<div class="src' + (st.error ? ' bad' : '') + '" data-pj-src="' + kind + '"><b>' + esc(name) + '</b> — ' + (st.error ? '⚠ ' + esc(st.error) + ' · ' : '✅ ') + 'last run ' + esc(when(st.lastRun)) + ' · ' + (+st.read || 0) + ' read · ' + (+st.matched || 0) + ' matched' + (st.added != null ? ' · ' + st.added + ' new' : '') + extra + '</div>';
 }
 function whoCell(x){
@@ -229763,7 +229765,7 @@ function jobRow(x){
     + '<td>' + whoCell(x) + '</td>'
     + '<td class="d"><div class="t">' + esc(x.desc) + '</div></td>'
     + '<td>' + arr(x.reasons).map(function(r){ return '<span class="gc-pj-ch">' + esc(r) + '</span>'; }).join('') + '</td>'
-    + '<td>' + coBadge(x.hint) + '</td><td>' + act + '</td></tr>';
+    + '<td>' + coBadge(x.hint) + (x.score != null ? '<div class="mut" title="' + esc(x.scoreWhy || '') + '" data-pj-score="1">★ ' + esc(x.score) + '</div>' : '') + '</td><td>' + act + '</td></tr>';   /* patch PERMITS3: the score + why on hover */
 }
 function coRow(c){
   var types = Object.keys(c.types).sort(function(a, b){ return c.types[b] - c.types[a]; }).slice(0, 3).join(', ');
@@ -229777,7 +229779,7 @@ function coRow(c){
 function opt(v, label, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(label) + '</option>'; }
 function filtersHtml(){
   var f = S.f, srcs = {}, i;
-  S.items.forEach(function(x){ srcs[srcKey(x)] = x.src === 'nashville' ? 'Nashville' : s(x.areaLong || x.area); });
+  S.items.forEach(function(x){ srcs[srcKey(x)] = x.src === 'nashville' ? 'Nashville' : s(x.areaLong || x.area); });   /* patch PERMITS3: + Memphis, Little Rock, Collierville */
   var h = '<div class="flt"><select data-pj-f="state" title="Which permits">' + opt('new', 'New', f.state) + opt('lead', 'Made leads', f.state) + opt('dismissed', 'Dismissed', f.state) + opt('all', 'All', f.state) + opt('hidden', 'Not matching the filters (kept)', f.state) + '</select>'
     + '<select data-pj-f="src" title="Area">' + opt('', 'All areas', f.src) + Object.keys(srcs).sort().map(function(k){ return opt(k, srcs[k], f.src); }).join('') + '</select>'
     + '<select data-pj-f="reason" title="Why it showed">' + opt('', 'Any reason', f.reason);
@@ -229785,7 +229787,7 @@ function filtersHtml(){
   h += '</select><select data-pj-f="co" title="Which GrayCo company it fits">' + opt('', 'Any GrayCo company', f.co) + opt('construction', '🏗 Construction', f.co) + opt('mitigation', '💧 Mitigation', f.co) + opt('environmental', '☢️ Environmental', f.co) + '</select>'
     + '<input data-pj-f="min" type="text" inputmode="numeric" placeholder="Min value $" value="' + esc(f.min) + '" style="width:110px">'
     + '<input data-pj-f="q" type="search" placeholder="Search address, company, phone, words…" value="' + esc(f.q) + '" style="width:240px">'
-    + (S.v === 'jobs' ? '<select data-pj-f="sort" title="Sort">' + opt('new', 'Newest first', f.sort) + opt('value', 'Biggest value', f.sort) + opt('area', 'By area', f.sort) + opt('who', 'By company', f.sort) + '</select>' : '')
+    + (S.v === 'jobs' ? '<select data-pj-f="sort" title="Sort">' + opt('new', 'Newest first', f.sort) + opt('score', 'Best first (score)', f.sort) + opt('value', 'Biggest value', f.sort) + opt('area', 'By area', f.sort) + opt('who', 'By company', f.sort) + '</select>' : '')
     + '</div>';
   if (f.who && S.v === 'jobs') { var nm = ''; S.items.some(function(x){ if (whoKey(x) === f.who) { nm = x.contractor; return true; } return false; }); h += '<div style="margin:0 0 8px"><span class="who">Pulled by: ' + esc(nm || f.who) + ' <button type="button" data-pj-a="nowho" title="All companies">✕</button></span></div>'; }
   return h;
@@ -229799,15 +229801,18 @@ function settingsHtml(){
     + '<div class="g" style="margin-top:6px"><label>Minimum job value ($; repair words, roofs and demolitions — when ticked — show at any value)<br><input type="number" min="0" step="1000" data-pj-set="minValue" value="' + esc(c.minValue) + '"></label>'
     + '<label>Only permits from the last … days<br><input type="number" min="1" max="90" data-pj-set="maxAgeDays" value="' + esc(c.maxAgeDays) + '"></label></div>'
     + '<label>Leave out (words, comma-separated)<textarea data-pj-set="exclude">' + esc(arr(c.exclude).join(', ')) + '</textarea></label>'
-    + '<div class="g"><label><input type="checkbox" data-pj-set="nashOn"' + (!c.nashville || c.nashville.on !== false ? ' checked' : '') + '> Nashville / Davidson Co. (free, every morning)</label></div>'
+    + '<div class="g"><label><input type="checkbox" data-pj-set="nashOn"' + (!c.nashville || c.nashville.on !== false ? ' checked' : '') + '> Nashville / Davidson Co. (free, every morning)</label>'
+    + '<label><input type="checkbox" data-pj-set="memOn"' + (!c.memphis || c.memphis.on !== false ? ' checked' : '') + '> Memphis / Shelby Co. — Develop 901 open data (free, every morning)</label>'
+    + '<label><input type="checkbox" data-pj-set="lrOn"' + (!c.littlerock || c.littlerock.on !== false ? ' checked' : '') + '> Little Rock — the city\'s permit file (free; read when the city posts a new one)</label>'
+    + '<label><input type="checkbox" data-pj-set="collOn"' + (!c.collierville || c.collierville.on !== false ? ' checked' : '') + '> Collierville — development applications (free; site plans before the permit)</label></div>'
     + '<div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="pm p" data-pj-a="save">Save filters</button><button type="button" class="pm" data-pj-a="defaults">Show the defaults</button><button type="button" class="pm" data-pj-a="setclose">Cancel</button></div></div>';
 }
 function bodyHtml(){
   var st = S.status || {};
   var h = '<div class="hd"><h2>🏗️ Permitted jobs</h2><span class="mut">Building permits that look like GrayCo work · Nashville / Davidson Co. (free, every morning) · nobody is alerted</span><span class="sp"></span>'
     + '<button type="button" class="pm" data-pj-a="run">↻ Run now</button>' + (shOn() && canEdit() ? '<button type="button" class="pm" data-pj-a="shovels">🔌 Shovels…</button>' : '') + (canEdit() ? '<button type="button" class="pm" data-pj-a="import">📥 Import a permit list (Excel/CSV)</button><button type="button" class="pm" data-pj-a="filters">⚙ Filters</button>' : '') + '</div>';
-  h += '<div class="stat">' + srcLine('Nashville / Davidson Co. (free)', st.nashville, 'nashville') + (shOn() ? srcLine('Shovels', st.shovels, 'shovels') : '') + '</div>';
-  if (!shOn()) h += '<div class="mut" data-pj-more="1" style="margin:-4px 0 8px">More areas: Memphis / Shelby, DeSoto and Little Rock have no free permit feed — available later through ⚙ Admin settings → Integrations.</div>';
+  h += '<div class="stat">' + srcLine('Nashville / Davidson Co. (free)', st.nashville, 'nashville') + srcLine('Memphis / Shelby Co. (Develop 901, free)', st.memphis, 'memphis') + srcLine('Little Rock (city file, free)', st.littlerock, 'littlerock') + srcLine('Collierville (planning, free)', st.collierville, 'collierville') + (shOn() ? srcLine('Shovels', st.shovels, 'shovels') : '') + '</div>';   /* patch PERMITS3 */
+  if (!shOn()) h += '<div class="mut" data-pj-more="1" style="margin:-4px 0 8px">More areas: DeSoto, Jonesboro, Bartlett and the other counties have no free permit feed — available later through ⚙ Admin settings → Integrations. Areas: 🔧 Owner setup → 🏗️ Permit areas.</div>';
   if (S.err) h += '<div class="err">' + esc(S.err) + '</div>';
   if (S.setOpen) h += settingsHtml();
   var jobs = shown(), cos = companies();
@@ -229933,7 +229938,7 @@ function runNow(b){
   b.disabled = true; b.textContent = 'Running…';
   return call({ action: 'run' }).then(function(r){
     if (!r || !r.ok) { toast(s(r && r.error) || 'The run did not finish.', true); if (r && r.status) S.status = r.status; }
-    else { var ad = r.added || {}, n = (+ad.nashville || 0) + (+ad.shovels || 0); toast(n ? '🏗️ ' + n + ' new permit' + (n === 1 ? '' : 's') + ' found.' : 'Run finished — no new permits.'); }
+    else { var ad = r.added || {}, n = Object.keys(ad).reduce(function(t0, k){ return t0 + (+ad[k] || 0); }, 0);   /* PERMITS3: every source */ toast(n ? '🏗️ ' + n + ' new permit' + (n === 1 ? '' : 's') + ' found.' : 'Run finished — no new permits.'); }
     S.at = 0; return load();
   });
 }
@@ -229949,7 +229954,7 @@ function readSettings(){
   var v = function(k){ var el = box.querySelector('[data-pj-set="' + k + '"]'); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
   var inc = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-pj-inc]'), function(el){ inc[el.getAttribute('data-pj-inc')] = el.checked; });
   var uses = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-pj-use]'), function(el){ uses[el.getAttribute('data-pj-use')] = el.checked; });
-  return { include: inc, uses: uses, exclude: s(v('exclude')).split(/[,\n;]+/).map(s).filter(Boolean), minValue: +v('minValue'), maxAgeDays: +v('maxAgeDays'), nashville: { on: !!v('nashOn') } };   /* Shovels' part is saved from Integrations */
+  return { include: inc, uses: uses, exclude: s(v('exclude')).split(/[,\n;]+/).map(s).filter(Boolean), minValue: +v('minValue'), maxAgeDays: +v('maxAgeDays'), nashville: { on: !!v('nashOn') }, memphis: { on: !!v('memOn') }, littlerock: { on: !!v('lrOn') }, collierville: { on: !!v('collOn') } };   /* patch PERMITS3 */   /* Shovels' part is saved from Integrations */
 }
 function saveSettings(b){
   var nv = readSettings(); if (!nv) return;
@@ -230301,6 +230306,39 @@ W._gcMsccOpen = function(){
     if (a === 'send') { if (!W.confirm('Send the records request to ' + s((MS.cfg || {}).to) + ' now?')) return; b.disabled = true; return call({ action: 'mscce-send', confirm: true }).then(function(r){ if (!r || !r.ok) toast(s(r && r.error) || 'Not sent.', true); else toast('📤 Sent to ' + s(r.sent && r.sent.to) + '.'); msLoad(ov); }); }
   });
   return msLoad(ov);
+};
+
+/* ── patch PERMITS3: 🏗️ Permit areas (Owner setup) — the built-in counties and an admin's own; a ticked area's ZIPs go on the Shovels list ── */
+var AR = { groups: [], builtIn: 0, zips: [], adding: [] };
+function arHtml(){
+  var z = {}; arr(AR.zips).forEach(function(x){ z[x] = 1; });
+  var rows = AR.groups.map(function(g, i){ var n = arr(g[1]).filter(function(x){ return z[x]; }).length, on = n === arr(g[1]).length && n > 0;
+    return '<label data-ar-row="' + i + '"><input type="checkbox" data-ar-on="' + i + '"' + (on ? ' checked' : '') + '> <b>' + esc(g[0]) + '</b> <span class="mut">' + arr(g[1]).length + ' ZIPs' + (n && !on ? ' · ' + n + ' picked' : '') + (i >= AR.builtIn ? ' · yours' : '') + '</span>' + (i >= AR.builtIn ? ' <button type="button" class="pm" data-ar="del" data-i="' + i + '">Remove</button>' : '') + '</label>'; }).join('');
+  return '<div class="bx" role="dialog" aria-label="Permit areas"><div style="display:flex;gap:8px;align-items:center"><h3>🏗️ Permit areas</h3><span style="flex:1"></span><button type="button" class="pm" data-ar="close">Close</button></div>'
+    + '<div class="mut" style="margin-top:4px">Free feeds already bring in Nashville, Memphis / Shelby Co. (Develop 901), Little Rock and Collierville every morning. A ticked area below is what Shovels pulls (paid, when it is switched on in Integrations → 🏗️ Shovels).</div>'
+    + '<div class="sec"><h4>Areas</h4>' + rows + '</div>'
+    + '<div class="sec"><h4>Add a county or ZIP codes</h4><label>Name<input type="text" data-ar-set="name" maxlength="80" placeholder="e.g. Lauderdale Co., TN"></label><label>ZIP codes (comma-separated)<input type="text" data-ar-set="zips" placeholder="38063, 38041"></label><button type="button" class="pm" data-ar="add">➕ Add</button></div>'
+    + '<div class="sec" style="display:flex;gap:6px"><button type="button" class="pm p" data-ar="save">Save</button></div></div>';
+}
+function arLoad(ov){ return call({ action: 'settings-get' }).then(function(r){ if (!r || !r.ok) { ov.querySelector('.bx').textContent = s(r && r.error) || 'Could not read the areas.'; return; } AR.groups = arr(r.zipGroups); AR.builtIn = +r.builtInGroups || AR.groups.length; AR.zips = arr(r.settings && r.settings.shovels && r.settings.shovels.zips); ov.innerHTML = arHtml(); }); }
+W._gcPermitAreasOpen = function(){
+  if (!canEdit()) { toast('Only an owner, an admin or the office can change the permit areas.', true); return; }
+  var ov = modal('gc-permit-areas');
+  ov.addEventListener('change', function(e){ var el = e.target, i = el && el.getAttribute && el.getAttribute('data-ar-on'); if (i == null) return; var g = AR.groups[+i]; if (!g) return; if (el.checked) arr(g[1]).forEach(function(x){ if (AR.zips.indexOf(x) < 0) AR.zips.push(x); }); else AR.zips = AR.zips.filter(function(x){ return arr(g[1]).indexOf(x) < 0; }); });
+  ov.addEventListener('click', function(e){
+    var b = e.target && e.target.closest && e.target.closest('[data-ar]'); if (!b) return;
+    var a = b.getAttribute('data-ar'), v = function(k){ var el = ov.querySelector('[data-ar-set="' + k + '"]'); return el ? s(el.value) : ''; };
+    if (a === 'close') { ov.remove(); return; }
+    if (a === 'add') { var nm = v('name'), zs = v('zips').split(/[\s,;]+/).filter(function(x){ return /^\d{5}$/.test(x); }); if (!nm || !zs.length) { toast('Type a name and at least one 5-digit ZIP.', true); return; } AR.groups.push([nm, zs, true, true]); zs.forEach(function(x){ if (AR.zips.indexOf(x) < 0) AR.zips.push(x); }); ov.innerHTML = arHtml(); return; }
+    if (a === 'del') { var i = +b.getAttribute('data-i'); if (i >= AR.builtIn) { var g0 = AR.groups[i]; AR.zips = AR.zips.filter(function(x){ return arr(g0[1]).indexOf(x) < 0; }); AR.groups.splice(i, 1); ov.innerHTML = arHtml(); } return; }
+    if (a === 'save') {
+      var on = {}; Array.prototype.forEach.call(ov.querySelectorAll('[data-ar-on]'), function(el){ var g = AR.groups[+el.getAttribute('data-ar-on')]; if (g) on[g[0]] = !!el.checked; });
+      var custom = AR.groups.slice(AR.builtIn).map(function(g){ return [g[0], g[1], !!on[g[0]]]; });
+      b.disabled = true;
+      return call({ action: 'areas-set', custom: custom, on: on }).then(function(r){ b.disabled = false; if (!r || !r.ok) { toast(s(r && r.error) || 'Not saved.', true); return; } AR.groups = arr(r.zipGroups); AR.zips = arr(r.settings && r.settings.shovels && r.settings.shovels.zips); ov.innerHTML = arHtml(); toast('🏗️ Permit areas saved — ' + AR.zips.length + ' ZIP codes on the Shovels list.'); });
+    }
+  });
+  return arLoad(ov);
 };
 
 /* ── 🏗️ Dodge (paid, later) ── */
