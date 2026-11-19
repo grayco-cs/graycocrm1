@@ -54,7 +54,7 @@ try {
   await reset();
   // 5. 👤 Customer portal: its own sheet, not the job page
   const cp = card().locator('[data-fa="fp-cust"]');
-  if (await cp.count()) { await cp.tap(); await sleep(1200); const r = await O.ev(() => ({ dash: !!document.getElementById('_gcJobDash'), sheet: !!document.querySelector('.gcfp-sheet') })); ok(!r.dash && r.sheet, 'tap 👤 Customer portal → its own sheet, the job page does not open', r); await reset(); }
+  if (await cp.count()) { await cp.tap(); await sleep(1200); const r = await O.ev(() => ({ dash: !!document.getElementById('_gcJobDash'), sheet: !!document.querySelector('.gcfp-sheet,#gcpe') })); ok(!r.dash && r.sheet, 'tap 👤 Customer portal → the customer portal (PORTALED: full screen), the job page does not open', r); await O.ev(() => { try { window._gcPortalEd && window._gcPortalEd.close(); } catch (e) {} }); await reset(); }
   // 6. the gap between the four buttons: nothing opens
   const g = await O.ev(() => { const row = document.querySelector('#_gcJobPick.gc-fh .fh-job[data-job="P1"] .fp-row'); const b = row.children; const r1 = b[0].getBoundingClientRect(), r2 = b[1].getBoundingClientRect(); return { x: (r1.right + r2.left) / 2, y: r1.top + r1.height / 2, gap: r2.left - r1.right }; });
   if (g.gap > 1) { await pg.touchscreen.tap(g.x, g.y); await sleep(900); ok(!(await opened()), 'a tap in the gap between the buttons does not open the job'); await reset(); }

@@ -810,7 +810,7 @@ async function gateState(pid){
   const G = await gateGet(null, true);
   if (!G.ok) return { ok: false, error: 'The portal gate could not be read.' };
   const items = Object.keys(G.map).map(function(k){ return G.map[k]; }).filter(function(x){ return !pid || s(x.pid) === s(pid); })
-    .map(function(x){ return { key: x.id, pid: x.pid, type: x.type, title: x.title, refId: x.refId, st: x.st, at: x.at, by: x.by || '', decidedAt: x.decidedAt || '' }; });
+    .map(function(x){ return { key: x.id, pid: x.pid, type: x.type, title: x.title, refId: x.refId, st: x.st, at: x.at, by: x.by || '', decidedAt: x.decidedAt || '', aq: x.aq || '' }; });   /* patch PORTALED: aq — its ✅ Approvals item, so the portal editor can approve it in place */
   return { ok: true, since: G.since, items: items };
 }
 
@@ -941,6 +941,7 @@ async function buildView(data, p, opts){
     if (ist === undefined) { try { ist = (await kvRead([IN2.KEY]))[IN2.KEY]; } catch (e) { ist = null; } }
     view.inspections = IN2.custView(ist, p, new Date(Date.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
   } catch (e) { view.inspections = null; }
+  try { require('./_lib/portaled.js').attach(view, p, carrierWords(p).concat(claimWords(data, pid, false), [COMMON_CARRIERS])); } catch (e) {}   /* patch PORTALED: the portal editor's summary, checklist, scopes, milestones */
   if (ins) {   /* patch INSP: the insurance-claim view */
     insTagDocs(view.docs, pdocs, signed);
     view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,

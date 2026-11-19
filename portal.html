@@ -711,13 +711,42 @@ function inspCard(){
   kids.push(h('div', { class: 'muted', style: 'margin-top:8px', text: es ? 'La ciudad o el condado inspecciona el trabajo. Su Gerente de Proyecto le avisa si algo cambia.' : 'The city or county inspects the work. Your Project Manager will let you know if anything changes.' }));
   return h('section', { class: 'card', id: 'gcInsp' }, kids);
 }
+/* patch PORTALED: what the PM / office put in the portal with the CRM's portal editor — "About your project", "Your project
+   checklist" and the scope of work (portal.js view.job.summary / view.checklist / view.scopes; the server cleans them: no
+   price, no note, no sub, no carrier, no portal link). The milestones are in "Your schedule" with the job's own steps. */
+function edCards(){
+  var out = [], es = LANG === 'es', j = (V && V.job) || {};
+  if (j.summary) out.push(h('section', { class: 'card', id: 'gcEdSummary' }, [h('h2', { text: es ? 'Sobre su proyecto' : 'About your project' }), h('p', { style: 'white-space:pre-wrap;margin:0;line-height:1.5', text: j.summary })]));
+  var cl = (V && V.checklist) || [];
+  if (cl.length) {
+    var open = cl.filter(function(x){ return !x.done; }).length;
+    out.push(h('section', { class: 'card', id: 'gcEdTasks' }, [h('div', { class: 'row' }, [h('h2', { text: es ? 'Lista de su proyecto' : 'Your project checklist' }), h('span', { class: 'pill ' + (open ? 'now' : 'ok'), text: open ? (open + (es ? ' pendiente' + (open === 1 ? '' : 's') : ' to go')) : (es ? 'Todo listo' : 'All done') })])].concat(cl.map(function(x){
+      return h('div', { class: 'line gc-ed-task' + (x.done ? ' done' : ''), 'data-task': x.id }, [h('span', { style: 'display:flex;gap:8px;align-items:flex-start' }, [h('span', { 'aria-hidden': 'true', style: 'font-weight:800;color:' + (x.done ? '#1D5E2C' : '#8A5A00'), text: x.done ? '✓' : '○' }), h('span', { style: x.done ? 'color:#55626F' : '', text: x.text })]),
+        h('span', { class: 'muted', style: 'white-space:nowrap', text: x.done ? (x.doneAt ? dt(x.doneAt) : (es ? 'Hecho' : 'Done')) : (x.due ? (es ? 'para el ' : 'by ') + dt(x.due) : '') })]);
+    }))));
+  }
+  ((V && V.scopes) || []).forEach(function(sc){
+    var kids = [h('h2', { text: (es ? 'Alcance del trabajo' : 'Scope of work') + (sc.title && !/^scope of work$/i.test(sc.title) ? ' — ' + sc.title : '') })];
+    if (sc.text) kids.push(h('p', { style: 'white-space:pre-wrap;margin:0 0 8px;line-height:1.5', text: sc.text }));
+    var last = '';
+    (sc.lines || []).forEach(function(l){
+      if (l.area && l.area !== last) { last = l.area; kids.push(h('h3', { style: 'margin:10px 0 4px;font-size:14px', text: l.area })); }
+      if (l.work) kids.push(h('div', { class: 'line' }, [h('span', { text: l.work }), h('span', { class: 'muted', style: 'white-space:nowrap', text: l.qty !== '' && l.qty != null ? String(l.qty) + (l.unit ? ' ' + l.unit : '') : '' })]));
+    });
+    if (sc.included) kids.push(h('p', { class: 'muted', style: 'white-space:pre-wrap', text: (es ? 'Incluido: ' : 'Included: ') + sc.included }));
+    if (sc.excluded) kids.push(h('p', { class: 'muted', style: 'white-space:pre-wrap', text: (es ? 'No incluido: ' : 'Not included: ') + sc.excluded }));
+    out.push(h('section', { class: 'card gc-ed-scope', 'data-scope': sc.id }, kids));
+  });
+  return out;
+}
 function home(){
   var ch = chCard();
   var tr0 = V.insurance ? (ch ? [ch] : insHome()) : [tracker()].concat(ch ? [ch] : []);   /* patch INSP: an insurance job shows its claim instead of the job steps */
   var icd = inspCard(); if (icd) tr0 = tr0.concat([icd]);   /* patch INSPECT2 */
   var ec = estCards().filter(function(c){ return !/Accepted|Declined/.test(c.textContent || ''); });   /* patch ESTPDF: an open estimate is on the Home page too */
-  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []).concat(icd ? [icd] : []), [updates(), photosButton(), reviewCard()]);   /* patch INSPECT2: + icd */
-  return [ownPwCard()].concat(ec, tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
+  var ed = edCards();   /* patch PORTALED */
+  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []).concat(icd ? [icd] : []), ed, [updates(), photosButton(), reviewCard()]);   /* patch INSPECT2: + icd */
+  return [ownPwCard()].concat(ec, tr0, ed, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
 /* ── PHOTOS: GrayCo Photos of this job only ── */
@@ -1483,6 +1512,10 @@ window._gcPortalAuto7 = { reload: load, data: function(){ return D; } };
    the same link code; the server checks every input. Never anything about subs or the insurance company. */
 (function(){
 'use strict';
+/* patch PORTALED: this card's own coName / V (they lived only in the main portal script, so a paper with the texting box threw
+   "coName is not defined" and the card did not draw) — the company the main script painted (window.__gcPortalCo), else GrayCo */
+var V = Object.defineProperty({}, 'company', { get: function(){ return window.__gcPortalCo || null; } });
+function coName(){ var c = window.__gcPortalCo; return c && c.legal ? String(c.legal).replace(/,? *LLC\.?$/i, '') : 'GrayCo Construction Services'; }
 if (window.__GC_PESIGN__) return; window.__GC_PESIGN__ = true;
 var FN = '/.netlify/functions/portal-sign', OFFICE = '901-585-0944';
 var token = '';
