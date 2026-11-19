@@ -50,7 +50,11 @@ try {
   const cons = []; A.page().on('console', m => cons.push(m.type() + ': ' + m.text().slice(0, 200)));
   const errs = []; A.page().on('pageerror', e => errs.push(String(e && e.message || e).slice(0, 200)));
   ok(await H.signIn(A, OFFICE, 20000), 'the office signs in');
-  await sleep(6000);
+  /* the company's lists reach the screen (slow on a busy machine), then the signed-in person follows them (4 s check) */
+  const loaded = await H.waitFor(A, () => { const c = window._crm || {}, I = (c.invs && c.invs.length ? c.invs : c.invoices) || []; return (c.users || []).some(u => u && u.id === 'U_office') && I.some(x => x && x.id === 'IVQ1'); }, null, 90000);
+  ok(!!loaded, 'the users list and the bills are loaded');
+  await H.waitFor(A, () => { const u = window._gcMeUser && window._gcMeUser(); return u && u.name === 'Demo Officeperson'; }, null, 30000);
+  await sleep(4000);
 
   /* 3. js-profiling */
   ok(!cons.some(c => /Document policy violation|js-profiling/i.test(c)), 'no "Document policy violation: js-profiling" in the console on load', cons.filter(c => /policy|profil/i.test(c)));
