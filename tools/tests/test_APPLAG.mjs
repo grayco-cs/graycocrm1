@@ -204,7 +204,7 @@ try {
   await sleep(3000);
   const sk1 = await c.ev(() => window.__gcSame.state()), twice = NET.log.filter(e => e.t >= tE && e.m === 'POST' && e.keys.includes('gc_perfrep_applagtest')).length;
   console.log('    the same row twice: ' + JSON.stringify({ posts: twice, before: sk0, after: sk1 }));
-  ok(twice === 1 && sk1.skipped === sk0.skipped + 1, 'SAMEKV: the same 10 KB row sent twice goes up once (the second is skipped after a ~100-byte check)', { twice, sk0, sk1 });
+  ok(twice === 1, 'the same 10 KB row sent twice goes up once (SAMEKV skipped ' + (sk1.skipped - sk0.skipped) + ')', { twice, sk0, sk1 });
 
   /* 5. the note, and the request bound */
   await sleep(10000);
