@@ -484,13 +484,13 @@ function make(d){
     arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
     arr(leads).forEach(l => {
       if (!l || !l.id || !s(l.bidDue) || closed(l)) return;
-      out.push(Object.assign(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })), { lwBid: LW().isBid(l) }));   /* LEADWATCH */
+      out.push(Object.assign(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })), { lwBid: LW().isBid(l), bidRole: low(l.bidRole) || (() => { try { return require('./bid-role.js').role(l); } catch (e) { return ''; } })() }));   /* LEADWATCH */
     });
     arr(items).forEach(it => {
       if (!it || it.stub || !s(it.bidDue) || haveInbox[it.id]) return;
       const lid = 'LEADIN-' + s(it.id).replace(/^LI-/, '');
       if (have[lid] || (tombs && tombs['leads:' + lid]) || closed(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
-      out.push(Object.assign(entry(Object.assign({}, it, { key: lid })), { lwBid: LW().isBid(Object.assign({}, it.leadExtra || {}, it)) }));   /* LEADWATCH */
+      out.push(Object.assign(entry(Object.assign({}, it, { key: lid })), { lwBid: LW().isBid(Object.assign({}, it.leadExtra || {}, it)), bidRole: low(it.bidRole) || (() => { try { return require('./bid-role.js').role(it); } catch (e) { return ''; } })() }));   /* LEADWATCH */
     });
     return out;
   }
@@ -533,7 +533,8 @@ function make(d){
     try { out.nag = await nag(src, t); } catch (e) { out.nag = { error: s(e && e.message) }; }
     try { out.assigned = await sweepAssigned(src, t); } catch (e) { out.assigned = { error: s(e && e.message) }; }
     try { out.overnight = await require('./smsalert.js').flushHeld(); } catch (e) { out.overnight = { error: s(e && e.message) }; }
-    try { out.lsa25 = await require('./smsalert.js').lsaAgeCheck(); } catch (e) { out.lsa25 = { error: s(e && e.message) }; }   /* LSAFLOW2: a Google LSA lead 25 days old and not qualified → the owners + the office, once */
+    try { out.lsa25 = await require('./smsalert.js').lsaAgeCheck(); } catch (e) { out.lsa25 = { error: s(e && e.message) }; }
+    try { out.lsaEsc = await require('./smsalert.js').lsaEscTick(); } catch (e) { out.lsaEsc = { error: s(e && e.message) }; }   /* LEADWATCH: the BAD-lead dispute ladder, 1 hour a step */   /* LSAFLOW2: a Google LSA lead 25 days old and not qualified → the owners + the office, once */
     try { out.emq = await require('./smsalert.js').emqDue(); } catch (e) { out.emq = { error: s(e && e.message) }; }   /* EMQ: emergency questions 15 min after we answered */   /* OVERNIGHT: overnight lead texts go out when the office opens (this run is every 10 minutes) */
     try { out.speed = await speedToLead(src, t); } catch (e) { out.speed = { error: s(e && e.message) }; }
     try { out.results = await resultsAsk(src, t); } catch (e) { out.results = { error: s(e && e.message) }; }
@@ -711,7 +712,7 @@ function make(d){
     let cell = null; try { cell = await require('./smsalert.js').assigned(x, lead); } catch (e) {}   /* patch SMSALERT */   /* LEADWATCH: + the lead, for the PM's GrayCo lead text */   /* TEXTFIRST: the text first — texted → no e-mail too */
     const r = await deliver(mailAssigned(x), null, [x.assigneeEmail], cell && Array.isArray(cell.to) ? cell.to : []);
     if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
-    try { if (await require('./automations.js').isOn('lead_customer_autotext')) await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* NOCUSTTEXT (owner 11/19): off unless switched on */   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
+    try { await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* CUSTTEXT2: "a PM will reach out shortly" (lead_good_text, ON; the PM's name only with lead_good_text_pm) */   /* NOCUSTTEXT (owner 11/19): off unless switched on */   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
     return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '', cell };
   }
   /* every 10 minutes: an assignment nobody's page reported (a phone offline, …). The first run only takes note. */
@@ -828,6 +829,14 @@ function make(d){
       await kvCas(KA, v => { const st = loadState(v); if (st.stlBoot && st.stlBoot2) return undefined; list.forEach(x => speedKinds(x, t).forEach(k => { st.reminded[stlKey(x, k)] = nowIso(); })); st.stlBoot = st.stlBoot || nowIso(); st.stlBoot2 = nowIso(); return st; });
       return { first: true, sent: 0 };
     }
+    /* LEADWATCH: the office's "👤 Assign a PM" To-Do closes once the lead has a PM (or is closed) */
+    const asgOpen = Object.keys((st0.lwasg && typeof st0.lwasg === 'object') ? st0.lwasg : {});
+    if (asgOpen.length) {
+      const byKey = {}; arr(src.leads).forEach(l => { if (l && l.id) byKey[s(l.id)] = l; });
+      const fin = asgOpen.filter(k => { const l = byKey[k]; return !l || LW().assignee(l) || LW().closed(l); });
+      if (fin.length) { try { await require('./smsalert.js')._D.tasksDone(fin.map(k => 'LWASG_' + k), 'a PM was assigned'); } catch (e) {}
+        await kvCas(KA, v => { const st = loadState(v); st.lwasg = st.lwasg || {}; fin.forEach(k => { delete st.lwasg[k]; }); return st; }).catch(() => {}); }
+    }
     if (quiet(t)) return { sent: 0, quiet: true };
     const want = [];
     list.forEach(x => { const ks = speedKinds(x, t); if (ks.length) want.push({ x, kind: ks[0], all: ks }); });
@@ -847,12 +856,13 @@ function make(d){
       const tx = cell && Array.isArray(cell.to) ? cell.to : [];
       const r = w.kind === 'pm4' || w.kind === 'pm24' ? await deliver(m, null, [x.assigneeEmail], tx) : w.kind === 'pm48' ? await deliver(m, [x.assigneeEmail], null, tx) : await deliver(m, null, null, tx);
       if (cell) r.cell = cell;
-      const okAny = r.ok || !!(cell && (cell.sent || (cell.skipped && cell.skipped.held)));
+      const okAny = r.ok || !!(cell && (cell.sent || (cell.skipped && cell.skipped.held) || (cell.todo && cell.todo.ok)));
       out.list.push({ key: x.key, kind: w.kind, ok: okAny, why: r.why || '', to: r.to, texted: tx });
       if (okAny) out.sent++; else out.failed++;
       await kvCas(KA, v => {
         const st = loadState(v);
-        if (!okAny) delete st.reminded[stlKey(x, w.kind)];   /* the next run tries again */
+        if (!okAny) delete st.reminded[stlKey(x, w.kind)];
+        if (w.kind === 'unasg24' && cell && cell.todo && cell.todo.ok) { st.lwasg = st.lwasg || {}; st.lwasg[x.key] = nowIso(); }   /* LEADWATCH: the office To-Do to close later */   /* the next run tries again */
         st.last = { at: nowIso(), kind: 'speed-' + w.kind, n: 1, ok: r.ok, why: r.why || '', to: r.to.length, pushed: r.pushed || 0 };
         return st;
       }).catch(() => {});

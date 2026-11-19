@@ -17,7 +17,10 @@
 //   5. the 5 PM default assign (bid-inbox releaseHolds → defaultAssign): a website lead nobody assigned → Owner 2 at 5 PM (not at 4:59)
 //      + the GrayCo lead text; a held Google lead → its suggested PM + the LSA text; a bid / an emergency / a lead the CRM already
 //      assigned are left alone; ⚡ "5 PM lead auto-assign" OFF → nothing
-//   6. nobody outside GrayCo is ever texted
+//   LEADWATCH owner decisions (later 11/19): a PRIME bid → the owners as a lead ("GrayCo PRIME BID <code>: …"), a SUB bid → the CRM only;
+//      24 h with no PM → the office role (text + "👤 Assign a PM" To-Do); 7. an owner's bare GOOD → that owner is the PM (suggested self);
+//      8. the PM's free reply → the lead's / job's notes + "Saved to <name> notes. Open: <job or lead>"; "not a good lead" → the bad path
+//   6. nobody outside GrayCo is texted except the switched customer texts (qualify ask, "a PM will reach out shortly")
 import { createRequire } from 'module';
 import path from 'path';
 const require = createRequire(import.meta.url);
@@ -82,6 +85,8 @@ const THU10 = Date.parse('2026-11-19T16:00:00Z');   /* Thu 10:00 AM Central */
 const toPh = d => SMS.filter(x => String(x.To).replace(/\D/g, '').endsWith(d));
 const custSms = () => ALL.filter(x => CUST.some(c => String(x.To).replace(/\D/g, '').endsWith(c)));
 const staffPh = [O1, O2, PAT, OFF, EST];
+const CUST_OK = /this is GrayCo Construction Services\. We (got|received) your request|A project manager will reach out to you shortly\./;   /* CUSTTEXT2: the qualify ask and the GOOD text are the only customer texts */
+const custOther = () => custSms().filter(x => !CUST_OK.test(x.Body));
 const onlyStaff = () => ALL.every(x => staffPh.some(p => String(x.To).replace(/\D/g, '').endsWith(p)));
 
 /* made-up leads in the CRM's shape */
@@ -115,14 +120,19 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   console.log('2. bid routing');
   world(); T = THU10;
   let r = await SA.leads([Object.assign({ key: 'LEADIN-a3dfebd4' }, BARTLETT)], { [BARTLETT.id]: BARTLETT }, () => false);
-  const eb = (toPh(EST)[0] || {}).Body || '';
-  ok(/^GrayCo BID INVITE: Generator-Animal Shelter for City of Bartlett · Bartlett, TN · due /.test(eb) && /crm\.grayco-cs\.com\/#leads&lead=/.test(eb), 'the City of Bartlett posting → the estimator: "GrayCo BID INVITE: Generator-Animal Shelter for City of Bartlett …"', eb);
-  ok(!toPh(O1).length && !toPh(O2).length && !SMS.some(x => /NEW LEAD: Unknown/.test(x.Body)), 'never the owners, never "NEW LEAD: Unknown"', SMS);
+  /* owner decision 11/19: GrayCo is the PRIME on the city's sealed bid → the owners as a lead, with a proper title; a SUB bid → the CRM only */
+  const ob = (toPh(O1)[0] || {}).Body || '';
+  ok(/^GrayCo PRIME BID [A-Z0-9]{4}: Generator-Animal Shelter for City of Bartlett · Bartlett, TN · due /.test(ob) && toPh(O2).length === 1 && /Reply GOOD [A-Z0-9]{4} \/ BAD/.test(ob), 'the City of Bartlett posting (prime) → Owner 1 / Owner 2: "GrayCo PRIME BID <code>: Generator-Animal Shelter for City of Bartlett …"', ob);
+  ok(!SMS.some(x => /NEW LEAD: Unknown/.test(x.Body)) && !toPh(EST).length, 'never "NEW LEAD: Unknown"; not the estimator', SMS);
+  SMS.length = 0;
+  const SUB = { id: 'LI-sub1', title: 'Five Guys fit-out', source: 'BuildingConnected', origin: 'email', type: 'Commercial', leadKind: 'Commercial', bidRole: 'sub', gc: 'Big GC LLC', bidDue: '2026-12-01', contact: { name: 'GC PM', phone: '(901) 555-7001' } };
+  await SA.leads([Object.assign({ key: 'LEADIN-sub1' }, SUB)], { [SUB.id]: SUB }, () => false);
+  ok(!SMS.length, 'a SUB bid (a GC\'s BuildingConnected invitation) → the CRM only, no texts', SMS);
   SMS.length = 0;
   const WC = { id: 'LI-wc1', title: 'Commercial bid inquiry — Acme Shops', source: 'Website (grayco-cs.com)', origin: 'website', type: 'Commercial', websiteLead: true, contact: { name: 'Cora Shop', phone: '(901) 555-7006' }, leadExtra: { websiteForm: 'Commercial bid inquiry', websiteLead: true } };
   await SA.leads([Object.assign({ key: 'LEADIN-wc1' }, WC)], { [WC.id]: WC }, () => false);
   ok(toPh(O1).length === 1 && toPh(O2).length === 1 && !toPh(EST).length && /GrayCo website lead/.test(toPh(O1)[0].Body), 'a website commercial inquiry → the owners as a customer lead (not the estimator as a bid)', SMS.map(x => [x.To, x.Body.slice(0, 60)]));
-  ok(!custSms().length, 'no text to the customer');
+  ok(!custOther().length, 'nothing else to the customer (the qualify ask only)', custSms());
 
   console.log('3. the chain on a stubbed clock');
   world(); T = THU10;
@@ -144,7 +154,10 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   SMS.length = 0; T += 10 * 60e3; await A.speedToLead(src(), T);
   ok(!SMS.length, 'once (the next 10-minute run sends nothing)');
   T = THU10 + 24 * H; await A.speedToLead(src(), T);
-  ok(toPh(O1).length === 2 && toPh(O2).length === 2 && /came in 24 h ago/.test(toPh(O1)[0].Body), '24 h, still no PM → the owners again', toPh(O1));
+  const of24 = toPh(OFF).map(x => x.Body), ot = (getKv('gc_office_tasks') || []).filter(x => /^LWASG_/.test(x.id));
+  ok(!toPh(O1).length && of24.length === 2 && of24.every(b => /^GrayCo: 👤 please assign .*came in 24 h ago and the owners have not given it to a PM/.test(b)), 'owner decision: 24 h and the owners have not assigned it → the OFFICE role is texted', { of24, o1: toPh(O1) });
+  ok(ot.length === 2 && ot.every(x => /^👤 Assign a PM: / .test(x.label) && !x.done), '… and gets an office To-Do "👤 Assign a PM" for each', ot);
+  ok(of24.some(b => /Reply GOOD [A-Z0-9]{4} <PM>/.test(b)), 'the office can answer GOOD <code> <PM> like an owner (inbox lead)', of24);
   SMS.length = 0;
   /* assigned to Pat (in the CRM) → Pat's GrayCo lead text, once */
   T = THU10 + 25 * H; W1 = Object.assign({}, W1, { pm: 'Pat Miller', pmEmail: EM.pat, assignedAt: iso(T), assignedBy: 'Ann Owner' }); PH1 = Object.assign({}, PH1, { contactedAt: iso(T), stage: 'Contacted' });
@@ -187,7 +200,7 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   const D1 = web('LEADIN-d1', 4, { inboxId: 'LI-d1' });
   await A4.speedToLead({ leads: [D1] }, T + 60e3); T += 4 * H; await A4.speedToLead({ leads: [D1] }, T);
   ok(toPh(O1).length === 1, '⏸ data-entry mode on → the owners\' "assign" text still goes (staff only)', SMS);
-  ok(/staff/.test(require('fs').readFileSync(path.join(SRC, '_lib/pause.js'), 'utf8')) && onlyStaff(), 'data-entry mode lets staff-tagged texts through; customers stay blocked (nothing here texts one)');
+  ok(/staff/.test(require('fs').readFileSync(path.join(SRC, '_lib/pause.js'), 'utf8')) && !custOther().length, 'data-entry mode lets staff-tagged texts through; the customer texts are only the switched ones (and pause.js blocks those)');
 
   console.log('4. a bid invite\'s due reminder');
   world(); T = Date.parse('2026-12-03T19:00:00Z');   /* Thu Dec 3, 1:00 PM Central — the bid is due 2:00 PM */
@@ -220,8 +233,38 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   SMS.length = 0; let d3 = await BI._lib.defaultAssign(crm);
   ok(!d3.assigned && !SMS.length, 'the next run: nothing again');
 
+  console.log('7. the suggested PM is the owner who answers');
+  world(); T = THU10;
+  const S1 = { id: 'LI-s1', title: 'Website lead', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, status: 'new', receivedAt: iso(T), contact: { name: 'Sue Self', phone: '(901) 555-7003' } };
+  const S2 = Object.assign({}, S1, { id: 'LI-s2', contact: { name: 'Sam Self', phone: '(901) 555-7004' } });
+  setKv('gc_lead_inbox', [S1, S2]); await SA.leads([S1, S2].map(x => Object.assign({ key: 'LEADIN-' + x.id.slice(3) }, x)), { 'LI-s1': S1, 'LI-s2': S2 }, () => false);
+  let g1 = await SA.staffInbound(O1, 'GOOD ' + SA._lsaCode('LI-s1'), 'SMs1'), g2 = await SA.staffInbound(O2, 'GOOD ' + SA._lsaCode('LI-s2'), 'SMs2');
+  const ib7 = getKv('gc_lead_inbox');
+  ok(g1 && g1.pm === 'Ann Owner' && ib7.find(x => x.id === 'LI-s1').pm === 'Ann Owner' && g2 && g2.pm === 'Ben Owner' && ib7.find(x => x.id === 'LI-s2').pm === 'Ben Owner', 'Owner 1\'s bare GOOD → Owner 1 is the PM; Owner 2\'s → Owner 2 (by role, no names in the code)', { g1, g2 });
+  ok(toPh(O1).some(x => /it's yours \(you answered it\)/.test(x.Body)), 'the confirmation says so and how to give it to someone else', toPh(O1).map(x => x.Body));
+  ok(/selfPmEmail\(\) \|\| defaultPmEmail\(\)/.test(require('fs').readFileSync(path.join(WT, 'index.html'), 'utf8')), 'the CRM\'s Google calls picker preselects the admin who opened it; the default PM is the fallback');
+
+  console.log('8. the PM\'s replies to his GrayCo lead text');
+  world(); T = THU10; const A8 = BI._lib.alertsApi(); await A8.loadPeople(USERS);
+  const P1 = { id: 'LI-p1', title: 'Website lead — Hal Roof', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, status: 'imported', receivedAt: iso(T), contact: { name: 'Hal Roof', phone: '(901) 555-7005' }, pm: 'Pat Miller', pmEmail: EM.pat, notes: [] };
+  setKv('gc_lead_inbox', [P1]);
+  await A8.notifyAssigned(Object.assign({}, P1, { id: 'LEADIN-p1', name: P1.title }), { by: EM.o1 });
+  ok(/^GrayCo: GrayCo website lead [A-Z0-9]{4} for you/.test((toPh(PAT)[0] || {}).Body || '') && /#leads&lead=LEADIN-p1/.test(toPh(PAT)[0].Body), 'Pat\'s lead text links the lead (no job yet)', toPh(PAT).map(x => x.Body));
+  SMS.length = 0; T += 2 * H;
+  let pn = await SA.staffInbound(PAT, 'talked to her, wants a new roof, insurance claim w/ State Farm, meet Tue 2pm', 'SMp1');
+  const notes = getKv('gc_text_notes') || [], n0 = notes.find(x => x.leadId === 'LEADIN-p1'), it8 = getKv('gc_lead_inbox').find(x => x.id === 'LI-p1');
+  ok(pn && pn.note === 'saved' && n0 && n0.by === 'Pat Miller' && /State Farm, meet Tue 2pm/.test(n0.text) && !n0.pid, 'any other reply → the lead\'s notes (gc_text_notes, the CRM page adds it), dated and signed', { pn, n0 });
+  ok(it8 && /\[\d+\/\d+ Pat Miller, text\] talked to her/.test([].concat(it8.notes).join('\n')) && it8.contactedAt, 'the Lead Inbox item gets the note too (and counts as contacted)', it8);
+  ok(/^GrayCo: Saved to Hal Roof notes\. Open: crm\.grayco-cs\.com\/#leads&lead=LEADIN-p1$/.test((toPh(PAT)[0] || {}).Body || ''), 'Pat: "Saved to <name> notes. Open: <the lead>"', toPh(PAT).map(x => x.Body));
+  setKv('projects', [{ id: 'PRJp1', name: 'Hal Roof — reroof', leadId: 'LEADIN-p1', status: 'bidding' }]); SMS.length = 0;
+  pn = await SA.staffInbound(PAT, 'sent the estimate, follow up Friday', 'SMp2');
+  const n1b = (getKv('gc_text_notes') || []).find(x => /follow up Friday/.test(x.text));
+  ok(n1b && n1b.pid === 'PRJp1' && /^GrayCo: Saved to Hal Roof — reroof notes\. Open: crm\.grayco-cs\.com\/#job=PRJp1$/.test((toPh(PAT)[0] || {}).Body || ''), 'once it is a job: the job\'s notes and the link opens the job (#job=)', { n1b, sms: toPh(PAT).map(x => x.Body) });
+  SMS.length = 0; pn = await SA.staffInbound(PAT, 'not a good lead, they want a handyman', 'SMp3');
+  ok(pn && pn.byPm && pn.good === false && /handyman/.test(pn.pmBad || ''), '"not a good lead …" → the bad path (as built)', pn);
+
   console.log('6. nobody outside GrayCo');
-  ok(!custSms().length && onlyStaff(), 'no text to a customer, a GC or anyone outside the staff list', custSms());
+  ok(!custOther().length, 'no other text to a customer, a GC or anyone outside the staff list (only the qualify ask / "a PM will reach out")', custOther());
   console.log((fail ? 'FAILED' : 'ALL PASSED') + ' — ' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

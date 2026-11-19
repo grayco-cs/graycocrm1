@@ -20,5 +20,9 @@ ADD = "  try { if (W._gcLeadWatch && W._gcLeadWatch.filterRaw) raw = W._gcLeadWa
 if ADD not in t:
     if t.count(HOOK) != 1: sys.exit('TD2 PAPERS hook not found once')
     t = t.replace(HOOK, HOOK + ADD)
+# CUSTTEXT2: the page carries _lib/automations.js word for word (AUTOREG)
+auto = io.open(os.path.join(ROOT, 'netlify/functions/_lib/automations.js'), encoding='utf-8').read()
+a = t.index('/* AUTOREG-BEGIN */\n') + len('/* AUTOREG-BEGIN */\n'); b = t.index('/* AUTOREG-END */', a)
+t = t[:a] + auto + t[b:]
 io.open(IDX, 'w', encoding='utf-8').write(t)
 print('LEADWATCH patched')

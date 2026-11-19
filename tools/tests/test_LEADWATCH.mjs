@@ -8,6 +8,8 @@
 //   C. To-Do only from now on (stubbed day 11/20): an auto To-Do about an older job / an older lead / an old setup seed / a "↩ Fix and
 //      resend" from before 11/19 is not shown; kept: a new job's To-Do, an overdue invoice, an approval, a sub's COI, a hand-written
 //      To-Do from October, a lead at risk; the desk note says how many are not shown; the admin's "Show them" brings them back.
+//   E. GOOD (or assigned, no BAD) → a job in Projects, status bidding, the lead's PO; BAD → never a job, a job already made is archived as
+//      "bad lead"; leads from before OLDER_BEFORE are left alone; #job=<id> opens the job.
 //   D. the real snapshot (when the scratchpad has it): the owner's phone Field home shows the card; the admin / office / PM To-Do counts.
 // Usage: node test_LEADWATCH.mjs <dir with index.html>   (GC_HARNESS = the offline harness_N.mjs; GC_SNAP = a snapshot dir)
 import fs from 'fs'; import path from 'path'; import { pathToFileURL } from 'url';
@@ -51,9 +53,13 @@ function seed(){
     { id: 'LW_OK', name: 'Contacted already', contactName: 'Sample Home D', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, stage: 'New Lead', createdAt: iso(50), pm: 'Demo PM', pmEmail: PM, assignedAt: iso(49), contactedAt: iso(48), companyId: 'construction' },
     { id: 'LW_NEW', name: 'Just came in', contactName: 'Sample Home E', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, stage: 'New Lead', createdAt: iso(2), companyId: 'construction' },
     { id: 'LEADIN-bid1', name: 'Generator-Animal Shelter', source: 'City of Bartlett', origin: 'watch', leadKind: 'Government', bidRole: 'prime', stage: 'New Lead', createdAt: iso(60), bidDue: '2026-12-03T14:00', companyId: 'construction' },
+    { id: 'LW_G', name: 'Google lead marked good', contactName: 'Sample Home G', source: 'Google LSA', lsaCheck: 'good', stage: 'New Lead', createdAt: iso(3), pm: 'Demo PM', pmEmail: PM, assignedAt: iso(2), contactedAt: iso(1), companyId: 'construction', autoPO: 'Q123' },
+    { id: 'LW_B', name: 'Bad lead with a job', contactName: 'Sample Home H', source: 'Google LSA', lsaCheck: 'bad', lostReason: 'LSA — not a real lead (spam)', stage: 'Lost', createdAt: iso(4), pid: 'PBAD', companyId: 'construction' },
+    { id: 'LW_B2', name: 'Bad lead, no job', contactName: 'Sample Home I', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, lsaCheck: 'bad', lostReason: 'Not a real lead (spam)', stage: 'Lost', createdAt: iso(4), pm: 'Demo PM', pmEmail: PM, companyId: 'construction' },
     { id: 'LOLD1', name: 'Old lead', contactName: 'Sample Old', source: 'Phone call', stage: 'New Lead', createdAt: '2026-10-02T15:00:00.000Z', pm: 'Demo PM', pmEmail: PM, assignedAt: '2026-10-02T15:00:00.000Z', companyId: 'construction' }]);
   H.cset('projects', [
     { id: 'POLD', name: 'Older Job', client: 'Sample Customer A', status: 'Active', pm: 'Demo PM', created: '2026-09-08', startDate: '2026-10-01', contract: 9000 },
+    { id: 'PBAD', name: 'Bad lead with a job', client: 'Sample Home H', status: 'bidding', leadId: 'LW_B', created: '2026-11-20', contract: 0 },
     { id: 'PNEW', name: 'New Job', client: 'Sample Customer B', status: 'Active', pm: 'Demo PM', created: '2026-11-20', startDate: '2026-11-23', contract: 5000 }]);
   H.cset('invs', [{ id: 'IVOLD', pid: 'POLD', num: 'INV-7', amt: 1200, status: 'sent', type: 'client', date: '2026-09-01', dueDate: '2026-09-15' }]);
   const T = (id, o) => Object.assign({ id, addedAt: '2026-10-20T15:00:00.000Z', updatedAt: '2026-10-20T15:00:00.000Z', done: false }, o);
@@ -103,6 +109,16 @@ try {
   const shown = await sev(A, () => { window._gcTD2.paint(); return window._gcTD2.state().items.map(x => x.title); });
   ok(shown.some(x => /Update progress: Older Job/.test(x)), '"Show them" brings them back (this page session)');
   await sev(A, () => window._gcLeadWatch.showOld(false));
+
+  console.log('E. GOOD → a job in Projects (bidding); BAD → never a job');
+  const jobs = await H.waitFor(A, () => { const L = window._crm.leads || [], P = window._crm.projects || []; const g = L.find(l => l.id === 'LW_G'), ph = L.find(l => l.id === 'LW_PH');
+    return g && g.pid && ph && ph.pid ? { g: P.find(p => p.id === g.pid), ph: P.find(p => p.id === ph.pid), bad: P.find(p => p.id === 'PBAD'), b2: L.find(l => l.id === 'LW_B2'), old: L.find(l => l.id === 'LOLD1'), n: P.length } : null; }, null, 60000);
+  ok(jobs && jobs.g && /^bidding$/i.test(jobs.g.status) && jobs.g.leadId === 'LW_G' && jobs.g.autoPO === 'Q123', 'the GOOD Google lead → a job in Projects, status bidding, keeping the lead\'s PO', jobs && jobs.g);
+  ok(jobs && jobs.ph && /^bidding$/i.test(jobs.ph.status), 'the assigned phone lead (no BAD) → a job too', jobs && jobs.ph);
+  ok(jobs && jobs.bad && /archiv/i.test(jobs.bad.status) && jobs.bad.archivedWhy === 'bad lead', 'the BAD lead\'s job is archived as "bad lead" (not deleted)', jobs && jobs.bad);
+  ok(jobs && jobs.b2 && !jobs.b2.pid && jobs.old && !jobs.old.pid, 'a BAD lead never becomes a job; a lead from before 11/19 is left alone (only from now on)', jobs && { b2: jobs.b2.pid, old: jobs.old.pid });
+  await sev(A, () => { location.hash = '#job=' + ((window._crm.leads || []).find(l => l.id === 'LW_G') || {}).pid; });
+  ok(!!(await H.waitFor(A, () => window.__gcLwJobOpened, null, 20000)), 'the #job=<id> link in the PM\'s texts opens the job');
 
   console.log('B2. the PM');
   const P = await H.computer('PM', { build, init: [INIT] }); OPEN.push(P);

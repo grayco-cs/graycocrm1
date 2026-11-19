@@ -124,20 +124,27 @@ const ALL_CUST = [];
   ok(pt.length === 1, 'Pat gets ONE text (the assignment notice does not double it)', pt.map(x => x.Body));
   const pb = pt[0] ? pt[0].Body : '';
   ok(new RegExp('^GrayCo: Google LSA lead ' + c1 + ' for you from Ann: Cus Tomer0 📞 \\(901\\) 555-7001 · Roofing — roof repair ▶ crm\\.grayco-cs\\.com/#leads&lead=LI-f1&rec=1 Notes: needs it before the rain CRM: crm\\.grayco-cs\\.com/#leads&lead=LEADIN-f1 Reply BAD ' + c1 + ' <reason> if it\'s not a real lead\\.$').test(pb), 'Pat\'s text: name, 📞 number, job type, ▶ recording, notes, CRM link, "Reply BAD <code> <reason>"', pb);
-  ok(toPh(O1).some(x => /GOOD — PM Pat Miller assigned; Pat is told \(nothing goes to the customer\)/.test(x.Body)), 'Owner 1\'s confirmation: Pat is told, nothing to the customer', toPh(O1).map(x => x.Body));
-  ok(!custSms().length, 'no text to the customer', custSms());
+  ok(toPh(O1).some(x => /GOOD — PM Pat Miller assigned; Pat is told and the customer is told a PM will reach out shortly\./.test(x.Body)), 'Owner 1\'s confirmation: Pat is told, the customer is told a PM will reach out (CUSTTEXT2)', toPh(O1).map(x => x.Body));
+  ok(custSms().length === 1 && /A project manager will reach out to you shortly\.$/.test(custSms()[0].Body) && !/Pat|555-2003/.test(custSms()[0].Body), 'CUSTTEXT2: the customer gets ONE "a PM will reach out shortly" — no PM name or number', custSms());
 
   console.log('3. Pat replies BAD by text');
   SMS.length = 0; T += 3600e3;
   r = await txt(PAT, 'BAD ' + c1 + ' selling solar panels');
   ok(r && r.byPm && r.good === false && item('LI-f1').lsaCheck === 'bad' && /selling solar panels/.test(item('LI-f1').lsaReason || ''), 'the lead is BAD at once (no approval step)', { r, x: item('LI-f1') });
   ok(toPh(PAT).length === 1 && new RegExp('^GrayCo: ' + c1 + ' Cus Tomer0 marked BAD \\(selling solar panels\\)\\. Dispute it in Google, pick the reason: https://c\\.gle/DEMOLINK0 ').test(toPh(PAT)[0].Body), '(a) Pat gets the Google dispute link for that lead', toPh(PAT).map(x => x.Body));
-  ok([O1, O2].every(ph => toPh(ph).length === 1 && new RegExp('^GrayCo: Pat Miller says BAD for ' + c1 + ' Cus Tomer0: selling solar panels\\. Dispute in Google: https://c\\.gle/DEMOLINK0').test(toPh(ph)[0].Body)), '(b) both owners: "<PM> says BAD for <code> <name>: <reason>. Dispute in Google: <link>"', SMS.map(x => [x.To, x.Body]));
+  ok([O1, O2].every(ph => !toPh(ph).length), '(b) LEADWATCH ladder: the owners are not texted at once (the PM has the link first)', SMS.map(x => [x.To, x.Body]));
   const td = task('LSADISPUTE_LI-f1');
-  ok(td && !td.done && (td.assignees || []).includes('office') && /^⚖️ Bad lead per Pat Miller — confirm and dispute by 12\/19: Cus Tomer0/.test(td.label) && /https:\/\/c\.gle\/DEMOLINK0/.test(td.note), '(c) the office To-Do "Bad lead per Pat Miller — confirm and dispute by 12/19" (30 days from the call)', td);
+  ok(td && !td.done && (td.assignees || []).includes('office') && /^⚖️ Bad lead per Pat Miller — confirm and dispute by 11\/21, 9:59 AM: Cus Tomer0/.test(td.label) && /https:\/\/c\.gle\/DEMOLINK0/.test(td.note), '(c) the office To-Do "Bad lead per Pat Miller — confirm and dispute by 11/21, 9:59 AM" (LEADWATCH: Google\'s 48 hours from the call)', td);
   const dec = (getKv('gc_lsa_decisions') || []).find(d => d.id === 'LI-f1');
   ok(dec && dec.good === false && dec.byEmail === EM.pat, 'gc_lsa_decisions: BAD by Pat (the CRM page marks the lead)', dec);
-  ok(toPh(OFF).length === 0 && !custSms().length, 'no text to the office or the customer');
+  ok(toPh(OFF).length === 0 && !custSms().length, 'no text to the office or the customer yet');
+  /* the ladder: 1 hour → the office role; 2 hours → marketing (nobody with a cell) is skipped → the owners */
+  SMS.length = 0; T += 30 * 60e3; let es = await SA.lsaEscTick();
+  ok(!SMS.length, 'ladder: nothing before the hour', es);
+  T += 31 * 60e3; es = await SA.lsaEscTick();
+  ok(toPh(OFF).length === 1 && new RegExp('BAD lead ' + c1 + ' Cus Tomer0 \\(selling solar panels, per Pat Miller\\).*https://c\\.gle/DEMOLINK0.*DISPUTED ' + c1).test(toPh(OFF)[0].Body) && !toPh(O1).length, 'ladder step 2 (1 hour later): the office role gets the dispute link', SMS.map(x => [x.To, x.Body]));
+  SMS.length = 0; T += 61 * 60e3; es = await SA.lsaEscTick();
+  ok(toPh(O1).length === 1 && toPh(O2).length === 1 && /BAD lead .*https:\/\/c\.gle\/DEMOLINK0/.test(toPh(O1)[0].Body), 'ladder: marketing has nobody with a cell → the owners (an hour after the office)', { es, sms: SMS.map(x => [x.To, x.Body]) });
 
   console.log('4. Disputed in Google ✓ closes it for everyone');
   SMS.length = 0; T += 600e3;
@@ -160,14 +167,16 @@ const ALL_CUST = [];
   r = await api('tok-pat', 'POST', { lsamark: '1' }, { leadId: 'LEADIN-f2', verdict: 'bad', reason: 'wrong number, never called' });
   ok(r.__code === 200 && r.ok && item('LI-f2').lsaCheck === 'bad', 'Pat taps 👎 Bad in the app', r);
   ok(toPh(PAT).length === 1 && /marked BAD \(wrong number, never called\)\. Dispute it in Google, pick the reason: https:\/\/c\.gle\/DEMOLINK1/.test(toPh(PAT)[0].Body), '(a) Pat gets the dispute link by text', toPh(PAT).map(x => x.Body));
-  ok([O1, O2].every(ph => toPh(ph).some(x => new RegExp('Pat Miller says BAD for ' + c2 + ' Cus Tomer1: wrong number, never called\\. Dispute in Google: https://c\\.gle/DEMOLINK1').test(x.Body))), '(b) both owners get the link', SMS.map(x => [x.To, x.Body]));
+  ok([O1, O2].every(ph => !toPh(ph).some(x => /DEMOLINK1/.test(x.Body))), '(b) the ladder starts with Pat (the owners not at once)', SMS.map(x => [x.To, x.Body]));
   ok(task('LSADISPUTE_LI-f2') && !task('LSADISPUTE_LI-f2').done && /Bad lead per Pat Miller — confirm and dispute by/.test(task('LSADISPUTE_LI-f2').label), '(c) the office To-Do', tasks());
   SMS.length = 0;
   r = await api('tok-off', 'POST', { lsamark: '1' }, { leadId: 'LI-f2', verdict: 'disputed' });
   ok(r.ok && item('LI-f2').lsaDisputedBy === 'Olive Office' && task('LSADISPUTE_LI-f2').done && SMS.length === 0, 'the office taps ✓ Disputed → closed for everyone, no texts', { r, t: tasks() });
   r = await api('tok-o1', 'POST', { lsamark: '1' }, { leadId: 'LI-f2', verdict: 'disputed' });
   ok(r.ok && r.already && item('LI-f2').lsaDisputedBy === 'Olive Office', 'the first one to dispute wins (an owner\'s tap after that changes nothing)', r);
-  ok(!custSms().length, 'no text to the customer');
+  SMS.length = 0; T += 3 * 3600e3; await SA.lsaEscTick();
+  ok(!SMS.some(x => /DEMOLINK1/.test(x.Body)), 'disputed → the ladder stops (no more dispute texts)', SMS.map(x => [x.To, x.Body]));
+  ok(custSms().every(x => /A project manager will reach out to you shortly\./.test(x.Body)), 'the customer only ever gets "a PM will reach out shortly"', custSms());
 
   console.log('6. silence = good');
   world(); T = DAY; SMS.length = 0;
@@ -178,23 +187,24 @@ const ALL_CUST = [];
   r = await api('tok-pat', 'POST', { lsamark: '1' }, { leadId: 'LI-f3', verdict: 'good' });
   ok(r.ok && item('LI-f3').lsaCheck === 'good' && item('LI-f3').pm === 'Pat Miller' && SMS.length === 0, 'Pat\'s 👍 Good in the app: saved, he stays the PM, no texts', { r, x: item('LI-f3'), sms: SMS });
 
-  console.log('7. day 25');
+  console.log('7. Google\'s 48 hours (LEADWATCH: replaces day 25 / 30)');
   world(); SMS.length = 0;
-  const D0 = Date.parse('2026-12-14T16:00:00Z');   /* Mon 10 AM Central */
-  const old = (id, n, days, o) => { T = D0 - days * 864e5; const L = lead(id, n, o); return L; };
-  const A = old('LI-a', 3, 25.2), B = old('LI-b', 4, 26, { lsaCheck: 'bad', lsaReason: 'spam', leadExtra: Object.assign(lead('x', 4).leadExtra, { receivedAt: iso(D0 - 26 * 864e5), lsaCheck: 'bad' }) }),
-    C = old('LI-c', 5, 27, { lsaCheck: 'bad', lsaDisputedAt: iso(D0 - 20 * 864e5) }), Dd = old('LI-d', 6, 25.5, { lsaCheck: 'good' }), E = old('LI-e', 7, 20), F = old('LI-f', 0, 31);
-  B.receivedAt = iso(D0 - 26 * 864e5); C.leadExtra.lsaCheck = 'bad';
+  ok(SA.LSA_DISPUTE_WINDOW_H === 48 && SA.LSA_WARN_LEFT_H === 8, 'LSA_DISPUTE_WINDOW_H = 48, warn with 8 h left (constants)');
+  const D0 = Date.parse('2026-12-15T04:00:00Z');   /* Mon 10 PM Central — after hours */
+  const H1 = 3600e3, old = (id, n, hours, o) => { T = D0 - hours * H1; const L = lead(id, n, o); return L; };
+  const A = old('LI-a', 3, 41), B = old('LI-b', 4, 42, { lsaCheck: 'bad', lsaReason: 'spam' }),
+    C = old('LI-c', 5, 43, { lsaCheck: 'bad', lsaDisputedAt: iso(D0 - 20 * H1) }), Dd = old('LI-d', 6, 41, { lsaCheck: 'good' }), E = old('LI-e', 7, 20), F = old('LI-f', 0, 49);
+  B.leadExtra.lsaCheck = 'bad'; C.leadExtra.lsaCheck = 'bad';
   setKv('gc_lead_inbox', [A, B, C, Dd, E, F]); T = D0;
   a = await SA.lsaAgeCheck();
-  ok(a.alerted.map(x => x.id).sort().join() === 'LI-a,LI-b', 'not qualified at 25 days: no PM (A), BAD not disputed (B); disputed (C), good (D), 20 days (E), past 30 (F) → none', a);
-  ok([O1, O2].every(ph => toPh(ph).length === 2) && toPh(O1).some(x => new RegExp('⏰ Google LSA lead ' + SA._lsaCode('LI-a') + ' Cus Tomer3 .* is 25 days old and not qualified \\(no PM yet\\)\\. Google\'s 30-day limit is 12/19').test(x.Body)) && toPh(O1).some(x => /BAD, not disputed yet.*Dispute it: https:\/\/c\.gle\/DEMOLINK4/.test(x.Body)), 'the owners\' texts (state, Google\'s last day, the link)', SMS.map(x => [x.To, x.Body]));
-  ok(task('LSA25_LI-a') && task('LSA25_LI-b') && (task('LSA25_LI-a').assignees || []).includes('office') && /25 days old — qualify by 12\/19/.test(task('LSA25_LI-a').label), 'the office To-Dos', tasks());
+  ok(a.alerted.map(x => x.id).sort().join() === 'LI-a,LI-b', 'less than 8 h of the 48 left and not qualified: no PM (A), BAD not disputed (B); disputed (C), good (D), 20 h (E), past 48 h (F) → none', a);
+  ok([O1, O2].every(ph => toPh(ph).length === 2) && toPh(O1).some(x => new RegExp('⏰ URGENT — Google LSA lead ' + SA._lsaCode('LI-a') + ' Cus Tomer3 .*not qualified \\(no PM yet\\) and Google\'s 48-hour window ends in about 7 h').test(x.Body)) && toPh(O1).some(x => /BAD, not disputed yet.*Dispute it: https:\/\/c\.gle\/DEMOLINK4/.test(x.Body)), 'after hours (10 PM): the owners are texted at once anyway (the urgent exception to the 7 AM hold)', SMS.map(x => [x.To, x.Body]));
+  ok(task('LSA25_LI-a') && task('LSA25_LI-b') && (task('LSA25_LI-a').assignees || []).includes('office') && /qualify by .*\(48 h\)/.test(task('LSA25_LI-a').label), 'the office To-Dos', tasks());
   SMS.length = 0; T += 600e3; a = await SA.lsaAgeCheck();
   ok(!a.alerted.length && SMS.length === 0, 'once: the next run sends nothing', { a, sms: SMS });
   r = await txt(O1, 'GOOD ' + SA._lsaCode('LI-a') + ' Pat');
-  ok(r && r.good && task('LSA25_LI-a').done, 'marked good → its day-25 To-Do closes', { r, t: task('LSA25_LI-a') });
-  ok(/lsaAgeCheck\(\)/.test(require('fs').readFileSync(path.join(SRC, '_lib/bid-alerts.js'), 'utf8')), 'the 10-minute lead check (bid-alerts remind) runs it');
+  ok(r && r.good && task('LSA25_LI-a').done, 'marked good → its To-Do closes', { r, t: task('LSA25_LI-a') });
+  ok(/lsaAgeCheck\(\)/.test(require('fs').readFileSync(path.join(SRC, '_lib/bid-alerts.js'), 'utf8')) && /lsaEscTick\(\)/.test(require('fs').readFileSync(path.join(SRC, '_lib/bid-alerts.js'), 'utf8')), 'the 10-minute lead check (bid-alerts remind) runs the window check and the ladder');
 
   console.log('8. who may');
   world(); T = DAY; const L4 = lead('LI-f4', 1, { pm: 'Pat Miller', pmEmail: EM.pat, lsaCheck: 'good' }); setKv('gc_lead_inbox', [L4]);
@@ -218,7 +228,7 @@ const ALL_CUST = [];
   ok(toPh(PAT).length === 1, '… and the PM at once', SMS.map(x => [x.To, x.Body]));
 
   console.log('10. never a customer');
-  ok(!ALL_CUST.length, 'no text to any customer number in the whole run', ALL_CUST);
+  ok(ALL_CUST.every(x => /A project manager will reach out to you shortly\./.test(x.Body) || /^Hi [^,]*, this is GrayCo Construction Services\. We received your request through Google/.test(x.Body)), 'CUSTTEXT2: the only customer texts are the qualify ask and "a PM will reach out shortly" (never a PM\'s name or number)', ALL_CUST);
 
   console.log(fail ? 'FAILED ' + pass + '/' + (pass + fail) : 'LSAFLOW2 ' + pass + '/' + pass);
   process.exit(fail ? 1 : 0);

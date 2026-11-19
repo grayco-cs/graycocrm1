@@ -179,12 +179,13 @@ exports.handler = async function(event){
       const me = { name: s(who.name), email: low(who.email), admin: !!who.admin, office: !!who.office };
       if (qs.lsaleads && m === 'GET') {
         const [items, pms, dpm, own] = await Promise.all([SA.lsaList(+qs.days || 30), SA.lsaPms(), SA.lsaDefaultPm(), SA.loadOwners()]);
-        return J(200, { ok: true, items, pms, defaultPm: dpm ? dpm.id : '', defaultPmName: dpm ? dpm.name : '', defaultPmAuto: !!(dpm && dpm.auto), admin: !!who.admin, owners: own.map(x => ({ slot: x.slot, name: x.name })) }, C);
+        return J(200, { ok: true, items, pms, defaultPm: dpm ? dpm.id : '', defaultPmName: dpm ? dpm.name : '', defaultPmAuto: !!(dpm && dpm.auto), admin: !!who.admin, office: !!who.office, assign: !!(who.admin || who.office), owners: own.map(x => ({ slot: x.slot, name: x.name })) }, C);
       }
       if (qs.lsaintake && m === 'POST') { const r = await SA.lsaIntake(b, me); return J(r.ok ? 200 : 400, r, C); }
       if (qs.lsaassign && m === 'POST') {
         if (s(b.verdict) === 'bad' && !who.admin) { const r = await SA.lsaIntake(Object.assign({}, b, { rating: 'bad', desc: s(b.reason) }), me); return J(r.ok ? 200 : 400, r, C); }   /* the office's BAD (LSAFLOW2: BAD now + the dispute To-Do) */
-        if (!who.admin) return J(403, { ok: false, error: 'Assigning a PM is the owners\' job — add your notes instead.' }, C);   /* LSAFLOW2 */
+        /* LEADWATCH (owner 11/19: "if the owners haven't assigned a lead within 24 h it goes to the office to assign … the office may assign
+           leads"): the office role assigns too (the PM gets his text as usual) — replaces LSAFLOW2's owners-only rule */
         const r = await SA.lsaAssign(b, me); return J(r.ok ? 200 : 400, r, C);
       }
       if (qs.lsapm && m === 'POST') { if (!who.admin) return J(403, { ok: false, error: 'Only an admin changes the default PM.' }, C); const r = await SA.lsaSetDefaultPm(b.id, who.email); return J(r.ok ? 200 : 400, r, C); }

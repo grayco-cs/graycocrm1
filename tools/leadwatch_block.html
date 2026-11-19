@@ -177,9 +177,57 @@ D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? 
 /* TD2 calls this on its raw list (after PAPERS); it keeps the count for the note */
 function filterRaw(raw, pj){ var out = [], n = 0, why = {}; arr(raw).forEach(function(r){ var dr = false; try { dr = todoDrop(r, pj); } catch (e) { dr = false; } if (dr) { n++; var k = s(r.cat) || '?'; why[k] = (why[k] || 0) + 1; } else out.push(r); }); OLD.n = n; OLD.why = why; return out; }
 
+/* ── #job=<id>: the job link in the PM's GrayCo texts (the job once it exists, else #leads&lead=) — phone: the Field job page; desk: the job ── */
+function openJobHash(){
+  var m = /[#&]job=([^&]+)/.exec(s(W.location.hash)); if (!m) return; var pid = decodeURIComponent(m[1]), n = 0;
+  (function go(){
+    if (!arr(W._crm && W._crm.projects).some(function(p){ return p && s(p.id) === pid; })) { if (++n < 90) ST.call(W, go, 500); return; }
+    try { W.history.replaceState(W.history.state, '', W.location.pathname + W.location.search); } catch (e) {}
+    try { if (D.documentElement.classList.contains('_fieldmode') && typeof W._gcJobDashboard === 'function') W._gcJobDashboard(pid);
+      else if (typeof W._gcGoToTaskJob === 'function') W._gcGoToTaskJob(pid, ''); else if (typeof W._navToJob === 'function') W._navToJob(pid); else if (typeof W._gcOpenJobProfile === 'function') W._gcOpenJobProfile(pid); } catch (e) {}
+    W.__gcLwJobOpened = pid;
+  })();
+}
+W.addEventListener('hashchange', openJobHash); ST.call(W, openJobHash, 600);
+
+/* ── GOOD → a job in Projects ("bidding"); BAD → never a job (one made already is archived as "bad lead", not deleted) ──
+   owner 11/19: "a lead that's GOOD (explicitly, or assigned with no BAD) becomes a job in Projects with status bidding". The CRM's own
+   lead → job (Lead Inbox createJob: status bidding, the lead's / bid job's PO rules). Customer leads, and a bid an owner marked GOOD; leads from
+   OLDER_BEFORE on (only from now on). One admin computer does it (a claim on the lead first). */
+function chk(l){ var ex = obj(l && l.leadExtra); return low(l && (l.lsaCheck || ex.lsaCheck)); }
+function badLead(l){ return chk(l) === 'bad' || chk(l) === 'pm_bad' || /not a real lead|bad lead/i.test(s(l && l.lostReason)); }
+function goodLead(l){
+  if (!l || badLead(l) || l.deleted || l.converted || l.archived || s(l.mergedInto) || tomb(l)) return false;
+  if (/^(lost|dead|declined|dismissed|merged|archived|cancell?ed)$/i.test(s(l.stage) || s(l.status))) return false;
+  if (chk(l) === 'good' || chk(l) === 'pm_good') return C.isCustomer(l) || C.isBid(l);
+  return C.isCustomer(l) && !!C.assignee(l);
+}
+var JOBQ = { busy: false, made: [], archived: [], err: '' };
+function myId(){ return myEmail() || low(myName()); }
+function patchLead(id, patch){ try { if (typeof W._setLeads === 'function') W._setLeads(function(list){ return arr(list).map(function(l){ return l && s(l.id) === s(id) ? Object.assign({}, l, patch, { updatedAt: new Date().toISOString() }) : l; }); }); } catch (e) {} }
+function jobSweep(){
+  if (JOBQ.busy || D.hidden || !admin() || vas() || !W._gcLeadInbox || typeof W._gcLeadInbox.createJob !== 'function') return;
+  var c = cut(); if (!c) return;
+  var projs = arr(W._crm && W._crm.projects), t = now();
+  /* BAD: archive the job a bad lead made (status bidding / empty), never delete */
+  var arch = leads().filter(function(l){ return badLead(l) && s(l.pid); }).map(function(l){ return projs.find(function(p){ return p && s(p.id) === s(l.pid) && (s(p.leadId) === s(l.id)) && !/archiv/i.test(s(p.status)) && /^(bidding|lead|)$/i.test(s(p.status)); }); }).filter(Boolean);
+  if (arch.length && typeof W._setProjects === 'function') { var ids = {}; arch.forEach(function(p){ ids[p.id] = 1; });
+    W._setProjects(function(prev){ return arr(prev).map(function(p){ return p && ids[p.id] ? Object.assign({}, p, { status: 'Archived', archivedWhy: 'bad lead', archivedAt: new Date().toISOString(), archivedBy: 'LEADWATCH (bad lead)', statusBeforeArchive: s(p.status), updatedAt: new Date().toISOString() }) : p; }); });
+    JOBQ.archived = JOBQ.archived.concat(Object.keys(ids)); }
+  var next = leads().filter(function(l){ var b = C.bornAt(l); return goodLead(l) && !s(l.pid) && isFinite(b) && new Date(b).toISOString().slice(0, 10) >= c && !(l.lwJob && l.lwJob.err); })[0];
+  if (!next) return;
+  var cl = obj(next.lwJobClaim);
+  if (!cl.by || (t - Date.parse(cl.at || 0) > 120000 && cl.by !== myId())) { patchLead(next.id, { lwJobClaim: { by: myId(), at: new Date(t).toISOString() } }); return; }   /* claim; the next round makes it */
+  if (cl.by !== myId()) return;
+  JOBQ.busy = true;
+  Promise.resolve().then(function(){ return W._gcLeadInbox.createJob(next.id); }).then(function(r){ JOBQ.busy = false; if (r && r.pid) { JOBQ.made.push({ lead: next.id, pid: r.pid }); patchLead(next.id, { lwJob: { pid: r.pid, at: new Date().toISOString(), why: chk(next) === 'good' || chk(next) === 'pm_good' ? 'good' : 'assigned, no BAD' } }); } },
+    function(e){ JOBQ.busy = false; JOBQ.err = s(e && e.message); patchLead(next.id, { lwJob: { err: JOBQ.err, at: new Date().toISOString() } }); });
+}
+SI.call(W, jobSweep, 6000);
+
 SI.call(W, paint, 2000);
 ST.call(W, paint, 800);
-W._gcLeadWatch = { core: C, list: list, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
+W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
   state: function(){ return { atRisk: list().map(function(z){ return { id: z.l.id, k: z.r.k, h: z.r.h, kind: C.kindOf(z.l) }; }), hidden: OLD.n, by: OLD.why, cut: cut(), admin: admin(), office: office() }; } };
 try { console.log('[GC] 🚨 leads at risk + To-Do only from now on (patch LEADWATCH) — _gcLeadWatch'); } catch (e) {}
 })(window);
