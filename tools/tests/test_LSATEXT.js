@@ -13,7 +13,10 @@ const kv = {}, sent = [], decided = [];
 let t = NIGHT;
 Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f) => { const nv = f(kv[k] == null ? null : JSON.parse(JSON.stringify(kv[k]))); if (nv !== undefined) kv[k] = nv; return { ok: true, value: kv[k] }; },
   send: async (to, body) => { sent.push({ to, body }); return { ok: true }; }, paused: async () => false, optouts: async () => ({}), consentNo: async () => false,
-  people: async () => ({ users: USERS, staff: [] }), vetTodo: async () => true, postReply: async m => ({ id: m.id }), hours: async () => null, lsaDecide: async d => { decided.push(d); return { inbox: true, list: true, todo: !d.good }; } });
+  people: async () => ({ users: USERS, staff: [] }), vetTodo: async () => true, postReply: async m => ({ id: m.id }), hours: async () => null, lsaDecide: async d => { decided.push(d); return { inbox: true, list: true, todo: !d.good }; },
+  inboxLead: async () => null, officeTask: async o => { tasks.push(o); return { ok: true, added: true }; }, tasksDone: async (ids, why) => { closedT.push({ ids, why }); return { ok: true, closed: 1 }; },   /* LSAFLOW2 */
+  lsaDisputed: async d => { disputes.push(d); return { already: disputes.length > 1, inbox: true, item: { id: d.leadId, contact: { name: d.name } } }; } });
+const tasks = [], closedT = [], disputes = [];
 (async () => {
   const lead = { id: 'LSA1', key: 'LSA1', title: 'Roof replacement', source: 'Google LSA', contact: { name: 'Pat Smith', phone: '(901) 555-0111' } };
   await SA.leads([lead], { LSA1: { id: 'LSA1', source: 'Google LSA', leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', said: { message: 'Need a new roof' } } } }, () => false);
@@ -118,9 +121,8 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   nt = await SA.staffInbound('9015550002', 'bad wanted a free inspection only', 'SM42');
   assert.ok(nt && nt.good === false && decided[2].notes === 'wanted a free inspection only', JSON.stringify(decided[2]));
   /* ── LSASEND: "SEND Pat" → Pat's text; Pat's GOOD / BAD ── */
-  const sends = [], pmbads = [];
+  const sends = [];
   SA._D.lsaSend = async d => { sends.push(d); return { inbox: true }; };
-  SA._D.lsaPmBad = async d => { pmbads.push(d); return { inbox: true, todo: true }; };
   decided.length = 0; sent.length = 0; t += 60000;
   await SA.leads([{ id: 'LSA9', key: 'LSA9', title: 'Leak', source: 'Google LSA', contact: { name: 'Ed Fox', phone: '9015550199' } }], { LSA9: { id: 'LSA9', source: 'Google LSA', leadExtra: { lsaCheck: 'pending', said: { message: 'Ceiling stain in hallway' } } } }, () => false);
   sent.length = 0;
@@ -129,14 +131,20 @@ Object.assign(SA._D, { now: () => t, kvGet: async k => kv[k], kvCas: async (k, f
   const pmMsg = sent.find(x => x.to === '9015550003');
   assert.ok(pmMsg && /sent to you by Wesley: \(901\) 555-0199 Ed Fox says "Ceiling stain in hallway" Note: call after 3\. Call them, then reply GOOD [A-Z0-9]{4}, BAD [A-Z0-9]{4} \+ why, or NA/.test(pmMsg.body), pmMsg && pmMsg.body);
   assert.ok(sent.some(x => x.to === '9015550002' && /sent to Pat PM \(texted\)/.test(x.body)), 'Wesley is told');
-  /* Pat says BAD → not final, the admins are asked */
+  /* LSAFLOW2: Pat says BAD → BAD now: Pat gets the Google dispute link, Nick and Wesley the same link, the office a To-Do (no approval step) */
   sent.length = 0;
   let pb = await SA.staffInbound('9015550003', 'bad just wanted a price for insurance', 'SM51');
-  assert.ok(pb && pb.byPm && pb.pmBad === 'just wanted a price for insurance' && pmbads[0].reason === 'just wanted a price for insurance' && decided.length === 0, JSON.stringify(pb));
-  assert.ok(sent.some(x => x.to === '9015550001' && /Pat PM says BAD for .* Reply BAD .* to confirm/.test(x.body)) && sent.some(x => x.to === '9015550002'), 'Nick and Wesley are asked to approve');
-  /* Wesley confirms BAD → final */
-  let wb = await SA.staffInbound('9015550002', 'BAD', 'SM52');
-  assert.ok(wb && wb.lsa === 'LSA9' && wb.good === false && decided[0].good === false && decided[0].reason === 'just wanted a price for insurance' || (wb && wb.good === false), JSON.stringify(wb));
+  const c9 = SA._lsaCode('LSA9');
+  assert.ok(pb && pb.byPm && pb.pmBad === 'just wanted a price for insurance' && decided[0].good === false && decided[0].reason === 'just wanted a price for insurance' && decided[0].byEmail === 'pat@grayco-cs.com' && decided[0].noTodo, JSON.stringify(pb));
+  assert.ok(sent.some(x => x.to === '9015550003' && /marked BAD \(just wanted a price for insurance\)\. Dispute it in Google, pick the reason: https:\/\/ads\.google\.com\/localservices\/leads/.test(x.body)), 'Pat gets the dispute link');
+  assert.ok(['9015550001', '9015550002'].every(ph => sent.some(x => x.to === ph && new RegExp('Pat PM says BAD for ' + c9 + ' Ed Fox: just wanted a price for insurance\\. Dispute in Google: https://ads\\.google\\.com/localservices/leads').test(x.body))), 'Nick and Wesley get the same link: ' + JSON.stringify(sent));
+  assert.ok(tasks.length === 1 && tasks[0].id === 'LSADISPUTE_LSA9' && /^⚖️ Bad lead per Pat PM — confirm and dispute by \d+\/\d+: Ed Fox/.test(tasks[0].label), JSON.stringify(tasks));
+  assert.ok(!sent.some(x => x.to === '9015550199'), 'nothing to the customer');
+  /* Wesley disputed it in Google → "DISPUTED <code>" closes it for everyone */
+  sent.length = 0;
+  let wb = await SA.staffInbound('9015550002', 'Disputed ' + c9, 'SM52');
+  assert.ok(wb && wb.lsa === 'LSA9' && wb.disputed === true && disputes[0].leadId === 'LSA9' && closedT.some(c => c.ids.includes('LSADISPUTE_LSA9') && c.ids.includes('LSA25_LSA9')), JSON.stringify({ wb, closedT }));
+  assert.ok(sent.length === 1 && sent[0].to === '9015550002' && /disputed in Google — closed for everyone/.test(sent[0].body), JSON.stringify(sent));
   /* another lead: Pat says GOOD → his, admins told */
   decided.length = 0; sent.length = 0; t += 60000;
   await SA.leads([{ id: 'LSA10', key: 'LSA10', title: 'Roof', source: 'Google LSA', contact: { name: 'Fay Gee', phone: '9015550200' } }], { LSA10: { id: 'LSA10', source: 'Google LSA', leadExtra: { lsaCheck: 'pending' } } }, () => false);

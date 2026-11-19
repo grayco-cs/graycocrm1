@@ -77,8 +77,8 @@ function world(o){
   o = o || {};
   KV.clear(); SMS.length = 0; CALLS.length = 0; MAIL.length = 0;
   setKv('users', [
-    { id: 'u-nick', name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'Admin', phone: '(901) 555-1001', active: o.nickInactive ? false : true },
-    { id: 'u-wes', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', cell: o.wesCell || '901-555-1002', active: true },
+    { id: 'u-nick', name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'Admin', phone: '(901) 555-1001', active: o.nickInactive ? false : true, createdAt: '2020-03-01T12:00:00Z' },   /* OWNERROLE: the second admin created = Owner 2 */
+    { id: 'u-wes', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', cell: o.wesCell || '901-555-1002', active: true, createdAt: '2019-03-01T12:00:00Z' },   /* Owner 1 */
     { id: 'u-pat', name: 'Pat Miller', email: 'pat@grayco-cs.com', role: 'Project Manager', phone: '(901) 555-1003', active: true },
     { id: 'u-off', name: 'Office Olivia', email: 'office@grayco-cs.com', role: 'Office', active: true }]);
   setKv('projects', []); setKv('customers', []); setKv('leads', []); setKv('gc_job_messages', []); setKv('gc_office_tasks', []);
@@ -119,7 +119,7 @@ const api = (tok, method, qs, body) => TX.handler({ httpMethod: method, headers:
   const hb = Object.values(held()).map(l => l[0] && l[0].body);
   ok(hb.every(b => b && b.includes(code) && /\(901\) 555-0421/.test(b) && /Called 8:21 AM/.test(b) && /#leads&lead=/.test(b)), 'the held text has the code, the number, the call time and the lead link', hb);
   const tk = tasks().find(x => x.id === 'LSAIN_' + lead.id);
-  ok(tk && tk.kind === 'lsa_intake' && !tk.done && /Google call — fill in the lead/.test(tk.label) && (tk.assignees || []).includes('office'), 'LSAINTAKE: the office To-Do "📞 Google call — fill in the lead" is there at once', tk);
+  ok(tk && tk.kind === 'lsa_intake' && !tk.done && /Google call — notes for the owners \(optional\)/.test(tk.label) && tk.prio !== 'high' && (tk.assignees || []).includes('office'), 'LSAINTAKE (LSAFLOW2: optional): the office To-Do "📞 Google call — notes for the owners (optional)" is there at once', tk);
   r = await BI._test.processEvent(evt());
   ok(inbox().length === 2 && heldN() === 2, 'the same e-mail again (Resend retry) → still one lead, nothing more held', { n: inbox().length, r: r.body });
 
@@ -202,16 +202,26 @@ const api = (tok, method, qs, body) => TX.handler({ httpMethod: method, headers:
   setKv('gc_lead_inbox', [L7()]); await SA.leads([L7()], { 'LI-in1': L7() }, () => false); SMS.length = 0;
   let g = await api('tok-office', 'GET', { lsaleads: '1' });
   ok(g.__code === 200 && g.items.length === 1 && g.items[0].code === SA._lsaCode('LI-in1') && g.items[0].check === 'pending' && g.items[0].phone === '9015550777', 'texts.js ?lsaleads: the office sees the Google call with its code and state', g);
-  ok(g.defaultPm === 'u-nick' && (getKv('gc_lead_inbox_settings') || {}).lsaDefaultPm === 'u-nick', '⚙ Default PM for Google LSA leads = Nick (resolved by his e-mail once, stored as his user id)', { d: g.defaultPm, set: getKv('gc_lead_inbox_settings') });
+  ok(g.defaultPm === 'u-nick' && (getKv('gc_lead_inbox_settings') || {}).lsaDefaultPm == null && (g.owners || []).map(o => o.slot + ':' + o.name).join() === '1:Wesley Johnson,2:Nick Thomas', 'OWNERROLE: ⚙ Default PM for Google LSA leads = Owner 2 (the second admin created), resolved by role at run time, not stored', { d: g.defaultPm, set: getKv('gc_lead_inbox_settings'), owners: g.owners });
   ok(g.pms.some(p => p.email === 'nthomas@grayco-cs.com') && g.pms.some(p => p.email === 'pat@grayco-cs.com') && !g.pms.some(p => p.email === 'office@grayco-cs.com'), 'the PM list: active PMs + admins (Nick), not the office', g.pms);
   g = await api('tok-pm', 'GET', { lsaleads: '1' }); ok(g.__code === 403, 'a PM cannot read it (role gate)');
+  /* LSAFLOW2: the office's form is optional notes — "Send to PM" from the office does not assign (the owners assign) */
   r = await api('tok-office', 'POST', { lsaintake: '1' }, { leadId: 'LI-in1', rating: 'good', desc: 'roof leak over the kitchen, 12 Oak St Bartlett, today', name: 'Kim Lee', address: '12 Oak St, Bartlett', action: 'pm', pmEmail: 'pat@grayco-cs.com' });
-  const x7 = inbox().find(x => x.id === 'LI-in1');
-  ok(r.__code === 200 && r.ok && r.pm === 'Pat Miller' && x7.pm === 'Pat Miller' && x7.lsaCheck === 'good' && (x7.leadExtra.intake || {}).rating === 'good' && x7.contact.name === 'Kim Lee', 'intake → "Send to PM" Pat: assigned like GOOD <code> Pat (the inbox: PM, good, the intake)', { r, x7 });
-  const dec = getKv('gc_lsa_decisions') || []; ok(dec.some(d => d.id === 'LI-in1' && d.good && d.pm === 'Pat Miller'), 'gc_lsa_decisions has it (the CRM page marks the lead)', dec);
-  const pt = toPh(PAT); ok(pt.length === 1 && /Google LSA lead [A-Z0-9]{4} for you/.test(pt[0].Body) && /\(901\) 555-0777/.test(pt[0].Body) && /roof leak over the kitchen/.test(pt[0].Body), 'Pat gets the lead text with the number and what they need', SMS.map(x => [x.To, x.Body]));
-  ok(toPh(WES).some(x => /Office \(.*\) sent [A-Z0-9]{4} Kim Lee to PM Pat Miller/.test(x.Body)) && toPh(NICK).some(x => /to PM Pat Miller/.test(x.Body)), 'the admins get "Office sent <code> to PM Pat Miller"', staffSms().map(x => x.Body));
+  let x7 = inbox().find(x => x.id === 'LI-in1');
+  ok(r.__code === 200 && r.ok && r.action === 'admin' && !x7.pm && x7.lsaCheck !== 'good' && (x7.leadExtra.intake || {}).desc && x7.contact.name === 'Kim Lee', 'LSAFLOW2: the office\'s notes are saved, nothing assigned (the owners assign)', { r, x7 });
+  ok(toPh(PAT).length === 0 && toPh(WES).some(x => /sent to you to assign\. Reply GOOD [A-Z0-9]{4} <PM>/.test(x.Body)), 'the owners get the notes and assign; no PM text yet', SMS.map(x => [x.To, x.Body]));
+  r = await api('tok-office', 'POST', { lsaassign: '1' }, { leadId: 'LI-in1', pmEmail: 'pat@grayco-cs.com' }); ok(r.__code === 403, 'the office cannot assign from the Leads page either');
   ok(tasks().some(x => x.id === 'LSAIN_LI-in1' && x.done), 'the intake To-Do closes');
+  /* an owner assigns in the CRM → the PM's GrayCo text (the customer switch at its real default: OFF) */
+  SMS.length = 0; setAuto('lead_customer_autotext', false);
+  r = await api('tok-wes', 'POST', { lsaassign: '1' }, { leadId: 'LI-in1', pmEmail: 'pat@grayco-cs.com' });
+  x7 = inbox().find(x => x.id === 'LI-in1');
+  ok(r.__code === 200 && r.ok && r.pm === 'Pat Miller' && x7.pm === 'Pat Miller' && x7.lsaCheck === 'good', 'an owner assigns Pat in the CRM', { r, x7 });
+  const dec = getKv('gc_lsa_decisions') || []; ok(dec.some(d => d.id === 'LI-in1' && d.good && d.pm === 'Pat Miller'), 'gc_lsa_decisions has it (the CRM page marks the lead)', dec);
+  const pt = toPh(PAT); ok(pt.length === 1 && /Google LSA lead [A-Z0-9]{4} for you/.test(pt[0].Body) && /\(901\) 555-0777/.test(pt[0].Body) && /roof leak over the kitchen/.test(pt[0].Body) && /Reply BAD [A-Z0-9]{4} <reason> if it's not a real lead/.test(pt[0].Body), 'Pat gets ONE lead text: the number, the office\'s notes, "Reply BAD <code> <reason>"', SMS.map(x => [x.To, x.Body]));
+  ok(!SMS.some(x => String(x.To).replace(/\D/g, '').endsWith('9015550777')), 'nothing to the customer (NOCUSTTEXT)', SMS.map(x => [x.To, x.Body]));
+  setAuto('lead_customer_autotext', true);
+  ok(toPh(PAT).length === 1 && /for you from Wesley:/.test(toPh(PAT)[0].Body), 'the PM text names who assigned it (the person, not an address)', toPh(PAT).map(x => x.Body));
   /* send to admin */
   world(); T = Date.parse('2026-11-19T17:10:00Z'); setKv('gc_lead_inbox', [L7()]);
   r = await api('tok-office', 'POST', { lsaintake: '1' }, { leadId: 'LI-in1', rating: 'good', desc: 'wants a full re-roof quote', action: 'admin' });
@@ -219,12 +229,13 @@ const api = (tok, method, qs, body) => TX.handler({ httpMethod: method, headers:
   ok(r.ok && ad && /^GrayCo: Office: GOOD — [A-Z0-9]{4} .*wants a full re-roof quote.*sent to you to assign\. Reply GOOD [A-Z0-9]{4} <PM>/.test(ad.Body) && toPh(NICK).length === 1, '"Send to admin" → "Office: GOOD — … — sent to you to assign"', staffSms().map(x => x.Body));
   r = await SA.staffInbound(WES, 'GOOD ' + SA._lsaCode('LI-in1') + ' Pat', 'SMadm1');
   ok(r && r.good === true && inbox().find(x => x.id === 'LI-in1').pm === 'Pat Miller', 'Wesley answers GOOD <code> Pat to that text → assigned');
-  /* office BAD → pending the admins */
+  ok(toPh(PAT).length === 1 && /for you from Wesley/.test(toPh(PAT)[0].Body), 'GOOD <code> Pat by text → Pat\'s GrayCo text (once — the assignment notice does not text him twice)', toPh(PAT).map(x => x.Body));
+  /* LSAFLOW2: the office's 👎 → BAD now, the owners get the dispute link, the office's To-Do to confirm and dispute */
   world(); T = Date.parse('2026-11-19T17:20:00Z'); setKv('gc_lead_inbox', [L7()]);
   r = await api('tok-office', 'POST', { lsaintake: '1' }, { leadId: 'LI-in1', rating: 'bad', desc: 'selling SEO', action: 'pm', pmEmail: 'pat@grayco-cs.com' });
-  const xb = inbox().find(x => x.id === 'LI-in1');
-  ok(r.ok && xb.lsaCheck === 'pm_bad' && !xb.pm && !tasks().some(t => /^LSADISPUTE_/.test(t.id)) && tasks().some(t => /^LSACHECK_/.test(t.id)), 'office 👎 → BAD pending an admin (pm_bad), not assigned, no dispute To-Do yet', { xb, t: tasks().map(t => t.id) });
-  ok(toPh(WES).some(x => /Office \(.*\) says BAD for [A-Z0-9]{4}.*selling SEO.*Reply BAD [A-Z0-9]{4} to confirm/.test(x.Body)), 'the admins are asked to confirm', staffSms().map(x => x.Body));
+  const xb = inbox().find(x => x.id === 'LI-in1'), tb = tasks().find(t => t.id === 'LSADISPUTE_LI-in1');
+  ok(r.ok && xb.lsaCheck === 'bad' && !xb.pm && tb && !tb.done && /^⚖️ Bad lead per .* — confirm and dispute by 12\/19: /.test(tb.label), 'office 👎 → BAD, not assigned, the dispute To-Do (by Google\'s 30 days from the call: 12/19)', { xb, t: tasks() });
+  ok(toPh(WES).some(x => /says BAD for [A-Z0-9]{4}.*selling SEO\. Dispute in Google: https:\/\/ads\.google\.com\/localservices\/leads/.test(x.Body)) && toPh(NICK).length === 1, 'the owners get the dispute link', staffSms().map(x => x.Body));
   /* an admin assigns from the Leads page */
   world(); T = Date.parse('2026-11-19T17:30:00Z'); setKv('gc_lead_inbox', [L7()]);
   r = await api('tok-wes', 'POST', { lsaassign: '1' }, { leadId: 'LI-in1', pmEmail: 'nthomas@grayco-cs.com' });

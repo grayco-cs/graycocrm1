@@ -4,8 +4,9 @@
 //      leads, with its "📞 <code> ⏳" chip; "📞 Google calls" lists it with the number (tap to call), call time, length, job type, ▶ Play,
 //      the 📝 summary, the code + state, the PM picker preselected with the ⚙ default PM (Nick) → ➡ Send to PM posts ?lsaassign;
 //      the old LSAVET "real lead?" card is gone; a deleted Google call says so with ↩ Put back;
-//   2. the office, phone (390 px): the "📞 Google call — fill in the lead" pop-up → the form (👍/👎/❓, what they need, name / number /
-//      address, the big "➡ Send to PM" with Nick preselected, the small "Send to admin to assign") → ?lsaintake; nothing wider than the screen;
+//   2. the office, phone (390 px): the "📞 Google call — add notes (optional)" pop-up → the form (👍/👎/❓ optional, what they need, name /
+//      number / address, ONE "💾 Save notes for the owners" — LSAFLOW2: no PM picker, assigning is the owners' job) → ?lsaintake action
+//      admin; the office's Google calls panel has no "Send to PM"; nothing wider than the screen;
 //   3. 🛰 Outreach with no cloud list → the 🏢 Company outreach list fills from ?outreachseed (desk and phone) and is saved to the cloud.
 import { computer, signIn, sleep, cset, cget, resetCloud, waitFor, onFn, ACCOUNTS } from '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs';
 const R = []; const ok = (n, c, i) => { R.push(!!c); console.log((c ? 'PASS ' : 'FAIL ') + n + (i !== undefined && !c ? '  ' + JSON.stringify(i).slice(0, 600) : '')); };
@@ -27,9 +28,9 @@ const ITEMS = [
   { id: 'LI-lsa1', code: 'K7Q2', title: 'Google LSA call', name: 'Google LSA caller (901) 555-0421', phone: '9015550421', at: recent, status: 'imported', check: 'pending', pm: '', pmEmail: '', call: true, emergency: false, link: '', intake: null, repeats: 0,
     info: { id: 'LI-lsa1', phone: '9015550421', callAtLabel: '11/19, 8:21 AM', dur: '2m 14s', durSec: 134, job: 'Roofer — roof repair', outcome: 'answered', lsa: true, recs: [{ id: 'RE' + 'a'.repeat(32), kind: 'call', dur: 134, durLabel: '2m 14s' }], google: null, transcript: { summary: 'Pat Smith — roof leak over the kitchen, 12 Oak St, Bartlett; wants a call back today.', text: 'Hi this is Pat…' } } },
   { id: 'LI-lsa0', code: 'ABCD', title: 'Google LSA call', name: 'Google LSA caller (10:05 AM)', phone: '', at: recent, status: 'imported', check: 'pending', pm: '', pmEmail: '', call: true, intake: null, repeats: 0, info: { callAtLabel: '11/19, 10:05 AM', recs: [] } }];
-const POSTS = [];
+const POSTS = []; let CUR = 'wjohnson@grayco-cs.com';
 onFn('texts', ({ query, body, method }) => {
-  if (query.lsaleads) return { ok: true, items: ITEMS, pms: [{ id: 'u-pm', name: 'Demo PM', email: 'pm@grayco-cs.com' }, { id: 'u-nick', name: 'Nick Thomas', email: 'nthomas@grayco-cs.com' }, { id: 'u-wesley', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com' }], defaultPm: 'u-nick', defaultPmName: 'Nick Thomas', admin: true };
+  if (query.lsaleads) return { ok: true, items: ITEMS, pms: [{ id: 'u-pm', name: 'Demo PM', email: 'pm@grayco-cs.com' }, { id: 'u-nick', name: 'Nick Thomas', email: 'nthomas@grayco-cs.com' }, { id: 'u-wesley', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com' }], defaultPm: 'u-nick', defaultPmName: 'Nick Thomas', defaultPmAuto: true, owners: [{ slot: 1, name: 'Wesley Johnson' }, { slot: 2, name: 'Nick Thomas' }], admin: !/office/.test(String(ACCOUNTS[CUR] && ACCOUNTS[CUR].role)) };
   if (query.lsaassign) { POSTS.push({ q: 'lsaassign', body }); return { ok: true, code: 'K7Q2', good: true, pm: 'Nick Thomas' }; }
   if (query.lsaintake) { POSTS.push({ q: 'lsaintake', body }); return { ok: true, code: 'K7Q2', rating: body.rating, action: body.action, pm: body.action === 'pm' ? 'Nick Thomas' : '' }; }
   return { ok: true };
@@ -53,9 +54,10 @@ try {
   await A.page().click('#gc-lc-btn'); await sleep(1200);
   const pn = await A.ev(() => { const ov = document.getElementById('gc-lc-ov'); const row = ov && ov.querySelector('[data-lc-row="LI-lsa1"]'); const r0 = ov && ov.querySelector('[data-lc-row="LI-lsa0"]');
     return { ov: !!ov, tel: row && (row.querySelector('a[href="tel:9015550421"]') || {}).textContent, txt: row ? row.textContent : '', play: !!(row && row.querySelector('[data-rec-play]')), sel: row && row.querySelector('[data-lc-pm]') ? row.querySelector('[data-lc-pm]').value : '', fill: !!(row && row.querySelector('[data-lc-in]')),
-      def: ov && ov.querySelector('[data-lc-def]') ? ov.querySelector('[data-lc-def]').value : '', gone: r0 ? r0.textContent : '' }; });
+      def: ov && ov.querySelector('[data-lc-def]') ? ov.querySelector('[data-lc-def]').value : '', gone: r0 ? r0.textContent : '', who: ov ? (ov.querySelector('[data-lc-who]') || {}).textContent : '' }; });
   ok('the panel: the number (tap to call), call time, length, job type, ▶ Play, the 📝 summary, the code + state', pn.ov && /\(901\) 555-0421/.test(pn.tel || '') && /8:21 AM/.test(pn.txt) && /2m 14s/.test(pn.txt) && /Roofer — roof repair/.test(pn.txt) && pn.play && /roof leak over the kitchen/.test(pn.txt) && /K7Q2/.test(pn.txt) && /not marked yet/.test(pn.txt), pn);
-  ok('the PM picker is preselected with the ⚙ default PM (Nick); admins see the ⚙ setting', pn.sel === 'nthomas@grayco-cs.com' && pn.def === 'u-nick' && pn.fill, pn);
+  ok('the PM picker is preselected with the ⚙ default PM (Owner 2 by role = Nick); admins see the ⚙ setting at "Owner 2 — default"', pn.sel === 'nthomas@grayco-cs.com' && pn.def === '@owner2' && pn.fill, pn);
+  ok('OWNERROLE: the panel names the owners from the server (no names in the page code)', /^Wesley and Nick get each call by text/.test(pn.who || ''), pn.who);
   ok('a deleted Google call says it is not on the Leads list', /Not on the Leads list — it was deleted/.test(pn.gone), pn.gone);
   await A.page().click('#gc-lc-ov [data-lc-go="LI-lsa1"]'); await sleep(1200);
   ok('➡ Send to PM → ?lsaassign { leadId, pmEmail: Nick } (= GOOD K7Q2 Nick)', POSTS.some(p => p.q === 'lsaassign' && p.body.leadId === 'LI-lsa1' && p.body.pmEmail === 'nthomas@grayco-cs.com'), POSTS);
@@ -75,30 +77,30 @@ try {
   await A.close(); OPEN.length = 0;
 
   /* ── 2. the office, phone ── */
-  seed();
+  seed(); CUR = 'office@grayco-cs.com';
   const O = await computer('O', { build, mobile: true }); OPEN.push(O);
   ok('office signs in on a phone', await signIn(O, 'office@grayco-cs.com', 20000));
   await sleep(4000);
   await O.ev(() => window._gcLsaCalls && window._gcLsaCalls.load());
   const pop = await waitFor(O, () => { const p = document.getElementById('gc-in-pop'); return p ? p.textContent : ''; }, null, 15000);
-  ok('the office gets "📞 Google call — fill in the lead"', /Google call — fill in the lead/.test(pop || ''), pop);
+  ok('the office gets "📞 Google call — add notes (optional)"', /Google call — add notes \(optional\)/.test(pop || ''), pop);
   await O.page().click('#gc-in-pop [data-pop-go]'); await sleep(800);
-  const fm = await O.ev(() => { const ov = document.getElementById('gc-in-ov'); if (!ov) return null; const go = ov.querySelector('[data-in-go="pm"]'), ad = ov.querySelector('[data-in-go="admin"]');
-    return { pm: ov.querySelector('[data-in-pm]').value, ph: ov.querySelector('[data-in-ph]').value, r: ov.querySelectorAll('[data-in-r]').length, goH: go.getBoundingClientRect().height, adH: ad.getBoundingClientRect().height, goW: go.getBoundingClientRect().width, adW: ad.getBoundingClientRect().width, sw: document.documentElement.scrollWidth, vw: innerWidth, box: ov.querySelector('[role=dialog]').getBoundingClientRect().width }; });
-  ok('the intake form: 👍/👎/❓, the number filled in, Nick preselected; "➡ Send to PM" is the big button, "Send to admin" the small one', fm && fm.r === 3 && fm.pm === 'nthomas@grayco-cs.com' && /555-0421/.test(fm.ph) && fm.goH > fm.adH && fm.goW > fm.adW * 1.5, fm);
+  const fm = await O.ev(() => { const ov = document.getElementById('gc-in-ov'); if (!ov) return null; const ad = ov.querySelector('[data-in-go="admin"]');
+    return { pm: !!ov.querySelector('[data-in-pm]'), go: !!ov.querySelector('[data-in-go="pm"]'), adT: ad ? ad.textContent : '', ph: ov.querySelector('[data-in-ph]').value, r: ov.querySelectorAll('[data-in-r]').length, adH: ad ? ad.getBoundingClientRect().height : 0, sw: document.documentElement.scrollWidth, vw: innerWidth, box: ov.querySelector('[role=dialog]').getBoundingClientRect().width, txt: ov.textContent }; });
+  ok('the office form: optional 👍/👎/❓, the number filled in, ONE big "💾 Save notes for the owners", no PM picker / Send to PM', fm && fm.r === 3 && !fm.pm && !fm.go && /Save notes for the owners/.test(fm.adT) && fm.adH >= 48 && /555-0421/.test(fm.ph) && /Optional/.test(fm.txt), fm);
   ok('the form fits a 390 px phone (no sideways scroll)', fm && fm.sw <= fm.vw + 1 && fm.box <= fm.vw, fm);
-  await O.page().click('#gc-in-ov [data-in-go="pm"]'); await sleep(300);
-  const need = await O.ev(() => (document.querySelector('#gc-in-ov [data-in-msg]') || {}).textContent || '');
-  ok('a rating is needed first', /Tap 👍 Good/.test(need), need);
-  await O.page().click('#gc-in-ov [data-in-r="good"]'); await O.page().fill('#gc-in-ov [data-in-desc]', 'roof leak over the kitchen, today'); await O.page().fill('#gc-in-ov [data-in-addr]', '12 Oak St, Bartlett');
-  await O.page().click('#gc-in-ov [data-in-go="pm"]'); await sleep(1200);
+  await O.page().fill('#gc-in-ov [data-in-desc]', 'roof leak over the kitchen, today'); await O.page().fill('#gc-in-ov [data-in-addr]', '12 Oak St, Bartlett');
+  await O.page().click('#gc-in-ov [data-in-go="admin"]'); await sleep(1200);
   const pi = POSTS.find(p => p.q === 'lsaintake');
-  ok('➡ Send to PM → ?lsaintake { rating: good, the description, the address, action pm, Nick }', pi && pi.body.leadId === 'LI-lsa1' && pi.body.rating === 'good' && pi.body.action === 'pm' && pi.body.pmEmail === 'nthomas@grayco-cs.com' && /roof leak/.test(pi.body.desc) && /12 Oak/.test(pi.body.address), pi);
+  ok('no rating needed: 💾 Save → ?lsaintake { rating unsure, the description, the address, action admin }', pi && pi.body.leadId === 'LI-lsa1' && pi.body.rating === 'unsure' && pi.body.action === 'admin' && !pi.body.pmEmail && /roof leak/.test(pi.body.desc) && /12 Oak/.test(pi.body.address), pi);
   ok('the form closes', await O.ev(() => !document.getElementById('gc-in-ov')));
-  /* send to admin */
   POSTS.length = 0; await O.ev(() => window._gcLsaCalls.intake('LI-lsa0')); await sleep(500);
-  await O.page().click('#gc-in-ov [data-in-r="unsure"]'); await O.page().click('#gc-in-ov [data-in-go="admin"]'); await sleep(1000);
-  ok('"Send to admin to assign" → ?lsaintake action admin', POSTS.some(p => p.q === 'lsaintake' && p.body.leadId === 'LI-lsa0' && p.body.action === 'admin' && p.body.rating === 'unsure'), POSTS);
+  await O.page().click('#gc-in-ov [data-in-r="good"]'); await O.page().click('#gc-in-ov [data-in-go="admin"]'); await sleep(1000);
+  ok('👍 + Save → ?lsaintake rating good, action admin', POSTS.some(p => p.q === 'lsaintake' && p.body.leadId === 'LI-lsa0' && p.body.action === 'admin' && p.body.rating === 'good'), POSTS);
+  await O.ev(() => window._gcLsaCalls.open()); await sleep(1500);
+  const op = await O.ev(() => { const ov = document.getElementById('gc-lc-ov'), row = ov && ov.querySelector('[data-lc-row="LI-lsa1"]'); return { go: !!(row && row.querySelector('[data-lc-go]')), pm: !!(row && row.querySelector('[data-lc-pm]')), bad: !!(row && row.querySelector('[data-lc-bad]')), def: !!(ov && ov.querySelector('[data-lc-def]')) }; });
+  ok('the office\'s 📞 Google calls panel: no PM picker / Send to PM / ⚙ default (the owners assign), 👎 Bad is there', op.go === false && op.pm === false && op.def === false && op.bad === true, op);
+  await O.ev(() => { const o = document.getElementById('gc-lc-ov'); if (o) o.remove(); });
   /* 3b. outreach on the phone */
   await O.ev(() => window._setView('leads')); await sleep(3000);
   await O.ev(() => { const b = [...document.querySelectorAll('#gc-leads-hub button')].find(b => /Outreach/.test(b.textContent)); if (b) b.click(); });

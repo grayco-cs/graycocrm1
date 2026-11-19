@@ -151,18 +151,40 @@ exports.handler = async function(event){
     }
     /* LSAINTAKE (owner 11/19): the Google LSA calls on the Leads page (admins + the office) — the list with codes / GOOD-BAD / call details,
        the office's quick intake, assigning a PM from the CRM (= an admin's "GOOD <code> <PM>"), the ⚙ "Default PM for Google LSA leads" */
+    /* LSAFLOW2 (owner 11/19): the lead's PM (or an admin / the office) marks a Google LSA lead 👍 Good / 👎 Bad / ✓ Disputed in Google from the
+       app (_lib/smsalert.js lsaMark checks who may); ?lsamine = my own Google LSA leads (the PM's buttons) */
+    if (qs.lsamark && m === 'POST') {
+      let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+      const r = await require('./_lib/smsalert.js').lsaMark(b, { name: s(who.name), email: low(who.email), admin: !!who.admin, office: !!who.office });
+      return J(r.ok ? 200 : (r.code || 400), r, C);
+    }
+    if (qs.lsamine && m === 'GET') { const items = await require('./_lib/smsalert.js').lsaMine(who.email, who.name); return J(200, { ok: true, items }, C); }
+    /* OWNERROLE: Admin → Team roles → Owner 1 / Owner 2 (admins; the server kv "gc_owner_roles", by user id) */
+    if (qs.owners) {
+      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can set Owner 1 / Owner 2.' }, C);
+      const O = require('./_lib/owners.js'); let pp = {}; try { pp = await require('./_lib/smsalert.js')._D.people(); } catch (e) {}
+      const admins = O.admins(pp.users, pp.staff);
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const v = Object.assign(O.clean(b, admins), { by: low(who.email), at: nowIso() });
+        await L().kvCas(O.KEY, () => v);
+      }
+      const saved = await L().kvGet(O.KEY);
+      return J(200, { ok: true, owners: O.resolve(pp.users, pp.staff, saved), admins, saved: saved || null }, C);
+    }
     if (qs.lsaleads || qs.lsaintake || qs.lsaassign || qs.lsapm) {
       if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can do this.' }, C);
       const SA = require('./_lib/smsalert.js');
       let b = {}; if (m === 'POST') { try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); } }
-      const me = { name: s(who.name), email: low(who.email) };
+      const me = { name: s(who.name), email: low(who.email), admin: !!who.admin, office: !!who.office };
       if (qs.lsaleads && m === 'GET') {
-        const [items, pms, dpm] = await Promise.all([SA.lsaList(+qs.days || 30), SA.lsaPms(), SA.lsaDefaultPm()]);
-        return J(200, { ok: true, items, pms, defaultPm: dpm ? dpm.id : '', defaultPmName: dpm ? dpm.name : '', admin: !!who.admin }, C);
+        const [items, pms, dpm, own] = await Promise.all([SA.lsaList(+qs.days || 30), SA.lsaPms(), SA.lsaDefaultPm(), SA.loadOwners()]);
+        return J(200, { ok: true, items, pms, defaultPm: dpm ? dpm.id : '', defaultPmName: dpm ? dpm.name : '', defaultPmAuto: !!(dpm && dpm.auto), admin: !!who.admin, owners: own.map(x => ({ slot: x.slot, name: x.name })) }, C);
       }
       if (qs.lsaintake && m === 'POST') { const r = await SA.lsaIntake(b, me); return J(r.ok ? 200 : 400, r, C); }
       if (qs.lsaassign && m === 'POST') {
-        if (s(b.verdict) === 'bad' && !who.admin) { const r = await SA.lsaIntake(Object.assign({}, b, { rating: 'bad', desc: s(b.reason) }), me); return J(r.ok ? 200 : 400, r, C); }   /* the office's BAD waits for an admin */
+        if (s(b.verdict) === 'bad' && !who.admin) { const r = await SA.lsaIntake(Object.assign({}, b, { rating: 'bad', desc: s(b.reason) }), me); return J(r.ok ? 200 : 400, r, C); }   /* the office's BAD (LSAFLOW2: BAD now + the dispute To-Do) */
+        if (!who.admin) return J(403, { ok: false, error: 'Assigning a PM is the owners\' job — add your notes instead.' }, C);   /* LSAFLOW2 */
         const r = await SA.lsaAssign(b, me); return J(r.ok ? 200 : 400, r, C);
       }
       if (qs.lsapm && m === 'POST') { if (!who.admin) return J(403, { ok: false, error: 'Only an admin changes the default PM.' }, C); const r = await SA.lsaSetDefaultPm(b.id, who.email); return J(r.ok ? 200 : 400, r, C); }

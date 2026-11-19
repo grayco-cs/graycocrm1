@@ -44,7 +44,7 @@ Object.assign(SA._D, {
   vetTodo: async () => true, postReply: async m => ({ id: m.id }), textLog: async row => { tlog.push(row); return true; },
   lsaDecide: async d => { decided.push(d); return { inbox: true, list: true, todo: !d.good }; },
   lsaSend: async d => { sends.push(d); return { inbox: true }; },
-  lsaPmBad: async d => { pmbads.push(d); return { inbox: true, todo: true }; },
+  inboxLead: async () => null, officeTask: async () => ({ ok: true }), tasksDone: async () => ({ ok: true }),   /* LSAFLOW2 */
   ack: async (id, why) => { acks.push({ id, why }); return { ok: true }; },
   lsaVerified: async () => true, jobs: async () => ({ projects: [], gc_deleted_projects: [] })
 });
@@ -187,8 +187,8 @@ async function three(){ await web('W1', 'Jo Smith', '9015550111'); await web('W2
   reset(); await three();
   await txt(WES, 'SEND ' + c1 + ' Steven'); await txt(WES, 'SEND ' + c2 + ' Steven'); sent.length = 0; decided.length = 0;
   r = await txt(STEVEN, 'GOOD ' + c1 + ', BAD ' + c2 + ' just wanted a price');
-  ok(r && r.multi && decided.length === 1 && decided[0].leadId === 'W1' && decided[0].keepPm && pmbads.length === 1 && pmbads[0].leadId === 'W2' && pmbads[0].reason === 'just wanted a price', 'a PM: GOOD one, BAD the other (to the admins to approve)', { decided, pmbads });
-  ok(to(STEVEN).length === 1 && /2 leads updated/.test(to(STEVEN)[0].body) && /went to the admins to approve/.test(to(STEVEN)[0].body), 'the PM gets one summary', to(STEVEN));
+  ok(r && r.multi && decided.length === 2 && decided[0].leadId === 'W1' && decided[0].keepPm && decided[1].leadId === 'W2' && decided[1].good === false && decided[1].reason === 'just wanted a price' && decided[1].byEmail === 'steven@grayco-cs.com', 'a PM: GOOD one, BAD the other (LSAFLOW2: BAD at once — no approval step)', { decided });
+  ok(to(STEVEN).length === 1 && /2 leads updated/.test(to(STEVEN)[0].body) && /BAD \(just wanted a price\), closed/.test(to(STEVEN)[0].body), 'the PM gets one summary', to(STEVEN));
   ok(to(WES).some(x => /Steven Hall says GOOD/.test(x.body)) && to(WES).some(x => /Steven Hall says BAD/.test(x.body)), 'the admins hear both', to(WES));
 
   console.log('3. no code: never re-marks an answered lead');
