@@ -52,12 +52,12 @@ The owner asked (10/23): "Can customers text the number for advice? Texts go to 
 - **Admin → 📱 Local text numbers** (admins only): rows of state, area codes, Twilio number and a label, for example MS 662 / 601 / 769 / 228, AR 870 / 501 / 479, TN 901 / 731. Saved in gc_kv `gc_sms_local`. Only phone numbers are stored; the Twilio SID and token stay in Netlify.
 - **Netlify fallback:** `TWILIO_LOCAL_NUMBERS`, JSON in the same shape, e.g. `[{"state":"MS","codes":["662","601"],"number":"+16625550100","label":"North MS"}]`. It is used for numbers that are not on the admin list.
 - **Which number a person's text goes out on** (📱 Text them, templates, the PM's texts from the CRM, the portal welcome, a PM's reply from their cell to a customer alert):
-  1. **Sticky:** the number this customer's conversation is already on (they texted it, or we texted them from a local number), as long as it is still one of ours. It is stored in gc_kv `gc_sms_local_sticky`.
-  2. Otherwise, the local number whose area codes include the customer's area code.
+  1. The local number whose area codes include the customer's area code — always, even if they last texted the main number (owner 11/19: "texts get moved to the local number").
+  2. Only when no local number matches: **sticky**, the number this customer's conversation is already on (they texted it, or we texted them from a local number), as long as it is still one of ours. It is stored in gc_kv `gc_sms_local_sticky`.
   3. Otherwise, the main GrayCo number (as before).
 
   Subs, the billing / insurance lines, and texts to staff cells keep their own numbers. The bar shows "📱 Sending from (662) …".
-- **Replies** to any of these numbers use the same webhook (`missed-call?event=sms`). They are matched to the customer and the job thread, and relayed to the same cells (the job's PM and the owners, per 📱 Text alerts), marked "via (662)". Automatic answers and the HELP answer go back from the number that was texted.
+- **Replies** to any of our numbers (local or main) land on the job thread. They use the same webhook (`missed-call?event=sms`). They are matched to the customer and the job thread, and relayed to the same cells (the job's PM and the owners, per 📱 Text alerts), marked "via (662)". Automatic answers and the HELP answer go back from the number that was texted.
 - **STOP and consent are per customer phone, across every number.** STOP on any number blocks all of them; START on any number undoes it.
 - Nothing here texts a customer by itself. It only picks the From number.
 - **A2P 10DLC:** every new number must be added to the existing messaging campaign's sender pool (Twilio → Messaging → Services → the service → Sender pool → Add), or its texts will not be delivered.

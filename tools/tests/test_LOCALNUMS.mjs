@@ -1,5 +1,5 @@
 // test_LOCALNUMS.mjs <build-dir> — patch LOCALNUMS in the browser (offline harness; made-up people, jobs and 555 numbers):
-//   · ⚙ Admin settings → 📱 Local text numbers (owner): the A2P 10DLC sender-pool note, the webhook to copy, "＋ MS / AR / TN rows",
+//   · ⚙ Admin settings → 📱 Local text numbers (owner): the rule (area code always wins, last-texted number only with no match), the A2P 10DLC sender-pool note, the webhook to copy, "＋ MS / AR / TN rows",
 //     typing the Twilio numbers, Save → the server gets { state, codes, number, label } only; a row with no number is not saved;
 //   · a PM (not an admin) sees "Only an admin…" (gate by role);
 //   · 💬 Job Messages "📱 Text them" bar: "📱 Sending from (662) 555-0101 · MS …" for a 662 customer; changing the phone to a 214
@@ -65,6 +65,7 @@ try {
   ok(/sender pool/.test(box) && /will not be delivered/.test(box), 'the section shows the A2P 10DLC sender-pool note', (box || '').slice(0, 300));
   ok(box.indexOf(HOOK) >= 0 && /Copy/.test(box), '…and the webhook to copy (the same as the main number)');
   ok(/No local numbers yet/.test(box) && /area code/.test(box), '…empty at first, explaining the area-code rule');
+  ok(/always used, even if they last texted the main number/.test(box) && /number they last texted/.test(box), '…the owner rule: the area-code number always wins; the last-texted number only when nothing matches');
   await O.page().click('.gcln [data-g="example"]'); await sleep(300);
   const rows = await O.ev(() => [...document.querySelectorAll('.gcln-row')].map(r => ({ st: r.querySelector('[data-l="state"]').value, codes: r.querySelector('[data-l="codes"]').value })));
   ok(JSON.stringify(rows) === JSON.stringify([{ st: 'MS', codes: '662, 601, 769, 228' }, { st: 'AR', codes: '870, 501, 479' }, { st: 'TN', codes: '901, 731' }]), '"＋ MS / AR / TN rows" adds MS 662/601/769/228, AR 870/501/479, TN 901/731', rows);

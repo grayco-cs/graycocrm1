@@ -110,8 +110,10 @@ console.log('— picking a number (pure) —');
   ok(P(CUST_AR).from === '+1' + AR_NUM && P('5015550000').from === '+1' + AR_NUM && P('4795550000').from === '+1' + AR_NUM, '870 / 501 / 479 → the AR number');
   ok(P(CUST_TX).from === '+1' + MAIN && P(CUST_TX).why === 'main' && !P(CUST_TX).local, 'no match (214) → the main GrayCo number (fallback)');
   ok(P(CUST_TX, { list: [] }).from === '+1' + MAIN, 'no local numbers at all → the main number');
-  ok(P(CUST_TX, { sticky: { number: MS_NUM } }).from === '+1' + MS_NUM && P(CUST_TX, { sticky: { number: MS_NUM } }).why === 'sticky', 'sticky beats the area code (a 214 customer who is on the 662 number stays on it)');
-  ok(P(CUST_MS, { sticky: { number: MAIN }, ours: [MAIN] }).from === '+1' + MAIN, 'sticky on the main number (they texted it) → stays on main');
+  ok(P(CUST_TX, { sticky: { number: MS_NUM } }).from === '+1' + MS_NUM && P(CUST_TX, { sticky: { number: MS_NUM } }).why === 'sticky', 'no local number for the area code (214) → the sticky number they are on (the 662 number)');
+  ok(P(CUST_TX, { sticky: { number: MAIN }, ours: [MAIN] }).from === '+1' + MAIN, 'no area match + sticky on the main number → main');
+  ok(P(CUST_MS, { sticky: { number: MAIN }, ours: [MAIN] }).from === '+1' + MS_NUM && P(CUST_MS, { sticky: { number: MAIN }, ours: [MAIN] }).why === 'area', 'owner rule: a 662 customer who last texted the MAIN number is still moved to the 662 number (area code beats sticky)');
+  ok(P(CUST_MS, { sticky: { number: AR_NUM }, ours: [MAIN] }).from === '+1' + MS_NUM, '…and beats a sticky number from another local line too');
   ok(P(CUST_MS, { sticky: { number: '6625550199' }, ours: [MAIN] }).from === '+1' + MS_NUM, 'a sticky number that is no longer ours is ignored → the area code');
   const envL = LN.fromEnv(k => k === 'TWILIO_LOCAL_NUMBERS' ? JSON.stringify([{ state: 'TN', codes: ['731'], number: TN_NUM }, { state: 'MS', codes: ['662'], number: '6625550199' }]) : '');
   ok(envL.length === 2 && envL[0].number === TN_NUM, 'TWILIO_LOCAL_NUMBERS (JSON array) is read', envL);
@@ -144,13 +146,13 @@ world();
   ok(r.code === 200 && toCust(SUB_MS)[0].From === '+1' + MAIN, 'a sub with a 662 phone keeps the subs / main number (not the local one)', toCust(SUB_MS));
   r = await send(ADMIN, { to: '9015550111', text: 'call me' });
   ok(r.code === 200 && toCust('9015550111')[0].From === '+1' + MAIN, 'a text to a staff cell is not a customer text → the main number');
-  /* sticky: the MS entry stops listing 662 (e.g. a second MS number for 662 later) — Molly stays on the number she knows */
+  /* the MS entry stops listing 662 (a second MS number takes 662) — the area-code number always wins over the sticky one */
   setKv(LN.KEY, { list: [{ state: 'MS', codes: ['601'], number: MS_NUM }, { state: 'MS', codes: ['662'], number: '6625550202' }, { state: 'AR', codes: ['870'], number: AR_NUM }] });
   SMS.length = 0;
   r = await send(PM, { to: CUST_MS, text: 'Second note', pid: 'PJ1' });
-  ok(r.code === 200 && toCust(CUST_MS)[0].From === '+1' + MS_NUM, 'sticky: once texted from a number, the customer keeps getting that number', toCust(CUST_MS));
+  ok(r.code === 200 && toCust(CUST_MS)[0].From === '+16625550202', 'owner rule: the area code always wins — Molly (662) moves to the number now listed for 662', toCust(CUST_MS));
   r = await send(PM, { to: '6625558888', text: 'Hello new 662' });
-  ok(toCust('6625558888')[0].From === '+16625550202', '…while a new 662 customer gets the new 662 number');
+  ok(toCust('6625558888')[0].From === '+16625550202', '…and a new 662 customer gets it too');
   /* the number is removed from the list → the sticky one is ignored */
   setKv(LN.KEY, { list: [{ state: 'AR', codes: ['870'], number: AR_NUM }] });
   SMS.length = 0;
@@ -192,7 +194,18 @@ world();
   SMS.length = 0;
   await inbound(CUST_TX, MS_NUM, 'question about my gutters');
   const s2 = await send(PM, { to: CUST_TX, text: 'Answering you', pid: 'PJ3' });
-  ok(s2.code === 200 && toCust(CUST_TX)[0].From === '+1' + MS_NUM, 'a customer who texted a local number is answered from that number (sticky beats area code)', toCust(CUST_TX));
+  ok(s2.code === 200 && toCust(CUST_TX)[0].From === '+1' + MS_NUM, 'a 214 customer (no local number for 214) who texted the 662 number is answered from it (sticky, used only when no area match)', toCust(CUST_TX));
+  /* owner rule: a 662 customer who texts the MAIN number — the reply still lands on the job, but a person's answer goes out on the 662 number */
+  SMS.length = 0; NOW += 10 * 60000;   /* past the per-thread alert throttle */
+  const r3 = await inbound(CUST_MS, MAIN, 'texting the main line');
+  const jm3 = (getKv('gc_job_messages') || []).filter(m => m.dir === 'in' && m.smsFrom === CUST_MS && m.smsTo === MAIN).pop();
+  ok(jm3 && jm3.pid === 'PJ1' && !jm3.viaLocal && (getKv(LN.STICKY_KEY) || {})[CUST_MS].number === MAIN, 'a 662 customer texting the main number: lands on their job (Oxford Reroof), no "via"', jm3);
+  ok(SMS.filter(x => /text from Molly/.test(x.Body)).map(x => x.To).sort().join() === '+19015550100,+19015550101,+19015550111', '…relayed to the PM and the owners');
+  const s3 = await send(PM, { to: CUST_MS, text: 'Got it', pid: 'PJ1' });
+  ok(s3.code === 200 && toCust(CUST_MS).filter(x => /Got it/.test(x.Body))[0].From === '+1' + MS_NUM, '…and the PM\'s answer is moved to the 662 local number (area code beats "last texted main")', toCust(CUST_MS));
+  SMS.length = 0;
+  const pr3 = await SA.staffInbound('9015550111', 'see you at 3', 'SMpm3');
+  ok(pr3 && pr3.replied && toCust(CUST_MS).filter(x => /see you at 3/.test(x.Body))[0].From === '+1' + MS_NUM, '…the PM\'s cell reply too', toCust(CUST_MS));
   /* the main number still works the same */
   SMS.length = 0;
   await inbound(CUST_TN901, MAIN, 'hi from memphis');

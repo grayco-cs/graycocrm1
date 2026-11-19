@@ -462,7 +462,7 @@ async function inboundSms(p){
   /* patch SMSMENU: on the Customers / default number HELP opens the 1–5 menu (with the STOP line) further down */
   const menuLine0 = ['customers', 'main'].indexOf(require('./_lib/smsroute.js').purposeOf(phone10(p.To), set, env)) >= 0;
   /* patch LOCALNUMS: a text to one of our local numbers (Admin → 📱 Local text numbers / TWILIO_LOCAL_NUMBERS) — same webhook, same
-     routing; it is answered from that number, the relay says "via (662)", and this customer's conversation stays on it (sticky) */
+     routing; it is answered from that number, the relay says "via (662)", and it is remembered as their number (used only when no local number matches their area code) */
   let lnList = []; try { lnList = await LNS().load(); } catch (e) {}
   const lnTo = require('./_lib/localnums.js').byNumber(lnList, p.To);
   if (S.HELP.test(body) && !menuLine0) { out.help = optedOut ? { skipped: 'opted out' } : await require('./_lib/custquiet.js').run('reply', () => sendSms(ph, S.HELP_TEXT, lnTo ? '+1' + lnTo.number : '')); return out; }   /* patch CUSTQUIET: the HELP answer carriers require goes at once */
@@ -489,7 +489,7 @@ async function inboundSms(p){
   out.route = { purpose, to: rt.to.map(x => x.email || x.name), office: rt.office, urgent: rt.urgent, why: rt.why };
   const viaLocal = lnTo ? require('./_lib/localnums.js').via(lnTo.number) : '';
   if (viaLocal) out.route.via = viaLocal;
-  /* patch LOCALNUMS: sticky — the customer texted this number of ours, so a person's answer goes back on it (staff / subs keep their own) */
+  /* patch LOCALNUMS: sticky — the customer texted this number of ours; a person's answer goes back on it unless a local number matches their area code (staff / subs keep their own) */
   if (!(who && (who.kind === 'staff' || who.kind === 'sub')) && (lnTo || RT.isOurs(toNum, set, env) || toNum === phone10(env('TWILIO_FROM')))) { try { if (await LNS().remember(ph, toNum, 'texted us')) out.sticky = toNum; } catch (e) {} }
   const name = s(who && who.name);
   const label = jobLabelOf(job);

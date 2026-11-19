@@ -9,10 +9,12 @@
      Netlify — nothing secret is stored in the CRM.
    · Which number a person's text to a customer goes out on (texts.js "📱 Text them" / templates / the PM's texts, the
      portal welcome the PM approves, a staff reply relayed from a cell):
-       1) sticky — the number this customer's conversation is already on (they texted it, or we texted them from a local
-          number), while that number is still one of ours;
-       2) the local number whose area codes include the customer's area code;
+       1) the local number whose area codes include the customer's area code — ALWAYS, even if they last texted the main
+          number (owner 11/19: "texts get moved to the local number");
+       2) only when no local number matches: sticky — the number this customer's conversation is already on (they texted
+          it, or we texted them from a local number), while that number is still one of ours;
        3) else the main GrayCo number (the caller's default — TWILIO_FROM / the purpose's number).
+     Replies land on the job whichever of our numbers they text.
      Subs and texts to staff cells never use it (they keep their own numbers).
    · Nothing here sends a text, and nothing here decides WHETHER a customer is texted (STOP and consent stay per customer
      phone, across every number, in missed-call.js / smsconsent.js). It only picks the From.
@@ -73,14 +75,16 @@ function forArea(l, ph){ const a = phone10(ph).slice(0, 3); if (a.length !== 3) 
 function pick(ph, o){
   o = o || {};
   const l = o.list || [], ours = (o.ours || []).map(phone10), fb = phone10(o.fallback);
-  const st = o.sticky && phone10(o.sticky.number);
-  if (st && st.length === 10) {
-    const e = byNumber(l, st);
-    if (e) return { from: '+1' + st, number: st, local: e, why: 'sticky' };
-    if (ours.indexOf(st) >= 0) return { from: '+1' + st, number: st, local: null, why: 'sticky' };
-  }
+  /* owner 11/19: "texts get moved to the local number" — a local number for their area code ALWAYS wins (even if they last texted
+     the main number); the sticky number only counts when no local number matches */
   const e = forArea(l, ph);
   if (e) return { from: '+1' + e.number, number: e.number, local: e, why: 'area' };
+  const st = o.sticky && phone10(o.sticky.number);
+  if (st && st.length === 10) {
+    const e2 = byNumber(l, st);
+    if (e2) return { from: '+1' + st, number: st, local: e2, why: 'sticky' };
+    if (ours.indexOf(st) >= 0) return { from: '+1' + st, number: st, local: null, why: 'sticky' };
+  }
   return { from: fb.length === 10 ? '+1' + fb : '', number: fb.length === 10 ? fb : '', local: null, why: 'main' };
 }
 function label(r){

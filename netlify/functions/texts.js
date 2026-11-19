@@ -68,7 +68,7 @@ async function send(who, b){
      held at the send itself) and the answer says so. A text to a staff cell goes now; an admin's sendNow (emergency) goes now. */
   const CQ = require('./_lib/custquiet.js');
   const staffTo = staffPhone(CD, to), override = b.sendNow === true && !!who.admin;
-  const set = await getSettings(), pk = await pickFrom(to, purpose, set, !!staffTo), from = pk.from;   /* patch LOCALNUMS: the customer's local number (sticky / area code), else as before */
+  const set = await getSettings(), pk = await pickFrom(to, purpose, set, !!staffTo), from = pk.from;   /* patch LOCALNUMS: the customer's local number (area code first, then sticky), else as before */
   const at = nowIso(), id = 'SMSO_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const r = await CQ.run(override ? 'override' : staffTo ? 'staff' : 'customer', () => MC().sendSms(to, text, from), { jobMsgId: id, by: low(who.email) });
   if (!r.ok) return { code: 502, body: { ok: false, error: 'Twilio did not send it' + (r.status ? ' (' + r.status + ')' : r.why ? ' (' + r.why + ')' : '') + '.' } };
