@@ -170,6 +170,8 @@ function css(){
   st.textContent = [
     '#gcpe{position:fixed;inset:0;z-index:' + Z + ';background:#F3F5F8;color:#14202E;display:flex;flex-direction:column;font:15px/1.4 Inter,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-text-size-adjust:100%}',
     '#gcpe *{box-sizing:border-box}',
+    /* PHONEUI: Field pages end above the app's bottom bar, which stays there and tappable (a tap on it closes this page) */
+    'html.gc-pu-app #gcpe{bottom:var(--gc-pu-tabs,0px)}',
     '#gcpe .pe-top{flex:0 0 auto;background:#0F1D2F;color:#fff;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;display:flex;align-items:center;gap:8px}',
     '#gcpe .pe-top button{min-width:44px;min-height:44px;border:0;border-radius:10px;background:rgba(255,255,255,.12);color:#fff;font:700 15px inherit;font-family:inherit;padding:0 12px;cursor:pointer}',
     '#gcpe .pe-tt{flex:1;min-width:0}#gcpe .pe-tt b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#gcpe .pe-tt small{display:block;color:#C9D3DF;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -270,7 +272,7 @@ function open(pid){
   css(); close(true);
   CUR = { pid: String(pid), mode: 'edit', gate: null, gateAt: 0, msgs: null, needs: null, signs: null, viewed: undefined, saving: false };
   CUR.lsBefore = {}; ['gc_portal_t', 'gc_portal_s', 'gc_lang'].forEach(function(k){ try { CUR.lsBefore[k] = localStorage.getItem(k); } catch (e) {} });
-  var o = D.createElement('div'); o.id = 'gcpe'; o.setAttribute('data-gc-keep', '1'); o.setAttribute('data-gcnav-ignore', '1'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('data-pid', String(pid));
+  var o = D.createElement('div'); o.id = 'gcpe'; o.setAttribute('data-gc-keep', '1'); o.setAttribute('data-gcnav-ignore', '1'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('data-pid', String(pid)); o.setAttribute('data-gc-pu-own', '1');   /* PHONEUI: not made into one of its pages (it has its own header, scroll and Back) */
   o.innerHTML = '<div class="pe-top"><button type="button" data-pe="close" aria-label="Close the customer portal">‹ Back</button><div class="pe-tt"><b></b><small></small></div></div>' +
     '<div class="pe-seg" role="tablist"><button type="button" data-pe="mode" data-m="edit" aria-pressed="true">✏️ Edit portal</button><button type="button" data-pe="mode" data-m="cust" aria-pressed="false">👁 Customer view</button></div>' +
     '<div class="pe-body"></div>';
@@ -709,6 +711,7 @@ function upload(files, label){
 W._gcPortalEd = { open: open, close: close, can: function(pid){ return can(proj(pid)); }, state: function(){ return { pid: CUR.pid, mode: CUR.mode, open: !!ov(), gate: CUR.gate, msgs: CUR.msgs, needs: CUR.needs }; }, warnings: function(pid, t){ return warnings(proj(pid), t); } };
 /* the phone's back gesture / Escape closes it like ‹ Back */
 D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && ov() && !D.querySelector('.pe-vis')) close(); });
+D.addEventListener('click', function(e){ try { if (ov() && e.target && e.target.closest && e.target.closest('#gc-fh-tabs')) close(); } catch (x) {} }, true);   /* a bottom-bar tab goes where it says: this page closes */
 try { console.log('[GC] 👤 Customer portal: open, see as the customer, edit (patch PORTALED) — _gcPortalEd'); } catch (e) {}
 })();
 </script>

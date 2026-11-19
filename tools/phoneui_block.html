@@ -298,6 +298,7 @@ try {
   var NOT_PAGE = /^(_gcJobPick|_gcJobDash|gcuOv|gc-fh-tabs|root|gc-pu-sat|_gcNavBk|_gcAppHead|_masterSearch|gc-update-bar|gc-bw-update)$/;
   function pageable(L){
     if (!L || L.parentNode !== D.body || L.nodeType !== 1 || /^(SCRIPT|STYLE|LINK)$/.test(L.tagName)) return false;
+    if (L.hasAttribute('data-gc-pu-own')) return false;   /* PORTALED: a layer that is already its own full-screen app page (its own ‹ Back header, its own scroll, the tab bar covered) */
     if (L.classList.contains('gc-pu-page')) return true;
     if ((L.id && (NOT_PAGE.test(L.id) || /^gc-auth|gate$|splash|^_gcLock|toast/i.test(L.id))) || /toast|gc-ra-sheet|gc-fh-sheet|gcautai-pill/.test(String(L.className || ''))) return false;
     /* cheap first: big enough to be a screen (offset sizes are kept by the browser), only then its computed style */
