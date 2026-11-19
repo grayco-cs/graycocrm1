@@ -248962,6 +248962,8 @@ try {
             if (mine && e.tagName === 'BUTTON' && !(parseFloat(r.bw[0]) > 0)) e.style.setProperty('border', '1px solid #cbd5e1', 'important');
           } else mine = e.classList.contains('gc-pu-card') ? WHITE : [245, 247, 250, 1];
           var own = mine || (c && c[3] > 0.5 ? c : null), bg = own || effBg(e); BG.set(e, bg);
+          /* a lone ‹ / › that steps a date (My Schedule's week) is not a Back: shown as ◀ / ▶ so nobody taps it to leave */
+          if (e.tagName === 'BUTTON' && e.closest('.gc-pu-sheet .bd') && e.nextElementSibling && /today|›/i.test(e.nextElementSibling.textContent || '') || (e.tagName === 'BUTTON' && e.closest('.gc-pu-sheet .bd') && e.previousElementSibling && /today|‹|◀/i.test(e.previousElementSibling.textContent || ''))) { var tt = (e.textContent || '').trim(); if (tt === '‹' || tt === '›') { e.textContent = tt === '‹' ? '◀' : '▶'; if (!e.getAttribute('aria-label')) e.setAttribute('aria-label', tt === '‹' ? 'Previous' : 'Next'); return; } }
           if (picked) return;
           var direct = false; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) { direct = true; break; }
           if (!direct && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return;
@@ -249020,11 +249022,13 @@ try {
     if (!d || d.parentNode !== tabs) {
       if (d) d.remove();
       d = D.createElement('div'); d.id = 'gc-pu-dock'; d.setAttribute('data-gc-keep', '1'); d.innerHTML = '<span class="gc-pu-dk" data-k="mic"></span><span class="gc-pu-dk" data-k="hub"></span>';
-      tabs.insertBefore(d, tabs.firstChild);
+      tabs.appendChild(d);
     }
+    /* (the last child, drawn first with order:-1: the bar's own nth-child styles — the raised 🏠 Home — stay on their tabs) */
+    if (d.nextElementSibling) tabs.appendChild(d);
     tabs.classList.add('gc-pu-hasdock');
     /* the bar can be drawn again by its own code: watch it and put the row back */
-    if (!tabs.__puMo) { try { tabs.__puMo = new MO(function(){ if (!D.getElementById('gc-pu-dock') || D.getElementById('gc-pu-dock').parentNode !== tabs) { try { dock(); } catch (e) {} } }); tabs.__puMo.observe(tabs, { childList: true }); } catch (e) {} }
+    if (!tabs.__puMo) { try { tabs.__puMo = new MO(function(){ var x = D.getElementById('gc-pu-dock'); if (!x || x.parentNode !== tabs || x.nextElementSibling) { try { dock(); } catch (e) {} } }); tabs.__puMo.observe(tabs, { childList: true }); } catch (e) {} }
     var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
     if (mic && mic.parentNode !== sm) { sm.insertBefore(mic, sm.firstChild); if (!sm.querySelector('.gc-pu-l')) { var l1 = D.createElement('span'); l1.className = 'gc-pu-l'; l1.textContent = 'Voice note'; sm.appendChild(l1); } }
     if (hub && hub.parentNode !== sh) { if (!sh.querySelector('.gc-pu-l')) { var l2 = D.createElement('span'); l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }

@@ -315,6 +315,14 @@ try {
     if (TAG !== 'before') ok(lb && lb.b <= lb.tTop + 0.5 && lb.hit, 'To-Do: scrolled to the end, the last button is above the bottom bar and the dock, and tappable', lb);
   }
   P.push(await checkPanel(a, 'OWNER', 'problemreports', () => a.ev(() => window._gcReportProb.list()), { cls: 'gc-rpb', cardOk: true }));
+  P.push(await checkPanel(a, 'OWNER', 'myreports', async () => { await a.ev(() => { if (window._gcReportProb && window._gcReportProb.mine) window._gcReportProb.mine(); }); }));
+  {
+    /* My Schedule's week arrows are not a Back (they read ◀ / ▶) */
+    await home(a); await tap(a, '#gc-fh-tabs [data-t="ra-sched"],#gc-fh-tabs [data-t="sched"]'); await sleep(1500);
+    await a.ev(() => { const w = [...document.querySelectorAll('.gc-ra-sheet button')].find(b => /^week$/i.test(b.textContent.trim())); w && w.click(); }); await sleep(1500);
+    const ar = await a.ev(() => [...document.querySelectorAll('.gc-ra-sheet .bd button')].map(b => b.textContent.trim()).filter(t => /^(‹|›|◀|▶)$/.test(t)));
+    if (TAG !== 'before') ok(ar.length >= 2 && !ar.includes('‹') && !ar.includes('›'), 'My Schedule → Week: the date arrows read ◀ / ▶ (no lone ‹ that looks like a Back)', ar);
+  }
   P.push(await checkPanel(a, 'OWNER', 'away', () => a.ev(() => window._gcAway.open())));
   P.push(await checkPanel(a, 'OWNER', 'portal', async () => { await home(a); await a.ev(() => { const b = [...document.querySelectorAll('#_gcJobPick button')].find(x => /Customer portal/.test(x.textContent)); b && b.click(); }); }));
   const done = P.filter(Boolean);
