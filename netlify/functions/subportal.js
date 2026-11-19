@@ -70,7 +70,7 @@ const SIGN_SECS = 8 * 3600;
 const MAX_ROW = 900 * 1024;
 const OFFICE = 'office@grayco-cs.com';
 const OFFICE_PHONE = '901-585-0944';
-const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions', 'acks'];   /* patch SYS2: acks = a sub's "I acknowledge addendum #n" */
+const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions', 'acks', 'mquotes'];   /* patch SUPPLIER: mquotes = a supplier's material quote */   /* patch SYS2: acks = a sub's "I acknowledge addendum #n" */
 const KEYED = ['plans', 'subdocs', 'takeoff', 'bid-draft'];
 const CLOSED = ['closed', 'won', 'lost'];
 /* patch LD2: the Lead Inbox writes DRAFT bid jobs here (netlify/functions/_lib/bid-portal.js: status "draft",
@@ -227,7 +227,7 @@ function rowFor(collection, rec){
   else if (collection === 'messages') { r.job_id = s(rec.jobId); r.user_id = threadOf(rec); }
   else if (collection === 'invites') { r.job_id = s(rec.jobId); r.email = low(rec.email); }
   else if (collection === 'questions') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
-  else if (collection === 'acks') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
+  else if (collection === 'acks' || collection === 'mquotes') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }   /* patch SUPPLIER: + mquotes */
   else if (collection === 'planreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.email); }   /* patch PLANREQ */
   return r;
 }
@@ -339,13 +339,15 @@ async function whoAmI(event){
     }
     return { email: t.email, uid: t.uid, staff: staff, profile: profile, isAdmin: true, isSub: false, approved: true };
   }
-  if (!profile || profile.role !== 'sub') return { email: t.email, uid: t.uid, staff: null, profile: null, isAdmin: false, isSub: false, approved: false };
+  if (!profile || (profile.role !== 'sub' && profile.role !== 'supplier')) return { email: t.email, uid: t.uid, staff: null, profile: null, isAdmin: false, isSub: false, approved: false };
   subAcctCheck(profile, t);   /* patch SUBACCT: turned off / signed out everywhere by an owner */
   if (profile.authUserId !== t.uid) {
     profile = Object.assign({}, profile, { authUserId: t.uid });
     await upsertRows([rowFor('users', profile)], t.email);
   }
-  return { email: t.email, uid: t.uid, staff: null, profile: profile, isAdmin: false, isSub: true, approved: profile.approved === true };
+  /* patch SUPPLIER: a supplier signs in the same way (isSub: the same account paths); isSupplier keeps the sub-only parts (labour bids,
+     COI papers) away from them and gives them material quotes + their POs / bills */
+  return { email: t.email, uid: t.uid, staff: null, profile: profile, isAdmin: false, isSub: true, isSupplier: profile.role === 'supplier', approved: profile.approved === true };
 }
 function needSub(who, approvedOnly){
   if (who.isAdmin) return;
@@ -355,6 +357,7 @@ function needSub(who, approvedOnly){
 
 /* ── what a subcontractor may see ─────────────────────────────────────────── */
 async function subScope(who){
+  if (who.isSupplier) return supplierScope(who);   /* patch SUPPLIER */
   const me = who.profile.id;
   const [jobs, invites, myBids] = await Promise.all([
     listRows([eq('collection', 'jobs')]),
@@ -375,6 +378,90 @@ async function subScope(who){
     });
   }
   return { me: me, jobs: visible, biddable: biddable, invites: invites, myBids: myBids };
+}
+
+/* ── patch SUPPLIER (owner 11/19: "Vendors, not subs, should also be able to have a portal and see these jobs for bid and their own jobs
+   too. Basically a sub portal but for suppliers.") ── a supplier account (users row role 'supplier', signed up / approved like a sub):
+   · sees only the jobs an admin opened for MATERIAL quotes (job.suppliersCanQuote, public or invited, open, not a draft) and the jobs
+     they already quoted — the plans / specs / addenda subs see (_lib/subvis.js), the job's material list, never the trades' labour scopes,
+     the bid form lines or anyone else's quote;
+   · sends material quotes (mquotes: line items, lead time, valid until, notes, files) — never a labour bid; no COI needed (a W-9 helps);
+   · sees their own POs (gc_kv gc_supplier_pos, sent ones) and supplier bills (invs type 'supplier') from the CRM, read-only, once GrayCo
+     linked the account to the CRM vendor (crmVendorId; Suppliers → CRM record, a likely match by e-mail or tax ID offered). */
+async function supplierScope(who){
+  const me = who.profile.id;
+  const [jobs, invites, mine] = await Promise.all([
+    listRows([eq('collection', 'jobs')]),
+    listRows([eq('collection', 'invites'), eq('email', who.email)]),
+    listRows([eq('collection', 'mquotes'), eq('user_id', me)])
+  ]);
+  const invited = new Set(invites.map(function(r){ return r.job_id; }));
+  const quoted = new Set(mine.map(function(r){ return r.job_id; }));
+  const visible = {}, quotable = {};
+  if (who.approved) {
+    jobs.forEach(function(r){
+      const j = r.data || {};
+      if (isDraft(j) || isGone(j)) return;
+      const canSee = j.suppliersCanQuote === true && ((j.visibility || 'public') === 'public' || invited.has(r.id));
+      const open = CLOSED.indexOf(low(j.status)) < 0;
+      if (quoted.has(r.id) || (canSee && open)) visible[r.id] = r;
+      if (canSee && open && !j.quotesClosed) quotable[r.id] = true;
+    });
+  }
+  return { me: me, jobs: visible, biddable: {}, quotable: quotable, invites: invites, myBids: [], myQuotes: mine, supplier: true };
+}
+/* what a supplier sees of a job: the sub view without the trades' labour scopes / bid form, plus the material list */
+function supplierJobView(j){
+  const v = subJobView(j, []);
+  delete v.tradeScopes; delete v.bidForm; delete v.bidLines; delete v.bidResultsSharing;
+  v.materialList = s(j.materialList).slice(0, 20000);
+  return v;
+}
+const MQ_STATUS = ['submitted', 'accepted', 'declined'];
+function mqLines(v){
+  return arr(v).slice(0, 200).map(function(l, i){
+    const qty = num(l.qty), price = num(l.unitPrice);
+    return { id: s(l.id).slice(0, 40) || 'l' + (i + 1), desc: s(l.desc).slice(0, 300), qty: qty, unit: s(l.unit).slice(0, 20), unitPrice: money(price), total: money(qty * price) };
+  }).filter(function(l){ return l.desc; });
+}
+async function supplierWork(profile){
+  const data = await crmData();
+  const gone = deletedTest(data);
+  const vendors = arr(data.vendors).filter(function(v){ return v && s(v.id) && !gone('vendors', v.id); });
+  const v = profile.crmVendorId ? vendors.find(function(x){ return s(x.id) === s(profile.crmVendorId); }) : null;
+  if (!v) return { linked: false, supplier: true };
+  const names = new Set([norm(v.name), norm(v.company)].filter(Boolean));
+  const isMine = function(name, id){ return (id && s(id) === s(v.id)) || (name && names.has(norm(name))); };
+  const projects = arr(data.projects).filter(function(p){ return !gone('projects', p.id); });
+  const projById = {}; projects.forEach(function(p){ projById[s(p.id)] = p; });
+  let pos = []; try { pos = arr((await kvRead(['gc_supplier_pos'])).gc_supplier_pos); } catch (e) { pos = []; }
+  const DRAFT = /^(waiting|needs-supplier|draft|cancel+ed|void|deleted)$/i;
+  const poOut = pos.filter(function(po){ return po && isMine(po.supplier, po.vendorId) && !DRAFT.test(s(po.status)); }).map(function(po){
+    const p = projById[s(po.pid)] || {};
+    return { id: s(po.id), poNo: s(po.poNo), job: s(p.name), address: s(p.address || p.jobAddress), status: s(po.status), sentAt: ymd(po.sentAt || po.updatedAt || po.createdAt),
+      items: arr(po.items).slice(0, 200).map(function(i){ return { desc: s(i.desc).slice(0, 300), qty: num(i.qty), unit: s(i.unit).slice(0, 20) }; }) };   /* no GrayCo cost */
+  }).sort(function(a, b){ return b.sentAt.localeCompare(a.sentAt); });
+  const seen = {};
+  const bills = arr(data.invs).concat(arr(data.invoices)).filter(function(iv){
+    if (!iv || low(iv.type) !== 'supplier' || gone('invs', iv.id) || seen[s(iv.id)]) return false; seen[s(iv.id)] = 1;
+    return isMine(iv.supplier || iv.vendor || iv.company, iv.vendorId);
+  }).map(function(iv){
+    const paid = low(iv.status) === 'paid' || iv.paid === true, p = projById[s(iv.pid)] || {};
+    return { id: s(iv.id), number: s(iv.invNum || iv.ref), job: s(p.name), po: s(iv.po || p.autoPO), amount: money(iv.amt), billDate: ymd(iv.billDate || iv.date), due: ymd(iv.dueDate || iv.due),
+      state: paid ? 'paid' : low(iv.status) === 'void' ? 'void' : 'open', paidDate: paid ? ymd(iv.paidDate) : '', checkNo: paid ? s(iv.checkNo) : '' };
+  }).filter(function(b){ return b.state !== 'void'; }).sort(function(a, b){ return (b.paidDate || b.billDate).localeCompare(a.paidDate || a.billDate); });
+  const jobIds = {}; poOut.forEach(function(x){ if (x.job) jobIds[x.job] = 1; }); bills.forEach(function(x){ if (x.job) jobIds[x.job] = 1; });
+  const sum = function(f){ return money(bills.filter(f).reduce(function(t, x){ return t + x.amount; }, 0)); };
+  return { linked: true, supplier: true, crm: { name: s(v.name || v.company), email: low(v.email), phone: s(v.phone) },
+    pos: poOut, bills: bills, jobs: Object.keys(jobIds).sort(), totals: { open: sum(function(x){ return x.state === 'open'; }), paidThisYear: sum(function(x){ return x.state === 'paid' && x.paidDate.slice(0, 4) === String(new Date().getFullYear()); }) } };
+}
+/* the CRM's vendors (not subs) for linking a supplier account — staff only; tax ID last 4 for the "likely match" */
+async function crmVendors(){
+  const data = await crmData(), gone = deletedTest(data);
+  return arr(data.vendors).filter(function(v){ return v && s(v.id) && v.isSub !== true && !gone('vendors', v.id); }).map(function(v){
+    const tax = s(v.taxId || v.ein || v.tin).replace(/\D/g, '');
+    return { id: s(v.id), name: s(v.name || v.company), email: low(v.email), phone: s(v.phone), cat: s(v.cat || v.category || v.trade), taxLast4: tax ? tax.slice(-4) : '' };
+  }).sort(function(a, b){ return a.name.localeCompare(b.name); });
 }
 
 async function staffUsers(){
@@ -455,6 +542,12 @@ async function loadKey(who, key, ctx){
       return all.filter(function(r){ return r.id === sc.me || (r.data.role === 'admin' && staff.has(low(r.email))); })
         .map(function(r){ return r.id === sc.me ? r.data : pick(r.data, STAFF_PUBLIC_FIELDS); });
     }
+    if (key === 'mquotes') return sc.supplier ? sc.myQuotes.map(function(r){ return r.data; }) : [];   /* patch SUPPLIER: their own quotes only */
+    if (key === 'jobs' && sc.supplier) {   /* patch SUPPLIER */
+      const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });
+      return (await estFill(ps.jobs, ctx)).map(function(j){ const v = supplierJobView(j); v.quotable = !!sc.quotable[j.id]; return v; });
+    }
+    if (key === 'bids' && sc.supplier) return [];
     if (key === 'jobs') { const tr = who.profile && Array.isArray(who.profile.trades) ? who.profile.trades : [];   /* patch SYS2 */
       const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });   /* patch BIDPO: the CRM's PO (never a new one from a sub's load) */
       return (await estFill(ps.jobs, ctx)).map(function(j){   /* patch BIDEST: the Senior Estimator next to the PM */
@@ -560,10 +653,10 @@ async function saveCollection(who, key, upsert, del, ctx){
         rec.email = old ? low(old.email) : low(rec.email);
         if (!okEmail(rec.email)) continue;
         if (!old && (rec.role === 'admin' || staff.has(rec.email))) continue;   // GrayCo people come from Team access in the CRM
-        rec.role = staff.has(rec.email) ? 'admin' : (old && old.role === 'admin' ? 'former' : 'sub');
+        rec.role = staff.has(rec.email) ? 'admin' : (old && old.role === 'admin' ? 'former' : ((old ? old.role : rec.role) === 'supplier' ? 'supplier' : 'sub'));   /* patch SUPPLIER: a supplier stays one */
         if (old) { rec.authUserId = old.authUserId; rec.createdAt = old.createdAt || rec.createdAt; }
         if (old) ['signinDisabled', 'signinDisabledAt', 'signinDisabledBy', 'signedOutAt', 'signedOutBy', 'tempPasswordAt', 'tempPasswordBy'].forEach(function(k){ if (old[k] !== undefined) rec[k] = old[k]; else delete rec[k]; });   /* patch SUBACCT: only Admin → 🔐 Sub portal accounts sets these */
-        if (rec.role === 'sub' && rec.approved === true && old && old.approved !== true) notes.push({ kind: 'approved', user: rec });
+        if ((rec.role === 'sub' || rec.role === 'supplier') && rec.approved === true && old && old.approved !== true) notes.push({ kind: 'approved', user: rec });
         rows.push(rowFor('users', rec));
       }
       for (const id of del) {
@@ -592,6 +685,14 @@ async function saveCollection(who, key, upsert, del, ctx){
           if (rec.noticeStatus === 'approve' && (!old || old.noticeStatus !== 'sent')) { notes.push({ kind: 'answer-to-bidders', q: rec }); rec.noticeStatus = 'sent'; rec.noticeSentAt = new Date().toISOString(); rec.noticeBy = who.email; }
           if (rec.visibility === 'private' && rec.noticeStatus === 'waiting') delete rec.noticeStatus;
           rows.push(rowFor('questions', rec));
+        }
+      } else if (key === 'mquotes') {   /* patch SUPPLIER: GrayCo marks a material quote accepted / declined (with a note); the supplier's lines stay as sent */
+        for (const rec0 of upsert) {
+          const old = existing[rec0.id] && existing[rec0.id].data; if (!old) continue;
+          const st = MQ_STATUS.indexOf(s(rec0.status)) > -1 ? s(rec0.status) : old.status;
+          const rec = Object.assign({}, old, { status: st, gcNote: s(rec0.gcNote).slice(0, 2000) });
+          if (st !== old.status) { rec.decidedAt = new Date().toISOString(); rec.decidedBy = who.email; }
+          rows.push(rowFor('mquotes', rec));
         }
       } else upsert.forEach(function(rec){
         if (key === 'jobs') {   /* patch LD2: a draft stays a draft until "Publish to bid portal" */
@@ -638,6 +739,31 @@ async function saveCollection(who, key, upsert, del, ctx){
       upsert.filter(function(x){ return x.id === me; }).forEach(function(x){
         rows.push(rowFor('users', Object.assign({}, p, pick(x, SUB_PROFILE_FIELDS), { updatedAt: new Date().toISOString() })));
       });
+    } else if (key === 'bids' && who.isSupplier) {
+      if (upsert.length) throw Fail(403, 'Suppliers send material quotes, not labour bids.');   /* patch SUPPLIER */
+    } else if (key === 'mquotes') {   /* patch SUPPLIER: a supplier's material quote — only on a job open for material quotes */
+      if (!who.isSupplier) { if (upsert.length) throw Fail(403, 'Material quotes are for supplier accounts.'); }
+      else for (const x of upsert) {
+        const old = existing[x.id];
+        if (old && old.user_id !== me) continue;
+        const prev = old ? old.data : null;
+        const jobId = prev ? prev.jobId : s(x.jobId);
+        if (prev && prev.status && prev.status !== 'submitted') throw Fail(409, 'GrayCo has already decided on this quote; it can no longer be changed.');
+        if (!sc.quotable[jobId]) throw Fail(403, 'This job is not open for material quotes.');
+        checkRefs(x, prev, me);
+        const lines = mqLines(x.lines);
+        if (!lines.length) throw Fail(400, 'Add at least one line to the quote.');
+        const q = Object.assign({}, prev || {}, {
+          id: x.id, jobId: jobId, userId: me, userName: p.name, userCompany: p.company, userEmail: p.email, userPhone: p.phone || '',
+          lines: lines, subtotal: money(lines.reduce(function(t, l){ return t + l.total; }, 0)), tax: money(x.tax), freight: money(x.freight),
+          leadTime: s(x.leadTime).slice(0, 120), validUntil: day10(x.validUntil), notes: s(x.notes).slice(0, 4000), docs: arr(x.docs).slice(0, 10),
+          status: 'submitted', submittedAt: prev ? prev.submittedAt : new Date().toISOString(), updatedAt: new Date().toISOString()
+        });
+        q.total = money(q.subtotal + q.tax + q.freight);
+        if (!prev) notes.push({ kind: 'new-mquote', q: q, job: sc.jobs[jobId] && sc.jobs[jobId].data });
+        rows.push(rowFor('mquotes', q));
+      }
+      del.forEach(function(id){ const old = existing[id]; if (who.isSupplier && old && old.user_id === me && s(old.data.status || 'submitted') === 'submitted') dropKeys.push('mquotes/' + id); });
     } else if (key === 'bids') {
       /* PAPERS (owner 11/11: "have to have valid credentials in the portal before a bid is accepted"): the server checks too, not only the page */
       if (upsert.length) { const miss = await papersMissing(me); if (miss) throw Fail(403, miss); }
@@ -787,7 +913,7 @@ async function register(body){
   if (!body.force) {
     // Possible duplicates: only the company name and why it matched go back — no contact details.
     const digits = function(v){ return s(v).replace(/\D/g, ''); };
-    const dupes = users.filter(function(r){ return r.data.role === 'sub'; }).map(function(r){
+    const dupes = users.filter(function(r){ return r.data.role === (p.acctType === 'supplier' ? 'supplier' : 'sub'); }).map(function(r){
       const u = r.data, why = [];
       if (sameCompany(p.company, u.company) || (p.dbaName && sameCompany(p.dbaName, u.company)) || (u.dbaName && sameCompany(p.company, u.dbaName))) why.push('company name');
       if (p.businessAddress && u.businessAddress && norm(p.businessAddress) === norm(u.businessAddress)) why.push('address');
@@ -813,7 +939,7 @@ async function register(body){
   const profile = {
     id: 'u_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'),
     authUserId: s(authUser.id || (authUser.user && authUser.user.id)),
-    username: email, email: email, role: 'sub', approved: invited,
+    username: email, email: email, role: p.acctType === 'supplier' ? 'supplier' : 'sub', approved: invited,   /* patch SUPPLIER: a supplier account (approved by GrayCo the same way) */
     name: clip(p.name, 80), phone: clip(p.phone, 40), contactTitle: clip(p.contactTitle, 80),
     company: clip(p.company, 120), dbaName: clip(p.dbaName, 120),
     businessAddress: clip(p.businessAddress), businessCity: clip(p.businessCity, 80),
@@ -1388,14 +1514,14 @@ async function notify(n){
     const u = n.user;
     const owners = String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail);
     /* patch SIGNUPNOTE (owner 11/13: "make sure we get the approval notification"): a phone notice to the owners too, and the e-mail opens ✅ Approvals in the CRM */
-    try { await pushTo(owners, u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
-    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
-      mailHtml('New subcontractor sign-up', [
+    try { await pushTo(owners, u.role === 'supplier' ? '🧱 New supplier waiting for approval' : u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
+    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.role === 'supplier' ? '🧱 Approve new supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
+      mailHtml(u.role === 'supplier' ? 'New supplier sign-up' : 'New subcontractor sign-up', [
         '<b>' + esc(u.company) + '</b>' + (u.dbaName ? ' (DBA ' + esc(u.dbaName) + ')' : ''),
         esc(u.name) + ' · ' + esc(u.email) + (u.phone ? ' · ' + esc(u.phone) : ''),
         u.trades && u.trades.length ? 'Trades: ' + esc(u.trades.join(', ')) : '',
-        u.approved ? 'They came from a job invite, so they already see that job. Please check them: <b>✅ Approvals → 🏗 Bid portal</b> (✅ Approve, or ✕ Deny to take their access away).' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
-      ].filter(Boolean), { href: crmUrl(), label: 'Open ✅ Approvals' }));
+        u.role === 'supplier' ? 'A <b>supplier</b> (materials) account. Approve or deny it on the bid site: <b>Pending</b> (sign in at bids.grayco-cs.com), then link it to the CRM vendor under <b>Suppliers</b>.' : u.approved ? 'They came from a job invite, so they already see that job. Please check them: <b>✅ Approvals → 🏗 Bid portal</b> (✅ Approve, or ✕ Deny to take their access away).' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
+      ].filter(Boolean), u.role === 'supplier' ? { href: portalLink(), label: 'Open the bid site' } : { href: crmUrl(), label: 'Open ✅ Approvals' }));
   }
   if (n.kind === 'approved') {
     /* patch SIGNUPNOTE: the 'you are approved' e-mail answers their own sign-up — it goes in ⏸ data-entry mode too */
@@ -1413,6 +1539,14 @@ async function notify(n){
         'GrayCo Construction Services approved <b>' + esc(n.user.company) + '</b> for the GrayCo bid site.',
         'Sign in at bids.grayco-cs.com with your e-mail and password to see open jobs and plans, and to bid.'
       ], { href: portalLink(), label: 'Open bids.grayco-cs.com' }));
+  }
+  if (n.kind === 'new-mquote' && n.job) {   /* patch SUPPLIER */
+    const q = n.q;
+    return sendMail(await staffEmailsFor(n.job), 'New material quote — ' + s(n.job.title) + ' — ' + q.userCompany,
+      mailHtml('New material quote on ' + s(n.job.title), [
+        '<b>' + esc(q.userCompany) + '</b> (' + esc(q.userName) + ') quoted <b>$' + num(q.total).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</b> for ' + q.lines.length + ' line(s).',
+        q.leadTime ? 'Lead time: ' + esc(q.leadTime) : ''
+      ].filter(Boolean), { href: portalLink(), label: 'Review the quote' }));
   }
   if (n.kind === 'new-bid' && n.job) {
     const b = n.bid;
@@ -1846,7 +1980,7 @@ exports.handler = async function (event) {
     const ctx = {};
     if (action === 'me') {
       if (!who.profile) return J(200, { user: null, error: 'This sign-in has no subcontractor portal account. Register first, or call GrayCo ' + OFFICE_PHONE + '.' });
-      return J(200, { user: who.profile, role: who.isAdmin ? 'admin' : 'sub' });
+      return J(200, { user: who.profile, role: who.isAdmin ? 'admin' : (who.isSupplier ? 'supplier' : 'sub') });
     }
     needSub(who, false);
     if (action === 'load') {
@@ -1891,12 +2025,17 @@ exports.handler = async function (event) {
     if (action === 'my-work') {
       if (who.isAdmin && !body.userId) return J(400, { error: 'Pick a subcontractor.' });
       const target = who.isAdmin ? (await getRow('users', s(body.userId)) || {}).data : who.profile;
-      if (!target || target.role !== 'sub') return J(404, { error: 'No such subcontractor.' });
+      if (!target || (target.role !== 'sub' && target.role !== 'supplier')) return J(404, { error: 'No such subcontractor.' });
       if (!who.isAdmin && !who.approved) return J(403, { error: 'Your account is waiting for GrayCo to approve it.' });
+      if (target.role === 'supplier') return J(200, await supplierWork(target));   /* patch SUPPLIER: their POs + supplier bills */
       return J(200, await myWork(target));
     }
     if (action === 'po-link') return J(200, await poLink(who, body));   /* patch BIDPO: 🔗 Link to CRM job / Change link */
     if (action === 'po-cands') return J(200, await poCands(who, body));
+    if (action === 'crm-vendors') {   /* patch SUPPLIER: the CRM's vendors, for linking a supplier account */
+      if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
+      return J(200, { vendors: await crmVendors() });
+    }
     if (action === 'crm-subs') {
       if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
       return J(200, { subs: await crmSubs() });
