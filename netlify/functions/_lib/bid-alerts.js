@@ -51,11 +51,12 @@
 
 const BD = require('./bid-due.js');
 function HOLD(){ return require('./lead-hold.js'); }   /* patch LEADHOLD */
-function LM(){ return require('./leadmsg.js'); }   /* patch LEADMAILMSG: "💬 What the customer said" + call / text buttons */
+function LM(){ return require('./leadmsg.js'); }
+function LW(){ return require('./lead-watch.js'); }   /* patch LEADWATCH: what a lead is, its clock */   /* patch LEADMAILMSG: "💬 What the customer said" + call / text buttons */
 const KA = 'gc_lead_inbox_alerts';
 const RETRY_H = 24, REMIND_EARLY = 50, REMIND_LATE = 70, TODAY_AT = '08:00';
 const NAG_FROM = '07:00', NAG_TO = '11:00', NAG_MAX_AGE_D = 30;   /* patch DUENAG */
-const STL_FIRST_H = 4, STL_SECOND_H = 24, STL_MAX_DAYS = 7, QUIET_FROM = '21:00', QUIET_TO = '07:00';
+const STL_FIRST_H = 4, STL_SECOND_H = 24, STL_OWNER_H = 48, STL_MAX_DAYS = 7, QUIET_FROM = '21:00', QUIET_TO = '07:00';
 
 function make(d){
   const { env, s, low, arr, nowIso, sb, kvCas, kvGet } = d;
@@ -483,13 +484,13 @@ function make(d){
     arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
     arr(leads).forEach(l => {
       if (!l || !l.id || !s(l.bidDue) || closed(l)) return;
-      out.push(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })));
+      out.push(Object.assign(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })), { lwBid: LW().isBid(l) }));   /* LEADWATCH */
     });
     arr(items).forEach(it => {
       if (!it || it.stub || !s(it.bidDue) || haveInbox[it.id]) return;
       const lid = 'LEADIN-' + s(it.id).replace(/^LI-/, '');
       if (have[lid] || (tombs && tombs['leads:' + lid]) || closed(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
-      out.push(entry(Object.assign({}, it, { key: lid })));
+      out.push(Object.assign(entry(Object.assign({}, it, { key: lid })), { lwBid: LW().isBid(Object.assign({}, it.leadExtra || {}, it)) }));   /* LEADWATCH */
     });
     return out;
   }
@@ -515,7 +516,10 @@ function make(d){
     for (const x of mine) {
       /* 1 hour / today: the admins and the assigned person; the day before: the assigned person */
       const who = [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean);   /* patch HOT2: + coAssignees */
-      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, who) : await deliver(mailRemind(x, x.kind), who);
+      /* LEADWATCH: a bid invite's own due reminder by text to the Estimator role (the e-mail as before; whoever got the text gets no e-mail) */
+      let bc = null; if (x.lwBid) { try { bc = await require('./smsalert.js').bidDueText(x.kind, x); } catch (e) { bc = null; } }
+      const btx = bc && Array.isArray(bc.to) ? bc.to : [];
+      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, who, btx) : await deliver(mailRemind(x, x.kind), who, null, btx);
       out.list.push({ key: x.key, kind: x.kind, ok: r.ok, why: r.why || '', to: r.to });
       if (r.ok) out.sent++; else out.failed++;
       await kvCas(KA, v => {
@@ -704,7 +708,7 @@ function make(d){
     const k = x.key + '|' + x.assigneeEmail; let claim = false;
     await kvCas(KA, v => { const st = loadState(v); st.assigned = st.assigned || {}; if (st.assigned[k]) return undefined; st.assigned[k] = nowIso(); claim = true; return st; });
     if (!claim) return { sent: 0, already: true };
-    let cell = null; try { cell = await require('./smsalert.js').assigned(x); } catch (e) {}   /* patch SMSALERT */   /* TEXTFIRST: the text first — texted → no e-mail too */
+    let cell = null; try { cell = await require('./smsalert.js').assigned(x, lead); } catch (e) {}   /* patch SMSALERT */   /* LEADWATCH: + the lead, for the PM's GrayCo lead text */   /* TEXTFIRST: the text first — texted → no e-mail too */
     const r = await deliver(mailAssigned(x), null, [x.assigneeEmail], cell && Array.isArray(cell.to) ? cell.to : []);
     if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
     try { if (await require('./automations.js').isOn('lead_customer_autotext')) await require('./smsalert.js').lsaPmText(lead, x); } catch (e) {}   /* NOCUSTTEXT (owner 11/19): off unless switched on */   /* patch LSAFLOW: the LSA customer gets the PM's name and number */
@@ -734,6 +738,12 @@ function make(d){
   function inbound(l){
     if (!l) return false;
     if (l.softLead || (l.leadExtra && l.leadExtra.softLead)) return false;   /* patch MKT2: a guide download is a soft lead — no reach-out clock */
+    /* LEADWATCH (owner 11/19): EVERY customer lead is on the clock — a phone / missed-call / text lead, one the office typed in, a referral,
+       Google LSA, the website, a lead source — not only the website and the listed sources; never a bid invite, a permit or a RoofScout prospect */
+    return LW().isCustomer(Object.assign({}, l.leadExtra || {}, l));
+  }
+  function inbound0(l){   /* the rule before LEADWATCH (kept for reference; not used) */
+    if (!l) return false;
     if (isWebsite(l)) return true;
     if (/commercial|government/i.test(s(l.leadKind || l.type))) return false;
     const src = [s(l.source), s(l.leadSource), s(l.subSource)].join(' ');
@@ -746,7 +756,8 @@ function make(d){
   function bornAt(l){ for (const f of ['createdAt', 'receivedAt', 'created', 'dateAdded']) { const x = ms(l[f]); if (isFinite(x)) return x; } const r = ms(l.leadExtra && l.leadExtra.receivedAt); return isFinite(r) ? r : ms(l.date); }
   const SYS_BY = /lead inbox|system|website|server|crm|auto/i, SYS_KIND = /creat|assign|import|added|system|auto/i;
   /* somebody reached out: the stage moved on, ✅ Contacted, or a person logged a call / follow-up / comment */
-  function contacted(l){
+  function contacted(l){ return LW().contacted(l); }   /* LEADWATCH: + a Google LSA lead's 👍 / 👎 from its PM */
+  function contacted0(l){
     const st = low(l.stage);
     if (st && !/^(new|new lead|lead|unassigned)$/.test(st)) return true;
     for (const f of ['contactedAt', 'lastContact', 'lastContacted', 'lastContactAt', 'followUpDone', 'firstContactAt']) if (s(l[f])) return true;
@@ -759,7 +770,7 @@ function make(d){
   function agoTxt(h){ return h >= 24 ? (Math.floor(h / 24) === 1 ? '1 day' : Math.floor(h / 24) + ' days') : h + ' hours'; }
   function contactLine(x){ const c = x.contact || {}; return [x.contactName || c.name, x.phone || c.phone, x.email || c.email].filter(Boolean).join(' · '); }
   function mailSpeed(x, kind){
-    const who = contactLine(x), h = kind === 'unasg24' || kind === 'pm24' ? STL_SECOND_H : STL_FIRST_H;
+    const who = contactLine(x), h = kind === 'pm48' ? STL_OWNER_H : kind === 'unasg24' || kind === 'pm24' ? STL_SECOND_H : STL_FIRST_H;
     let subject, head, intro;
     if (kind === 'unasg' || kind === 'unasg24') {
       subject = '👤 Assign this lead: ' + x.title + ' — came in ' + agoTxt(h) + ' ago, no PM yet';
@@ -767,13 +778,13 @@ function make(d){
     } else {
       subject = '⏰ Reach out: ' + x.title + ' — assigned ' + agoTxt(h) + ' ago, not contacted yet';
       head = 'GrayCo — reach out to your new lead'; intro = 'This lead was assigned to <b>' + esc(x.assignee) + '</b> ' + agoTxt(h) + ' ago and nobody has reached out yet. Call or e-mail them, then press <b>✅ Contacted</b> on the lead (or move its stage to Contacted).'
-        + (kind === 'pm24' ? ' <b>The admins get this one too.</b>' : '');
+        + (kind === 'pm48' ? ' <b>The owners are told too.</b>' : '');
     }
     subject = subject.slice(0, 250);
     const row = '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b>' + (who ? '<br><span style="font-size:13px"><b>Contact:</b> ' + esc(who) + '</span>' : '')
       + (x.address ? '<br><span style="font-size:13px;color:#555">' + esc(x.address) + '</span>' : '') + '<br><span style="font-size:13px;color:#555">' + esc([x.form || cap(x.type), x.source && 'from ' + x.source].filter(Boolean).join(' · ')) + '</span>'
       + (x.assignee ? '<br><span style="font-size:13px"><b>Assigned to:</b> ' + esc(x.assignee) + '</span>' : '<br><span style="font-size:13px;color:#b45309"><b>Not assigned yet</b></span>') + '</td></tr>';
-    const html = frame(head, intro, row, 'Speed to lead: the admins hear when a new lead has no PM after 4 and 24 hours; the PM when nobody has reached out 4 hours after it was assigned, and the PM and admins at 24 hours. Nothing between 9 PM and 7 AM Central.');
+    const html = frame(head, intro, row, 'Speed to lead: the owners are texted when a new lead has no PM after 4 and 24 hours; the PM when nobody has reached out 4 hours (e-mail) and 24 hours (text) after it was assigned, and the owners at 48 hours. Nothing between 9 PM and 7 AM Central.');
     const text = subject + '\n\n' + x.title + (who ? '\n' + who : '') + (x.address ? '\n' + x.address : '') + '\n\nOpen Leads: ' + site() + '/#leads';
     return { area: 'area:Leads', leadKey: x.key, replyTo: s(x.email || (x.contact || {}).email), subject, html, text, push: { title: subject.slice(0, 100), body: (x.title + (who ? ' — ' + who : '')).slice(0, 180), tag: 'lead-stl-' + kind + '-' + x.key } };
   }
@@ -781,17 +792,17 @@ function make(d){
     const out = [], haveInbox = {}, have = {};
     arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
     arr(leads).forEach(l => {
-      if (!l || !l.id || closed(l) || !inbound(l) || HOLD().isHeld(l)) return;   /* patch LEADHOLD: held for an admin until 5 PM — not "unassigned" */
+      if (!l || !l.id || closed(l) || LW().closed(l) || !inbound(l)) return;   /* LEADWATCH: a held lead is still unassigned — the owners hear at 4 h that it goes to the suggested PM at 5 PM */
       const x = entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type }));
       if (x.assignee && low(l.createdBy) === low(x.assignee)) return;   /* a PM's own lead, typed in after talking to them */
-      out.push(Object.assign(x, { born: bornAt(l), asgAt: ms(l.assignedAt), contacted: contacted(l), contactName: s(l.contactName), phone: s(l.phone), email: s(l.email), address: s(l.address) }));
+      out.push(Object.assign(x, { born: bornAt(l), asgAt: LW().asgAt(l), contacted: contacted(l), contactName: s(l.contactName), phone: s(l.phone), email: s(l.email), address: s(l.address), raw: l }));
     });
     /* a website lead no CRM has collected yet: it is unassigned all the same */
     arr(items).forEach(it => {
-      if (!it || it.stub || haveInbox[it.id] || !inbound(it) || closed(it) || HOLD().isHeld(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
+      if (!it || it.stub || haveInbox[it.id] || !inbound(it) || closed(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
       const lid = 'LEADIN-' + s(it.id).replace(/^LI-/, ''); if (have[lid] || (tombs && tombs['leads:' + lid])) return;
       const x = entry(Object.assign({}, it, { key: lid }));
-      out.push(Object.assign(x, { born: bornAt(it), asgAt: ms(it.assignedAt), contacted: false, address: [s(it.address), s(it.city)].filter(Boolean).join(', ') }));
+      out.push(Object.assign(x, { born: bornAt(it), asgAt: LW().asgAt(it), contacted: false, address: [s(it.address), s(it.city)].filter(Boolean).join(', '), raw: Object.assign({}, it.leadExtra || {}, it, { id: lid, inboxId: it.id, name: s(it.title) }) }));
     });
     return out;
   }
@@ -802,7 +813,7 @@ function make(d){
     if (!x.assignee) { const a = (t - x.born) / H; return a >= STL_SECOND_H ? ['unasg24', 'unasg'] : a >= STL_FIRST_H ? ['unasg'] : []; }
     if (!x.assigneeEmail) return [];
     const from = isFinite(x.asgAt) ? x.asgAt : x.born, a = (t - from) / H;
-    return a >= STL_SECOND_H ? ['pm24', 'pm4'] : a >= STL_FIRST_H ? ['pm4'] : [];
+    return a >= STL_OWNER_H ? ['pm48', 'pm24', 'pm4'] : a >= STL_SECOND_H ? ['pm24', 'pm4'] : a >= STL_FIRST_H ? ['pm4'] : [];   /* LEADWATCH: + 48 h → the owners */
   }
   function stlKey(x, k){ return 'stl|' + k + '|' + x.key + (/^pm/.test(k) ? '|' + x.assigneeEmail : ''); }
   async function speedToLead(src, t){
@@ -810,9 +821,11 @@ function make(d){
     src = src || {}; t = t == null ? now() : t;
     const list = speedCandidates(src.leads, src.items, src.tombs);
     const st0 = loadState(await kvGet(KA));
-    /* the first run only takes note: leads already waiting when this was switched on are not e-mailed all at once */
-    if (!st0.stlBoot) {
-      await kvCas(KA, v => { const st = loadState(v); if (st.stlBoot) return undefined; list.forEach(x => speedKinds(x, t).forEach(k => { st.reminded[stlKey(x, k)] = nowIso(); })); st.stlBoot = nowIso(); return st; });
+    /* the first run only takes note: leads already waiting when this was switched on are not e-mailed all at once.
+       LEADWATCH: the same once more when the texts and the 48-hour step start (stlBoot2) — a lead already late then is on the 🚨 Leads at
+       risk card, not texted to everyone at once */
+    if (!st0.stlBoot || !st0.stlBoot2) {
+      await kvCas(KA, v => { const st = loadState(v); if (st.stlBoot && st.stlBoot2) return undefined; list.forEach(x => speedKinds(x, t).forEach(k => { st.reminded[stlKey(x, k)] = nowIso(); })); st.stlBoot = st.stlBoot || nowIso(); st.stlBoot2 = nowIso(); return st; });
       return { first: true, sent: 0 };
     }
     if (quiet(t)) return { sent: 0, quiet: true };
@@ -827,13 +840,19 @@ function make(d){
     const out = { sent: 0, failed: 0, list: [] };
     for (const w of mine) {
       const x = w.x, m = mailSpeed(x, w.kind);
-      /* unassigned: the admins; 4 h: the PM; 24 h: the PM and the admins */
-      const r = w.kind === 'pm4' ? await deliver(m, null, [x.assigneeEmail]) : w.kind === 'pm24' ? await deliver(m, [x.assigneeEmail]) : await deliver(m);
-      out.list.push({ key: x.key, kind: w.kind, ok: r.ok, why: r.why || '', to: r.to });
-      if (r.ok) out.sent++; else out.failed++;
+      /* LEADWATCH (owner 11/19): the TEXT first — no PM 4 h / 24 h → the owners (Owner 1 / Owner 2, by role); not contacted 24 h after it was
+         assigned → the PM; 48 h → the owners. The e-mail as before (unassigned: the alert list; 4 h / 24 h: the PM; 48 h: the PM and the list),
+         never to whoever got the text */
+      let cell = null; if (w.kind !== 'pm4') { try { cell = await require('./smsalert.js').speedText(w.kind, x); } catch (e) { cell = { error: s(e && e.message) }; } }
+      const tx = cell && Array.isArray(cell.to) ? cell.to : [];
+      const r = w.kind === 'pm4' || w.kind === 'pm24' ? await deliver(m, null, [x.assigneeEmail], tx) : w.kind === 'pm48' ? await deliver(m, [x.assigneeEmail], null, tx) : await deliver(m, null, null, tx);
+      if (cell) r.cell = cell;
+      const okAny = r.ok || !!(cell && (cell.sent || (cell.skipped && cell.skipped.held)));
+      out.list.push({ key: x.key, kind: w.kind, ok: okAny, why: r.why || '', to: r.to, texted: tx });
+      if (okAny) out.sent++; else out.failed++;
       await kvCas(KA, v => {
         const st = loadState(v);
-        if (!r.ok) delete st.reminded[stlKey(x, w.kind)];   /* the next run tries again */
+        if (!okAny) delete st.reminded[stlKey(x, w.kind)];   /* the next run tries again */
         st.last = { at: nowIso(), kind: 'speed-' + w.kind, n: 1, ok: r.ok, why: r.why || '', to: r.to.length, pushed: r.pushed || 0 };
         return st;
       }).catch(() => {});

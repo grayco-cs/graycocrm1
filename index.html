@@ -147553,6 +147553,7 @@ function build(){
   raw = raw.filter(function(r){ return !(r.src === 'st' && r.rec && (r.rec.done || r.rec.deleted)); });
   try { if (typeof W._gcQbFactDrop === 'function') { var qbCtx = { owner: isAdmin() && !isOffice() }; raw = raw.filter(function(r){ return !W._gcQbFactDrop(r, qbCtx); }); } } catch (e) { warn(e); }   /* patch QBFACT */
   try { if (W._gcPapers && W._gcPapers.todoDrop) raw = raw.filter(function(r){ return !W._gcPapers.todoDrop(r, proj); }); } catch (e) { warn(e); }   /* PAPERS: an older job's auto To-Dos are off */
+  try { if (W._gcLeadWatch && W._gcLeadWatch.filterRaw) raw = W._gcLeadWatch.filterRaw(raw, proj); } catch (e) { warn(e); }   /* LEADWATCH: an automatic To-Do about a record from before OLDER_BEFORE is not shown (only from now on) */
   var me = myKey(), company = isCompany(), t0 = today();
   /* de-duplicate by what it is about */
   var by = {}, list = [], doneToday = [], snoozed = [];
@@ -249353,6 +249354,356 @@ function state(){
 W._gcPapers = { older: older, basic: basic, dropped: dropped, required: required, itemState: itemState, fieldModel: fieldModel, wanted: wanted, tier: tier, bdAfter: bdAfter, rowDue: rowDue, head: head,
   closeWhy: closeWhy, turnOn: turnOn, todoDrop: todoDrop, autoRec: autoRec, colOf: colOf, colSet: colSet, selBox: selBox, selAll: selAll, bar: bar, sel: SEL, olderBar: olderBar, live: live, state: state, OLDER_BEFORE: OLDER_BEFORE, ESC_OFFICE_BD: ESC_OFFICE_BD, ESC_ADMIN_BD: ESC_ADMIN_BD };
 try { console.log('[GC] 📑 papers: older jobs keep the basics · suggested · PM → office → admins (patch PAPERS) — _gcPapers'); } catch (e) {}
+})(window);
+</script>
+<script id="gc-patch-leadwatch">
+/* __GC_PATCH_LEADWATCH__ — 🚨 LEADS AT RISK + TO-DO ONLY FROM NOW ON (tools/patch_LEADWATCH.py).
+   Owner 11/19: "I need to make sure all my leads don't get ignored, get sent to PM etc." and "I have 600 todos, I shouldn't have that
+   much, because the old todos for contract etc shouldn't be showing. Only from now on they should show."
+   1. The rule is netlify/functions/_lib/lead-watch.js, inlined below word for word (window._gcLeadWatchCore): what a customer lead is
+      (not a bid invite, a permit, a RoofScout prospect or a job copy), and its clock — no PM 4 h / 24 h after it came in, the PM has not
+      marked it contacted 24 h / 48 h after it was assigned (on a Google LSA lead the PM's own 👍 / 👎 counts).
+   2. "🚨 Leads at risk" — the owners (admin role) see every open customer lead past those times (last 30 days) at the top of the Leads
+      page and on the GrayCo Field home: who, how it came in, what is late, the PM, 📞 call, Open. Every company's leads (the company
+      filter never hides one), and such a lead always passes the Leads page's company filter. The same leads are To-Dos (Leads & bids)
+      for the admins / the office, and the PM's own late leads are the PM's To-Do.
+   3. To-Do, only from now on: an AUTOMATIC To-Do whose source record — the job (PAPERS' older job), the lead, the setup item / the To-Do's
+      own record when there is nothing else — is from before W._gcPapers.OLDER_BEFORE (one constant, PAPERS') is not shown. Kept: money
+      owed (overdue invoices, collections), approvals waiting for a decision, subs' COI / W-9 / insurance, leads at risk, anything a
+      person wrote by hand. Nothing is deleted or marked: they are only not shown (admins: "show them" for this page session).
+      ✓ Not needed / 🗄 Show archived (PAPERS) are unchanged.
+   Roles decide (admin / office / the lead's PM), never names. Test clock: window.__GC_LW_NOW__ (epoch ms).
+   API: window._gcLeadWatch = { core, list(), todoDrop(r, pj), hidden(), showOld(on), paint(), state() } */
+/* __LEADWATCH_CORE_BEGIN__ netlify/functions/_lib/lead-watch.js, inlined word for word: */
+/* ============================================================================
+   lead-watch.js: EVERY CUSTOMER LEAD GETS A PM AND A CALL (patch LEADWATCH)
+
+   Owner (11/19): "I need to make sure all my leads don't get ignored, get sent to PM etc."
+   ONE rule, used by the server (bid-alerts.js speed to lead, smsalert.js lead texts, bid-inbox.js the 5 PM default assign)
+   and by the CRM page (the "🚨 Leads at risk" card on the owners' Leads page and Field home — the page carries this file
+   word for word as window._gcLeadWatchCore).
+   1. WHAT A LEAD IS (kindOf): a CUSTOMER lead — Google LSA, the website / instant price / partner API, a phone lead (missed
+      call, text, call), a referral, a lead source (Roof Ignite, Contractor Connection, HomeAdvisor …) or any other lead a
+      person or a channel made — or NOT one: a bid invite (plan rooms, bid boards, city / county / school bid postings, a GC's
+      invitation: the estimator's), a permit (the 🏗 Permits tab: no alerts, owner 11/12), a RoofScout prospect, a job copied
+      onto the list (GrayCo Photos / QuickBooks), a soft lead (a guide download). How it came in wins over its type: a website
+      lead for a commercial roof is still a customer lead (it never goes to the estimator as a bid).
+   2. THE CLOCK (risk): an open customer lead
+        no PM 4 hours after it came in            → 'nopm'   (the owners are texted to assign it; the 5 PM default assign follows)
+        no PM 24 hours after it came in           → 'nopm24' (the owners again)
+        a PM, not contacted 24 h after assignment → 'pm24'   (the PM's reminder)
+        a PM, not contacted 48 h after assignment → 'pm48'   (the owners are told)
+      "Contacted" = the stage moved past New Lead, ✅ Contacted (contactedAt), a call / follow-up / comment a person logged, or
+      on a Google LSA lead the PM's own 👍 GOOD / 👎 BAD (an owner's GOOD when assigning is not the PM's call).
+   3. The card lists the open customer leads past those times from the last CARD_DAYS days.
+   Pure: no I/O, no names, no e-mails. Nothing here contacts anyone.
+   ========================================================================== */
+(function(root){
+'use strict';
+var NOPM_H = 4, NOPM2_H = 24, PM_H = 24, OWNER_H = 48, CARD_DAYS = 30, H = 3600000;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+
+var BID_BOARDS = /buildingconnected|planhub|isqft|smartbid|bidclerk|constructconnect|procore|pantera|bluebook|dodge|bid ?board|plan ?room|bid postings|bidnet|demandstar|sam\.gov/i;
+var LEAD_SOURCES = /referr|roof\s*ignite|contractor\s*connection|alacrity|sedgwick|leads@|homeadvisor|angi|thumbtack|google\s*(lsa|local)|facebook\s*lead|nextdoor|yelp|porch|networx|modernize|bark/i;
+var JOB_SRC = /^(companycam|quickbooks|estimate builder|qb|crm import)$/i;
+var CLOSED = /^(won|lost|dead|deleted|converted|declined|not\s*bidding|no\s*bid|pass(ed)?|archived|cancell?ed|closed|dismissed|merged|submitted|spam|sales|blocked|duplicate)$/i;
+
+function srcText(l){ var ex = obj(l.leadExtra); return [l.source, l.leadSource, ex.leadSource, l.subSource, ex.mkSource, ex.websiteForm, l.websiteForm, l.origin, l.createdVia].map(s).join(' '); }
+function isLsa(l){ var ex = obj(l && l.leadExtra); return !!l && (/^(pending|good|bad|pm_good|pm_bad|no_answer)$/.test(s(l.lsaCheck || ex.lsaCheck)) || /google\s*lsa|local\s*services/i.test([l.source, l.leadSource, ex.leadSource, ex.mkSource === 'Google LSA' ? 'google lsa' : ''].map(s).join(' '))); }
+function isWebsite(l){ var ex = obj(l.leadExtra); return !!(s(l.origin) === 'website' || s(l.origin) === 'partner' || l.websiteLead || ex.websiteLead || l.partnerLead || ex.partnerLead || /^website\b|grayco-cs\.com|web ?form|instant roof|roof ?price/i.test(s(l.source))); }
+function isPhone(l){ var ex = obj(l.leadExtra); return !!(ex.missedCall || l.missedCall || ex.textMessage || l.textMessage || ex.smsFrom || l.smsFrom || ex.lsaCall || /^(phone|missed-call|sms|voice)$/i.test(s(l.origin)) || /missed call|text message|phone|\bcall\b|voicemail|call ?rail/i.test(s(l.source) + ' ' + s(l.leadSource))); }
+function isBidSignals(l){
+  var ty = low(l.type || l.leadKind) + ' ' + low(l.leadKind);
+  if (/^(sub|prime)$/.test(low(l.bidRole || obj(l.leadExtra).bidRole))) return true;
+  if (s(l.origin) === 'watch' || s(l.origin) === 'email' && (s(l.gc) || s(l.bidDue) || /commercial|government/.test(ty))) return true;
+  if (/bid|commercial|government|\bgov\b/.test(ty)) return true;
+  if (s(l.bidDue) || s(l.gc) || s(l.dueToCompany) || s(l.bidNumber)) return true;
+  return BID_BOARDS.test([l.source].concat(arr(l.sources).map(function(y){ return s(y && y.name || y); })).join(' '));
+}
+/* 'lsa' | 'website' | 'phone' | 'referral' | 'source' | 'other' (customer leads) · 'bid' | 'permit' | 'roofscout' | 'job' | 'soft' (not) */
+function kindOf(l){
+  if (!l) return 'job';
+  var ex = obj(l.leadExtra), src = srcText(l);
+  if (l.softLead || ex.softLead) return 'soft';
+  if (isLsa(l)) return 'lsa';
+  if (isWebsite(l)) return 'website';
+  if (l.rsLeadId || /^LEAD_RS_/.test(s(l.id)) || /roof ?scout/i.test(src)) return 'roofscout';
+  if (l.permitId || l.fromPermit || /permit/i.test(s(l.source) + ' ' + s(l.createdVia))) return 'permit';
+  if (isPhone(l)) return 'phone';
+  if (l.fromBidBoard || s(l.gc) || s(l.bidRole)) return 'bid';   /* a GC's invitation / an old Bid Board item, even when its source says "Referral" */
+  if (/referr/i.test(src)) return 'referral';
+  if (LEAD_SOURCES.test(src)) return 'source';
+  if (isBidSignals(l)) return 'bid';
+  if ((l.fromProjectId || l.ccamId || JOB_SRC.test(s(l.source))) && !s(l.stage) && !l.inboxId) return 'job';
+  if (JOB_SRC.test(s(l.source)) && !l.inboxId && !l.leadExtra) return 'job';
+  return 'other';
+}
+var CUSTOMER = { lsa: 1, website: 1, phone: 1, referral: 1, source: 1, other: 1 };
+function isCustomer(l){ return !!CUSTOMER[kindOf(l)]; }
+function isBid(l){ return kindOf(l) === 'bid'; }
+var LABEL = { lsa: 'Google LSA', website: 'Website', phone: 'Phone', referral: 'Referral', source: 'Lead source', other: 'Other', bid: 'Bid invite', permit: 'Permit', roofscout: 'RoofScout', job: 'Job copy', soft: 'Soft lead' };
+
+function closed(l){
+  if (!l) return true;
+  var ex = obj(l.leadExtra);
+  if (l.deleted || l._deleted || l.converted || l.notBidding || l.noBid || l.archived || l.dismissed || l.stub || s(l.mergedInto)) return true;
+  if (low(l.lsaCheck || ex.lsaCheck) === 'bad') return true;
+  return [l.stage, l.status, l.inboxState, l.bidStatus].some(function(v){ return CLOSED.test(s(v)); });
+}
+function assignee(l){ return s(l && (l.pm || l.estimator || l.apm)); }
+function ms(v){ if (v == null || v === '') return NaN; if (typeof v === 'number') return v; var t = Date.parse(/^\d{4}-\d\d-\d\d$/.test(s(v)) ? s(v) + 'T12:00:00Z' : s(v)); return isFinite(t) ? t : NaN; }
+function bornAt(l){ var ex = obj(l.leadExtra); var f = ['createdAt', 'receivedAt', 'inboxAt', 'created', 'dateAdded']; for (var i = 0; i < f.length; i++) { var x = ms(l[f[i]]); if (isFinite(x)) return x; } var r = ms(ex.receivedAt); return isFinite(r) ? r : ms(l.date); }
+/* when it was assigned: the earliest stamp we have (an import can re-stamp assignedAt; the 5 PM release and the "lead assigned" text keep the first) */
+function asgAt(l){
+  var c = [ms(l.assignedAt), ms(l.autoAssignedAt), ms(obj(l.hold).state && obj(l.hold).state !== 'held' ? obj(l.hold).doneAt : '')];
+  arr(l.activity).forEach(function(a){ if (a && /lead assigned|assigned to/i.test(s(a.text))) c.push(ms(a.at)); });
+  c = c.filter(function(x){ return isFinite(x); });
+  return c.length ? Math.min.apply(null, c) : NaN;
+}
+var SYS_BY = /lead inbox|system|website|server|crm|auto|grayco text/i, SYS_KIND = /creat|assign|import|added|system|auto/i;
+function pmOwn(l){   /* a Google LSA verdict the lead's PM gave himself (an owner's GOOD while assigning is not the PM's call) */
+  var ex = obj(l.leadExtra), c = low(l.lsaCheck || ex.lsaCheck), by = low(s(l.lsaDecidedBy).replace(/\s*\((by )?text[^)]*\)\s*$/i, ''));
+  if (c === 'pm_good' || c === 'pm_bad' || c === 'bad') return true;
+  if (c === 'good' && (s(l.lsaPmOkAt) || (by && low(l.pm) && by === low(l.pm)))) return true;
+  return false;
+}
+function contacted(l){
+  var st = low(l.stage);
+  if (st && !/^(new|new lead|lead|unassigned)$/.test(st)) return true;
+  var f = ['contactedAt', 'lastContact', 'lastContacted', 'lastContactAt', 'followUpDone', 'firstContactAt'];
+  for (var i = 0; i < f.length; i++) if (s(l[f[i]])) return true;
+  if (isLsa(l) && pmOwn(l)) return true;
+  var g = ['calls', 'followUps', 'activity', 'activities', 'log', 'comments', 'history', 'contactLog'];
+  for (var j = 0; j < g.length; j++) {
+    if (arr(l[g[j]]).some(function(c){ return c && typeof c === 'object' && !SYS_BY.test(s(c.by || c.who || c.author)) && !SYS_KIND.test(s(c.type || c.kind || c.action)) && !/texted|e-?mailed|📱|📧/.test(s(c.text)); })) return true;
+  }
+  return false;
+}
+/* the lead's place on the clock at `now`: null (fine / not a customer lead / closed) or { k, h, since, label } */
+function risk(l, now, o){
+  o = o || {};
+  if (!l || closed(l) || !isCustomer(l)) return null;
+  var t = typeof now === 'number' ? now : Date.now(), born = bornAt(l);
+  if (!isFinite(born)) return null;
+  if (o.maxDays && t - born > o.maxDays * 864e5) return null;
+  if (contacted(l)) return null;
+  if (!assignee(l)) {
+    var a = (t - born) / H;
+    if (a >= NOPM2_H) return { k: 'nopm24', h: Math.floor(a), since: born, label: 'no PM for ' + ago(a) };
+    if (a >= NOPM_H) return { k: 'nopm', h: Math.floor(a), since: born, label: 'no PM for ' + ago(a) };
+    return null;
+  }
+  var from = isFinite(asgAt(l)) ? asgAt(l) : born, b = (t - from) / H;
+  if (b >= OWNER_H) return { k: 'pm48', h: Math.floor(b), since: from, label: assignee(l) + ' has not contacted them — assigned ' + ago(b) + ' ago' };
+  if (b >= PM_H) return { k: 'pm24', h: Math.floor(b), since: from, label: assignee(l) + ' has not contacted them — assigned ' + ago(b) + ' ago' };
+  return null;
+}
+function ago(h){ h = Math.floor(h); return h >= 48 ? Math.floor(h / 24) + ' days' : h + ' h'; }
+/* the CRM leads + the Lead Inbox items not on the CRM list yet → the leads at risk, worst first */
+function atRisk(leads, items, now, o){
+  o = Object.assign({ maxDays: CARD_DAYS }, o || {});
+  var t = typeof now === 'number' ? now : Date.now(), have = {}, out = [];
+  arr(leads).forEach(function(l){ if (l && l.id) { have[s(l.id)] = 1; if (l.inboxId) have[s(l.inboxId)] = 1; } });
+  arr(leads).forEach(function(l){ var r = l && risk(l, t, o); if (r) out.push({ l: l, r: r }); });
+  arr(items).forEach(function(it){
+    if (!it || !it.id || have[s(it.id)] || have['LEADIN-' + s(it.id).replace(/^LI-/, '')] || !/^(new|imported|)$/.test(s(it.status))) return;
+    var l = Object.assign({}, it, obj(it.leadExtra), { id: 'LEADIN-' + s(it.id).replace(/^LI-/, ''), inboxId: it.id, name: s(it.title), stage: '', status: '' });
+    var r = risk(l, t, o); if (r) out.push({ l: l, r: r });
+  });
+  var W = { pm48: 0, nopm24: 1, pm24: 2, nopm: 3 };
+  return out.sort(function(a, b){ return (W[a.r.k] - W[b.r.k]) || (a.r.since - b.r.since); });
+}
+/* the 5 PM default assign (bid-inbox.js, every 10 minutes): Lead Inbox items that are customer leads, still without anybody at
+   their 5 PM (holdUntil of when they came in), not held, not an emergency, not closed, and whose CRM copy nobody assigned / handled */
+function defaultDue(items, crmLeads, now, holdUntil){
+  var t = typeof now === 'number' ? now : Date.now(), byInbox = {};
+  arr(crmLeads).forEach(function(l){ if (l && l.inboxId) byInbox[s(l.inboxId)] = l; });
+  return arr(items).filter(function(it){
+    if (!it || !it.id || it.stub || !/^(new|imported)$/.test(s(it.status) || 'new')) return false;
+    var l = Object.assign({}, obj(it.leadExtra), it);
+    var heldLsa = !!(it.hold && it.hold.state === 'held' && isLsa(l));   /* a Google lead held for its suggested PM: the 5 PM rule (lead-hold.js) skips Google leads */
+    if (assignee(it) || (it.hold && it.hold.state === 'held' && !heldLsa) || it.emergency || obj(it.leadExtra).emergency) return false;
+    if (closed(l) || !isCustomer(l)) return false;
+    var born = bornAt(l); if (!isFinite(born) || t - born > 7 * 864e5) return false;
+    var c = byInbox[s(it.id)]; if (c && (assignee(c) || closed(c) || contacted(c) || (c.hold && c.hold.state && c.hold.state !== 'held'))) return false;
+    var due = heldLsa ? Date.parse(it.hold.until) : typeof holdUntil === 'function' ? Date.parse(holdUntil(born)) : born + NOPM2_H * H;
+    return isFinite(due) && due <= t;
+  });
+}
+
+var API = { V: 1, NOPM_H: NOPM_H, NOPM2_H: NOPM2_H, PM_H: PM_H, OWNER_H: OWNER_H, CARD_DAYS: CARD_DAYS, LABEL: LABEL,
+  kindOf: kindOf, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
+  contacted: contacted, risk: risk, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
+if (typeof module !== 'undefined' && module.exports) module.exports = API;
+else root._gcLeadWatchCore = API;
+})(typeof window !== 'undefined' ? window : this);
+/* __LEADWATCH_CORE_END__ */
+(function(W){
+'use strict';
+if (W.__GC_PATCH_LEADWATCH__) return; W.__GC_PATCH_LEADWATCH__ = true;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval, C = W._gcLeadWatchCore;
+if (!C) return;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function now(){ var t = +W.__GC_LW_NOW__; return isFinite(t) && t > 0 ? t : Date.now(); }
+function tidy(p){ p = s(p).replace(/\D/g, ''); if (p.length === 11 && p[0] === '1') p = p.slice(1); return p.length === 10 ? '(' + p.slice(0, 3) + ') ' + p.slice(3, 6) + '-' + p.slice(6) : ''; }
+function day(v){ if (v == null || v === '') return ''; if (typeof v === 'number' || /^\d{12,14}$/.test(s(v))) { var d = new Date(+v); return isNaN(d) ? '' : d.toISOString().slice(0, 10); } var t = s(v); return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : ''; }
+
+/* ── who is looking (roles, never names) ── */
+function user(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u && (u.name || u.email)) return u; } } catch (e) {} try { var j = JSON.parse(localStorage.getItem('grayco_user') || '{}'); if (j && typeof j === 'object') return j; } catch (e) {} return {}; }
+function vas(){ try { return !!(W._gcVAS && W._gcVAS.active()); } catch (e) { return false; } }
+function admin(){ if (vas()) return false; try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = user(); return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function office(){ if (admin()) return false; try { if (W._gcIsOfficeFull && W._gcIsOfficeFull()) return true; } catch (e) {} var u = user(); return /office/i.test(s(u.role) + ' ' + s(u.profile)); }
+function myEmail(){ try { var e = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); if (e) return e; } catch (e) {} return low(user().email); }
+function myName(){ return s(user().name); }
+
+/* ── the leads at risk ── */
+function tomb(l){ try { return typeof W._gcIsTombstoned === 'function' && W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } }
+function leads(){ return arr(W._crm && W._crm.leads).filter(function(l){ return l && l.id && !tomb(l); }); }
+var LAST = { at: 0, list: [] };
+function list(){
+  var t = now(); if (LAST.at && Math.abs(t - LAST.at) < 3000 && LAST.n === arr(W._crm && W._crm.leads).length) return LAST.list;
+  var L = C.atRisk(leads(), [], t); LAST = { at: t, n: arr(W._crm && W._crm.leads).length, list: L }; return L;
+}
+function riskOf(l){ try { return C.risk(l, now(), { maxDays: C.CARD_DAYS }); } catch (e) { return null; } }
+var KC = { nopm: ['👤', '#9a3412', '#ffedd5'], nopm24: ['👤', '#991b1b', '#fee2e2'], pm24: ['⏰', '#92400e', '#fef3c7'], pm48: ['⚠️', '#991b1b', '#fee2e2'] };
+function rowHtml(z){
+  var l = z.l, r = z.r, c = obj(l.contact), k = KC[r.k] || KC.nopm, ph = tidy(c.phone || l.phone), nm = s(c.name || l.contactName) || s(l.name) || 'Lead';
+  var what = r.k === 'nopm' || r.k === 'nopm24' ? 'No PM — came in ' + C.ago(r.h) + ' ago' : 'Not contacted — ' + esc(s(l.pm || l.estimator || l.apm)) + ' has had it ' + C.ago(r.h);
+  return '<div class="lw-row" data-lw-row="' + esc(l.id) + '" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;border-top:1px solid #fecaca;padding:7px 0">'
+    + '<span style="flex:1 1 220px;min-width:0"><b>' + esc(nm) + '</b>' + (s(l.name) && s(l.name) !== nm ? ' <span style="color:#475569">· ' + esc(s(l.name).slice(0, 60)) + '</span>' : '')
+    + '<span style="display:block;font-size:12.5px;color:#475569">' + esc(C.LABEL[C.kindOf(l)] || 'Lead') + ' · <span style="display:inline-block;border-radius:999px;padding:0 7px;font-weight:800;color:' + k[1] + ';background:' + k[2] + '">' + k[0] + ' ' + what + '</span></span></span>'
+    + (ph ? '<a href="tel:' + esc(ph.replace(/\D/g, '')) + '" style="color:#1d4ed8;font-weight:800;text-decoration:none;min-height:36px;display:inline-flex;align-items:center">📞 ' + esc(ph) + '</a>' : '')
+    + '<button type="button" data-lw-open="' + esc(l.id) + '" style="min-height:36px;padding:0 12px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#241968;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Open</button></div>';
+}
+function cardHtml(L, kind){
+  var more = L.length > 8 ? '<div style="font-size:12.5px;color:#7f1d1d;padding-top:6px">+ ' + (L.length - 8) + ' more</div>' : '';
+  return '<div style="font:800 15px Inter,Arial,sans-serif;color:#7f1d1d;display:flex;align-items:center;gap:8px">🚨 Leads at risk <span style="display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:#dc2626;color:#fff;font-size:12px;line-height:20px;text-align:center">' + L.length + '</span></div>'
+    + '<div style="font-size:12.5px;color:#7f1d1d;margin:2px 0 4px">No PM ' + C.NOPM_H + ' h after it came in, or not marked contacted ' + C.PM_H + ' h after it was assigned (the owners are texted at ' + C.OWNER_H + ' h). Every company\'s leads.</div>'
+    + L.slice(0, 8).map(rowHtml).join('') + more;
+}
+var BOX = 'margin:0 0 10px;padding:10px 12px;border-radius:12px;border:2px solid #fca5a5;background:#fef2f2;font:14px Inter,Arial,sans-serif;color:#0f172a;box-sizing:border-box;max-width:100%';
+function place(id, parent, before, L, kind){
+  var box = D.getElementById(id);
+  if (!parent || !L.length || !admin()) { if (box) box.remove(); return; }
+  var h = cardHtml(L, kind);
+  if (!box) { box = D.createElement('div'); box.id = id; box.setAttribute('data-gc-keep', '1'); box.style.cssText = BOX; }
+  if (box.__h !== h) { box.__h = h; box.innerHTML = h; }
+  if (box.parentElement !== parent || (before && box.nextSibling !== before)) parent.insertBefore(box, before || parent.firstChild);
+}
+function paint(){
+  try {
+    if (D.hidden) return;
+    var L = admin() ? list() : [];
+    var hub = D.getElementById('gc-leads-hub'), top = hub && hub.getClientRects().length ? hub.querySelector('.gclu-top') : null;
+    place('gc-lw-card', top ? top.parentElement : null, top ? top.nextSibling : null, L, 'leads');
+    var home = D.querySelector('#_gcJobPick.gc-fh .fh-wrap'), ra = home ? home.querySelector('.gc-ra-top') : null;
+    place('gc-lw-field', home, ra ? ra.nextSibling : (home ? home.firstChild : null), L, 'field');
+  } catch (e) { W.__gcLwErr = String(e && e.stack || e); }
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-lw-open]') : null; if (!b) return;
+  e.preventDefault(); var id = b.getAttribute('data-lw-open');
+  try { if (W._setView) W._setView('leads'); } catch (x) {}
+  ST.call(W, function(){ try { W._gcLeadsHub.open(id); } catch (x) {} }, 300);
+}, true);
+
+/* ── the company filter never hides a lead at risk ── */
+function coWrap(){
+  var G = W._gcCo; if (!G || typeof G.passLead !== 'function') return false; if (G.passLead.__lw) return true;
+  var pl = G.passLead; G.passLead = function(l, v){ if (l && riskOf(l)) return true; return pl.apply(this, arguments); }; G.passLead.__lw = true; return true;
+}
+(function tryCo(n){ if (!coWrap() && n < 120) ST.call(W, function(){ tryCo(n + 1); }, 500); })(0);
+
+/* ── the To-Do: the leads at risk (admins / office; the PM his own) ── */
+W._gcTodoExt = arr(W._gcTodoExt);
+W._gcTodoExt.push(function(){
+  var co = admin() || office(), me = myEmail(), nm = low(myName()), t0 = day(now());
+  return list().filter(function(z){ var l = z.l; return co || (me && low(l.pmEmail) === me) || (nm && low(l.pm) === nm); }).map(function(z){
+    var l = z.l, c = obj(l.contact), who = s(l.pm || l.estimator || l.apm), nmL = s(c.name || l.contactName) || s(l.name) || 'Lead';
+    return { key: 'lw:' + l.id, cat: 'leads', prio: 'high', due: t0, pid: '', title: '🚨 Lead at risk: ' + nmL + ' — ' + (z.r.k === 'nopm' || z.r.k === 'nopm24' ? 'no PM' : 'not contacted'), sub: z.r.label,
+      who: who ? [who] : [], vis: 'both', act: { l: 'Open lead', f: function(){ try { if (W._setView) W._setView('leads'); } catch (x) {} ST.call(W, function(){ try { W._gcLeadsHub.open(l.id); } catch (x) {} }, 300); } } };
+  });
+});
+
+/* ── To-Do: only from now on ── */
+var OLD = { show: false, n: 0, why: {} };
+try { OLD.show = sessionStorage.getItem('gc_lw_showold') === '1'; } catch (e) {}
+function cut(){ return s(W._gcPapers && W._gcPapers.OLDER_BEFORE); }
+var THING_PID = /^(contract|bill|scope|po|info|prop|final|portal-link|portal-docs|nopm|draft|progress|closeout|verify)\|([^|]+)/;
+function pidOf(r){ if (s(r.pid)) return s(r.pid); var m = THING_PID.exec(s(r.thing)); if (m) return m[2]; return s(r.rec && (r.rec.pid || r.rec.projectId || r.rec.jobId)); }
+var LEADID = /(LEADIN-[A-Za-z0-9]+|LI-[0-9a-f]{8,}|LEAD_RS_[A-Za-z0-9]+|\bL[A-Z]{1,3}_[A-Za-z0-9_]+|LEAD[a-z0-9]{8,})/;
+function leadIdOf(r){
+  var rec = obj(r.rec), m = /^(lead|leadmiss)\|(.+)$/.exec(s(r.thing)); if (m) return m[2];
+  if (s(rec.leadId)) return s(rec.leadId);
+  var bag = [s(rec.id), s(obj(rec._deny).key), s(obj(rec._deny).id)].join(' '), x = LEADID.exec(bag);
+  if (!x) return ''; var id = x[1]; return /^LI-/.test(id) ? 'LEADIN-' + id.slice(3) : id;
+}
+function leadDay(id){ var l = arr(W._crm && W._crm.leads).find(function(y){ return y && s(y.id) === s(id); }); if (!l) return ''; var b = C.bornAt(l); return isFinite(b) ? new Date(b).toISOString().slice(0, 10) : ''; }
+function userNames(){ var o = {}; arr(W._crm && W._crm.users).forEach(function(u){ if (!u || !s(u.name)) return; o[low(u.name)] = 1; o[low(s(u.name).split(/\s+/)[0])] = 1; }); return o; }
+/* a person wrote it (not the CRM): a quick add / an @mention / their own, or added under a person's name — not a "↩ Fix and resend" the
+   Approvals' Send back made, not a seeded setup item */
+function personMade(t){
+  if (!t) return false;
+  if (t.kind === 'quick' || t.kind === 'mention' || t.self) return true;
+  if (t._deny || t.kind === 'admin_seed' || t.auto || t._noContract) return false;
+  try { if (W._gcPapers && W._gcPapers.autoRec && W._gcPapers.autoRec(t)) return false; } catch (e) {}
+  var by = low(t.addedBy || t.by || t.createdBy).replace(/\s*\(via [^)]*\)\s*$/, ''); if (!by) return false;
+  return !!userNames()[by];
+}
+/* kept whatever their date: money owed, a decision waiting, a sub's papers, a lead at risk */
+function keep(r){
+  var th = s(r.thing), rec = obj(r.rec), id = s(rec.id), t = s(r.title) + ' ' + s(rec.label);
+  if (/^lw:/.test(s(r.key))) return true;
+  if (/^(ar|sub)\|/.test(th) || r.cat === 'appr' || r.roll === 'ar-old' || r.roll === 'subdocs') return true;
+  if (/^appr_esc_|^COI_REQ_|^x10_call_/.test(id) || rec.kind === 'coi_request' || rec.kind === 'appr') return true;
+  if ((s(rec.sub) || s(rec.subName) || s(rec.vendor) || s(rec.subId)) && /\b(COI|W-?9|workers'? ?comp|insurance)\b/i.test(t)) return true;   /* a sub's papers (not GrayCo's own W-9) */
+  if (/overdue invoice|over \d+ days|collections?\b|30\+ days late/i.test(t)) return true;
+  return false;
+}
+/* the day of the record the To-Do is about ('' = not known: kept) */
+function srcDay(r, pj){
+  var pid = pidOf(r);
+  if (pid) { var p = (typeof pj === 'function' ? pj(pid) : null) || arr(W._crm && W._crm.projects).find(function(x){ return x && s(x.id) === pid; });
+    if (p) { try { if (W._gcPapers.older(p)) return '0000-00-00'; } catch (e) {} var m = day(p.created) || day(p.createdAt) || day(p.startDate); if (m) return m; } }
+  var lid = leadIdOf(r); if (lid) { var ld = leadDay(lid); if (ld) return ld; }
+  if (r.src === 'st' && r.rec) return day(r.rec.addedAt) || day(r.rec.at) || day(r.rec.createdAt);
+  return '';
+}
+function todoDrop(r, pj){
+  var c = cut(); if (!r || !c || OLD.show) return false;
+  if (r.src === 'roll' || keep(r)) return false;
+  if (r.src === 'st' && personMade(r.rec)) return false;
+  var d = srcDay(r, pj); if (!d || d >= c) return false;
+  return true;
+}
+function showOld(on){ OLD.show = !!on; try { sessionStorage.setItem('gc_lw_showold', on ? '1' : '0'); } catch (e) {} try { if (W._gcTD2 && W._gcTD2.paint) W._gcTD2.paint(); } catch (e) {} }
+/* the desk note under PAPERS' bar (admins / office): how many older automatic To-Dos are not shown */
+function noteHtml(kind){
+  if (kind === 'field' || !(admin() || office()) || (!OLD.n && !OLD.show)) return '';
+  var c = cut(), dd = c ? (+c.slice(5, 7)) + '/' + (+c.slice(8, 10)) : '';
+  return '<div class="lw-old" data-gc-keep="1" style="font:12.5px Inter,Arial,sans-serif;color:#475569;margin:0 0 8px">🕰 ' + (OLD.show ? 'Showing the older automatic To-Dos too.' : OLD.n + ' automatic To-Do' + (OLD.n === 1 ? '' : 's') + ' about records from before ' + esc(dd) + ' ' + (OLD.n === 1 ? 'is' : 'are') + ' not shown — only from now on.')
+    + (admin() ? ' <button type="button" data-lw-old="' + (OLD.show ? '0' : '1') + '" style="border:0;background:none;color:#241968;font:700 12.5px Inter,Arial,sans-serif;cursor:pointer;text-decoration:underline">' + (OLD.show ? 'Hide them' : 'Show them') + '</button>' : '') + '</div>';
+}
+D.addEventListener('click', function(e){ var b = e.target && e.target.closest ? e.target.closest('[data-lw-old]') : null; if (!b) return; e.preventDefault(); e.stopPropagation(); showOld(b.getAttribute('data-lw-old') === '1'); }, true);
+(function wrapBar(n){
+  var P = W._gcPapers; if (!P || typeof P.bar !== 'function') { if (n < 120) ST.call(W, function(){ wrapBar(n + 1); }, 500); return; }
+  if (P.bar.__lw) return; var b0 = P.bar; P.bar = function(kind){ return s(b0.apply(this, arguments)) + noteHtml(kind); }; P.bar.__lw = true;
+})(0);
+/* TD2 calls this on its raw list (after PAPERS); it keeps the count for the note */
+function filterRaw(raw, pj){ var out = [], n = 0, why = {}; arr(raw).forEach(function(r){ var dr = false; try { dr = todoDrop(r, pj); } catch (e) { dr = false; } if (dr) { n++; var k = s(r.cat) || '?'; why[k] = (why[k] || 0) + 1; } else out.push(r); }); OLD.n = n; OLD.why = why; return out; }
+
+SI.call(W, paint, 2000);
+ST.call(W, paint, 800);
+W._gcLeadWatch = { core: C, list: list, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
+  state: function(){ return { atRisk: list().map(function(z){ return { id: z.l.id, k: z.r.k, h: z.r.h, kind: C.kindOf(z.l) }; }), hidden: OLD.n, by: OLD.why, cut: cut(), admin: admin(), office: office() }; } };
+try { console.log('[GC] 🚨 leads at risk + To-Do only from now on (patch LEADWATCH) — _gcLeadWatch'); } catch (e) {}
 })(window);
 </script>
 </script>

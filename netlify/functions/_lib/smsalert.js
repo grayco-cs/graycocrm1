@@ -68,6 +68,7 @@ function hourOf(v, d){ const n = parseInt(v, 10); return isFinite(n) && n >= 0 &
 
 /* ── dependencies (tests swap these) ── */
 function L(){ return require('../bid-inbox.js')._lib; }
+function LWc(){ return require('./lead-watch.js'); }   /* LEADWATCH: what a lead is, its clock */
 function MC(){ return require('../missed-call.js')._test; }
 function core(){ return require('../portal.js')._core; }
 const _D = {
@@ -619,7 +620,13 @@ async function leads(list, raw, isEm){
     /* LEADLINK (owner 11/10: "I also want the CRM link in here with all leads, it can just be a blue link to click, doesn't have to be big"):
        the lead's own link without "https://" — the phone still makes it a blue link, but no big preview card */
     const head = em ? '🚨 GrayCo EMERGENCY' : 'GrayCo NEW LEAD', link = site().replace(/^https?:\/\//, '') + '/#leads&lead=' + encodeURIComponent(s(x.key || x.id));
-    const only = !em && isSubBid(r, x) ? await estimatorsFor(r, x) : null;   /* patch SUBALERT */
+    /* LEADWATCH (owner 11/19: the City of Bartlett bid postings reached the owners as "GrayCo NEW LEAD: Unknown"): how the lead came in
+       decides (_lib/lead-watch.js) — a customer lead (LSA, website, phone, referral, a lead source, any other lead) is never a bid even when its
+       type says commercial; a bid invite (plan rooms, bid boards, city / county / school postings, a GC's invitation — prime or sub) goes to the
+       Estimator role only, as "GrayCo BID INVITE: <project> …", never to the owners */
+    const lwL = Object.assign({}, x, r, { leadExtra: Object.assign({}, obj(x.leadExtra), obj(r.leadExtra)) }), lwK = LWc().kindOf(lwL), cust = LWc().isCustomer(lwL);
+    const bidInv = !em && lwK === 'bid' && !isLsaLead(r, x);
+    const only = !em && (bidInv || (!cust && isSubBid(r, x))) ? await estimatorsFor(r, x) : null;   /* patch SUBALERT */
     /* LEADTEXT (owner 11/10: "website leads say GrayCo website lead and do the same structure … all leads do this structure" · "all leads for
        the entire company should go through this GrayCo text"): every customer lead (not a bid invite — those stay with the estimator — and not an
        emergency that is not LSA — that still pages on call) goes to the owners' cells in the LSA shape with the same replies */
@@ -631,7 +638,7 @@ async function leads(list, raw, isEm){
        send to admin to assign PM, or send to PM directly"): the office gets "📞 Google call — fill in the lead" (an office To-Do + a phone
        push) at the same moment; nothing waits on it. After hours the text waits for 7:00 AM (notify: LSAHOLD). */
     if (lsaL) { try { out.push({ intake: await _D.intakeTodo({ leadId: s(x.id), code: lsaCode(x.id), name: clip(name, 60), phone: callPh, said: clip(s(msg).replace(/\s+/g, ' '), 200), em: !!em }) }); } catch (e) { out.push({ intakeError: s(e && e.message) }); } }
-    if (lsaL || (!em && !only && !bidLike(r, x))) {   /* LSATEXT: owner 11/10 — Google LSA leads to the owners' cells; they text back GOOD or BAD */
+    if (lsaL || (!em && !only && (cust || !bidLike(r, x)))) {   /* LSATEXT: owner 11/10 — Google LSA leads to the owners' cells; they text back GOOD or BAD */
       const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
       const det = lsaL ? lsaDetails(r, x) : '';   /* LSAREC: Google's call length + job type (Google Ads API), when known */
@@ -652,6 +659,13 @@ async function leads(list, raw, isEm){
     /* LEADTXT (owner 11/19: "How do I say good or bad if I get 2-3 or more texts"): the 🚨 EMERGENCY / NEW LEAD texts that reach the
        owners carry the lead's code + "Reply GOOD <code> / BAD <code>" too (not a sub bid — those go to the estimator only). Their answer needs
        the code (codeOnly): a plain "Good, on our way" in the 30 minutes still goes to the customer as before. Nobody else gets the hint. */
+    if (bidInv) {   /* LEADWATCH: the estimator's bid text — the project, who it is for, when it is due; no customer name ("Unknown") */
+      const due = s(x.bidDue || r.bidDue), to = s(x.dueToCompany || r.dueToCompany || r.gc || x.gc || r.owner), where = [s(r.city || x.city), s(r.state || x.state)].filter(Boolean).join(', ');
+      let dueS = ''; try { dueS = due ? require('./bid-due.js').fmtDue(due) : ''; } catch (e) { dueS = due; }
+      const bt = 'GrayCo BID INVITE: ' + clip(s(x.title || r.title || r.name) || 'new bid', 70) + (to ? ' for ' + clip(to, 40) : '') + (where ? ' · ' + clip(where, 30) : '') + (dueS ? ' · due ' + dueS : ' · due date not found — add it') + ' (' + clip(s(r.source || x.source) || 'Lead Inbox', 30) + ') ' + link;
+      try { out.push(Object.assign(await notify({ type: 'lead', text: bt, body: () => bt, link, only: only || [], thread: 'bid:' + s(x.key || x.id), leadId: s(x.key || x.id) }), { bid: true })); } catch (e) { out.push({ error: s(e && e.message) }); }
+      continue;
+    }
     const code = only ? '' : lsaCode(x.id), adm = lsaAdmins();
     const hintFor = g => (code && (!g || !g.email || adm.indexOf(low(g.email)) >= 0)) ? lsaHint(code) : '';
     const body = (more, g) => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, tail + hintFor(g));
@@ -1129,7 +1143,7 @@ async function lsaVetted(o){
   return notify({ type: 'lead', lsa: { leadId: id, code, name, phone: ph, link: '', said: clip(s(o.note), 140), em: false, isLsa: true, label }, text: lt(0), body: lt, link: site() + '/#leads', only: lsaAdmins(), thread: 'p:' + ph });
 }
 /* a lead assigned later (bid-alerts.js notifyAssigned) */
-async function assigned(x){
+async function assigned(x, raw){
   /* LSAFLOW2 (owner 11/19: "when we assign it, it's sent to the PM"): a Google LSA lead given to a PM — any way (GOOD <code> <PM> by text,
      the CRM, the office) — → the PM's GrayCo text (pmAssignText: name, number, job type, recording, notes, the CRM link, "Reply BAD …"),
      once per lead and PM */
@@ -1139,7 +1153,62 @@ async function assigned(x){
     const r = await pmAssignText({ name: s(x.assignee), email: low(x.assigneeEmail) }, { leadId: s(y.id), by: s(x.assignedBy).replace(/\s*\(text[^)]*\)\s*$/, ''), item: y });
     return r && r.already ? { sent: 0, already: true, to: [low(x.assigneeEmail)] } : r;
   }
+  /* LEADWATCH (owner 11/19: "get sent to PM"): every customer lead given to a PM — any way — → the PM's GrayCo lead text by their CRM cell
+     (name, number, what they asked, the CRM link), once per lead and PM, whether or not they are on the 📱 Text alerts list */
+  const lw = Object.assign({}, obj(y), obj(raw)); if (!s(lw.id)) lw.id = s(x.key || x.id); if (y && !s(lw.inboxId)) lw.inboxId = s(y.id);
+  if (low(x.assigneeEmail) && LWc().isCustomer(lw)) { const r2 = await pmLeadText({ name: s(x.assignee), email: low(x.assigneeEmail) }, lw, { by: s(x.assignedBy) }); return r2 && r2.already ? { sent: 0, already: true, to: [low(x.assigneeEmail)] } : r2; }
   return notify({ type: 'assigned', text: 'lead assigned to you: ' + clip(x.title, 60) + (x.assignedBy ? ' (by ' + clip(x.assignedBy, 24) + ')' : ''), link: site() + '/#leads', thread: 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail], leadId: s(x.key || x.id) });   /* TEXTEDPM: on the lead's timeline */
+}
+/* ── LEADWATCH (owner 11/19: "I need to make sure all my leads don't get ignored, get sent to PM etc.") ──
+   pmLeadText  — a customer lead (not Google LSA: pmAssignText) given to a PM → "GrayCo: website lead K7Q2 for you: <name> 📞 <number> …
+                 CRM: <link>", by the PM's CRM cell, once per lead and PM (staff quiet hours: held to 7 AM; an emergency goes at once)
+   speedText   — the speed-to-lead clock (bid-alerts.js speedToLead): no PM 4 h / 24 h → the owners "👤 Assign …"; the PM has not marked
+                 it contacted 24 h after it was assigned → the PM "⏰ Reach out …"; 48 h → the owners "⚠️ <PM> has not contacted …"
+   bidDueText  — a bid invite's own due reminders (1 hour / today / tomorrow) → the Estimator role only
+   Staff only (the owners by role, the lead's PM, the estimators). Nothing here ever texts a customer. */
+function lwLink(id){ id = s(id); return site().replace(/^https?:\/\//, '') + '/#leads&lead=' + encodeURIComponent(/^LI-/.test(id) ? 'LEADIN-' + id.slice(3) : id); }
+function lwWho(l){ l = obj(l); const c = obj(l.contact), ex = obj(l.leadExtra); const nm = clip(s(c.name) || s(l.contactName) || s(ex.contactName) || s(l.name || l.title) || 'New lead', 40), ph = phone10(c.phone || l.phone || ex.phone);
+  return { nm, ph, line: nm + (ph.length === 10 ? ' 📞 ' + tidy(ph) : '') }; }
+async function pmLeadText(pm, lead, o){
+  pm = pm || {}; o = o || {}; const em = low(pm.email), l = obj(lead), leadId = s(l.id); if (!em || !leadId) return { skipped: 'no PM' };
+  const ex = obj(l.leadExtra), w = lwWho(l), code = lsaCode(s(l.inboxId) || leadId), label = leadLabel(l, l);
+  let msg = ''; try { msg = require('./leadmsg.js').collect(Object.assign({}, l, { leadExtra: Object.assign({ said: obj(l.said) }, ex) })).message; } catch (e) {}   /* a CRM lead keeps "said" on itself */
+  const job = clip(s(ex.service || l.service || l.websiteForm || ex.websiteForm), 34), addr = clip(s(l.address), 50), emg = !!(l.emergency || ex.emergency);
+  let byN = s(o.by).replace(/\s*\((by )?text[^)]*\)\s*$/i, ''); if (/@|^auto|lead inbox|system/i.test(byN)) byN = '';
+  let claim = false;
+  await _D.kvCas(SKEY, v => { const st = loadState(v); claim = false; if (low(obj(st.lsaPmTx[leadId]).pm) === em) return undefined; st.lsaPmTx[leadId] = { pm: em, at: new Date(now()).toISOString() }; claim = true; return st; }).catch(() => { claim = true; });
+  if (!claim) return { already: true };
+  const said = s(msg).replace(/\s+/g, ' '), head = 'GrayCo: ' + label + ' ' + code + ' for you' + (byN ? ' from ' + clip(byN.split(/\s+/)[0], 20) : '') + ': ' + w.line + (job ? ' · ' + job : '') + (addr ? ' · ' + addr : '');
+  const tail = ' CRM: ' + lwLink(leadId) + ' Call them, then tap ✅ Contacted on the lead.', room = MAX - head.length - tail.length - 4;
+  const text = head + (said && room > 16 ? ' "' + clip(said, room) + '"' : '') + tail;
+  return notify({ type: 'assigned', text, body: () => text, link: site() + '/#leads', only: [em], mine: [em], thread: 'lead:' + leadId + ':pm:' + em, leadId, hold: true, sqOnly: true, emergency: emg });
+}
+async function speedText(kind, x){
+  x = obj(x); const owners = await loadOwners(), l = obj(x.raw), w = lwWho(Object.assign({}, l, { name: s(l.name || x.title) })), label = leadLabel(l, l), id = s(x.key || l.id);
+  const link = lwLink(id), code = s(l.inboxId) ? lsaCode(s(l.inboxId)) : '', ago = LWc().ago(Math.max(0, (now() - (/^pm/.test(kind) ? (isFinite(x.asgAt) ? x.asgAt : x.born) : x.born)) / 3600000));
+  let text, only;
+  if (kind === 'unasg' || kind === 'unasg24') {
+    let sug = s(obj(l.hold).state === 'held' && obj(l.hold).name) || s(x.suggest);
+    if (!sug && s(l.inboxId)) { try { if (await require('./automations.js').isOn('lead_auto_assign')) { const d = await lsaDefaultPm(); if (d) sug = s(d.name); } } catch (e) {} }   /* the 5 PM default assign (bid-inbox.js) */
+    text = 'GrayCo: 👤 assign ' + label + (code ? ' ' + code : '') + ' — ' + w.line + ' came in ' + ago + ' ago and has no PM.' + (sug ? ' It goes to ' + clip(sug, 24) + ' at 5 PM unless you pick someone.' : '') + (code ? ' Reply GOOD ' + code + ' <PM> to assign.' : '') + ' ' + link;
+    only = owners.map(o => o.email);
+  } else if (kind === 'pm24') {
+    text = 'GrayCo: ⏰ reach out — ' + label + (code ? ' ' + code : '') + ' ' + w.line + ' was given to you ' + ago + ' ago and is not marked contacted. Call them, then tap ✅ Contacted' + (LWc().isLsa(l) && code ? ' (or reply BAD ' + code + ' <why> if it is not a real lead)' : '') + ': ' + link;
+    only = [low(x.assigneeEmail)];
+  } else if (kind === 'pm48') {
+    text = 'GrayCo: ⚠️ ' + clip(s(x.assignee) || 'The PM', 24) + ' has not contacted ' + label + (code ? ' ' + code : '') + ' ' + w.line + ' — given to them ' + ago + ' ago. ' + link;
+    only = owners.map(o => o.email).filter(e => e !== low(x.assigneeEmail));
+  } else return { skipped: 'kind' };
+  only = only.filter(Boolean); if (!only.length) return { skipped: 'nobody' };
+  return notify({ type: 'lead', text, body: () => text, link: site() + '/#leads', only, thread: 'stl:' + kind + ':' + id, leadId: id, hold: true, sqOnly: true,
+    lsa: code && /^unasg/.test(kind) ? { leadId: s(l.inboxId), code, name: w.nm, phone: w.ph, link: '', said: '', em: false, isLsa: false, fu: true, label, codeOnly: true, adminsOnly: true } : undefined });
+}
+async function bidDueText(kind, x){
+  x = obj(x); const est = await estimatorsFor({}, x); if (!est.length) return { skipped: 'no estimator' };
+  let due = s(x.bidDue); try { due = require('./bid-due.js').fmtDue(due); } catch (e) {}
+  const when = kind === '1h' ? 'IN 1 HOUR' : kind === 'today' ? 'TODAY' : 'TOMORROW', to = s(x.dueToCompany || x.gc);
+  const text = 'GrayCo ⏰ BID DUE ' + when + ': ' + clip(s(x.title) || 'bid', 70) + ' — ' + due + (to ? ' to ' + clip(to, 40) : '') + (x.submitMethod ? ' (' + clip(s(x.submitMethod) + (x.submitWhere ? ': ' + s(x.submitWhere) : ''), 40) + ')' : '') + ' ' + lwLink(s(x.key || x.id));
+  return notify({ type: 'lead', text, body: () => text, link: site() + '/#leads', only: est, thread: 'biddue:' + kind + ':' + s(x.key || x.id), leadId: s(x.key || x.id), hold: kind !== '1h', sqOnly: true });
 }
 /* the morning approvals digest (auto-digest.js) — at most one text a day per person */
 async function approvals(email, n){
@@ -1495,5 +1564,5 @@ async function lsaAgeCheck(){
   return out;
 }
 
-module.exports = { pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

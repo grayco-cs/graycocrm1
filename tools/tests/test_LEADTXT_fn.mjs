@@ -1,9 +1,9 @@
 // test_LEADTXT_fn.mjs [worktree] — patch LEADTXT (owner 11/19: "How do I say good or bad if I get 2-3 or more texts … just say
 // bad bad bad good bad, or is there a better way"). Node only: netlify/functions/_lib/smsalert.js with a mocked store and a mocked SMS
 // sender (nothing is sent, nothing is written anywhere). Made-up people and leads.
-//   1. every lead text (Google LSA, website, text / missed-call, 🚨 emergency, NEW LEAD bid, office-checked LSA call, the PM's SEND text)
-//      carries its 4-letter code and "Reply GOOD <code> / BAD <code>" — also after the first month; the mitigation manager and a sub
-//      bid's estimator get no GOOD / BAD hint;
+//   1. every lead text (Google LSA, website, text / missed-call, 🚨 emergency, office-checked LSA call, the PM's SEND text)
+//      carries its 4-letter code and "Reply GOOD <code> / BAD <code>" — also after the first month; the mitigation manager and a bid invite's (prime or sub, LEADWATCH)
+//      estimator get no GOOD / BAD hint;
 //   2. one reply answers several leads: "BAD c1 c2, GOOD c3 Steven", "bad c1 bad c2 good c3", "c1 bad, c2 good", "BAD c1 c2 spam",
 //      "bad c1, good" and the bare "bad bad good" (in order to the open leads, oldest first — only when the counts match; otherwise
 //      nothing is saved and the reply lists the open leads with code + name);
@@ -82,8 +82,9 @@ async function three(){ await web('W1', 'Jo Smith', '9015550111'); await web('W2
   /* NEW LEAD (a prime bid) and a sub bid */
   sent.length = 0;
   await SA.leads([{ id: 'B1', key: 'B1', title: 'Church reroof', source: 'Dodge', type: 'bid', bidDue: '2026-11-20', contact: { name: 'Owner Rep', phone: '9015550215' } }], { B1: { id: 'B1', bidRole: 'prime' } }, () => false);
-  b = (to(WES)[0] || {}).body || '';
-  ok(/^GrayCo NEW LEAD: Owner Rep/.test(b) && b.indexOf('Reply GOOD ' + code('B1') + ' / BAD ' + code('B1') + '.') > 0, 'NEW LEAD (bid) to an admin: + the code hint', b);
+  b = (to(GLENN)[0] || {}).body || '';
+  /* LEADWATCH (owner 11/19: the City of Bartlett bid postings reached the owners as "NEW LEAD: Unknown"): a prime bid is the estimator's too */
+  ok(/^GrayCo BID INVITE: Church reroof/.test(b) && !/Reply GOOD/.test(b) && !to(WES).length && !to(NICK).length, 'a prime bid: only the estimator ("GrayCo BID INVITE: <project>"), never the owners, no GOOD / BAD hint', sent);
   sent.length = 0;
   await SA.leads([{ id: 'B2', key: 'B2', title: 'School', source: 'BuildingConnected', gc: 'Big GC', type: 'bid', bidDue: '2026-11-20', contact: { name: 'GC PM', phone: '9015550216' } }], { B2: { id: 'B2', bidRole: 'sub' } }, () => false);
   ok(to(GLENN).length === 1 && !/Reply GOOD/.test(to(GLENN)[0].body) && !to(WES).length, 'a sub bid: only the estimator, no GOOD / BAD hint', sent);

@@ -1326,7 +1326,41 @@ async function releaseHolds(crmLeads){
   for (const x of out.assigned) { try { const r = await A.notifyAssigned(Object.assign({}, x, { id: s(x.leadId) || ('LEADIN-' + s(x.id).replace(/^LI-/, '')) }), { by: 'auto' }); if (r && r.sent) out.notified++; } catch (e) {} }
   for (const l of plan.crmOnly) { try { const r = await A.notifyAssigned(Object.assign({}, l, LH.releaseFields(l, 'auto', '', now)), { by: 'auto' }); out.crmOnly++; if (r && r.sent) out.notified++; } catch (e) {} }
   out.assigned = out.assigned.map(x => ({ id: x.id, to: s(x.pm || x.estimator) }));
+  try { out.dflt = await defaultAssign(crmLeads); } catch (e) { out.dflt = { error: s(e && e.message) }; }   /* patch LEADWATCH */
   return out;
+}
+/* patch LEADWATCH (owner 11/19: "I need to make sure all my leads don't get ignored, get sent to PM"): the 5 PM auto-assign for EVERY
+   customer lead in the Lead Inbox. A lead the lead roles had no suggestion for (most website / phone / referral leads) and a Google LSA lead
+   (the hold rule waits for GOOD / BAD on those) used to stay unassigned for good. Now, at the 5 PM of the work day it came in (lead-hold.js
+   holdUntil — after 5 PM or on a weekend: 5 PM the next work day) a customer lead still without anybody goes to: its suggested person (a held
+   Google lead), else the "Default PM for Google LSA leads" setting (Lead settings; never set = Owner 2, by role). The PM gets the GrayCo lead
+   text (smsalert pmAssignText / pmLeadText via notifyAssigned). Not: bid invites, emergencies (on call has them), a lead whose CRM copy a
+   person assigned / contacted / closed. ⚡ "5 PM lead auto-assign" (lead_auto_assign) OFF → nothing is assigned (held: would have done N). */
+async function defaultAssign(crmLeads){
+  if (env('LEAD_DEFAULT_ASSIGN') === '0') return { off: true };
+  const LW = require('./_lib/lead-watch.js'), LH = require('./_lib/lead-hold.js'), now = typeof exports._now === 'function' ? exports._now() : Date.now();
+  const due = LW.defaultDue(arr(await kvGet(KV)), crmLeads, now, LH.holdUntil);
+  if (!due.length) return { assigned: 0 };
+  const AUTO = require('./_lib/automations.js');
+  if (!(await AUTO.isOn('lead_auto_assign'))) return { assigned: 0, held: await AUTO.held('lead_auto_assign', due.length, due.map(x => s(x.title || x.id)).slice(0, 3)) };
+  let dflt = null; try { dflt = await require('./_lib/smsalert.js').lsaDefaultPm(); } catch (e) { dflt = null; }
+  const want = {}; due.forEach(it => { want[it.id] = 1; });
+  const done = [];
+  await kvCas(KV, v => { const list = arr(v); done.length = 0;
+    list.forEach(x => {
+      if (!x || !want[x.id] || LH.assignee(x)) return;
+      const at = new Date(now).toISOString();
+      if (x.hold && x.hold.state === 'held' && s(x.hold.name)) Object.assign(x, LH.releaseFields(x, 'auto', '', now));   /* a held Google lead → its suggested PM */
+      else if (dflt && dflt.email) { x.pm = s(dflt.name); x.pmEmail = low(dflt.email); x.assignedBy = 'Auto · 5 PM default PM (nobody assigned it)'; x.assignedAt = at; x.autoAssignedAt = at;
+        x.hold = { state: 'auto', name: s(dflt.name), email: low(dflt.email), field: 'pm', label: 'Default PM', k: 'default', until: at, at, doneAt: at, doneBy: 'auto' }; }   /* hold 'auto': the CRM copies the PM onto its lead (LEADHOLD fromItem) */
+      else return;
+      if (x.status === 'new') x.status = 'imported';
+      x.rev = (x.rev || 1) + 1; x.updatedAt = at; done.push(Object.assign({}, x));
+    });
+    return done.length ? list : undefined; });
+  const A = alertsApi(); let notified = 0;
+  for (const x of done) { try { const r = await A.notifyAssigned(Object.assign({}, x, { id: s(x.leadId) || ('LEADIN-' + s(x.id).replace(/^LI-/, '')) }), { by: 'auto' }); if (r && (r.sent || (r.cell && r.cell.sent))) notified++; } catch (e) {} }
+  return { assigned: done.length, notified, to: done.map(x => ({ id: x.id, pm: s(x.pm) })), noDefault: !dflt };
 }
 async function routeLead(id){
   const LR = require('./_lib/lead-roles.js');
@@ -1929,7 +1963,7 @@ exports.backgroundHandler = async function(event){
 };
 
 /* shared with bid-watch.js, and the test harness */
-exports._lib = { leadSigOf, liteList, KV_SIG, routeLead, releaseHolds, holdPick, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
+exports._lib = { leadSigOf, liteList, KV_SIG, routeLead, releaseHolds, defaultAssign, holdPick, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
 exports._test = { radiusGate, miles, bidPath, noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
