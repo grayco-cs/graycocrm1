@@ -159005,6 +159005,8 @@ var LABELS = { insCarrier: 'GL insurer', insPolicy: 'GL policy #', insEff: 'GL e
   autoInsCarrier: 'Auto insurer', autoInsExp: 'Auto expires', umbCarrier: 'Umbrella insurer', umbExp: 'Umbrella expires', addlInsured: 'GrayCo additional insured', insuredName: 'Insured', certHolder: 'Certificate holder',
   legalName: 'Legal name', businessName: 'Business name', taxClass: 'Tax classification', address: 'Address', tinType: 'Tax ID type' };
 function confirmSubRead(ov, rd, subId, form, meta){
+  /* QA gate 11/19: an answer without the read values (the reader failed / sent nothing back) threw here and left "Reading…" up for good */
+  if (!rd || typeof rd !== 'object') { try { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ The reader sent nothing back for this file. Try 📄 Read & confirm again in a minute, or open 📄 The file and fill the sub record by hand.</div>'; } catch (e) {} return; }
   var f = rd.fields || {}, guess = subId || (subByName(f.businessName || f.legalName || f.insuredName) || {}).id || '';
   var rows = Object.keys(LABELS).filter(function(k){ return f[k] != null && f[k] !== '' && !(k === 'addlInsured' && rd.kind !== 'coi'); }).map(function(k){
     var v = f[k]; if (typeof v === 'number') v = money(v).replace('.00', ''); if (typeof v === 'boolean') v = v ? 'Yes' : 'NO — ask for it';
@@ -159026,6 +159028,7 @@ function confirmSubRead(ov, rd, subId, form, meta){
 function applySubRead(rd, sid, form, meta){
   var sb = subById(sid); if (!sb) return { ok: false, error: 'That sub is not loaded.' };
   if (typeof W._setSubs !== 'function') return { ok: false, error: 'The sub list is not ready on this screen.' };
+  if (!rd || typeof rd !== 'object') return { ok: false, error: 'Nothing was read from that file.' };
   var f = rd.fields || {}, at = nowIso(), by = myName(), ch = {}, extra = {};
   var file = { id: uid('F'), cat: rd.kind === 'coi' ? 'COI' : 'W-9', ref: s(rd.ref || (meta && meta.ref)), data: s(rd.ref || (meta && meta.ref)), name: s(rd.name || (meta && meta.name)) || (rd.kind === 'coi' ? 'COI.pdf' : 'W-9.pdf'), by: by, at: at, aiRead: rd.id };
   if (rd.kind === 'coi') {
@@ -159116,7 +159119,7 @@ function subDocGo(ov, x){
   fn('sub-doc-read', { ref: x.ref, name: x.name, subId: x.subId, kind: /w-?9/i.test(s(x.cat) + s(x.name)) ? 'w9' : 'coi', source: 'sub-docs' }).then(function(j){
     if (!j.ok) { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(j.error) + '</div>'; return; }
     confirmSubRead(ov, j.read, x.subId, null, { ref: x.ref, name: x.name });
-  });
+  }, function(e){ try { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc((e && e.message) || 'Could not read it — try again') + '</div>'; } catch (x2) {} });   /* never stuck on "Reading…" */
 }
 function openSubDoc(ref){
   var x = SDQ.filter(function(z){ return z.ref === s(ref); })[0]; if (!x) return false;
