@@ -6,7 +6,7 @@
 //      · a job for the customer "Enterprise" no longer takes a bill for another Enterprise site (#1302);
 //      · a customer with several jobs → the invoice is NOT put on the first one; one PO on 3 jobs → no job; two jobs at one address → no job;
 //      · a lost job is never the target; nothing attaches to a job that is not there;
-//      · what IS sure still lands by itself: the PO of exactly one job, its street address, the customer of exactly one job.
+//      · what IS sure still lands by itself: the PO of exactly one job, its street address (INVLINK 11/19: the customer of one job alone is only a suggestion).
 //   B. ➕ New project (patch NEWPROJ) from the invoice:
 //      · "Did you mean …?" finds the existing job for "4964 Given Ave" (the job is at 4964 GivenS Ave) and for a memo that holds the address;
 //      · opened from 🔗 QuickBooks ↔ CRM it knows the record (id, vendor, memo);
