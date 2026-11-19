@@ -3111,23 +3111,19 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                   display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
                   paddingTop: isFirst ? 0 : 14,
                   paddingBottom: isFirst ? 14 : 0,
-                  borderBottom: isFirst ? `1px solid ${styles.navy2}` : 'none',
+                  borderBottom: isFirst ? `1px solid ${styles.border}` : 'none',
                 }}>
-                  <div style={{
-                    width: 44, height: 44, background: styles.accent, borderRadius: 6,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <Shield size={22} color={styles.navy} />
-                  </div>
+                  {/* BIDLOGO (owner 11/19): GrayCo's logo, clean — no colored box behind it */}
+                  <img src={logoUrl} alt="GrayCo" style={{ width: 72, height: 'auto', flexShrink: 0, display: 'block' }} />
                   <div style={{ flex: 1, minWidth: 160 }}>
                     <div style={{
-                      fontSize: 11, color: styles.accent, letterSpacing: '0.1em',
+                      fontSize: 11, color: styles.text2, letterSpacing: '0.1em',
                       textTransform: 'uppercase', fontWeight: 600, marginBottom: 3,
                     }}>{role}</div>
-                    <div style={{ fontFamily: styles.fontDisplay, fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>
+                    <div style={{ fontFamily: styles.fontDisplay, fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: styles.navy }}>
                       {person.name}
                     </div>
-                    {person.title && <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 2 }}>{person.title}</div>}
+                    {person.title && <div style={{ fontSize: 12, color: styles.text2, marginTop: 2 }}>{person.title}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {person.phone && (
@@ -3143,9 +3139,9 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                     {person.email && (
                       <a href={`mailto:${person.email}`} style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '10px 14px', background: 'transparent', color: '#fff',
+                        padding: '10px 14px', background: 'transparent', color: styles.navy,
                         borderRadius: 6, textDecoration: 'none', fontWeight: 600, fontSize: 13,
-                        border: `1.5px solid ${styles.navy2}`,
+                        border: `1.5px solid ${styles.border}`,
                       }}>
                         <Mail size={14} /> {t.emailPM}
                       </a>
@@ -3157,8 +3153,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
             return (
               <Card style={{
-                marginBottom: 16, background: styles.navy, color: '#fff',
-                border: `1px solid ${styles.navy2}`,
+                marginBottom: 16, background: '#fff', color: styles.text,
               }}>
                 {samePerson ? (
                   <ContactBlock person={pm} role={`${t.projectManager} & ${t.estimator}`} isFirst={false} />
