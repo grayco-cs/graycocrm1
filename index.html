@@ -233080,7 +233080,8 @@ function wrapUnion(){
   try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
   w.__gcCoiRead = true; W._gcUnionMerge = w;
 }
-wrapUnion(); SI.call(W, wrapUnion, 3000);
+/* other scripts wrap _gcUnionMerge too (some after a delay): stay on top for the first minutes */
+wrapUnion(); (function(){ var n = 0, iv = SI.call(W, function(){ wrapUnion(); if (++n > 60) clearInterval(iv); }, 2000); })();
 W._gcCoiKeepRead = function(list, others){ return keepRead(list, readMarks([list].concat(arr(others)))); };
 
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
