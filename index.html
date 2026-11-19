@@ -249481,6 +249481,7 @@ try {
     /* (a raised tab — 🏠 Home or ✅ Approvals in a big circle — rises into this row: the two buttons move to the other side) */
     '#gc-pu-dock.gc-pu-dk-r{justify-content:flex-end;gap:18px}#gc-pu-dock.gc-pu-dk-l{justify-content:flex-start;gap:18px}' +
     'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;margin:0!important;padding:0!important;border-radius:18px!important;font-size:17px!important;line-height:36px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}' +
+    'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
@@ -250058,7 +250059,7 @@ try {
     Array.prototype.forEach.call((D.body || H).children, watchKid); PU.mo.push(ma);
     var mb = new MO(function(ms){
       var hit = false;
-      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); fresh(a[k]); watchKid(a[k]); hit = true; } }
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (/^(_gcAppHead|_gcMicBtn|_gcFieldHubBtn|gc-fh-tabs)$/.test(a[k].id)) head(); fresh(a[k]); watchKid(a[k]); hit = true; } }
       if (hit) { safeUntil = Date.now() + 3000; soon(); }
     });
     mb.observe(D.body || H, { childList: true }); PU.mo.push(mb);
