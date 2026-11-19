@@ -2,15 +2,15 @@
 //   a register with live supplier-bill lines + copies of them that were DELETED (tombstoned + gc_deleted_gcAcctRegister),
 //   a fold cycle (C into Z, Z into C), and a real duplicate pair. Then the duplicate fold runs, then the deleted copies are
 //   stripped (what the next sync / upload does). The live lines must still be there.
-// Also: the out-of-date-copy gate (_gcStaleGate) and the admin restore (plan / apply / undo).
+// Also: the out-of-date-copy gate (_gcStaleGate), the bill-amount fix (_gcBillAmtFix: plan / apply / undo) and the import guard.
 import fs from 'fs'; import vm from 'vm'; import path from 'path';
 const FILE = path.resolve(process.argv[2] || 'index.html');
 const html = fs.readFileSync(FILE, 'utf8');
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 600) : '')); } };
 const blockAt = (needle) => { const i = html.indexOf(needle); if (i < 0) return ''; const st = html.lastIndexOf('<script', i), en = html.indexOf('</script>', i); return html.slice(html.indexOf('>', st) + 1, en); };
-const J = blockAt("if(window.__GC_PATCH_J__) return;"), G = blockAt('__GC_PATCH_STALEGATE__'), RR = blockAt('__GC_PATCH_REGRESTORE__');
+const J = blockAt("if(window.__GC_PATCH_J__) return;"), G = blockAt('__GC_PATCH_STALEGATE__');
 ok(J.length > 20000, 'index.html has patch J (fold / duplicate check)');
-const HAS_FIX = G.length > 1000 && RR.length > 1000;
+const HAS_FIX = G.length > 1000;
 console.log(HAS_FIX ? '  (this copy has patch REGFIX)' : '  (this copy has NO patch REGFIX — the checks below show the 11/19 loss)');
 
 function harness(){
@@ -143,45 +143,55 @@ async function gate(){
   ok(SD.state() === 'current', 'no answer for 20 s: opens up (never stuck shut)');
 }
 
-async function restore(){
-  if (!RR) { ok(false, 'index.html has patch REGRESTORE'); return; }
+async function amtfix(){
+  const AF = blockAt('__GC_PATCH_AMTFIX__');
+  ok(!html.includes('_gcRegRestore'), 'the "Restore 44 register lines" action is gone (those lines were copies of money still on the register)');
+  if (!AF) { ok(false, 'index.html has patch AMTFIX'); return; }
   const H = harness();
   vm.runInContext(J, H.ctx); H.tick(4);
-  const W = H.win;
-  vm.runInContext(RR, H.ctx);
-  const R = W._gcRegRestore; const LINES = R.lines();
-  ok(LINES.length === 44, 'the restore carries 44 lines', LINES.length);
-  const tot = Math.round(LINES.reduce((t, l) => t + Number(l.amt), 0) * 100) / 100;
-  ok(tot === 125064.44, 'their bills total $125,064.44', tot);
-  /* the register as it is now: none of them; one already back (by id); one deleted on purpose */
-  H.store.gcAcctRegister = [L('EXPother0001', 'SUB_INVother001', 10), Object.assign({}, LINES[0])];
-  H.tomb['gcAcctRegister:' + LINES[1].id] = 1;
-  H.store.gc_folded = LINES.map((l) => ({ id: 'FOLD_gcAcctRegister_' + l.id, list: 'gcAcctRegister', recordId: l.id, keptId: 'EXPdeadcopy', rule: 'R1 two register rows for one source', record: l }));
-  /* line 0 is on the disk but folded: hidden from reads until un-folded */
-  const P = await R.plan();
-  const by = (w) => P.filter((p) => p.what === w).length;
-  ok(by('deleted') === 1 && by('restore') + by('already') === 43, 'preview: one deleted on purpose is left alone; the rest are restore / already there', { restore: by('restore'), already: by('already'), deleted: by('deleted') });
-  const before = JSON.stringify(H.store.gcAcctRegister);
-  ok(before === JSON.stringify(H.store.gcAcctRegister), 'the preview writes nothing');
-  const res = await R.apply();
-  const reg = H.store.gcAcctRegister, ids = reg.map((r) => r.id);
-  ok(res.restored === by('restore') && LINES.filter((l, i) => i !== 1).every((l) => ids.includes(l.id)), 'Restore puts back every missing line (not the deleted one)', res.restored);
-  ok(!ids.includes(LINES[1].id) && ids.includes('EXPother0001'), 'the deleted line stays out; other lines untouched');
-  ok(new Set(ids).size === ids.length, 'no line twice');
-  const l5 = reg.find((r) => r.id === LINES[5].id);
-  ok(l5 && l5.amount === LINES[5].amount && l5.amt === LINES[5].amt && l5.srcInvId === LINES[5].srcInvId && l5._restoredAt, 'a restored line is the 11/18 row (amount, amt, bill link) plus a restore stamp');
-  const F = H.store.gc_folded; ok(F.filter((f) => f.unfolded).length === res.restored, 'their gc_folded entries are kept, marked unfolded', F.filter((f) => f.unfolded).length);
-  const vis = await W.idbGet('gcAcctRegister');
-  ok(vis.length === reg.length, 'every restored line shows on a read (no fold hides them)', [vis.length, reg.length]);
-  const log = H.store.gc_regrestore_log; ok(Array.isArray(log) && log.length === 1 && log[0].ids.length === res.restored, 'the restore is logged in gc_regrestore_log');
-  const again = await R.apply(); ok(again.restored === 0, 'pressing Restore again does nothing');
-  const u = await R.undo(log[0].id);
-  const ids2 = H.store.gcAcctRegister.map((r) => r.id);
-  ok(u.removed === res.restored && ids2.includes('EXPother0001') && !LINES.some((l, i) => i > 1 && ids2.includes(l.id)), 'Undo takes exactly the restored lines off', u);
-  ok(H.store.gc_folded.filter((f) => f.unfolded).length === 0 && H.store.gc_regrestore_log[0].undoneAt, 'Undo folds the entries back and marks the log');
+  const W = H.win; vm.runInContext(AF, H.ctx);
+  const F = W._gcBillAmtFix;
+  /* the 11/13 shape: bill B1 changed 31,484.70 -> 49.19 (QB paid+open = 31,484.70) with three register lines;
+     B2 changed 2,000 -> 3,750 with two lines; B3 changed but no line at the QuickBooks total; B4 never changed */
+  const bill = (id, num, amt, was, extra) => Object.assign({ id, type: 'sub', source: 'quickbooks', qbKey: 'QB:bill:' + num + ':demo', invNum: num, sub: 'Demo Lumber', amt, status: 'paid', date: '2026-09-25' }, was == null ? {} : { qbAmountWas: was }, extra || {});
+  H.store.invs = [bill('INVb1', '373642', 49.19, 31484.7, { amountPaid: 2297.91, openBalance: 29186.79 }), bill('INVb2', '85388', 3750, 2000), bill('INVb3', '1111', 80, 60), bill('INVb4', '2222', 500)];
+  const R = (id, src, amount, amt) => ({ id, _id: id, srcInvId: src, amount, amt, date: '2026-11-05', desc: 'Sub paid: QuickBooks bill', type: 'expense', status: 'paid', source: 'subinvoice' });
+  H.store.gcAcctRegister = [R('EXPq1', 'INVb1', 31484.7, 31484.7), R('EXPw1', 'INVb1', 49.19, 49.19), R('EXPs1', 'SUB_INVb1', 31484.7, 49.19),
+    R('EXPq2', 'INVb2', 2000, 2000), R('EXPw2', 'INVb2', 3750, 3750), R('EXPw3', 'INVb3', 80, 80), R('EXPq4', 'INVb4', 500, 500)];
+  const P = await F.plan();
+  const p1 = P.find((p) => p.id === 'INVb1'), p3 = P.find((p) => p.id === 'INVb3');
+  ok(P.length === 3 && !P.some((p) => p.id === 'INVb4'), 'the preview lists the bills the import changed (not the others)', P.map((p) => p.id));
+  ok(p1 && p1.num === '373642' && p1.now === 49.19 && p1.was === 31484.7 && p1.paidOpen === 31484.7 && p1.agrees === true, 'preview: bill #, vendor, now, before, QuickBooks paid + open (agrees with before)', p1);
+  ok(p1 && p1.keep === 'EXPq1' && p1.fold.map((f) => f.id).sort().join() === 'EXPs1,EXPw1', 'keeps the line at exactly the QuickBooks total; folds the import-amount line and the SUB_ copy (whose amt differs)', p1);
+  ok(p3 && !p3.keep && p3.noKeep && !p3.fold.length, 'no line at exactly the QuickBooks total: nothing on the register is folded or changed for that bill', p3);
+  ok(p1.regBefore === 63018.59 && p1.regAfter === 31484.7 && p1.costBefore === 49.19 && p1.costAfter === 31484.7, 'per-bill totals: register lines before / after, cost totals before / after', [p1.regBefore, p1.regAfter, p1.costBefore, p1.costAfter]);
+  const T = await F.totals();
+  ok(T.costBefore === 49.19 + 3750 + 80 && T.costAfter === 31484.7 + 2000 + 60, 'overall totals', T);
+  const regBefore = JSON.stringify(H.store.gcAcctRegister), invBefore = JSON.stringify(H.store.invs);
+  ok(JSON.stringify(H.store.gcAcctRegister) === regBefore, 'the preview writes nothing');
+  const res = await F.apply();
+  const inv = Object.fromEntries(H.store.invs.map((b) => [b.id, b]));
+  ok(inv.INVb1.amt === 31484.7 && inv.INVb1._importAmt === 49.19 && inv.INVb2.amt === 2000 && inv.INVb3.amt === 60 && inv.INVb4.amt === 500, 'Fix: each bill back to its QuickBooks total, the import value kept in _importAmt', H.store.invs.map((b) => [b.id, b.amt]));
+  const ids = H.store.gcAcctRegister.map((r) => r.id).sort().join();
+  ok(ids === 'EXPq1,EXPq2,EXPq4,EXPw3', 'one register line per bill; the bill with no exact line is left alone', ids);
+  ok((H.store.gc_folded || []).filter((f) => !f.unfolded).length === 3 && res.folded === 3, 'the extra lines are folded (kept in gc_folded), not deleted', res);
+  ok(Array.isArray(H.store.gc_amtfix_log) && H.store.gc_amtfix_log.length === 1, 'the fix is logged in gc_amtfix_log');
+  const again = await F.plan(); ok(again.length === 0, 'after the fix nothing is left to fix');
+  const u = await F.undo(H.store.gc_amtfix_log[0].id);
+  const ids2 = H.store.gcAcctRegister.map((r) => r.id).sort().join();
+  ok(u.bills === 3 && ids2 === 'EXPq1,EXPq2,EXPq4,EXPs1,EXPw1,EXPw2,EXPw3', 'Undo: bills and folded lines back', [u, ids2]);
+  ok(H.store.invs.find((b) => b.id === 'INVb1').amt === 49.19 && !('_importAmt' in H.store.invs.find((b) => b.id === 'INVb1')), 'Undo restores the bill amount exactly');
+
+  /* the import never changes a QuickBooks bill total by itself */
+  const hold = W._gcQbBillAmtHold;
+  ok(typeof hold === 'function' && /amount conflict/.test(hold(bill('X', '1', 31484.7), 49.19)), 'a re-import that changes a QuickBooks bill total is held as a to-do');
+  ok(hold(bill('X', '1', 100), 100) === '' && hold(Object.assign(bill('X', '1', 100), { type: 'client' }), 50) === '' && hold(Object.assign(bill('X', '1', 100), { source: '', qbKey: '' }), 50) === '', 'not held: same total, a client invoice, or a bill that did not come from QuickBooks');
+  const QB = blockAt('function diffFor(rec, x, list, pid, ctx)');
+  ok(/_gcQbBillAmtHold\(x, rec\.amount\)/.test(QB), 'the QuickBooks CSV import (QBCSV) asks the same rule before changing an amount');
+  ok((J.match(/_gcQbBillAmtHold\(/g) || []).length >= 4, 'patch J import (bill and already-imported rows) asks it too');
 }
 
 await run();
-if (HAS_FIX) { await gate(); await restore(); }
+if (HAS_FIX) { await gate(); await amtfix(); }
 console.log(`\nREGFIX: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
