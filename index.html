@@ -249993,6 +249993,7 @@ try {
     var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
     if (mic && mic.parentNode !== sm) { sm.insertBefore(mic, sm.firstChild); if (!sm.querySelector('.gc-pu-l')) { var l1 = D.createElement('span'); l1.className = 'gc-pu-l'; l1.textContent = 'Voice note'; sm.appendChild(l1); } }
     if (hub && hub.parentNode !== sh) { if (!sh.querySelector('.gc-pu-l')) { var l2 = D.createElement('span'); l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
+    [mic, hub].forEach(function(x){ if (x && x.__gcDodge && (x.__gcDodge[0] || x.__gcDodge[1])) { x.__gcDodge = [0, 0]; x.style.removeProperty('translate'); x.style.removeProperty('opacity'); x.setAttribute('data-gcnav-dodged', '0'); } });
     if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
     if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
   }
