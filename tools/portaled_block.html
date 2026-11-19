@@ -194,6 +194,13 @@ function css(){
     '#gcpe .pe-b.sm{min-height:40px;min-width:44px;padding:0 10px;font-size:13px}',
     '#gcpe .pe-b.red{border-color:#b91c1c;color:#b91c1c}',
     '#gcpe .pe-b:disabled{opacity:.45;cursor:default}',
+    /* the owner's rule on phones: white pages, no navy — the Field's header and Edit / Customer view tabs are white there (the
+       desk keeps the dark header) */
+    'html._fieldmode #gcpe .pe-top,html._fieldmode #gcpe .pe-seg{background:#fff;color:#14202E;border-bottom:1px solid #E5E7EB}',
+    'html._fieldmode #gcpe .pe-top button{background:#EEF2F7;color:#1d4ed8}html._fieldmode #gcpe .pe-tt small{color:#55626F}',
+    'html._fieldmode #gcpe .pe-seg button{border-color:#CBD5E1;color:#334155}',
+    'html._fieldmode #gcpe .pe-seg button[aria-pressed="true"]{background:#D4A017;border-color:#D4A017;color:#0F1D2F}',
+    'html._fieldmode #gcpe .pe-b.navy{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
     '#gcpe .pe-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}',
     '#gcpe .pe-btns.two{display:grid;grid-template-columns:1fr 1fr}',
     '#gcpe input.pe-i,#gcpe textarea.pe-i,#gcpe select.pe-i{width:100%;min-height:44px;border:1px solid #C9C2B2;border-radius:10px;padding:8px 10px;font-size:16px;font-family:inherit;background:#fff;color:#14202E}',

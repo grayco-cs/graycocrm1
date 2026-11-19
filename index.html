@@ -837,6 +837,30 @@ try {
       .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
     return checking;
   };
+  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0;
+  var autoUpdate = function(){
+    if (autoT) return;
+    if (!autoN) { try { ['keydown', 'input', 'compositionupdate'].forEach(function(t){ D.addEventListener(t, function(){ lastType = Date.now(); }, true); }); } catch (e) {} }
+    autoT0 = autoT0 || Date.now();
+    var tick = function(){
+      autoT = null; if (++autoN > 2000) return;
+      var busy = '';
+      try {
+        var a = D.activeElement, editing = a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()));
+        if (editing && Date.now() - lastType < 60000) busy = 'typing';
+        if (!busy && W._gcSending && W._gcSending().length && Date.now() - autoT0 < 180000) busy = 'sending';
+      } catch (e) {}
+      if (!busy) { B.autoUpd = ms(); dirty = true; autoToast(); NST.call(W, function(){ if (!update()) { autoT0 = 0; } }, 2000); return; }
+      autoT = NST.call(W, tick, 1500);
+    };
+    autoT = NST.call(W, tick, 300);
+  };
+  var autoToast = function(){
+    try { var t = D.getElementById('gc-bw-updating'); if (t) return; t = D.createElement('div'); t.id = 'gc-bw-updating'; t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1');
+      t.style.cssText = 'position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483647;background:#1e293b;color:#fff;padding:8px 16px;border-radius:999px;font:700 14px -apple-system,Segoe UI,Arial,sans-serif;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+      t.textContent = 'Updating…'; (D.body || H).appendChild(t); NST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {}
+  };
+  autoImpl = autoUpdate;
   checkImpl = function(resumed){
     return fetchLive().then(function(live){
       var mine = B.build = s(W.__GC_BUILD_ID__ || B.build).slice(0, 40);
@@ -846,7 +870,7 @@ try {
       B.old = { mine: mine, live: live, src: src || (resumed ? 'resumed' : 'network'), t: ms() };
       if (recent) B.old.afterUpdate = Math.round((Date.now() - healed) / 1000) + ' s after Tap to update';
       problem('old');
-      if (!recent && (src || resumed || gateUp() || !authed())) banner(live);
+      if (!recent) autoUpdate();   /* AUTOUPD: no bar, no button — the update runs by itself */
       return true;
     });
   };
@@ -970,10 +994,11 @@ try {
     } catch (e) {}
     return '';
   };
-  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, bar = null, lateOn = false;
+  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, bar = null, lateOn = false;
   function L(){ if (lateOn) return; lateOn = true; try { var t = D.getElementById('gc-bw-late'); eval(t ? t.textContent : ''); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
+  function auto(){ L(); if (autoImpl) autoImpl(); return !!autoImpl; }
   function update(){ L(); return updateImpl ? updateImpl() : false; }
   function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };
@@ -1042,8 +1067,8 @@ try {
   var older = function(mine, live){ L(); return olderImpl ? olderImpl(mine, live) : false; };
   function checkVersion(resumed){ L(); return checkImpl ? checkImpl(resumed) : Promise.resolve(false); }
   var lastResume = 0;
-  var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 10 * 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
-  try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = 0; resume(); } }); } catch (e) {}
+  var resume = function(){ if (D.visibilityState === 'hidden' || Date.now() - lastResume < 60e3 || Date.now() - T0 < 60e3) return; lastResume = Date.now(); checkVersion(true); };
+  try { D.addEventListener('visibilitychange', resume); W.addEventListener('pageshow', function(e){ if (e && e.persisted) { lastResume = Date.now(); checkVersion(true); } }); } catch (e) {}
 
   var isProblem = function(){ for (var k in B.p) return true; return false; };
   function heartbeat(){ if (get(HB_K) === day()) return; hbDue = true; var t0 = Date.now();
@@ -1061,7 +1086,7 @@ try {
 
   W._gcBootWatch = {
     state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
-    older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); },
+    older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); }, auto: auto, check: function(){ return checkVersion(true); },
     live: function(maxAge){ return LIVE.v && Date.now() - LIVE.at < (maxAge || 60000) ? LIVE.v : ''; },
     send: function(){ dirty = true; return send('manual'); }
   };
@@ -6891,7 +6916,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.277-2026-11-19-r36q -->
+<!-- GrayCo CRM Build: 33.278-2026-11-19-r36r -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -7863,7 +7888,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.277-2026-11-19-r36q");
+  console.log("[GC] Build 33.278-2026-11-19-r36r");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -7911,34 +7936,20 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.277-2026-11-19-r36q"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.278-2026-11-19-r36r"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
   var barShown = false;
 
+  /* AUTOUPD (owner 11/19): no "Yes, update / Not now" bar — a newer build on the server updates this copy by itself
+     (BOOTWATCH: right away when nobody is typing and nothing is on its way; else once the field is left / 60 s after the last
+     key; a 2-second "Updating…" note). Without BOOTWATCH on this device: a reload once nobody is typing. */
   function showUpdateBar(remote){
-    if(barShown) return;
-    /* patch BOOTWATCH: its "Tap to update" banner is already up (a cached copy / the sign-in screen) */
-    try{ if(window._gcBootWatch && window._gcBootWatch.banner()) return; }catch(e){}
-    barShown = true;
-    var bar = document.createElement('div');
-    bar.id = 'gc-update-bar';
-    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#2563eb;color:#fff;padding:10px 20px;text-align:center;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:12px';
-    bar.innerHTML = '\uD83D\uDD04 A newer version of the CRM is ready (' + remote + ') \u2014 ' +
-      '<button id="gc-update-now" style="background:#fff;color:#2563eb;border:none;border-radius:5px;padding:4px 14px;font-weight:700;cursor:pointer">Yes, update</button>' +
-      '<button id="gc-update-later" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:5px;padding:4px 14px;font-weight:700;cursor:pointer">Not now</button>';
-    document.body.prepend(bar);
-    var btn = document.getElementById('gc-update-now');
-    /* patch BOOTWATCH: the same update as its banner — caches emptied, old service workers removed, one reload (≤ 1 per 10 min) */
-    if(btn) btn.onclick = function(){ try{ if(window._gcBootWatch && window._gcBootWatch.update()) return; }catch(e){} location.reload(true); };
-    var laterBtn = document.getElementById('gc-update-later');
-    if(laterBtn) laterBtn.onclick = function(){ var b=document.getElementById('gc-update-bar'); if(b) b.remove(); barShown=false; window.__GC_UPDATE_PENDING__=false; };
-
-    // NEVER reload on a timer — that would throw someone off the page they are
-    // working on mid-task. Instead, arm a one-time reload that fires the next
-    // time the person changes tabs/views (a natural break where nothing is lost).
-    window.__GC_UPDATE_PENDING__ = false; // only update when the user clicks Yes
+    if(barShown) return; barShown = true;
+    try{ if(window._gcBootWatch && window._gcBootWatch.auto && window._gcBootWatch.auto()) return; }catch(e){}
+    var t0 = Date.now(), go = function(){ if(window.__GC_IS_TYPING__ && Date.now() - t0 < 60000){ setTimeout(go, 1500); return; } window.__GC_USER_WANTS_RELOAD__ = true; location.reload(); };
+    go();
   }
 
   // When an update is pending, reload on the NEXT navigation click — never while
@@ -7969,13 +7980,15 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
       .then(function(v){
         if(!v) return;
         var remote = String(v).trim();
-        if(remote && remote !== BUILD_ID) showUpdateBar(remote);
+        if(remote && remote !== BUILD_ID && !(window._gcBootWatch && window._gcBootWatch.older && !window._gcBootWatch.older(BUILD_ID, remote))) showUpdateBar(remote);   /* AUTOUPD: only when the server's build is NEWER (a newer copy — a preview, a rollback — is left alone) */
       })
       .catch(function(){});
   }
 
-  setInterval(checkVersion, 2 * 60 * 1000);   // every 2 minutes
+  setInterval(checkVersion, 60 * 1000);       // AUTOUPD: every minute while the page is on screen (checkVersion skips a hidden page)
   window.addEventListener('focus', checkVersion);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkVersion(); });
+  window.addEventListener('pageshow', function(e){ if(e && e.persisted) checkVersion(); });
   setTimeout(checkVersion, 8000);             // and shortly after load
 })();
 </script>
@@ -8095,7 +8108,7 @@ W._gcStaleGate = {
 };
 })();
 </script>
-<style>html._fieldmode #gc-hub-btn{display:none !important;}</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. *//* HUBFIX: #_cashPos, #_ctrRevWrap, #_pmComm, #_subXtra, #_teamStat are the SCREENS 💎 Cash Position / contract review / PM Commission Setup / Sub Details / Team Status open, not floating buttons — hiding them made those items do nothing */#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap{display:none !important;}</style>
+<style>html._fieldmode #gc-hub-btn{display:none !important;}@media (max-width:640px) and (hover:none) and (pointer:coarse){html._fieldmode #_gcMicBtn{display:none!important}html._fieldmode body>#_gcFieldHubBtn{visibility:hidden!important}}/* owner 11/19 (phone, Field): no 🎤 button of its own (🎤 Voice note is in the 💎 menu), and the 💎 shows once it sits in the bottom bar — not floating over the home's tiles while the page is still starting */</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. *//* HUBFIX: #_cashPos, #_ctrRevWrap, #_pmComm, #_subXtra, #_teamStat are the SCREENS 💎 Cash Position / contract review / PM Commission Setup / Sub Details / Team Status open, not floating buttons — hiding them made those items do nothing */#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap{display:none !important;}</style>
 </head>
   <body>
 <script>
@@ -21438,9 +21451,10 @@ fmBtn.onclick = function() {
   fmBtn.textContent = inField ? "Field" : "Desk";
 };
 
-// First-time help
+// First-time help (a desk's: never on a phone or in the Field — owner 11/19, it sat over his lead on his iPhone)
 if (!localStorage.getItem("_helpShown")) {
   setTimeout(function() {
+    try { if (document.documentElement.classList.contains("_fieldmode") || /iPhone|iPod|iPad|Android/i.test(navigator.userAgent || "") || (window.innerWidth || 0) < 820) return; } catch (e) {}
     var tip = document.createElement("div");
     tip.style.cssText = "position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:9999;background:#d4a017;color:#0d1b2a;padding:14px 24px;border-radius:10px;font-size:14px;font-weight:600;font-family:Inter,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,0.3);text-align:center;max-width:400px";
     tip.innerHTML = "New here? Tap <b>Field</b> at bottom-left for larger text and touch targets on mobile.";
@@ -23640,7 +23654,6 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\u2601", label: "Check the cloud", fn: function(){ if(window._gcOpenCloudCheck) window._gcOpenCloudCheck(); } },
         { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
         { icon: "\uD83D\uDD0D", label: "Duplicate check", fn: function(){ if(window._gcOpenDupCheck) window._gcOpenDupCheck(); } },
-        { icon: "\uD83E\uDDFE", label: "Fix bill amounts the 11-13 import changed", adminOnly: true, fn: function(){ if(window._gcBillAmtFix) window._gcBillAmtFix.open(); else alert("Still loading, try again in a moment."); } },   /* patch REGFIX-AMT */
         { icon: "\uD83D\uDCE5", label: "Import from QuickBooks (CSV)", fn: function(){ if(window._gcOpenQbCsvImport) window._gcOpenQbCsvImport(); } },
         { icon: "👤", label: "Card holders", adminOnly: true, fn: function(){ if(window._gcCardHolders) window._gcCardHolders.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "🔗", label: "QuickBooks ↔ CRM", adminOnly: true, fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
@@ -32765,6 +32778,12 @@ function calcPly(){try{
 var _gcSlotSaveT=null;
 function _gcSaveSlots(){
   try{
+    /* QA gate 11/19: saved on every click outside the builder, every blur and every closed sheet — with a new ts each time,
+       so an untouched builder went up to the cloud again and again. Only a real change of the open slots is saved now. */
+    var _core=JSON.stringify({slots:openSlots,active:activeSlot});
+    if(_gcSaveSlots._last==null){ try{ var _o=JSON.parse(localStorage.getItem('gc_builder_slots')||'null'); if(_o && JSON.stringify({slots:_o.slots,active:_o.active})===_core) _gcSaveSlots._last=_core; }catch(e){} }
+    if(_core===_gcSaveSlots._last) return;
+    _gcSaveSlots._last=_core;
     var _ts=Date.now(); window._gcSlotsTs=_ts;
     var payload=JSON.stringify({slots:openSlots,active:activeSlot,ts:_ts});
     // localStorage backup, capped so it can never fill storage
@@ -51832,7 +51851,12 @@ var _docSeen = (function(){
 })();
 function _saveDocSeen(){
   try{ localStorage.setItem('gc_doc_seen', JSON.stringify(_docSeen)); }catch(e){}
+  /* QA gate 11/19: also in IndexedDB — on a full localStorage (the owner's iPhone) the line above fails, and every open listed every
+     document as changed and downloaded them one by one again (hundreds of requests on one bar, holding his own saves back) */
+  try{ if(!_saveDocSeen.t) _saveDocSeen.t = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ _saveDocSeen.t = 0; try{ idbSet('gc_doc_seen_idb', _docSeen); }catch(e){} }, 3000); }catch(e){}
 }
+var _docSeenIdb = null;
+try{ (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ try{ _docSeenIdb = Promise.resolve(idbGet('gc_doc_seen_idb')).then(function(v){ if(v && typeof v === 'object') Object.keys(v).forEach(function(k){ if(_docSeen[k] == null) _docSeen[k] = v[k]; }); }, function(){}); }catch(e){} }, 0); }catch(e){}
 // Fingerprints of documents already uploaded, remembered across reloads so we
 // don't re-upload every document each time the page opens.
 var _docSnap = (function(){
@@ -51937,7 +51961,13 @@ function docFingerprint(d){
   return [d.id, d.name||'', d.size||0, d.uploaded||'', d.type||'', d.pid||'', d.cat||''].join('|');
 }
 
+/* QA gate 11/19: on a new device (or after its storage was cleared) the documents came down with the job lists, and the first
+   push — before the first document pull had fingerprinted them — sent every one of them back up (360–580 doc:* rows, the same
+   documents the cloud has, from the owner's phone on one bar). Documents go up once this page has pulled them once (or after
+   3 minutes whatever happened, so a receipt saved here is never held for good). */
+var _docsPulled = false, _docsT0 = Date.now();
 async function pushDocs(){
+  if(!_docsPulled && Date.now() - _docsT0 < 180000) return;
   var docs = await idbGet('projectDocs');
   if(!Array.isArray(docs) || !docs.length) return;
   for(var i=0; i<docs.length; i++){
@@ -51960,11 +51990,13 @@ async function pushDocs(){
 }
 
 async function pullDocs(){
+  try{ if(_docSeenIdb) await _docSeenIdb; }catch(e){}   /* the remembered stamps (IndexedDB) first */
   // Cheap listing first: keys + timestamps only, no file bytes.
   var r = await fetch(SB_URL+'/rest/v1/gc_kv?key=like.'+_DOC_PREFIX+'*&select=key,updated_at',
     {headers: {'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY}});
   var rows = await r.json();
-  if(!Array.isArray(rows) || !rows.length) return false;
+  if(!Array.isArray(rows)) return false;
+  if(!rows.length){ _docsPulled = true; return false; }
 
   var changed = rows.filter(function(row){ return _docSeen[row.key] !== row.updated_at; });
   /* APPLAG (QA gate): the upload fingerprints (gc_doc_snap, localStorage) were gone — a full store, or the files sweep clearing
@@ -51976,7 +52008,7 @@ async function pullDocs(){
     if(Array.isArray(_locD)) _locD.forEach(function(d){ if(d && d.id && _docSnap[d.id] == null && _seenNow[_DOC_PREFIX + d.id]){ _docSnap[d.id] = docFingerprint(d); _fill++; } });
     if(_fill) _saveDocSnap();
   }catch(e){}
-  if(!changed.length) return false;
+  if(!changed.length){ _docsPulled = true; return false; }
 
   var local = await idbGet('projectDocs');
   if(!Array.isArray(local)) local = [];
@@ -52001,6 +52033,7 @@ async function pullDocs(){
   merged.forEach(function(d){ try{ if(d && d.id) _docSnap[d.id] = docFingerprint(d); }catch(e){} });
   _saveDocSnap();
   try{ _applyOrQueue('projectDocs', merged); }catch(e){}
+  _docsPulled = true;
   console.log('[GC Sync] Documents updated from cloud: '+changed.length+' (now '+merged.length+' total).');
   try{ await window._gcFlagBigDocs(); }catch(e){}
   return true;
@@ -52161,10 +52194,12 @@ sbWrite.onDone = function(key, value, ok, status){
     try{ if(window._gcStaleGate && typeof window._gcStaleGate.stale === 'function' && window._gcStaleGate.stale()) keys = []; }catch(e){}
     if(!keys.length){ if(el) el.remove(); return; }
     if(!el){ el = document.createElement('div'); el.id = 'gc-unsent-note'; el.setAttribute('role', 'status'); el.setAttribute('data-gcnav-ignore', '1');
-      el.style.cssText = 'position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:8px 12px;border-radius:10px;font:600 12.5px Arial,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:80vw;pointer-events:none;opacity:.94';   /* never in the way of a button under it (it retries by itself) */
+      el.style.cssText = 'position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147482000;background:#92400e;color:#fff;padding:5px 10px;border-radius:999px;font:600 12px Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;opacity:.9';   /* NOTEFIX (owner 11/19: "blocking buttons"): a small pill bottom-right, the full sentence in its title */   /* never in the way of a button under it (it retries by itself) */
       (document.body || document.documentElement).appendChild(el); }
     var t = '\u23F3 Saved on this ' + (/iPhone|iPad|Android/i.test(navigator.userAgent || '') || (window.innerWidth || 999) < 600 ? 'phone' : 'computer') + ' — not sent to the office yet (' + (navigator.onLine === false ? 'no connection' : 'the database did not answer') + '). It keeps trying by itself.';
-    if(el.textContent !== t) el.textContent = t;
+    var tShort = '\u23F3 Not sent yet \u2014 retrying';   /* NOTEFIX */
+    if(el.textContent !== tShort) el.textContent = tShort;
+    if(el.title !== t) el.title = t;
   }catch(e){}
 }, 5000);
 try{ window.addEventListener('online', function(){ if(Object.keys(_gcsvBad).length && window._gcPushAll) (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ window._gcPushAll(); }, 1500); }); }catch(e){}
@@ -63171,6 +63206,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var merged=mergeTaskLists(local, cloud).filter(function(x){ return !(x && x.id && tomb[k+':'+x.id]); });
         var mergedRaw=JSON.stringify(merged);
         if(cloud!=null && mergedRaw===cloud) return true;   /* APPLAG: the cloud already has exactly this — not sent again (684 KB) */
+        if(cloud!=null && sameTasks(merged, cloud)) return true;   /* QA gate 11/19: the same to-dos in another order / key order — not a change (733 KB from the owner's phone) */
         return rawPush(k, mergedRaw).then(function(ok){
           if(!ok) throw new Error('cloud write refused');
           var cur=localStorage.getItem(k);
@@ -63205,6 +63241,16 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // un-ticked it. A manual decision is final; it must never be reverted by a
   // sync. Rules: union by id (a task on either side is kept), and for a task on
   // both sides the one that was touched most recently wins.
+  /* the same to-dos, by id, each with the same fields and values (order of the list and of each to-do's keys aside) */
+  function canon(v){ if(Array.isArray(v)) return '['+v.map(canon).join(',')+']'; if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(function(k){ return JSON.stringify(k)+':'+canon(v[k]); }).join(',')+'}'; return JSON.stringify(v===undefined?null:v); }
+  function sameTasks(merged, cloudRaw){
+    try{
+      var c=JSON.parse(cloudRaw||'[]'); if(!Array.isArray(c) || c.length!==merged.length) return false;
+      var m={}; for(var i=0;i<c.length;i++){ var t=c[i]; if(!t || !t.id || m[t.id]!=null) return false; m[t.id]=canon(t); }
+      for(var j=0;j<merged.length;j++){ var u=merged[j]; if(!u || !u.id || m[u.id]!==canon(u)) return false; }
+      return true;
+    }catch(e){ return false; }
+  }
   function taskTime(t){
     return String((t && (t.updatedAt || t.doneAt || t.addedAt || '')) || '');
   }
@@ -94570,6 +94616,18 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
 
   // ── Commission: earned on job completion, paid the FOLLOWING period ──────
   async function queue(){ var q=await window.idbGet(COMM); return Array.isArray(q)?q:[]; }
+  var _cloudQ=null;
+  async function cloudQueue(){
+    if(_cloudQ) return _cloudQ;
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/gc_kv?key=eq.'+COMM+'&select=value',{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+      if(!r || !r.ok) return null;
+      var rows=await r.json(); if(!Array.isArray(rows)) return null;
+      var v=rows[0] ? rows[0].value : []; if(typeof v==='string'){ try{ v=JSON.parse(v); }catch(e){ v=null; } }
+      if(rows.length && !Array.isArray(v)) return null;
+      _cloudQ=v||[]; return _cloudQ;
+    }catch(e){ return null; }
+  }
   async function saveQueue(q){
     await window.idbSet(COMM, q);
     try{ if(window._supaUpsert) window._supaUpsert(COMM, q); }catch(e){}
@@ -94582,7 +94640,16 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     if(!proj) return null;
 
     var q=await queue();
-    if(q.some(function(c){ return c.pid===projectId && c.status!=='void'; })) return null; // already queued
+    /* COMMDUP (QA gate 11/19): one record per job, whatever its status. Every new device / session (a phone whose full
+       localStorage cannot keep gc_commission_seen) queued every completed job again with a random id, and the copies of all
+       devices were merged into the cloud list: 584 records for 51 jobs (up to 13 each), ~1 KB more on every open. A voided
+       one stays voided (never brought back as owed), and the id is the job's, so two devices queueing it at once make ONE. */
+    if(q.some(function(c){ return c && c.pid===projectId; })) return null; // already queued (or voided)
+    /* this list is not among the lists a device pulls: its own copy has only what IT queued — so the cloud's copy is looked at
+       too (read once per open, kept in memory, nothing written); if it cannot be read, nothing is queued now (the next open
+       looks again) */
+    var cq=await cloudQueue(); if(!cq) return null;
+    if(cq.some(function(c){ return c && c.pid===projectId; })) return null;
 
     var closedOn = opts.closedOn || proj.completionDate || proj.endDate || ymd(new Date());
     var earnedPeriod = window._gcPayPeriodContaining(closedOn);
@@ -94592,7 +94659,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     var payPeriod = window._gcPayPeriodFor(ymd(payEnd));
 
     var rec={
-      id:'CM'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),
+      id:'CM-'+String(projectId),
       pid:projectId, job:proj.name||'', pm:proj.pm||'', 
       amount: parseFloat(opts.amount)||0,
       closedOn: closedOn,
@@ -97965,9 +98032,10 @@ window._gcSupplierTask = async function(){
 
   function push(l){
     try{ localStorage.setItem('gc_office_tasks', JSON.stringify(l)); }catch(e){}
-    try{ if(window._gcOfficeTasksPush) window._gcOfficeTasksPush(); }catch(e){}
     try{ if(window._gcApplyOrQueue) window._gcApplyOrQueue('gc_office_tasks', l); }catch(e){}
-    try{ if(window._supaUpsert) window._supaUpsert('gc_office_tasks', l); }catch(e){}
+    /* the to-do list goes up ONE way: merged with the cloud's (it also went up raw, unmerged, a second time — 733 KB from a
+       phone, and a raw copy can drop another person's new to-do); the raw upload only where the merged push is missing */
+    try{ if(window._gcOfficeTasksPush) window._gcOfficeTasksPush(); else if(window._supaUpsert) window._supaUpsert('gc_office_tasks', l); }catch(e){}
   }
 };
 
@@ -123208,179 +123276,7 @@ console.log('[GC] Never allow duplicates (patch J): _gcDupCheck() · 💎 → Du
 })();
 
 </script>
-<script id="gc-patch-regfix-amtfix">
-/* __GC_PATCH_AMTFIX__ (patch REGFIX-AMT, 11/19) — 💎 → "Fix bill amounts the 11-13 import changed" (admin).
-   11/13 16:15Z a QuickBooks CSV re-import changed the total of 59 QuickBooks sub / supplier bills ("QuickBooks is fact"),
-   keeping the old total in qbAmountWas. The new totals were really payment lines: where QuickBooks' own paid + open is on
-   the bill it equals qbAmountWas every time (#373642: $49.19 now; paid $2,297.91 + open $29,186.79 = $31,484.70 = before).
-   The register then got a second "Sub paid" line per bill at the new total, beside the line at the QuickBooks total.
-   This screen lists every such bill (bill #, vendor, now, before, QuickBooks paid + open) and its register lines. Fix:
-     • the bill's amt goes back to qbAmountWas (the import's value kept in _importAmt);
-     • one register line per bill: the line at the QuickBooks total stays; any other line for the same bill (the import's
-       amount, or a SUB_ copy) is FOLDED into it (gc_folded, Undo puts it back); if no line has the QuickBooks total, the
-       first line is corrected to it (the old amounts kept in _origAmount / _origAmt).
-   Undo puts the bills, the corrected lines and the folded lines back. Every fix is logged in gc_amtfix_log.
-   The import itself no longer changes a QuickBooks bill's total (window._gcQbBillAmtHold, patch J + QBCSV).
-   Console: _gcBillAmtFix.plan() */
-(function(){
-'use strict';
-var W = window;
-if (W._gcBillAmtFix) return;
-var REG = 'gcAcctRegister', LOGK = 'gc_amtfix_log', RULE = 'REGFIX one bill, one register line';
-function s(v){ return v == null ? '' : String(v); }
-function num(v){ var x = parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
-function r2(v){ return Math.round(num(v) * 100) / 100; }
-function c(v){ return Math.round(Math.abs(num(v)) * 100); }
-function money(n){ n = num(n); return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function esc(v){ return s(v).replace(/[&<>"']/g, function(ch){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]; }); }
-function nowISO(){ return new Date().toISOString(); }
-function me(){ try { return (W._gcMeUserJSON ? W._gcMeUserJSON('{}') : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
-function rid(r){ return s(r && (r._id || r.id)); }
-function lineAmt(r){ return r ? (r.amount != null && r.amount !== '' ? r.amount : r.amt) : 0; }   /* what the register shows */
-function bare(v){ return s(v).replace(/^(SUB_|SUPPLIER_)/, ''); }
-async function getList(k){ try { var v = await (k === REG && W._gcAc ? W._gcAc(k) : W.idbGet(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-async function putList(k, list, why){
-  try { if (W._gcManualNow) W._gcManualNow(why); } catch (e) {}
-  try { await (k === REG && W._gcAcW ? W._gcAcW(k, list) : W.idbSet(k, list)); } catch (e) {}
-  try { if (k === 'invs' && typeof W._setInvoices === 'function') W._setInvoices(list.slice()); } catch (e) {}
-  try { if (W._crm) { if (k === 'invs') { W._crm.invs = list; W._crm.invoices = list; } else W._crm[k] = list; } } catch (e) {}
-  try { var up = W._supaUpsertNow || W._supaUpsert; if (up) await up(k, list); } catch (e) { try { console.warn('[GC] AMTFIX upload:', e && e.message || e); } catch (_e) {} }
-  if (k === REG) { try { if (W._gcRegisterFlush) await W._gcRegisterFlush(); } catch (e) {} try { if (W._gcRefreshSpend) W._gcRefreshSpend(); } catch (e) {} }
-}
-function isSub(b){ var t = s(b && b.type).toLowerCase(); return t === 'sub' || t === 'supplier'; }
-
-async function plan(){
-  var I = await getList('invs'), R = await getList(REG), by = {};
-  R.forEach(function(r){ if (r && r.srcInvId) (by[bare(r.srcInvId)] = by[bare(r.srcInvId)] || []).push(r); });
-  var bills = I.filter(function(b){ return b && isSub(b) && b.qbAmountWas != null && b.qbAmountWas !== '' && c(b.amt) !== c(b.qbAmountWas); });
-  return bills.map(function(b){
-    var qb = r2(b.qbAmountWas), po = (b.amountPaid != null || b.openBalance != null) ? r2(num(b.amountPaid) + num(b.openBalance)) : null;
-    var lines = (by[s(b.id)] || []).filter(function(r){ return r && !r._dupOf; });
-    /* the line to keep has EXACTLY the QuickBooks total (in every amount field it carries) */
-    var right = lines.filter(function(r){ return c(lineAmt(r)) === c(qb) && (r.amt == null || r.amt === '' || c(r.amt) === c(qb)); });
-    var keep = right.filter(function(r){ return s(r.srcInvId) === s(b.id); })[0] || right[0] || null;   /* the paid-bill line (bill id) first */
-    var fix = null;   /* no line at the QuickBooks total: nothing is folded or changed on the register for this bill — a person looks */
-    var keepId = keep ? rid(keep) : '';
-    var fold = keep ? lines.filter(function(r){ return rid(r) !== keepId; }) : [];
-    /* totals: what the register shows for this bill (every line), and what the cost totals count (the bill's amount, once) */
-    var regBefore = r2(lines.reduce(function(t, r){ return t + num(lineAmt(r)); }, 0));
-    var regAfter = keep ? qb : regBefore;
-    var gateOk = true; try { if (W._gcCostGate && W._gcCostGate(b) !== 'ok') gateOk = false; } catch (e) {}
-    return { id: s(b.id), num: s(b.invNum || b.qbNum || ''), vendor: s(b.sub || b.vendor), now: r2(b.amt), was: qb, paidOpen: po,
-      agrees: po != null ? c(po) === c(qb) : null, status: s(b.status), counted: gateOk,
-      regBefore: regBefore, regAfter: regAfter, costBefore: gateOk ? r2(b.amt) : 0, costAfter: gateOk ? qb : 0, noKeep: !keep && lines.length > 0,
-      keep: keepId, fixLine: fix ? { id: rid(fix), amount: fix.amount, amt: fix.amt } : null,
-      fold: fold.map(function(r){ return { id: rid(r), amount: lineAmt(r), src: s(r.srcInvId) }; }),
-      lines: lines.map(function(r){ return { id: rid(r), amount: lineAmt(r), amt: r.amt, src: s(r.srcInvId), desc: s(r.desc).slice(0, 70) }; }) };
-  });
-}
-
-async function apply(onlyIds){
-  var P = await plan(); if (onlyIds) P = P.filter(function(p){ return onlyIds.indexOf(p.id) >= 0; });
-  if (!P.length) return { bills: 0, folded: 0, corrected: 0 };
-  var who = me().name || '', at = nowISO(), log = { id: 'AF' + Date.now().toString(36), at: at, by: who, bills: [], regEdits: [], folds: [] };
-  /* 1. the bills */
-  var want = {}; P.forEach(function(p){ want[p.id] = p; });
-  var I = await getList('invs');
-  I = I.map(function(b){
-    var p = b && want[s(b.id)]; if (!p) return b;
-    log.bills.push({ id: p.id, from: b.amt, fromAmount: b.amount, to: p.was });
-    var n = Object.assign({}, b, { amt: p.was, _importAmt: b.amt, amtFixedAt: at, amtFixedBy: who, amtFixedWhy: 'REGFIX: the 11/13 QuickBooks re-import put a payment amount on this bill; QuickBooks total restored', updatedAt: at });
-    if (b.amount != null) n.amount = p.was;
-    return n;
-  });
-  await putList('invs', I, 'fix bill amounts (QuickBooks import 11/13)');
-  /* 2. a register line corrected where none has the QuickBooks total */
-  var R = await getList(REG), fixes = {};
-  P.forEach(function(p){ if (p.fixLine) fixes[p.fixLine.id] = p.was; });
-  if (Object.keys(fixes).length) {
-    R = R.map(function(r){
-      var to = fixes[rid(r)]; if (to == null) return r;
-      log.regEdits.push({ id: rid(r), amount: r.amount, amt: r.amt });
-      return Object.assign({}, r, { amount: to, amt: to, _origAmount: r.amount, _origAmt: r.amt, updatedAt: at });
-    });
-    await putList(REG, R, 'fix register amounts (QuickBooks import 11/13)');
-  }
-  /* 3. one line per bill: fold the others into it (gc_folded keeps them) */
-  var folded = 0;
-  for (var i = 0; i < P.length; i++) {
-    var p = P[i]; if (!p.keep || !p.fold.length) continue;
-    var ids = p.fold.map(function(f){ return f.id; });
-    var n = 0; try { n = await W._gcFold(REG, p.keep, ids, RULE, 'bill #' + p.num + ' ' + p.vendor + ': one line at the QuickBooks total ' + money(p.was) + ' (fixed by ' + who + ')', { person: true, allowHand: true, by: who || 'office' }); } catch (e) { n = 0; }
-    if (n) { folded += n; ids.forEach(function(id){ log.folds.push('FOLD_' + REG + '_' + id); }); }
-  }
-  var L = await getList(LOGK); L.push(log); await putList(LOGK, L, 'fix bill amounts (log)');
-  try { console.log('[GC] AMTFIX: ' + log.bills.length + ' bill(s) back to their QuickBooks total, ' + log.regEdits.length + ' register line(s) corrected, ' + folded + ' extra line(s) folded (' + log.id + ').'); } catch (e) {}
-  return { bills: log.bills.length, corrected: log.regEdits.length, folded: folded, log: log };
-}
-
-async function undo(logId){
-  var L = await getList(LOGK), log = L.filter(function(x){ return x && x.id === logId && !x.undoneAt; })[0];
-  if (!log) return { bills: 0 };
-  /* folded lines back first (each fold's own Undo puts the row back on the register) */
-  var back = 0;
-  for (var i = 0; i < (log.folds || []).length; i++) { try { if (await W._gcUnfold(log.folds[i])) back++; } catch (e) {} }
-  var ed = {}; (log.regEdits || []).forEach(function(e){ ed[e.id] = e; });
-  if (Object.keys(ed).length) {
-    var R = await getList(REG);
-    R = R.map(function(r){ var e = ed[rid(r)]; if (!e) return r; var n = Object.assign({}, r, { amount: e.amount, amt: e.amt, updatedAt: nowISO() }); delete n._origAmount; delete n._origAmt; return n; });
-    await putList(REG, R, 'undo fix register amounts');
-  }
-  var bb = {}; (log.bills || []).forEach(function(b){ bb[b.id] = b; });
-  var I = await getList('invs'), nb = 0;
-  I = I.map(function(b){ var e = b && bb[s(b.id)]; if (!e || c(b.amt) !== c(e.to)) return b; nb++;
-    var n = Object.assign({}, b, { amt: e.from, updatedAt: nowISO() }); if (e.fromAmount !== undefined) n.amount = e.fromAmount; delete n._importAmt; delete n.amtFixedAt; delete n.amtFixedBy; delete n.amtFixedWhy; return n; });
-  await putList('invs', I, 'undo fix bill amounts');
-  log.undoneAt = nowISO(); log.undoneBy = me().name || '';
-  await putList(LOGK, L, 'undo fix bill amounts (log)');
-  return { bills: nb, lines: back, corrected: Object.keys(ed).length };
-}
-
-async function open(){
-  var D = W.document, P = await plan(), logs = (await getList(LOGK)).filter(function(x){ return x && !x.undoneAt; });
-  var old = D.getElementById('_gcAmtFixOv'); if (old) old.remove();
-  var BTN = 'border:none;border-radius:7px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;';
-  var nFold = P.reduce(function(t, p){ return t + p.fold.length; }, 0), nFix = 0, T = totals(P);
-  var rows = P.map(function(p){
-    var ag = p.agrees === true ? '<span style="color:#166534">= before ✔</span>' : (p.agrees === false ? '<span style="color:#b91c1c">≠ before</span>' : '<span style="color:#94a3b8">—</span>');
-    return '<tr style="border-top:1px solid #e2e8f0;vertical-align:top"><td style="padding:4px 6px">#' + esc(p.num) + '</td><td style="padding:4px 6px">' + esc(p.vendor) + '</td>'
-      + '<td style="padding:4px 6px;text-align:right;color:#b91c1c">' + money(p.now) + '</td><td style="padding:4px 6px;text-align:right;font-weight:700">' + money(p.was) + '</td>'
-      + '<td style="padding:4px 6px;text-align:right">' + (p.paidOpen != null ? money(p.paidOpen) + '<div style="font-size:11px">' + ag + '</div>' : '—') + '</td>'
-      + '<td style="padding:4px 6px;font-size:11px">' + p.lines.map(function(l){ return (l.id === p.keep ? '✔ keep ' : (p.fold.some(function(f){ return f.id === l.id; }) ? '↳ fold ' : '• ')) + money(l.amount) + ' <span style="color:#94a3b8">' + esc(l.src) + '</span>'; }).join('<br>')
-      + (p.noKeep ? '<div style="color:#b45309">no line at exactly ' + money(p.was) + ' — register left alone, check by hand</div>' : '')
-      + '<div style="color:#475569">register ' + money(p.regBefore) + ' → ' + money(p.regAfter) + ' · cost totals ' + money(p.costBefore) + ' → ' + money(p.costAfter) + (p.counted ? '' : ' (not counted: waiting / denied)') + '</div>' + (!p.lines.length ? '<span style="color:#94a3b8">no register line</span>' : '') + '</td></tr>';
-  }).join('');
-  var ov = D.createElement('div'); ov.id = '_gcAmtFixOv';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(6,12,20,.88);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Arial,sans-serif';
-  ov.innerHTML = '<div style="background:#fff;color:#111;border-radius:13px;width:min(1080px,98vw);padding:20px;margin:auto">'
-    + '<div style="display:flex;gap:10px;align-items:center"><div style="font-size:19px;font-weight:800;flex:1">Bill amounts the 11/13 QuickBooks import changed</div><button id="_afX" style="' + BTN + 'background:#e5e7eb">Close</button></div>'
-    + '<div style="font-size:12.5px;margin:8px 0 12px;padding:9px 12px;border-radius:9px;background:#eff6ff;border:1px solid #bfdbfe">On 11/13 a QuickBooks re-import changed these bills\' totals ("Now") — the amounts it used were really payment lines. "Before" is the total from the first QuickBooks import; where QuickBooks\' own paid + open is on the bill it equals "Before". '
-    + '<b>Check a few against QuickBooks first.</b> Fix puts ' + P.length + ' bill(s) back to "Before", keeps ONE register line per bill at that total (' + nFold + ' extra line(s) folded — Undo brings them back' + (nFix ? '; ' + nFix + ' line(s) corrected' : '') + '). Undo is on this screen.</div>'
-    + '<div style="font-size:13px;margin:0 0 10px"><b>Totals.</b> Register lines for these bills: ' + money(T.regBefore) + ' → ' + money(T.regAfter) + '. Cost totals (P&amp;L, job costs — they count each bill once at the bill\'s amount): ' + money(T.costBefore) + ' → ' + money(T.costAfter) + ' (' + (T.costAfter - T.costBefore >= 0 ? '+' : '') + money(T.costAfter - T.costBefore) + ').</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">' + (P.length ? '<button id="_afGo" style="' + BTN + 'background:#166534;color:#fff">Fix ' + P.length + ' bill amounts</button>' : '<span style="font-weight:700;color:#166534">Nothing to fix.</span>')
-    + logs.map(function(x){ return '<button class="_afUndo" data-id="' + esc(x.id) + '" style="' + BTN + 'background:#7f1d1d;color:#fff">Undo fix of ' + esc(x.at.slice(0, 16).replace('T', ' ')) + ' (' + (x.bills || []).length + ' bills)</button>'; }).join('') + '</div>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="text-align:left;color:#475569"><th style="padding:4px 6px">Bill</th><th style="padding:4px 6px">Vendor</th><th style="padding:4px 6px;text-align:right">Now</th><th style="padding:4px 6px;text-align:right">Before (QuickBooks)</th><th style="padding:4px 6px;text-align:right">QB paid + open</th><th style="padding:4px 6px">Register lines</th></tr>' + rows + '</table></div>';
-  D.body.appendChild(ov);
-  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
-  ov.querySelector('#_afX').onclick = function(){ ov.remove(); };
-  var go = ov.querySelector('#_afGo');
-  if (go) go.onclick = async function(){
-    var ok = true; try { ok = confirm('Put ' + P.length + ' bills back to their QuickBooks total and keep one register line per bill?\n\nUndo is on this screen.'); } catch (e) {}
-    if (!ok) return; this.disabled = true; this.textContent = 'Fixing…';
-    var r = await apply(); try { alert('Fixed ' + r.bills + ' bill(s); ' + r.folded + ' extra register line(s) folded; ' + r.corrected + ' corrected.'); } catch (e) {} open();
-  };
-  Array.prototype.forEach.call(ov.querySelectorAll('._afUndo'), function(b){ b.onclick = async function(){
-    var ok = true; try { ok = confirm('Undo this fix (bills, register lines)?'); } catch (e) {}
-    if (!ok) return; this.disabled = true; var r = await undo(this.getAttribute('data-id')); try { alert('Undone: ' + r.bills + ' bill(s), ' + r.lines + ' line(s) back.'); } catch (e) {} open();
-  }; });
-  return P;
-}
-function totals(P){ var t = { regBefore: 0, regAfter: 0, costBefore: 0, costAfter: 0, bills: P.length, fold: 0, noKeep: 0 };
-  P.forEach(function(p){ t.regBefore += p.regBefore; t.regAfter += p.regAfter; t.costBefore += p.costBefore; t.costAfter += p.costAfter; t.fold += p.fold.length; if (p.noKeep) t.noKeep++; });
-  ['regBefore', 'regAfter', 'costBefore', 'costAfter'].forEach(function(k){ t[k] = r2(t[k]); }); return t; }
-W._gcBillAmtFix = { totals: function(){ return plan().then(totals); }, plan: plan, apply: apply, undo: undo, open: open };
-})();
-</script>
+<!-- REGFIX-AMT ("Fix bill amounts the 11-13 import changed") taken out on the owner's word 11/19: bill #373642's $49.19 is right; the $31,484.70 was a payment over several bills. The import guard (_gcQbBillAmtHold) stays. -->
 <script>
 /* ============================================================================
    GrayCo — ACCOUNTING, ONE HOME.  (patch K)
@@ -135103,7 +134999,7 @@ W._gcLeadsBar = { place: place, order: ORDER.slice() };
 'use strict';
 var W = window, D = document;
 if (W._gcLeadsChips) return;
-var ORDER = ['gcsb-strip', 'gc-leadsee'], els = {}, want = {};
+var ORDER = ['gcsb-strip', 'gc-leadsee', 'gc-nl-chip'], els = {}, want = {};   /* patch NEWLEADSPOP: + 🔔 new for you */
 function rank(id){ var i = ORDER.indexOf(id); return i < 0 ? ORDER.length : i; }
 function slot(hub){ hub = hub || D.getElementById('gc-leads-hub'); return hub ? hub.querySelector('#gc-leads-chips') : null; }
 function put(sl, el){
@@ -142653,6 +142549,12 @@ function ensureCss(){
     + '#gc-la-dash .hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:14px}#gc-la-dash .hd select{padding:4px 8px;border:1px solid #cfd5e3;border-radius:6px;font:inherit;font-size:13px}#gc-la-dash .cnt{color:#64748b;font-size:12px}'
     + '#gc-la-dash .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px}#gc-la-dash .tile{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 9px}#gc-la-dash .tile .v{font-size:16px;font-weight:800}#gc-la-dash .tile .l{font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700}#gc-la-dash .tile.warn .v{color:#b45309}#gc-la-dash .tile.hot .v{color:#b91c1c}'
     + '#gc-la-dash .tw{overflow-x:auto}#gc-la-dash table{width:100%;border-collapse:collapse}#gc-la-dash th{text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;padding:5px 6px;border-bottom:1px solid #e2e8f0}#gc-la-dash td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}#gc-la-dash .sub{color:#64748b;font-size:11px}#gc-la-dash .miss{color:#b45309;font-weight:700}#gc-la-dash .acts{display:flex;gap:4px;flex-wrap:wrap}#gc-la-dash select.gc-la-st{padding:4px 6px;border:1px solid #cfd5e3;border-radius:6px;font:inherit}#gc-la-dash .empty{color:#64748b;padding:6px 0}'
+    /* patch DESKFIT: on a desk the estimating table fits its box (it ran off the right edge, Status cut off) and its rows are one line of
+       buttons again (the action cell was a flex box, which broke it out of the row: four buttons stacked, very tall rows) */
+    + '@media (min-width:641px){#gc-la-dash table{table-layout:fixed}#gc-la-dash th:nth-child(2){width:150px}#gc-la-dash th:nth-child(3){width:18%}#gc-la-dash th:nth-child(4){width:120px}#gc-la-dash th:nth-child(5){width:306px}'
+    + '#gc-la-dash td{overflow:hidden;overflow-wrap:break-word}#gc-la-dash td:first-child b{white-space:normal}#gc-la-dash td.acts{display:table-cell;white-space:nowrap}'
+    + '#gc-la-dash td.acts button,#gc-la-dash .gc-la-due{font-size:12px;padding:3px 7px;min-height:28px;margin:0 4px 0 0;max-width:100%}#gc-la-dash select.gc-la-st{max-width:100%;font-size:12px}}'
+    + '@media (min-width:641px) and (max-width:1199px){#gc-la-dash th:nth-child(5){width:176px}#gc-la-dash td.acts{white-space:normal}#gc-la-dash td.acts button{margin:0 4px 4px 0}}'
     + '@media (max-width:640px){#gc-la-dash table,#gc-la-dash tbody,#gc-la-dash tr,#gc-la-dash td{display:block}#gc-la-dash thead{display:none}#gc-la-dash tr{border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;padding:4px}#gc-la-dash td{border:0;padding:3px 4px}}'
     + '.gc-la-new{display:inline-block;margin-left:6px;background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;font:800 9px/16px inherit;font-family:inherit;letter-spacing:.04em;vertical-align:middle}'
     + 'tr[data-gc-new="1"]{background:#fff7ed}tr[data-gc-new="1"]>td:first-child{box-shadow:inset 3px 0 0 #dc2626}'
@@ -177595,7 +177497,13 @@ function css(){
 function pipelineWrap(){ var tb = D.querySelector('#root table[data-gc-fid="LEAD"]'); if (!tb) return null; var w = tb.parentElement; while (w && w.parentElement && !/border/.test(w.getAttribute('style') || '')) w = w.parentElement; return w; }
 function anchor(){
   var la = D.getElementById('gc-la-set'); if (la && la.parentElement) return la;
-  return pipelineWrap();
+  var pw = pipelineWrap(); if (pw) return pw;
+  /* owner 11/19 (a lead's text link on his iPhone): before the classic list has its leads there is no table to stand before,
+     so the hub waited and "No lead pipeline — Click + Add" showed instead (an empty list, wrong). The hub has its own copy of
+     the leads: it stands before the Leads tab's content (the classic one, hidden under it) at once. */
+  var tb = D.getElementById('gc-leads-tabs'), c = tb && tb.getAttribute('data-tab') === 'leads' ? tb.nextElementSibling : null;
+  while (c && (c.id === 'gc-leads-hub' || c.hasAttribute('data-gc-keep'))) c = c.nextElementSibling;
+  return c && c.parentElement ? c : null;
 }
 function kpis0(){
   var all = scoped().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), open = all.filter(function(l){ return !shut(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);   /* patch HOT2; patch LCLEAN: 📦 imported not counted */
@@ -177931,7 +177839,7 @@ function lcRowHtml(l, r, bc, del, now){
   return '<tr class="gcl-lr' + bkRowCls(l) + '" data-gcl-id="' + id + '"><td class="c-name">' + bkChk(l)   /* patch LEADBULK */
     + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
     + (function(){ try { return W._gcBidPost && W._gcBidPost.canPost({ leadId: l.id }) ? '<button type="button" class="gclu-nb" data-gclu-bp="' + id + '" title="📢 Put on bid portal" aria-label="Put on bid portal">📢</button>' : ''; } catch (e) { return ''; } })()   /* patch LEADBP */
-    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
+    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (W._gcBidMerge ? W._gcBidMerge.chip(l) : '') /* patch BIDMERGE */ + (W._gcCo && W._gcCo.bothChip ? W._gcCo.bothChip(l) : '') /* patch LEADBOTH */ + ' <span class="gcl-srcin">' + chanBadge(l) + '</span>' /* patch LEADFIT: Source on the Lead line under 1200 px */ + (r.addr ? '<div class="gcl-addr" title="' + r.addr + '">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
     + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
     + '<td class="c-prio">' + lcPrio(l) + '</td>'
@@ -178343,6 +178251,14 @@ function css2(){
     '.gcl-dash{color:#9ca3af}.gcl-due{font-weight:700;border-radius:6px;padding:1px 6px}.gcl-due.od{color:#b91c1c;background:#fee2e2}.gcl-due.soon{color:#b45309;background:#fef3c7}',
     '.gcl-pc{display:inline-block;border:1px solid transparent;border-radius:999px;padding:1px 9px;font:700 10.5px Arial;background:#f3f4f6;color:#555;cursor:default;min-width:34px;text-align:center}button.gcl-pc{cursor:pointer;min-height:26px}button.gcl-pc:hover{border-color:#241968}',
     '.gcl-pc.p-hi{background:#fee2e2;color:#b91c1c}.gcl-pc.p-md{background:#fffbeb;color:#b45309}.gcl-pc.p-no{background:#fff;color:#9ca3af;border-color:#e5e7eb}',
+    /* patch LEADFIT (owner 11/19: the Leads list was wider than the desk window — sideways scrolling to see Stage — and the rows were tall):
+       on a desk the table fits its box (fixed layout): the Lead column flexes and wraps, the others are narrow and fixed, Bid to and Source
+       are cut short with their tooltip, rows are tighter; under 1200 px Source moves onto the Lead line and Distance is hidden. */
+    '@media (min-width:641px){.gcl-wrap>table.gcl-lc{table-layout:fixed;width:100%;min-width:0}.gcl-lc th,.gcl-lc td{padding:4px 6px;overflow:hidden;text-overflow:ellipsis}'
+      + '.gcl-lc th.c-due{width:84px}.gcl-lc th.c-prio{width:54px}.gcl-lc th.c-bidto{width:14%}.gcl-lc th.c-role{width:62px}.gcl-lc th.c-src{width:100px}.gcl-lc th.c-stage{width:88px}.gcl-lc th.c-who{width:96px}.gcl-lc th.c-dist{width:56px}.gcl-lc th.gcl-tc{width:38px}'
+      + '.gcl-lc td.c-name{min-width:0;overflow-wrap:anywhere;line-height:1.25}.gcl-lc td.c-name .gc-role,.gcl-lc td.c-name .gcl-chip{line-height:15px;padding-top:0;padding-bottom:0;font-size:10.5px}.gcl-lc td.c-bidto{max-width:none}.gcl-lc td.c-stage,.gcl-lc td.c-who{white-space:normal;max-width:none}.gcl-lc td.c-src .gcl-src{max-width:100%;overflow:hidden}'
+      + '.gcl-lc .gcl-addr{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gcl-lc td.c-name .gcl-addr,.gcl-lc td.c-name .gclu-np{display:inline-block;vertical-align:top;max-width:49%;margin:1px 6px 0 0}.gcl-lc .gclu-nb{min-height:18px;min-width:20px;padding:0 2px;font-size:12px;margin-top:-1px}.gcl-lc .gcl-del{min-height:26px;min-width:28px;padding:2px 4px}.gcl-lc button.gcl-pc{min-height:22px}}.gcl-srcin{display:none}'
+      + '@media (min-width:641px) and (max-width:1199px){.gcl-lc th.c-src,.gcl-lc td.c-src,.gcl-lc th.c-dist,.gcl-lc td.c-dist{display:none}.gcl-lc .gcl-srcin{display:inline}}',
     '.gcl-lc .gcl-tc{width:1%;text-align:right;padding:2px 4px}.gcl-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}',
     '.gcl-del{border:0;background:none;cursor:pointer;font-size:15px;opacity:.55;padding:4px 6px;border-radius:6px;min-width:34px;min-height:34px}.gcl-del:hover,.gcl-del:focus-visible{opacity:1;background:#fee2e2}',
     '#gcl-lprio-pop{position:absolute;z-index:100200;background:#fff;border:1px solid #d6d3ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:8px;display:flex;flex-wrap:wrap;gap:4px;max-width:250px;font:12px Arial}#gcl-lprio-pop .t{width:100%;color:#555;margin-bottom:2px}',
@@ -178440,7 +178356,7 @@ function mount(){
     a.parentElement.insertBefore(hub, a); HUB_SIG = '';
     bind(hub);
   }
-  var pw = pipelineWrap(); if (pw && !pw.classList.contains('gcl-classic-body')) pw.classList.add('gcl-classic-body');
+  var pw = pipelineWrap() || (a.id !== 'gc-la-set' ? a : null); if (pw && !pw.classList.contains('gcl-classic-body')) pw.classList.add('gcl-classic-body');
   D.body.classList.toggle('gcl-noclassic', !UI.classic && !D.documentElement.classList.contains('gcl-classic-ok'));   /* patch HOT2b: the admin's "old table" link (or a hub failure) shows it */
   var ae = D.activeElement, typing = ae && hub.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
@@ -209832,6 +209748,11 @@ function css(){
     '#gcpe .pe-b.sm{min-height:40px;min-width:44px;padding:0 10px;font-size:13px}',
     '#gcpe .pe-b.red{border-color:#b91c1c;color:#b91c1c}',
     '#gcpe .pe-b:disabled{opacity:.45;cursor:default}',
+    'html._fieldmode #gcpe .pe-top,html._fieldmode #gcpe .pe-seg{background:#fff;color:#14202E;border-bottom:1px solid #E5E7EB}',
+    'html._fieldmode #gcpe .pe-top button{background:#EEF2F7;color:#1d4ed8}html._fieldmode #gcpe .pe-tt small{color:#55626F}',
+    'html._fieldmode #gcpe .pe-seg button{border-color:#CBD5E1;color:#334155}',
+    'html._fieldmode #gcpe .pe-seg button[aria-pressed="true"]{background:#D4A017;border-color:#D4A017;color:#0F1D2F}',
+    'html._fieldmode #gcpe .pe-b.navy{background:#1d4ed8;border-color:#1d4ed8;color:#fff}',
     '#gcpe .pe-btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}',
     '#gcpe .pe-btns.two{display:grid;grid-template-columns:1fr 1fr}',
     '#gcpe input.pe-i,#gcpe textarea.pe-i,#gcpe select.pe-i{width:100%;min-height:44px;border:1px solid #C9C2B2;border-radius:10px;padding:8px 10px;font-size:16px;font-family:inherit;background:#fff;color:#14202E}',
@@ -213289,17 +213210,26 @@ function alsoPm(){ var n = low(myName()); if (!n) return false; return arr(C().p
 function kindOf(p){ try { return W._gcFieldMore && W._gcFieldMore.kind ? s(W._gcFieldMore.kind(p)) : ''; } catch (e) { return ''; } }
 function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins' || (kindOf(p) === 'mit' && insFlag(p)); }); }
 function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
+/* LEANHOME (owner 11/19: "Don't need a lot of buttons on the Field view"): Home keeps the big tiles + Leads + Today's to-dos (a PM's
+   📒 Daily log too); the rest moved to ☰ More → "From Home" (movedOf), nothing removed. Mitigation / environmental keep their tiles. */
+function movedOf(a, k){
+  var L = [];
+  if (a === 'admin') L = ['viewas', 'systems', 'addjob', 'sendest'];
+  else if (a === 'pm') L = ['sendest'];
+  if ((a === 'pm' || a === 'admin') && insJobs()) L.push('claims', 'tpa');
+  if ((a === 'pm' || a === 'admin') && mitJobsMine()) L.push('equip', 'drying');
+  var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; try { return k.shown(id); } catch (e) { return false; } });
+}
 function extrasOf(a, k){
   var L = [];
-  if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 🧾 Snap a receipt: a quick action */   /* 💵 Money: ☰ More (owner 11/16) */
-  else if (a === 'pm') L = ['log', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
+  if (a === 'admin') L = ['leads', 'todo'].concat(alsoPm() ? ['log'] : []);   /* LEANHOME; 🧾 Snap a receipt: a quick action; 💵 Money: ☰ More (owner 11/16) */
+  else if (a === 'pm') L = ['log', 'todo'];   /* LEANHOME: 📤 Send estimate → ☰ More; ☐ Punch list / 💬 Messages: on each job page */
   else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
   else if (a === 'env') L = ['emerg'];   /* 🚨 Emergency leads (trauma / biohazard calls included — no "trauma" button, owner 11/16) + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
     if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
     L.push('todo'); }
-  if ((a === 'pm' || a === 'admin') && insJobs()) ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });   /* insurance jobs: 📆 TPA dates · 🛡 Claim info */
-  if (a === 'pm' || a === 'admin') ['equip', 'drying'].forEach(function(id){ if (mitJobsMine() && L.indexOf(id) < 0) L.push(id); });
+  /* LEANHOME: a PM's / admin's 📆 TPA dates · 🛡 Claim info · 🌀 Equipment · 💧 Drying are in ☰ More → From Home (movedOf) */
   var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; return k.shown(id); });
 }
 /* environmental: the jobs whose hazard papers (lead / asbestos / mold) are not in the customer's hands yet — patch DOCAUTO2's Start-job gate */
@@ -213332,7 +213262,7 @@ function dashHtml(a, h0){
     : '<div class="fh-empty">Nothing on your schedule today. Tap <b>📅 New appointment</b> or <b>🛠 Schedule work</b>.</div>';
   /* 2. the quick actions — big tiles */
   var com = !hourly();
-  h += '<div class="gc-pmf-q">' + QUICK.map(function(q){
+  h += '<div class="gc-pmf-q">' + QUICK.filter(function(q){ return q[0] === 'sched' ? false : q[0] === 'clock' ? !com : true; }).map(function(q){   /* LEANHOME: 📅 My Schedule is in the bottom bar; ⏱ Clock in (optional) → ☰ More (an hourly person keeps Start / end my day) */
     var l = q[2], sm = q[3];
     if (q[0] === 'clock') { try { l = RA() && RA().label ? RA().label('clock') || l : l; } catch (e) {} sm = com ? 'Optional — only if you want to log it' : 'Start / end my day'; }
     return '<button type="button" class="gc-pmf-t" data-pmf-a="' + q[0] + '"><span class="e">' + q[1] + '</span><span class="l">' + esc(l) + '</span>' + (sm ? '<small>' + esc(sm) + '</small>' : '') + '</button>';
@@ -213717,6 +213647,11 @@ W._gcRaMoreHook = function(a, o, pk){
   var box = D.createElement('div'); box.className = 'gc-pmf-less';
   box.innerHTML = '<div class="gc-fm-k" data-fm="less">Less often</div>' + lessRows(a).map(function(r){ return '<button type="button" class="gc-fm-r" data-pmf-a="' + r[0] + '"><span class="e">' + r[1] + '</span><span>' + esc(r[2]) + '<small>' + esc(r[3]) + '</small></span></button>'; }).join('');
   pk.insertBefore(box, pk.firstChild);
+  /* LEANHOME: what left Home is here, first */
+  try { var k9 = K(), mv = movedOf(a, k9), fh = D.createElement('div'); fh.className = 'gc-pmf-less gc-pmf-fromhome';
+    fh.innerHTML = '<div class="gc-fm-k" data-fm="fromhome">From Home</div>' + (!hourly() ? '<button type="button" class="gc-fm-r" data-pmf-a="clock"><span class="e">⏱</span><span>Clock in (optional)<small>Only if you want to log it</small></span></button>' : '') +
+      '<button type="button" class="gc-fm-r" data-pmf-a="sched"><span class="e">📅</span><span>My Schedule<small>Day · week · time off</small></span></button>' + mv.map(function(id){ return k9.tileHtml(id, 'gc-fm-r'); }).join('');
+    pk.insertBefore(fh, pk.firstChild); } catch (e) { warn(e); }
   var anchor = off0 ? off0.nextSibling : null;
   moved.forEach(function(b){ if (off0) pk.insertBefore(b, anchor); else pk.appendChild(b); });
   if (!pk.querySelector('[data-m="search"],[data-ra-a="search"]') && K() && K().shown('search')) { var sr = D.createElement('button'); sr.type = 'button'; sr.className = 'gc-fm-r'; sr.setAttribute('data-ra-a', 'search'); sr.setAttribute('data-m', 'search'); sr.setAttribute('data-ra-close', ''); sr.innerHTML = '<span class="e">🔍</span><span>Search</span>'; pk.insertBefore(sr, pk.querySelector('[data-m="tools"]') || null); }
@@ -223726,7 +223661,7 @@ ST.call(W, sweep, 25000); SI.call(W, sweep, 180000);
 (function(W){
 'use strict';
 if (W.__GC_PATCH_NEWLEAD__) return; W.__GC_PATCH_NEWLEAD__ = true;
-var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+var D = W.document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_REAL_SETINTERVAL__ || W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;   /* patch NEWLEADSPOP: light work, never idle-paced */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -223735,9 +223670,24 @@ function myName(){ try { var u = JSON.parse(localStorage.getItem('grayco_user') 
 var KEY = function(){ return 'gc_lead_seen__' + email(); };
 var SEEN = null;
 function seenMap(){ if (SEEN) return SEEN; try { SEEN = JSON.parse(localStorage.getItem(KEY()) || '{}') || {}; } catch (e) { SEEN = {}; } return SEEN; }
-function markSeen(id){ var m = seenMap(); m[id] = new Date().toISOString(); var k = Object.keys(m); if (k.length > 400) k.sort(function(a, b){ return m[a] < m[b] ? -1 : 1; }).slice(0, k.length - 400).forEach(function(x){ delete m[x]; }); try { localStorage.setItem(KEY(), JSON.stringify(m)); } catch (e) {} try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u(KEY(), m); } catch (e) {} paint(); }
+/* patch NEWLEADSPOP: one save for one lead or a whole batch. localStorage, and always IndexedDB too (a full localStorage on the
+   desk dropped the save, so "seen" was forgotten at every reload), and the person's cloud row (the phone and the desk agree). */
+function merge(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (!v || typeof v !== 'object') return false; var m = seenMap(), n = 0; Object.keys(v).forEach(function(k){ if (!m[k] && v[k]) { m[k] = v[k]; n++; } }); return n > 0; }
+var IDB = 0;
+function idbLoad(){   /* 1 = reading (nothing is drawn until it answers, at most 3 s: no chip flashing up for a batch already closed), 2 = read */
+  if (IDB || !email()) return; if (typeof W.idbGet !== 'function') { IDB = 2; return; } IDB = 1; var k = KEY(), done = function(){ if (IDB === 1) { IDB = 2; paint(); } };
+  ST.call(W, done, 3000); try { Promise.resolve(W.idbGet(k)).then(function(v){ if (k === KEY()) merge(v); done(); }, done); } catch (e) { done(); } }
+function markSeen(ids){
+  ids = [].concat(ids).map(function(x){ return s(x && x.id || x); }).filter(Boolean); if (!ids.length) return;
+  var m = seenMap(), now = new Date().toISOString(); ids.forEach(function(id){ m[id] = now; });
+  var k = Object.keys(m); if (k.length > 400) k.sort(function(a, b){ return m[a] < m[b] ? -1 : 1; }).slice(0, k.length - 400).forEach(function(x){ delete m[x]; });
+  try { localStorage.setItem(KEY(), JSON.stringify(m)); } catch (e) {}
+  try { if (typeof W.idbSet === 'function') W.idbSet(KEY(), Object.assign({}, m)); } catch (e) {}
+  try { var u = W._supaUpsertNow || W._supaUpsert; if (u) u(KEY(), m); } catch (e) {}
+  paint();
+}
 var pulled = false;
-function pull(){ if (pulled || !email()) return; pulled = true; try { var u = (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k = localStorage.getItem('grayco_sb_key') || ''; if (!u || !k) return; W.fetch(u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(KEY()) + '&select=value', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){ var v = rows && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (v && typeof v === 'object') { SEEN = Object.assign({}, v, seenMap()); try { localStorage.setItem(KEY(), JSON.stringify(SEEN)); } catch (e) {} paint(); } }).catch(function(){}); } catch (e) {} }
+function pull(){ if (pulled || !email()) return; pulled = true; try { var u = (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k = localStorage.getItem('grayco_sb_key') || ''; if (!u || !k) return; W.fetch(u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(KEY()) + '&select=value', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){ var v = rows && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (v && typeof v === 'object') { SEEN = Object.assign({}, v, seenMap()); try { localStorage.setItem(KEY(), JSON.stringify(SEEN)); } catch (e) {} paint(); } }).catch(function(){ ST.call(W, function(){ pulled = false; }, 60000); }); } catch (e) {} }   /* patch NEWLEADSPOP: no answer → again in a minute */
 var OPEN_STAGE = /^(|new|new lead|unassigned|assigned|incoming|to call|uncontacted)$/i;
 function who(l){ return s(l.assignedTo || l.pm || l.estimator || l.assignee || l.salesRep); }
 function mine(){
@@ -223765,6 +223715,7 @@ function cardHtml(L, field){
       + '<div class="gc-nl-b"><button type="button" data-nl="open">Open lead</button><button type="button" data-nl="got" class="g">✓ Got it</button></div></div>';
   });
   if (field && L.length > 3) h += '<div class="gc-nl-m">+ ' + (L.length - 3) + ' more on the Leads tab</div>';
+  if (L.length > 1) h += '<div class="gc-nl-b"><button type="button" data-nlc="all">✓ Mark all ' + L.length + ' seen</button></div>';   /* patch NEWLEADSPOP: one tap closes the batch */
   return h;
 }
 function css(){
@@ -223777,23 +223728,23 @@ function css(){
     + '.gc-nl-b button{flex:1;min-height:40px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;font:700 14px Inter,Arial,sans-serif;cursor:pointer}.gc-nl-b button.g{background:#166534;color:#fff;border-color:#166534}';
   D.head.appendChild(st);
 }
-function mount(host, id, before, field){
-  var L = mine(), cur = D.getElementById(id);
+function mount(host, id, before, field, L){
+  L = L || mine(); var cur = D.getElementById(id);
   if (!host || !L.length) { if (cur) cur.remove(); return; }
   css();
-  var sig = L.map(function(l){ return l.id + (l.updatedAt || ''); }).join('|');
+  var sig = L.map(function(l){ return l.id; }).join('|');   /* patch NEWLEADSPOP: ids only */
   if (cur && cur.parentElement === host && cur.getAttribute('data-sig') === sig) return;
   if (!cur) { cur = D.createElement('div'); cur.id = id; cur.className = 'gc-nl'; cur.setAttribute('data-gc-keep', '1'); cur.setAttribute('role', 'region'); cur.setAttribute('aria-label', 'New leads for you'); }
   cur.setAttribute('data-sig', sig); cur.innerHTML = cardHtml(L, field);
-  if (cur.parentElement !== host || (before && cur.nextSibling !== before)) host.insertBefore(cur, before || host.firstChild);
+  if (cur.parentElement !== host || (before && before !== cur && cur.nextSibling !== before)) host.insertBefore(cur, before || host.firstChild);
 }
 function paint(){
   try {
-    if (D.hidden || !email()) return; pull();
-    var fh = D.querySelector('#_gcJobPick.gc-fh .fh-wrap');
-    if (fh) mount(fh, 'gc-nl-field', fh.querySelector('.gc-ra-top') ? fh.querySelector('.gc-ra-top').nextSibling : fh.firstChild, true);
-    var hub = D.getElementById('gc-leads-hub');
-    if (hub && hub.getClientRects().length) mount(hub, 'gc-nl-leads', hub.firstChild, false); else { var c = D.getElementById('gc-nl-leads'); if (c && !hub) c.remove(); }
+    if (D.hidden || !email()) return; pull(); idbLoad(); if (IDB === 1) return;
+    var fh = D.querySelector('#_gcJobPick.gc-fh .fh-wrap'), hub = D.getElementById('gc-leads-hub');
+    var L = fh || hub || POP.open ? mine() : null;
+    if (fh) mount(fh, 'gc-nl-field', fh.querySelector('.gc-ra-top') ? fh.querySelector('.gc-ra-top').nextSibling : fh.firstChild, true, L);
+    deskChip(hub, L || []);
   } catch (e) {}
 }
 D.addEventListener('click', function(e){
@@ -223801,14 +223752,139 @@ D.addEventListener('click', function(e){
   var r = b.closest('[data-id]'), id = r && r.getAttribute('data-id'); if (!id) return;
   e.preventDefault(); e.stopPropagation();
   markSeen(id);
-  if (b.getAttribute('data-nl') === 'open') {
+  if (b.getAttribute('data-nl') === 'open') { closePop();
     try { if (typeof W._gcOpenLead === 'function') W._gcOpenLead(id); else if (W._gcLeadsHub && W._gcLeadsHub.open) { if (W._setView) W._setView('leads'); ST.call(W, function(){ W._gcLeadsHub.open(id); }, 400); } } catch (x) {}
   }
 }, true);
 /* opening a lead anywhere counts as seen */
 (function hookOpen(n){ var H = W._gcLeadsHub; if (H && typeof H.open === 'function' && !H.open.__nl) { var o = H.open; var f = function(id){ try { if (id) markSeen(s(id && id.id || id)); } catch (e) {} return o.apply(this, arguments); }; f.__nl = true; H.open = f; } if (n < 60) ST.call(W, function(){ hookOpen(n + 1); }, 2000); })(0);
 SI.call(W, paint, 1500);
-W._gcNewLead = { mine: mine, seen: markSeen, paint: paint };
+/* patch NEWLEADSPOP (owner 11/19, the desk "lags a lot"): the 📥 card sat INSIDE the Leads list's box (#gc-leads-hub). Every redraw
+   of the list (a sync bringing any lead change) wiped it and the 1.5 s timer put it back — the page jumped up and down by the card's
+   height (6 heavy cards for an estimator with 64 bid invites), and a teammate's edit to any of those leads redrew the card too.
+   On the Leads page it is now a chip in the list's own header row ("🔔 64 new for you", kept there by BARSTILL2 across redraws):
+   the chip opens a short list (8 rows, then "Open Leads" for the rest) that only opens when asked; ✕ / "✓ Mark all seen" closes
+   the batch for good (one save: localStorage, IndexedDB, the person's cloud row). A new lead brings the chip back. */
+var POP = { open: false };
+function popCss(){
+  if (D.getElementById('gc-nlp-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-nlp-css';
+  st.textContent = '#gc-leads-chips>#gc-nl-chip{display:inline-flex;align-items:center;gap:2px;white-space:nowrap;margin:0;padding:0;border:0;background:none}'
+    + '#gc-nl-chip button{cursor:pointer;font:700 12px Inter,Arial,sans-serif;border-radius:999px}#gc-nl-chip .c{border:1px solid #f59e0b;background:#fffbeb;color:#92400e;padding:3px 10px}#gc-nl-chip .c[aria-expanded="true"]{background:#f59e0b;color:#fff}'
+    + '#gc-nl-chip .x{border:0;background:none;color:#92400e;padding:2px 6px}#gc-nl-chip .x:hover{background:#fef3c7}'
+    + '#gc-nl-pop{position:fixed;z-index:100150;margin:0;width:min(440px,calc(100vw - 16px));max-height:min(70vh,560px);overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:8px 10px}'
+    + '#gc-nl-pop .gc-nl-h{display:flex;align-items:center;gap:8px}#gc-nl-pop .gc-nl-h span{flex:1}#gc-nl-pop .gc-nl-r{display:flex;gap:8px;align-items:center;padding:5px 0}#gc-nl-pop .t{flex:1;min-width:0}'
+    + '#gc-nl-pop .t b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#gc-nl-pop .gc-nl-m{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '#gc-nl-pop .gc-nl-b{margin:0;flex:0 0 auto;gap:4px}#gc-nl-pop .gc-nl-b button{flex:0 0 auto;min-height:28px;padding:2px 8px;font-size:12px}'
+    + '#gc-nl-pop .gc-nl-f{display:flex;gap:8px;align-items:center;border-top:1px solid #fde68a;padding-top:6px;margin-top:2px;font-size:12.5px;color:#64748b}#gc-nl-pop .gc-nl-f span{margin-right:auto}'
+    + '#gc-nl-pop button.x,#gc-nl-pop .gc-nl-f button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:3px 10px;min-height:28px;font:700 12px Inter,Arial,sans-serif;cursor:pointer;color:#0f172a}#gc-nl-pop .gc-nl-f button.g{background:#166534;border-color:#166534;color:#fff}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function dueTxt(l){ var t = Date.parse(l.bidDue || l.dueDate || 0); return isFinite(t) && t ? 'due ' + new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+function popHtml(L){
+  var MAX = 8, n = L.length;
+  var h = '<div class="gc-nl-h"><span>🔔 ' + n + ' new lead' + (n === 1 ? '' : 's') + ' for you</span><button type="button" class="x" data-nlc="close" aria-label="Close">✕</button></div>';
+  L.slice(0, MAX).forEach(function(l){
+    h += '<div class="gc-nl-r" data-id="' + esc(l.id) + '"><div class="t"><b title="' + esc(l.name || l.client || 'New lead') + '">' + esc(l.name || l.client || 'New lead') + '</b>'
+      + '<div class="gc-nl-m">' + esc([l.leadKind || l.type, l.source || l.leadSource, dueTxt(l)].filter(Boolean).join(' · ')) + '</div></div>'
+      + '<div class="gc-nl-b"><button type="button" data-nl="open">Open lead</button><button type="button" data-nl="got" class="g">✓ Got it</button></div></div>';
+  });
+  return h + '<div class="gc-nl-f">' + (n > MAX ? '<span>+ ' + (n - MAX) + ' more</span><button type="button" data-nlc="leads">Open Leads</button>' : '<span></span>')
+    + '<button type="button" class="g" data-nlc="all">✓ Mark all ' + n + ' seen</button></div>';
+}
+function chipEl(){ var CH = W._gcLeadsChips; return D.getElementById('gc-nl-chip') || (CH && CH.els && CH.els['gc-nl-chip']) || null; }
+function closePop(){ POP.open = false; var p = D.getElementById('gc-nl-pop'); if (p) p.remove(); var c = chipEl(), b = c && c.querySelector('.c'); if (b) b.setAttribute('aria-expanded', 'false'); }
+function popPaint(L){
+  var c = chipEl(), r = c && c.isConnected ? c.getBoundingClientRect() : null;
+  if (!L.length || !r || !r.width) { closePop(); return; }
+  css(); popCss(); var p = D.getElementById('gc-nl-pop');
+  if (!p) { p = D.createElement('div'); p.id = 'gc-nl-pop'; p.className = 'gc-nl'; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'New leads for you'); p.setAttribute('data-gc-keep', '1'); D.body.appendChild(p); }
+  var sig = L.map(function(l){ return l.id; }).join('|');
+  if (p.getAttribute('data-sig') !== sig) { p.setAttribute('data-sig', sig); p.innerHTML = popHtml(L); }
+  var top = Math.round(r.bottom + 6) + 'px', right = Math.max(8, Math.round(W.innerWidth - r.right)) + 'px';
+  if (p.style.top !== top) p.style.top = top; if (p.style.right !== right) p.style.right = right;
+}
+function deskChip(hub, L){
+  var old = D.getElementById('gc-nl-leads'); if (old) old.remove();   /* the old card inside the list's box */
+  var CH = W._gcLeadsChips, el = chipEl();
+  if (!hub || !CH || !L.length) { if (el && CH) CH.off(el); closePop(); return; }
+  popCss();
+  if (!el) { el = D.createElement('span'); el.id = 'gc-nl-chip'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'status'); }
+  var n = String(L.length);
+  if (el.getAttribute('data-n') !== n) { el.setAttribute('data-n', n);
+    el.innerHTML = '<button type="button" class="c" data-nlc="show" aria-haspopup="dialog" aria-expanded="' + (POP.open ? 'true' : 'false') + '" title="New leads assigned to you that you have not opened yet">🔔 ' + n + ' new for you</button>'
+      + '<button type="button" class="x" data-nlc="all" title="Mark all ' + n + ' as seen" aria-label="Mark all ' + n + ' new leads as seen">✕</button>'; }
+  CH.on(el, hub);
+  if (POP.open) popPaint(L);
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('[data-nlc]') : null;
+  if (!b) { var p = D.getElementById('gc-nl-pop'); if (POP.open && p && !p.contains(e.target)) closePop(); return; }
+  e.preventDefault(); e.stopPropagation();
+  var a = b.getAttribute('data-nlc');
+  if (a === 'show') { if (POP.open) closePop(); else { POP.open = true; b.setAttribute('aria-expanded', 'true'); popCss(); popPaint(mine()); } return; }
+  if (a === 'close') { closePop(); return; }
+  if (a === 'all') { var ids = mine().map(function(l){ return l.id; }); closePop(); markSeen(ids); return; }
+  if (a === 'leads') { closePop(); try { if (W._setView && !D.getElementById('gc-leads-hub')) W._setView('leads'); var h = D.getElementById('gc-leads-hub'); if (h) h.scrollIntoView({ block: 'start' }); } catch (x) {} }
+}, true);
+D.addEventListener('keydown', function(e){ if (POP.open && e.key === 'Escape') closePop(); }, true);
+W._gcNewLead = { mine: mine, seen: markSeen, paint: paint, close: closePop };
+})(window);
+</script>
+<script id="gc-patch-deskfit">
+/* patch DESKFIT (owner 11/19: the desk's big lists were wider than the window — sideways scrolling to see the right-hand
+   columns). The Projects and Invoices tables (React's, in an overflow-x box) fit their box on a desk: fixed layout, the
+   columns get set shares, text wraps, long Address / Client / Description are cut short with the full text as a tooltip;
+   under 1200 px the least-used columns (Address and Type on Projects, Sent on Invoices) are hidden. A table is matched by
+   its header names, so a column a role does not see is simply not there. The phone layout is not touched (≥ 641 px only).
+   Projects' own column widths (the drag-to-resize ones, and the older pipeline fit) are kept as proportions: this patch never
+   writes a column's width, it reads them and sets its own --gcw share, so it does not fight them. */
+(function(W){
+'use strict';
+if (W.__GC_DESKFIT__) return; W.__GC_DESKFIT__ = true;
+var D = W.document, SI = W.__GC_REAL_SETINTERVAL__ || W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;   /* the browser's own interval: light work, never idle-paced (a list opened while idle still fits) */
+/* header → [width %, hidden under 1200 px, cut short with a tooltip] */
+var FIT = [
+  { k: 'proj', need: ['po#', 'project', 'finish date'], cols: { 'po#': [6], project: [13], client: [11], address: [11, 1, 1], pm: [8], type: [7, 1], status: [8], started: [7], 'finish date': [7], contract: [7], spent: [5], profit: [6], alert: [4] } },
+  { k: 'inv', need: ['po#', 'description', 'amount'], cols: { 'po#': [7], project: [18], client: [13, 0, 1], description: [22, 0, 1], amount: [9], status: [8], sent: [7, 1], due: [7], actions: [9] } }
+];
+function key(th){ return String(th.textContent || '').replace(/[▲▼↑↓⇅]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+function css(){
+  if (D.getElementById('gc-deskfit-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-deskfit-css';
+  st.textContent = '@media (min-width:641px){table.gc-fit{table-layout:fixed!important;width:100%!important;min-width:0!important}table.gc-fit>thead>tr>th{width:var(--gcw,auto)!important}'
+    + 'table.gc-fit th,table.gc-fit td{max-width:none!important;white-space:normal!important;overflow-wrap:break-word;overflow:hidden;padding:5px 6px!important}'
+    + 'table.gc-fit td[data-gcclip]{white-space:nowrap!important;text-overflow:ellipsis}}'
+    + '@media (min-width:641px) and (max-width:1199px){table.gc-fit [data-gch="1"]{display:none!important}}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function fit(t){
+  var ths = t.querySelectorAll('thead th'); if (!ths.length) return;
+  var keys = [].map.call(ths, key), px = [].map.call(ths, function(th){ return /px$/.test(th.style.width) ? parseFloat(th.style.width) : 0; }), sig = keys.join('|') + '#' + px.join(',');
+  if (t.getAttribute('data-gcfit-sig') !== sig) {
+    t.setAttribute('data-gcfit-sig', sig);
+    var F = FIT.filter(function(f){ return f.need.every(function(n){ return keys.indexOf(n) >= 0; }); })[0];
+    t.__gcfit = F ? keys.map(function(k){ return F.cols[k] || null; }) : null;
+    if (!F) { t.classList.remove('gc-fit'); return; }
+    css(); t.classList.add('gc-fit');
+    var sum = px.every(function(w){ return w > 0; }) ? px.reduce(function(a, w){ return a + w; }, 0) : 0;   /* the table's own widths, as shares */
+    [].forEach.call(ths, function(th, i){ var c = t.__gcfit[i]; th.style.setProperty('--gcw', sum ? (px[i] * 100 / sum).toFixed(2) + '%' : c ? c[0] + '%' : 'auto'); if (c && c[1]) th.setAttribute('data-gch', '1'); else th.removeAttribute('data-gch'); });
+    if (t.getAttribute('data-gcfit-k') !== keys.join('|')) { t.setAttribute('data-gcfit-k', keys.join('|')); [].forEach.call(t.querySelectorAll('tbody tr[data-gcf]'), function(tr){ tr.removeAttribute('data-gcf'); }); }   /* the columns changed: the rows again */
+  }
+  var M = t.__gcfit; if (!M) return;
+  [].forEach.call(t.querySelectorAll('tbody tr:not([data-gcf])'), function(tr){
+    tr.setAttribute('data-gcf', '1'); var cs = tr.children; if (cs.length !== M.length) return;   /* a full-width row (colspan) */
+    for (var i = 0; i < cs.length; i++) { var c = M[i]; if (!c) continue; if (c[1]) cs[i].setAttribute('data-gch', '1'); if (c[2]) { cs[i].setAttribute('data-gcclip', '1'); var tx = String(cs[i].textContent || '').trim(); if (tx && !cs[i].title) cs[i].title = tx; } }
+  });
+}
+var RUNS = 0, ERR = '';
+function tick(){
+  RUNS++; if (D.hidden || W.innerWidth < 641) return;
+  [].forEach.call(D.querySelectorAll('#root div[style*="overflow-x"] > table'), function(t){ try { if (t.getClientRects().length) fit(t); } catch (e) { ERR = String(e && e.message || e); } });
+}
+SI.call(W, tick, 1500);
+D.addEventListener('mouseup', function(){ (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, tick, 50); }, true);   /* a column just resized */
+W._gcDeskFit = { tick: tick, state: function(){ return { runs: RUNS, err: ERR }; } };
 })(window);
 </script>
 <script id="gc-patch-lsacheck">
@@ -243248,7 +243324,7 @@ function hubItem(panel){
   }
 }
 /* pinned: it stays the first thing in the menu (other items that put themselves on top come in after it) */
-function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rpb-hub'); if (it && panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }
+function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rpb-hub'); if (!it) return; var mic = panel.querySelector('[data-gc-pu-mic]'); if (mic) { if (mic.nextSibling !== it) mic.parentNode.insertBefore(it, mic.nextSibling); return; } if (panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }   /* the Field's 🎤 Voice note stays first (owner 11/19) */
 D.addEventListener('gc-hub-open', function(e){ try { var p = e && e.detail && e.detail.panel; hubItem(p); later(function(){ keepFirst(p); }, 0); later(function(){ keepFirst(p); }, 200); } catch (x) { warn(x); } });
 function hubPoll(){ var all = D.querySelectorAll('.gc-hub-panel'); for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { hubItem(all[i]); keepFirst(all[i]); break; } }
 /* GrayCo Field ☰ More: the Office rows */
@@ -249788,6 +249864,9 @@ try {
     /* (a raised tab — 🏠 Home or ✅ Approvals in a big circle — rises into this row: the two buttons move to the other side) */
     '#gc-pu-dock.gc-pu-dk-r{justify-content:flex-end;gap:18px}#gc-pu-dock.gc-pu-dk-l{justify-content:flex-start;gap:18px}' +
     'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;margin:0!important;padding:0!important;border-radius:18px!important;font-size:17px!important;line-height:36px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}' +
+    'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
+    'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
+    'html.gc-pu-app #_gcMicBtn,html._fieldmode.gc-pu #_gcMicBtn{display:none!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
@@ -250258,6 +250337,8 @@ try {
   function dock(){
     var app = H.classList.contains('gc-pu-app'), tabs = D.getElementById('gc-fh-tabs'), d = D.getElementById('gc-pu-dock');
     var mic = D.getElementById('_gcMicBtn'), hub = D.getElementById('_gcFieldHubBtn');
+    if (mic && d && d.contains(mic)) D.body.appendChild(mic);
+    mic = null;
     var home = function(){ if (d) { if (mic && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } if (tabs) tabs.classList.remove('gc-pu-hasdock'); };
     if (!app || !tabs || (!mic && !hub)) { home(); return; }
     if (!d || d.parentNode !== tabs) {
@@ -250273,9 +250354,20 @@ try {
     var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
     if (mic && mic.parentNode !== sm) { sm.insertBefore(mic, sm.firstChild); if (!sm.querySelector('.gc-pu-l')) { var l1 = D.createElement('span'); l1.className = 'gc-pu-l'; l1.textContent = 'Voice note'; sm.appendChild(l1); } }
     if (hub && hub.parentNode !== sh) { if (!sh.querySelector('.gc-pu-l')) { var l2 = D.createElement('span'); l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
+    [mic, hub].forEach(function(x){ if (x && x.__gcDodge && (x.__gcDodge[0] || x.__gcDodge[1])) { x.__gcDodge = [0, 0]; x.style.removeProperty('translate'); x.style.removeProperty('opacity'); x.setAttribute('data-gcnav-dodged', '0'); } });
     if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
     if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
   }
+  function micInMenu(ev){
+    try {
+      var pn = ev && ev.detail && ev.detail.panel; if (!pn || !H.classList.contains('gc-pu-app') || pn.querySelector('[data-gc-pu-mic]')) return;
+      var it = D.createElement('div'); it.className = 'gc-hub-item'; it.setAttribute('data-gc-pu-mic', '1'); it.setAttribute('data-label', 'Voice note'); it.setAttribute('role', 'button');
+      it.innerHTML = "<span class='gc-hub-icon'>🎤</span><span>Voice note</span>";
+      it.addEventListener('click', function(){ try { if (W._gcAUTAI && typeof W._gcAUTAI.mic === 'function') { W._gcAUTAI.mic(); return; } } catch (e) {} var vb = D.getElementById('_gcMicBtn') || D.getElementById('_voiceBtn'); if (vb) vb.click(); });
+      var first = pn.querySelector('.gc-hub-item'); if (first) first.parentNode.insertBefore(it, first); else pn.appendChild(it);
+    } catch (e) {}
+  }
+  D.addEventListener('gc-hub-open', function(ev){ micInMenu(ev); ST.call(W, function(){ try { var pn = ev.detail && ev.detail.panel, it = pn && pn.querySelector('[data-gc-pu-mic]'), first = pn && pn.querySelector('.gc-hub-item'); if (it && first && first !== it) first.parentNode.insertBefore(it, first); } catch (e) {} }, 0); });   /* first, even when another patch adds its item at the top after us */
   function head(){
     try { dock(); } catch (e) {}
     var hd = D.getElementById('_gcAppHead');
@@ -250363,9 +250455,10 @@ try {
     });
     var watchKid = function(n){ if (n.nodeType === 1 && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) try { ma.observe(n, { attributes: true, attributeFilter: ['class', 'style'] }); } catch (e) {} };
     Array.prototype.forEach.call((D.body || H).children, watchKid); PU.mo.push(ma);
+    var mbRun = 0;
     var mb = new MO(function(ms){
       var hit = false;
-      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); fresh(a[k]); watchKid(a[k]); hit = true; } }
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); else if (/^(_gcMicBtn|_gcFieldHubBtn|gc-fh-tabs)$/.test(a[k].id) && !(mbRun > Date.now() - 1000)) { mbRun = Date.now(); try { run(); } catch (e) {} } fresh(a[k]); watchKid(a[k]); hit = true; } }
       if (hit) { safeUntil = Date.now() + 3000; soon(); }
     });
     mb.observe(D.body || H, { childList: true }); PU.mo.push(mb);

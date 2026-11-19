@@ -79,6 +79,12 @@ try {
     /* (a raised tab — 🏠 Home or ✅ Approvals in a big circle — rises into this row: the two buttons move to the other side) */
     '#gc-pu-dock.gc-pu-dk-r{justify-content:flex-end;gap:18px}#gc-pu-dock.gc-pu-dk-l{justify-content:flex-start;gap:18px}' +
     'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;margin:0!important;padding:0!important;border-radius:18px!important;font-size:17px!important;line-height:36px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto;color:#fff}' +
+    /* behind the Field pages: the page's own background light too — a Field page that draws itself again (My Approvals after
+       its data comes in) showed the desk's navy behind it for a moment, a third of the phone screen */
+    'html.gc-pu-app,html.gc-pu-app body{background:#F3F5F8!important}' +
+    /* 🆘 Problem reports and its other cards: clear of the status bar and the home bar (its ✕ sat under the clock) */
+    'html.gc-pu-app .gc-rpb-ov{padding-top:calc(14px + env(safe-area-inset-top,0px))!important;padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))!important}html.gc-pu-app .gc-rpb-card{max-height:100%!important}' +
+    'html.gc-pu-app #_gcMicBtn,html._fieldmode.gc-pu #_gcMicBtn{display:none!important}' +
     'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
     /* the end of every Field page clears the bottom bar (a spacer as well as the padding: a page that scrolls inside
        itself does not always count its padding), and "scroll this into view" stops clear of the header and the bar */
@@ -549,6 +555,9 @@ try {
   function dock(){
     var app = H.classList.contains('gc-pu-app'), tabs = D.getElementById('gc-fh-tabs'), d = D.getElementById('gc-pu-dock');
     var mic = D.getElementById('_gcMicBtn'), hub = D.getElementById('_gcFieldHubBtn');
+    /* owner 11/19: no 🎤 button of its own in the Field — "🎤 Voice note" is the first item of the 💎 menu (micInMenu); the row keeps 💎 */
+    if (mic && d && d.contains(mic)) D.body.appendChild(mic);
+    mic = null;
     var home = function(){ if (d) { if (mic && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } if (tabs) tabs.classList.remove('gc-pu-hasdock'); };
     if (!app || !tabs || (!mic && !hub)) { home(); return; }
     if (!d || d.parentNode !== tabs) {
@@ -564,9 +573,23 @@ try {
     var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
     if (mic && mic.parentNode !== sm) { sm.insertBefore(mic, sm.firstChild); if (!sm.querySelector('.gc-pu-l')) { var l1 = D.createElement('span'); l1.className = 'gc-pu-l'; l1.textContent = 'Voice note'; sm.appendChild(l1); } }
     if (hub && hub.parentNode !== sh) { if (!sh.querySelector('.gc-pu-l')) { var l2 = D.createElement('span'); l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
+    /* NAV's dodge moved a FLOATING button aside (an inline translate: 35px !important, opacity .75) when it covered a tile at
+       start-up; once docked, the dodge no longer looks at it and the 💎 stayed 35 px off the right edge — undone here */
+    [mic, hub].forEach(function(x){ if (x && x.__gcDodge && (x.__gcDodge[0] || x.__gcDodge[1])) { x.__gcDodge = [0, 0]; x.style.removeProperty('translate'); x.style.removeProperty('opacity'); x.setAttribute('data-gcnav-dodged', '0'); } });
     if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
     if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
   }
+  /* the 💎 menu in the Field: "🎤 Voice note" first (the same voice note the 🎤 button started) */
+  function micInMenu(ev){
+    try {
+      var pn = ev && ev.detail && ev.detail.panel; if (!pn || !H.classList.contains('gc-pu-app') || pn.querySelector('[data-gc-pu-mic]')) return;
+      var it = D.createElement('div'); it.className = 'gc-hub-item'; it.setAttribute('data-gc-pu-mic', '1'); it.setAttribute('data-label', 'Voice note'); it.setAttribute('role', 'button');
+      it.innerHTML = "<span class='gc-hub-icon'>🎤</span><span>Voice note</span>";
+      it.addEventListener('click', function(){ try { if (W._gcAUTAI && typeof W._gcAUTAI.mic === 'function') { W._gcAUTAI.mic(); return; } } catch (e) {} var vb = D.getElementById('_gcMicBtn') || D.getElementById('_voiceBtn'); if (vb) vb.click(); });
+      var first = pn.querySelector('.gc-hub-item'); if (first) first.parentNode.insertBefore(it, first); else pn.appendChild(it);
+    } catch (e) {}
+  }
+  D.addEventListener('gc-hub-open', function(ev){ micInMenu(ev); ST.call(W, function(){ try { var pn = ev.detail && ev.detail.panel, it = pn && pn.querySelector('[data-gc-pu-mic]'), first = pn && pn.querySelector('.gc-hub-item'); if (it && first && first !== it) first.parentNode.insertBefore(it, first); } catch (e) {} }, 0); });   /* first, even when another patch adds its item at the top after us */
   function head(){
     try { dock(); } catch (e) {}
     var hd = D.getElementById('_gcAppHead');
@@ -654,9 +677,12 @@ try {
     });
     var watchKid = function(n){ if (n.nodeType === 1 && !/^(SCRIPT|STYLE|LINK)$/.test(n.tagName)) try { ma.observe(n, { attributes: true, attributeFilter: ['class', 'style'] }); } catch (e) {} };
     Array.prototype.forEach.call((D.body || H).children, watchKid); PU.mo.push(ma);
+    /* the 🎤 / 💎 buttons and the bottom bar: docked the moment they are added (they floated over the home's tiles for the
+       first seconds of an open on a slow phone) */
+    var mbRun = 0;
     var mb = new MO(function(ms){
       var hit = false;
-      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); fresh(a[k]); watchKid(a[k]); hit = true; } }
+      for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); else if (/^(_gcMicBtn|_gcFieldHubBtn|gc-fh-tabs)$/.test(a[k].id) && !(mbRun > Date.now() - 1000)) { mbRun = Date.now(); try { run(); } catch (e) {} } fresh(a[k]); watchKid(a[k]); hit = true; } }
       if (hit) { safeUntil = Date.now() + 3000; soon(); }
     });
     mb.observe(D.body || H, { childList: true }); PU.mo.push(mb);

@@ -496,7 +496,7 @@ function hubItem(panel){
   }
 }
 /* pinned: it stays the first thing in the menu (other items that put themselves on top come in after it) */
-function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rpb-hub'); if (it && panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }
+function keepFirst(panel){ var it = panel && panel.querySelector('#gc-rpb-hub'); if (!it) return; var mic = panel.querySelector('[data-gc-pu-mic]'); if (mic) { if (mic.nextSibling !== it) mic.parentNode.insertBefore(it, mic.nextSibling); return; } if (panel.firstChild !== it) panel.insertBefore(it, panel.firstChild); }   /* the Field's 🎤 Voice note stays first (owner 11/19) */
 D.addEventListener('gc-hub-open', function(e){ try { var p = e && e.detail && e.detail.panel; hubItem(p); later(function(){ keepFirst(p); }, 0); later(function(){ keepFirst(p); }, 200); } catch (x) { warn(x); } });
 function hubPoll(){ var all = D.querySelectorAll('.gc-hub-panel'); for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { hubItem(all[i]); keepFirst(all[i]); break; } }
 /* GrayCo Field ☰ More: the Office rows */

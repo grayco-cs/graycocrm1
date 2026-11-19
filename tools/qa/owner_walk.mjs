@@ -56,7 +56,7 @@ if (!flag('child')) {
       try { r = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch (e) {}
       if (!r) r = { profile: p, label: (L.PROFILES[p] || {}).label || p, steps: [], crashed: true, notes: ['the walk did not finish (exit ' + rc + ') — see ' + path.join(runDir, p + '.log')] };
       r.wallSec = Math.round((Date.now() - t0) / 1000);
-      console.log(`  ${p}: ${r.steps.length} steps, ${r.steps.filter(s => s.fails.length).length} with failures (${r.wallSec}s)`);
+      console.log(`  ${p}: ${r.steps.length} steps, ${r.steps.filter(s => s.fails.some(f => f.sev !== 'minor')).length} with critical / major failures, ${r.steps.filter(s => s.fails.length && s.fails.every(f => f.sev === 'minor')).length} with minor findings only (${r.wallSec}s)`);
     } else r = { profile: p, label: (L.PROFILES[p] || {}).label || p, steps: [], notes: [], crawlOnly: true, finished: true };
     if (!flag('no-crawl')) {
       const cf = path.join(runDir, p + '.crawl.json'); const reuse = flag('reuse-crawl') && fs.existsSync(cf);
@@ -74,7 +74,7 @@ if (!flag('child')) {
   fs.writeFileSync(js, JSON.stringify(summary, null, 1));
   fs.writeFileSync(rep, renderHTML(summary, rep));
   console.log(`report: ${rep}\nsummary: ${js}`);
-  console.log(`${summary.pass ? 'PASS' : 'FAIL'} ${buildName}: ${summary.counts.steps} steps on ${results.length} profile(s), ${summary.counts.failedSteps} failed, ${summary.counts.fails} failures (${summary.counts.critical} critical, ${summary.counts.major} major, ${summary.counts.minor} minor); buttons ${summary.counts.buttons || 0}: ${summary.counts.buttonsFail || 0} FAIL (${summary.counts.dead || 0} dead), ${summary.counts.buttonsSlow || 0} SLOW${summary.crashed.length ? '; did not finish: ' + summary.crashed.join(', ') : ''}`);
+  console.log(`${summary.pass ? 'PASS' : 'FAIL'} ${buildName}: ${summary.counts.steps} steps on ${results.length} profile(s), ${summary.counts.failedSteps} failed (critical / major), ${summary.counts.minorSteps} with minor findings only, ${summary.counts.fails} failures (${summary.counts.critical} critical, ${summary.counts.major} major, ${summary.counts.minor} minor); buttons ${summary.counts.buttons || 0}: ${summary.counts.buttonsFail || 0} FAIL (${summary.counts.dead || 0} dead), ${summary.counts.buttonsSlow || 0} SLOW${summary.crashed.length ? '; did not finish: ' + summary.crashed.join(', ') : ''}`);
   process.exit(summary.pass ? 0 : 1);
 }
 function runLocked(p, jf, snapDir, logf, mode){
@@ -125,7 +125,7 @@ async function tapAt(x, y){ lastTap = Date.now(); if (phone) await page.touchscr
 async function locate(q){
   return A.ev(q => {
     const rx = q.rx ? new RegExp(q.rx, q.fl || 'i') : null;
-    const vis = e => { const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') return false; const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
+    const vis = e => { if (e.checkVisibility && !e.checkVisibility()) return false; const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') return false; const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
     const t = e => (e.innerText || e.getAttribute('aria-label') || e.title || e.value || '').replace(/\s+/g, ' ').trim();
     let L = [...document.querySelectorAll(q.sel || 'button,[role=button],a,[onclick],[data-ra-a],[data-t],.btn,label,summary,[tabindex]')].filter(vis);
     if (q.within) { const W = [...document.querySelectorAll(q.within)].filter(vis).pop(); L = W ? L.filter(e => W.contains(e)) : []; }
@@ -163,7 +163,10 @@ async function scrollEnd(){
     const doc = document.scrollingElement; let n = 0;
     if (!sc && doc.scrollHeight > innerHeight + 40) sc = doc;
     if (!sc) return { scrolled: false };
-    for (let i = 0; i < 40; i++) { const before = sc.scrollTop; sc.scrollTop = sc.scrollHeight; await new Promise(r => setTimeout(r, 120)); n++; if (Math.abs(sc.scrollTop - before) < 2) break; }
+    /* to the real end: a page that draws more as it is scrolled (or finishes drawing a moment later) is followed until its
+       height and position hold still for ~0.6 s */
+    let still = 0;
+    for (let i = 0; i < 60 && still < 3; i++) { const before = sc.scrollTop, h0 = sc.scrollHeight; sc.scrollTop = sc.scrollHeight; await new Promise(r => setTimeout(r, 200)); n++; if (Math.abs(sc.scrollTop - before) < 2 && sc.scrollHeight === h0) still++; else still = 0; }
     return { scrolled: true, el: (sc.id ? '#' + sc.id : sc.tagName) + (typeof sc.className === 'string' && sc.className ? '.' + sc.className.split(' ')[0] : ''), h: sc.scrollHeight, n };
   }).catch(e => ({ scrolled: false, err: e.message }));
 }
@@ -208,7 +211,9 @@ async function step(name, o, fn){
   if (down > PROF.maxStepMB * 1048576) st.fails.push({ check: 'bytes', msg: `downloaded ${(down / 1048576).toFixed(1)} MB in this step (limit ${PROF.maxStepMB} MB on ${PROF.label})`, list: st.info.net.biggest });
   const wr = H.writes.slice(w0).filter(w => w.table === 'gc_kv'); const shared = wr.filter(w => !OWN.test(w.key));
   st.info.writes = { all: wr.length, shared: [...new Set(shared.map(w => w.key))], sameValue: shared.filter(w => w.same).length };
-  if (shared.length && o.passive) st.fails.push({ check: 'sharedwrite', msg: `shared list(s) uploaded with no change made on this screen: ${st.info.writes.shared.slice(0, 8).join(', ')}` + (st.info.writes.sameValue ? ` (${st.info.writes.sameValue} identical to the cloud)` : ''), list: shared.slice(0, 8).map(w => `${w.key} ${Math.round(w.len / 1024)} KB${w.same ? ' (unchanged)' : ''}`) });
+  /* a write the screen makes by design when it is opened (o.expect: e.g. opening Job messages marks its "new messages" approval read) */
+  if (o.expect) { const ex = shared.filter(w => o.expect.test(w.key)); if (ex.length) st.info.expectedWrites = [...new Set(ex.map(w => w.key))]; }
+  if (shared.filter(w => !(o.expect && o.expect.test(w.key))).length && o.passive) st.fails.push({ check: 'sharedwrite', msg: `shared list(s) uploaded with no change made on this screen: ${st.info.writes.shared.slice(0, 8).join(', ')}` + (st.info.writes.sameValue ? ` (${st.info.writes.sameValue} identical to the cloud)` : ''), list: shared.slice(0, 8).map(w => `${w.key} ${Math.round(w.len / 1024)} KB${w.same ? ' (unchanged)' : ''}`) });
   if (A) st.info.functions = A.fn.slice(f0).map(f => f.name).slice(0, 12);
   st.fails.forEach(f => { f.sev = f.sev || SEV[f.check] || 'minor'; });
   R.steps.push(st); save();
@@ -229,6 +234,16 @@ async function open(roleKey, extraInit){
   const home = await until(() => A.ev(ph => ph ? !!document.querySelector('#_gcJobPick.gc-fh') : !!(window._crm && document.querySelector('#root *')), phone), 120000);
   const data = await until(() => A.ev(async () => { try { return ((window.idbGet && await window.idbGet('projects')) || []).length; } catch (e) { return 0; } }), 180000);
   await sleep(8000);
+  /* a device in daily use, not a brand-new one: the walk starts once this device's first sync has settled (the first pull,
+     the first document pull and what they send up) — no shared upload for 15 s, at most 3 minutes, on the fast link, untimed.
+     What that first sync sent is reported (setup.firstSync), not hidden: it is what a NEW device / cleared phone sends. */
+  { const fs0 = H.writes.length, t0s = Date.now(); let last = Date.now(), n = fs0;
+    let nr = S.link.log.length;
+    while (Date.now() - t0s < 180000) { await sleep(1000); const sh = H.writes.slice(n).filter(w => w.table === 'gc_kv' && !OWN.test(w.key)); n = H.writes.length;
+      const rd = S.link.log.slice(nr).filter(r => /\/rest\/v1\/gc_kv/.test(r.path)).length; nr = S.link.log.length;   /* the first document pull reads hundreds of rows */
+      if (sh.length || rd > 3) last = Date.now(); else if (Date.now() - last > 15000) break; }
+    const fsw = H.writes.slice(fs0).filter(w => w.table === 'gc_kv' && !OWN.test(w.key));
+    R.setup.firstSync = { sec: Math.round((Date.now() - t0s) / 1000), uploads: fsw.length, identical: fsw.filter(w => w.same).length, docRows: fsw.filter(w => /^doc:/.test(w.key)).length, lists: [...new Set(fsw.filter(w => !/^doc:/.test(w.key)).map(w => w.key))].slice(0, 30) }; }
   const cold = S.link.log.slice();
   const coldWire = cold.reduce((a, r) => a + r.down, 0);
   R.setup.signIn = { ok: okIn, home: !!home, projects: data || 0, ms: Date.now() - t0 };
@@ -242,16 +257,27 @@ async function open(roleKey, extraInit){
 }
 
 /* close what is on top (the way a person does: the ✕ / Close / ‹ Back on screen) */
+/* PHONEUI: every Field page / sheet has ONE ‹ Back (.gc-pu-back, in its top bar; the panel's own Back / ✕ is hidden with
+   data-gc-pu-own-back). It is taken first: a small ✕ inside the page is often a row's "remove", not the way out. */
+const PU_BACK = '.gc-pu-back:not([data-gc-pu-own-back])';
 async function back(st, rx){
-  const p = await locate({ rx: rx || '^(‹ ?Back|‹|←|✕|×|Close|Done|‹ Home)$' });
-  if (!p) throw new Error('could not find a close / back button');
+  let p = rx ? null : await locate({ sel: PU_BACK });
+  if (!p) p = await locate({ rx: rx || '^(‹ ?Back|‹|←|✕|×|Close|Done|‹ Home)$' });
+  if (!p) {
+    /* the screen closed by itself (approving the last item on it, a save that returns to the job): the walk is where Back
+       would have taken it — noted, not a failure */
+    const where = await A.ev(() => !!document.querySelector('#_gcJobDash') && document.querySelector('#_gcJobDash').getBoundingClientRect().width > 0 ? 'the job page' : '').catch(() => '');
+    if ((await fieldHome()) || where) { if (st) st.info.back = 'no Back needed: already on ' + (where || 'Field home') + ' (the screen closed itself)'; return null; }
+    throw new Error('could not find a close / back button');
+  }
   if (p.covered && st) st.fails.push({ check: 'closeback', msg: `"${p.text}" is covered by ${p.by}` });
   await tapAt(p.x, p.y); await sleep(600); return p;
 }
 /* the crawler's way back: the ✕ / Close / ‹ Back / Cancel of what is on top (Esc on the desk) */
 async function crawlBack(){
   const sig0 = await A.ev(() => [...document.body.children].filter(e => getComputedStyle(e).display !== 'none' && getComputedStyle(e).position === 'fixed').length + '|' + (localStorage.getItem('grayco_view') || '') + '|' + (document.elementFromPoint(innerWidth / 2, innerHeight * 0.4) || {}).className).catch(() => '');
-  const p = await locate({ rx: '^(‹ ?Back|‹|←|✕|×|✖|Close|Done|Cancel|‹ Home|Back|Not now|OK)$' });
+  let p = await locate({ sel: PU_BACK });
+  if (!p) p = await locate({ rx: '^(‹ ?Back|‹|←|✕|×|✖|Close|Done|Cancel|‹ Home|Back|Not now|OK)$' });
   if (p) { await tapAt(p.x, p.y); await sleep(700); const s1 = await A.ev(() => [...document.body.children].filter(e => getComputedStyle(e).display !== 'none' && getComputedStyle(e).position === 'fixed').length + '|' + (localStorage.getItem('grayco_view') || '') + '|' + (document.elementFromPoint(innerWidth / 2, innerHeight * 0.4) || {}).className).catch(() => ''); return s1 !== sig0 ? { ok: true, how: p.text } : { ok: false, how: p.text, why: `"${p.text}" did not close it` }; }
   if (!phone) { await page.keyboard.press('Escape'); await sleep(500); return { ok: true, how: 'left menu / Esc' }; }
   /* the phone's bottom bar is always a way out */
@@ -322,7 +348,7 @@ async function summarize(results, snapDir, feats){
       status: !B.length ? (f.ids.length + f.data.length + f.labels.length ? 'NOT SEEN' : 'NO UI') : B.some(b => b.result === 'FAIL') ? 'FAIL' : B.some(b => b.result === 'SLOW') ? 'SLOW' : 'OK' }; });
   const crawlErr = results.filter(r => r.crawl && r.crawl.error).map(r => r.profile + ': ' + r.crawl.error);
   const all = []; results.forEach(r => r.steps.forEach(s => s.fails.forEach(f => all.push(Object.assign({ profile: r.profile, step: s.name, n: s.n, shot: (s.shots[0] || {}).file }, f)))));
-  const c = { steps: results.reduce((a, r) => a + r.steps.length, 0), failedSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.length).length, 0), fails: all.length, critical: all.filter(f => f.sev === 'critical').length, major: all.filter(f => f.sev === 'major').length, minor: all.filter(f => f.sev === 'minor').length };
+  const c = { steps: results.reduce((a, r) => a + r.steps.length, 0), failedSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.some(f => f.sev !== 'minor')).length, 0), minorSteps: results.reduce((a, r) => a + r.steps.filter(s => s.fails.length && s.fails.every(f => f.sev === 'minor')).length, 0), fails: all.length, critical: all.filter(f => f.sev === 'critical').length, major: all.filter(f => f.sev === 'major').length, minor: all.filter(f => f.sev === 'minor').length };
   const crashed = results.filter(r => r.crashed || !r.finished || r.stopped || !r.steps.length).map(r => r.profile + (r.stopped ? ' (' + r.stopped + ')' : ''));
   /* the bug list: the same failure on many screens is one bug (with every place and screenshot) */
   const bugMap = new Map(); const norm = m => String(m).replace(/\d+(\.\d+)?/g, '#').replace(/"[^"]{0,80}"/g, '"…"').slice(0, 140);
@@ -344,6 +370,7 @@ function renderHTML(S, file){
   const prof = p => !p.device ? '' : `<section><h2>${esc(p.label)} <span class="muted">(${esc(p.setup && p.setup.account ? p.setup.account.name + ' · ' + p.setup.account.crmRole : '')})</span></h2>
     <p class="muted">${esc(p.device.viewport.width + '×' + p.device.viewport.height)} @${p.device.dsf}x · ${p.device.net ? `${p.device.net.down} kbps down / ${p.device.net.up} up / ${p.device.net.rtt} ms RTT` : 'fast network'} · CPU ×${p.device.cpu}${p.device.safe && p.device.safe.top ? ` · safe area ${p.device.safe.top}/${p.device.safe.bottom}` : ''} · ${p.steps.length} steps · ${p.wallSec || '?'} s</p>
     ${p.setup && p.setup.firstOpen ? `<p>First open of this build (download, untimed setup): <b>${p.setup.firstOpen.wireMB} MB</b> over the wire (${p.setup.firstOpen.rawMB} MB unpacked, ${p.setup.firstOpen.requests} requests)${p.setup.firstOpen.estSec ? ` — about <b>${p.setup.firstOpen.estSec} s</b> on this link` : ''}. ${p.setup.ls ? `localStorage: ${p.setup.ls.keys} keys, ${p.setup.ls.chars.toLocaleString()} chars.` : ''}</p>` : ''}
+    ${p.setup && p.setup.firstSync ? `<p class="muted">This device's first sync (untimed setup, before the walk): ${p.setup.firstSync.uploads} shared upload(s) in ${p.setup.firstSync.sec} s — ${p.setup.firstSync.docRows} doc:* rows, ${p.setup.firstSync.identical} identical to the cloud; lists: ${esc(p.setup.firstSync.lists.join(', '))}</p>` : ''}
     ${p.notes && p.notes.length ? `<ul>${p.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${p.steps.map(s => `<div class="step ${s.fails.length ? 'bad' : 'good'}"><h3>${s.fails.length ? '✗' : '✓'} ${s.n}. ${esc(s.name)} <span class="muted">${(s.openMs / 1000).toFixed(1)} s · ${s.info.net ? s.info.net.kvRequests + ' gc_kv req · ' + s.info.net.downKB + ' KB down' : ''}${s.info.longTasks ? ' · long tasks ' + s.info.longTasks.n + ' (worst ' + s.info.longTasks.worst + ' ms)' : ''}</span></h3>
       <div class="row"><div class="shots">${s.shots.filter(x => x.file).map(x => `<figure><a href="${rel(x.file)}"><img loading="lazy" src="${rel(x.file)}"></a><figcaption>${esc(x.label)}</figcaption></figure>`).join('')}</div>

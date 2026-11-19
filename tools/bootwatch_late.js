@@ -149,6 +149,36 @@
       .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
     return checking;
   };
+  /* AUTOUPD (owner 11/19: "automatic update as soon as the CRM updates, and don't have the blue update button … so everyone
+     is on the same version always"): an OLD copy updates by itself — no bar, no button; a 2-second "Updating…" note just
+     before the reload. Right away when nobody is typing and no upload is on its way; while someone types: once the field is
+     left (the draft keeper, gc_draft_*, has saved it) or at the latest 60 s after the last key; an upload on its way: once it
+     lands (at most 3 minutes). The stale gate (REGFIX) holds this copy's shared uploads until then; what is saved here stays
+     in IndexedDB and goes up from the new copy. updateImpl keeps it to one update per 10 minutes (never a loop). */
+  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0;
+  var autoUpdate = function(){
+    if (autoT) return;
+    if (!autoN) { try { ['keydown', 'input', 'compositionupdate'].forEach(function(t){ D.addEventListener(t, function(){ lastType = Date.now(); }, true); }); } catch (e) {} }
+    autoT0 = autoT0 || Date.now();
+    var tick = function(){
+      autoT = null; if (++autoN > 2000) return;
+      var busy = '';
+      try {
+        var a = D.activeElement, editing = a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()));
+        if (editing && Date.now() - lastType < 60000) busy = 'typing';
+        if (!busy && W._gcSending && W._gcSending().length && Date.now() - autoT0 < 180000) busy = 'sending';
+      } catch (e) {}
+      if (!busy) { B.autoUpd = ms(); dirty = true; autoToast(); NST.call(W, function(){ if (!update()) { autoT0 = 0; } }, 2000); return; }
+      autoT = NST.call(W, tick, 1500);
+    };
+    autoT = NST.call(W, tick, 300);
+  };
+  var autoToast = function(){
+    try { var t = D.getElementById('gc-bw-updating'); if (t) return; t = D.createElement('div'); t.id = 'gc-bw-updating'; t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1');
+      t.style.cssText = 'position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483647;background:#1e293b;color:#fff;padding:8px 16px;border-radius:999px;font:700 14px -apple-system,Segoe UI,Arial,sans-serif;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+      t.textContent = 'Updating…'; (D.body || H).appendChild(t); NST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {}
+  };
+  autoImpl = autoUpdate;
   checkImpl = function(resumed){
     return fetchLive().then(function(live){
       var mine = B.build = s(W.__GC_BUILD_ID__ || B.build).slice(0, 40);
@@ -160,7 +190,7 @@
       problem('old');
       /* the banner: a cached / service-worker copy, an app back from the background, or the sign-in screen (the CRM's own
          update bar cannot show over it); a fresh page while signed in gets the CRM's own bar (same update) */
-      if (!recent && (src || resumed || gateUp() || !authed())) banner(live);
+      if (!recent) autoUpdate();   /* AUTOUPD: no bar, no button — the update runs by itself */
       return true;
     });
   };

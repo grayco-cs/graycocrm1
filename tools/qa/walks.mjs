@@ -42,6 +42,17 @@ function kit(X){
   return { A, page, sig, tapOpen, jobTiles, jobTile };
 }
 
+/* owner 11/19 — a lean Field home: at most 9 tiles, no 🎤 button of its own (it is in the 💎 menu), no COI / W-9 pill */
+async function homeChecks(X, st){
+  const h = await X.A().ev(() => { const vis = e => { if (!e) return false; const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
+    const tiles = [...document.querySelectorAll('#_gcJobPick .gc-pmf-q .gc-pmf-t, #_gcJobPick .gc-pmf-x .gc-ra-qb')].filter(vis).map(e => (e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 24));
+    const pills = [...document.querySelectorAll('#_gcSubDocPill, .gcautai-pill')].filter(vis).map(e => (e.innerText || '').trim().slice(0, 40));
+    return { tiles, mic: vis(document.getElementById('_gcMicBtn')), pills }; }).catch(() => null);
+  if (!h) return; st.info.homeTiles = h.tiles;
+  if (h.tiles.length > 9) st.fails.push({ check: 'toggle', sev: 'major', msg: `${h.tiles.length} tiles on the Field home (owner: at most 8–9; the rest in ☰ More)`, list: h.tiles });
+  if (h.mic) st.fails.push({ check: 'floating', sev: 'major', msg: 'a 🎤 button of its own on the Field home (owner: 🎤 Voice note is in the 💎 menu)' });
+  if (h.pills.length) st.fails.push({ check: 'floating', sev: 'major', msg: 'the COI / W-9 pill is showing: ' + h.pills.join(' · ') });
+}
 /* a job to walk: the active job with the most going on (documents, schedule, messages), from the snapshot */
 function pickJob(X, pmName){
   const P = (X.snap.get('projects') || []).filter(p => p && p.id && !p.deleted && /active|progress|production|scheduled/i.test(p.status || '') );
@@ -76,7 +87,19 @@ async function owner(X){
     return !!(await until(async () => (await fieldHome()) && await A().ev(() => document.querySelectorAll('#_gcJobPick .gc-pmf-t, #_gcJobPick [data-ra-a]').length > 3), 60000));
   });
   await step('Phone left alone for 30 s after opening (no taps)', { scroll: false, timed: false }, async () => { await sleep(30000); return true; });
-  await step('🏠 Home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); return !!(await until(fieldHome, 15000)); });
+  await step('🏠 Home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); const ok = !!(await until(fieldHome, 15000)); await homeChecks(X, st); return ok; });
+  /* owner 11/19: 💎 is the one menu button; "🎤 Voice note" is its first item */
+  await step('💎 Menu (🎤 Voice note first)', { scroll: false }, async st => {
+    await goHome(); const hb = await X.locate({ sel: '#_gcFieldHubBtn' }); if (!hb) throw new Error('could not find the 💎 menu button');
+    if (hb.covered) st.fails.push({ check: 'tap', sev: 'major', msg: 'the 💎 menu button is covered by ' + hb.by });
+    await X.tapAt(hb.x, hb.y); await sleep(1200);
+    const m = await A().ev(() => { const p = document.querySelector('.gc-hub-panel'); if (!p) return null; const it = [...p.querySelectorAll('.gc-hub-item')].filter(e => e.getBoundingClientRect().width > 0).map(e => (e.innerText || '').replace(/[\s≡]+/g, ' ').trim()); return { first: it[0] || '', n: it.length }; });
+    st.info.menu = m;
+    if (!m) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the 💎 menu did not open' });
+    else if (!/Voice note/.test(m.first)) st.fails.push({ check: 'notfound', sev: 'major', msg: `"🎤 Voice note" is not the first item of the 💎 menu (first: "${m.first}")` });
+    try { await A().ev(() => { const p = document.querySelector('.gc-hub-panel'); if (p) p.remove(); }); } catch (e) {}
+    return !!m;
+  });
   // Approvals
   let apprOpen = false;
   await step('✅ Approvals (open + scroll)', {}, async st => {
@@ -111,11 +134,11 @@ async function owner(X){
   });
   const tiles = [['Job info', 'Job Info'], ['Schedule', 'Schedule'], ['Documents', 'Documents'], ['Customer portal', 'Customer portal'], ['Messages', '^\\W*Messages?$']];
   for (const [nm, rx] of tiles) {
-    await step(`Job page → ${nm}`, {}, async st => {
+    await step(`Job page → ${nm}`, nm === 'Messages' ? { expect: /^gc_apx_decided_approvals$/ } : {}, async st => {
       if (!(await A().ev(() => !!document.querySelector('#_gcJobDash')))) { await goHome(); await openJobPage(X, K, st, job || {}); }
       return K.jobTile(st, rx);
     });
-    await step(`Back from ${nm}`, { scroll: false }, async st => { await back(st); await sleep(600); return true; });
+    await step(`Back from ${nm}`, nm === 'Messages' ? { scroll: false, expect: /^gc_apx_decided_approvals$/ } : { scroll: false }, async st => { await back(st); await sleep(600); return true; });
   }
   // update progress to 25 %
   await step('Job page → Update progress to 25%', { passive: false, timed: false }, async st => {
@@ -126,9 +149,14 @@ async function owner(X){
     if (!r) { const b = await X.locate({ rx: '^25 ?%' }); if (!b) throw new Error('could not find a 25% choice or a progress slider'); await X.tapAt(b.x, b.y); }
     st.info.progressBy = r || 'button';
     await sleep(500);
+    const w0 = X.H.writes.length;
     const sv = await X.locate({ rx: '^(💾 ?)?(Save|Update|Done|Save progress|✓ Save)' }); if (sv) await X.tapAt(sv.x, sv.y);
-    const saved = await until(() => X.H.writes.some(w => w.key === 'projects' || /^projects__/.test(w.key)), 20000);
-    if (!saved) st.fails.push({ check: 'stuck', msg: 'the progress change did not reach the (offline) cloud within 20 s' });
+    /* only a write AFTER this change counts (an earlier upload of the job list passed this check by itself), and the job list
+       (~555 KB) needs its time on this link: ~30 s up at 150 kbps after the CRM's own batching (≤ 20 s) */
+    const t0p = Date.now();
+    const saved = await until(() => X.H.writes.slice(w0).some(w => w.key === 'projects' || /^projects__/.test(w.key)), 90000);
+    st.info.progressUploadSec = saved ? Math.round((Date.now() - t0p) / 1000) : null;
+    if (!saved) st.fails.push({ check: 'stuck', msg: 'the progress change did not reach the (offline) cloud within 90 s' });
     return true;
   });
   // Leads
@@ -145,6 +173,30 @@ async function owner(X){
   await step('🆘 Problem reports', {}, async st => { if (!(await A().ev(() => !!document.querySelector('.gc-fh-sheet[data-ra-more]')))) { await goHome(); await tap({ sel: '#gc-fh-tabs [data-t="more"]' }, st); await sleep(800); } return K.tapOpen(st, { rx: 'Problem reports' }); });
   await step('📸 Photos / projects page', {}, async st => { await goHome(); await tap({ sel: '#gc-fh-tabs [data-t="jobs"]' }, st); await sleep(800); return K.tapOpen(st, { rx: 'GrayCo Photos' }, () => !!(window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open) || true); });
   await step('Back to 🏠 Home', { scroll: false }, async st => { try { await back(st); } catch (e) {} await goHome(); return !!(await fieldHome()); });
+  /* owner 11/19: a lead's TEXT link (crm.grayco-cs.com/#leads&lead=LEADIN-…) opened cold on his iPhone showed a navy Leads page,
+     "No lead pipeline" (an empty list), ‹ Back over the title, the "New here? Tap Field" tip over a COI pill and the floating
+     🎤 / 💎 / 💬. The newest lead from the Lead Inbox, opened the same way: the list loads, that lead opens, nothing in the way. */
+  let LL = X.snap.get('leads'); if (typeof LL === 'string') { try { LL = JSON.parse(LL); } catch (e) { LL = []; } } const ll = (Array.isArray(LL) ? LL : []).filter(l => l && /^LEADIN-/.test(String(l.id)) && !l.deleted && !l.archived && !/lost|dead|won|closed|junk/i.test(String(l.status || '') + ' ' + String(l.stage || '')) && l.lsaCheck !== 'bad').sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
+  if (ll) await step('Lead text link → that lead (cold open, #leads&lead=…)', { scroll: false, timed: false }, async st => {
+    st.info.lead = ll.id; const nm = String(ll.name || '').replace(/\s+/g, ' ').trim().slice(0, 14);
+    await page().goto('http://app.local/#leads&lead=' + encodeURIComponent(ll.id), { waitUntil: 'commit' }).catch(() => {});
+    await page().reload({ waitUntil: 'commit' }).catch(() => {});
+    const t0 = Date.now(); let open = false, emptyAt = null, tipAt = null;
+    while (Date.now() - t0 < 90000) {
+      await sleep(400);
+      const v = await A().ev(nm => { const vis = e => !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden';
+        const txt = document.body ? document.body.innerText : ''; const d = document.getElementById('gcl-drawer');
+        return { empty: /No lead pipeline/.test(txt), tip: /New here\? Tap/.test(txt), drawer: vis(d) && (!nm || (d.innerText || '').indexOf(nm) >= 0) }; }, nm).catch(() => ({}));
+      if (v.empty && emptyAt == null) emptyAt = Date.now() - t0;
+      if (v.tip && tipAt == null) tipAt = Date.now() - t0;
+      if (v.drawer) { open = true; break; }
+    }
+    st.info.leadOpenSec = open ? Math.round((Date.now() - t0) / 1000) : null;
+    if (emptyAt != null) st.fails.push({ check: 'stuck', sev: 'major', msg: `"No lead pipeline" (an empty lead list) showed ${(emptyAt / 1000).toFixed(1)} s into the open — the leads are there` });
+    if (tipAt != null) st.fails.push({ check: 'floating', sev: 'major', msg: 'the desk tip "New here? Tap Field…" showed on the phone' });
+    if (!open) st.fails.push({ check: 'stuck', sev: 'critical', msg: `the linked lead (${ll.id}) did not open within 90 s` });
+    return true;
+  });
 }
 
 /* ═════ a PM on his iPhone ═════ */
@@ -154,7 +206,7 @@ async function pm(X){
   const A = K.A, page = K.page;
   await step('Open the app (time to Field home)', { scroll: false }, async () => { await page().reload({ waitUntil: 'commit' }); return !!(await until(async () => (await fieldHome()) && await A().ev(() => document.querySelectorAll('#_gcJobPick .gc-pmf-t, #_gcJobPick [data-ra-a], #_gcJobPick ._jpItem').length > 2), 60000)); });
   await step('Phone left alone for 30 s after opening (no taps)', { scroll: false, timed: false }, async () => { await sleep(30000); return true; });
-  await step('🏠 Field home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); return !!(await until(fieldHome, 15000)); });
+  await step('🏠 Field home', {}, async st => { await tap({ sel: '#gc-fh-tabs [data-t="home"]' }, st); const ok = !!(await until(fieldHome, 15000)); await homeChecks(X, st); return ok; });
   const job = pickJob(X, X.acc.map.pm && X.acc.map.pm.name);
   X.R.notes.push('job walked: ' + (job ? job.name : 'none'));
   await step('A job (My jobs)', {}, async st => { await goHome(); const ok = await openJobPage(X, K, st, job || {}); st.info.tiles = await K.jobTiles(); return ok; });
@@ -194,11 +246,11 @@ async function pm(X){
     return true;
   });
   await step('Back from the photo', { scroll: false }, async st => { try { await back(st); } catch (e) {} try { await A().ev(() => window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open && window._gcPhotos.close()); } catch (e) {} return true; });
-  await step('💬 Messages', {}, async st => {
+  await step('💬 Messages', { expect: /^gc_apx_decided_approvals$/ }, async st => {
     if (!(await A().ev(() => !!document.querySelector('#_gcJobDash')))) { await goHome(); await openJobPage(X, K, st, job || {}); }
     return K.jobTile(st, '^\\W*Messages?$');
   });
-  await step('Back to 🏠 Home', { scroll: false }, async st => { try { await back(st); } catch (e) {} await goHome(); return !!(await fieldHome()); });
+  await step('Back to 🏠 Home', { scroll: false, expect: /^gc_apx_decided_approvals$/ }, async st => { try { await back(st); } catch (e) {} await goHome(); return !!(await fieldHome()); });
 }
 
 /* ═════ the office at a desk ═════ */
@@ -207,14 +259,42 @@ async function desk(X){
   await X.open('office');
   const A = K.A, page = K.page; const D = deskKit(X, K);
   await step('Open the CRM (time to the dashboard)', { scroll: false }, async () => { await page().reload({ waitUntil: 'commit' }); return !!(await until(() => A().ev(() => !!window._crm && document.querySelectorAll('nav button, aside button').length > 5), 60000)); });
-  await step('Dashboard', {}, st => D.go('^(🏠 ?|📊 ?)?Dashboard$', 'dashboard', null, st));
+  await step('Dashboard', {}, async st => { const ok = await D.go('^(🏠 ?|📊 ?)?Dashboard$', 'dashboard', null, st);
+    /* owner 11/19: REGFIX's "Fix bill amounts the 11-13 import changed" is out of the release (the import guard stays) */
+    const r = await A().ev(() => ({ fix: typeof window._gcBillAmtFix !== 'undefined', guard: typeof window._gcQbBillAmtHold === 'function' })).catch(() => ({}));
+    st.info.regfixAmt = r;
+    if (r.fix) st.fails.push({ check: 'stuck', sev: 'critical', msg: 'the bill-amount restore (REGFIX-AMT, "Fix bill amounts the 11-13 import changed") is in the build — the owner took it out' });
+    if (r.guard === false) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the QuickBooks import guard (_gcQbBillAmtHold) is missing' });
+    return ok; });
   await step('To-Do (collapsed groups)', {}, async st => { const ok = await D.go('^(☑ ?|✅ ?)?To-?Do', 'todo', null, st); st.info.groups = await A().ev(() => { const d = [...document.querySelectorAll('details')].filter(e => e.getBoundingClientRect().width > 0); return { details: d.length, open: d.filter(e => e.open).length }; }); return ok; });
   for (const [tab, rx] of [['Client', '^[^a-z]*Client'], ['Sub', '^[^a-z]*Sub( invoices| bills)?'], ['Supplier', '^[^a-z]*Supplier']]) await step(`Invoices → ${tab} tab`, {}, st => D.go('^(🧾 ?|💵 ?)?Invoices$', 'invoices', rx, st));
   await step('Accounting', {}, st => D.go('^(📒 ?|🏦 ?|💼 ?)?Accounting$', 'taxcenter', null, st));
   await step('Leads', {}, st => D.go('^(📥 ?|🎯 ?)?Leads$', 'leads', null, st));
   await step('Approvals', {}, st => D.go('^(✅ ?)?Approvals', 'approvals', null, st));
-  for (const c of ['construction', 'mitigation']) await step(`Materials & SDS (${c})`, {}, async st => { const ok = await D.sds(c, st); st.info.sdsText = await A().ev(() => /Materials library/.test(document.body.innerText)); if (ok && !st.info.sdsText) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the Materials & SDS tab opened without its library' }); return ok; });
+  /* SDSCO: Materials & SDS belongs to Mitigation and Environmental — on Construction the tab says so and shows no library (by design) */
+  for (const c of ['construction', 'mitigation']) await step(`Materials & SDS (${c})`, {}, async st => { const ok = await D.sds(c, st); st.info.sdsText = await A().ev(() => /Materials library/.test(document.body.innerText)); st.info.notConstruction = await A().ev(() => /not Construction/i.test(document.body.innerText));
+    if (ok && c !== 'construction' && !st.info.sdsText) st.fails.push({ check: 'stuck', sev: 'major', msg: 'the Materials & SDS tab opened without its library' });
+    if (ok && c === 'construction' && (st.info.sdsText || !st.info.notConstruction)) st.fails.push({ check: 'stuck', sev: 'major', msg: 'on Construction the Materials & SDS tab should say it is for Mitigation / Environmental and show no library' + (st.info.sdsText ? ' (it showed the library)' : '') });
+    return ok; });
   await step('Marketing dashboard (office)', {}, st => D.go('^(📣 ?|📈 ?)?Marketing', 'marketing', null, st));
+  /* AUTOUPD (owner 11/19): the server gets a newer build → this copy updates by itself: no "Yes, update" / "Tap to update" bar,
+     an "Updating…" note, one reload */
+  await step('Server has a newer build → updates by itself (no bar)', { scroll: false, timed: false, passive: false }, async st => {
+    const pg = page(); let navs = 0; const onNav = () => { navs++; }; pg.on('domcontentloaded', onNav);
+    const newer = '99.999-2099-12-31-qa';
+    await pg.route('**/version.txt*', r => r.fulfill({ status: 200, contentType: 'text/plain', body: newer })).catch(() => {});
+    await A().ev(() => { try { if (window._gcBootWatch && window._gcBootWatch.check) window._gcBootWatch.check(); window.dispatchEvent(new Event('focus')); } catch (e) {} }).catch(() => {});
+    let bar = false, toast = false; const t0 = Date.now();
+    while (Date.now() - t0 < 40000 && !navs) { await X.sleep(300); const v = await A().ev(() => ({ b: !!(document.getElementById('gc-update-bar') || document.getElementById('gc-bw-update')), t: !!document.getElementById('gc-bw-updating') })).catch(() => ({})); if (v.b) bar = true; if (v.t) toast = true; }
+    st.info.autoUpdate = { reloadSec: navs ? Math.round((Date.now() - t0) / 1000) : null, toast, bar };
+    await X.sleep(6000);
+    await pg.unroute('**/version.txt*').catch(() => {}); pg.off('domcontentloaded', onNav);
+    if (bar) st.fails.push({ check: 'floating', sev: 'major', msg: 'an update bar ("Yes, update" / "Tap to update") showed — the owner wants it to update by itself' });
+    if (!navs) st.fails.push({ check: 'stuck', sev: 'critical', msg: 'the server had a newer build and this copy did not update by itself within 40 s' });
+    if (navs > 1) st.fails.push({ check: 'stuck', sev: 'critical', msg: `it reloaded ${navs} times (one update, never a loop)` });
+    await X.until(() => A().ev(() => !!window._crm && document.querySelectorAll('nav button, aside button').length > 5), 60000);
+    return true;
+  });
   if (X.acc.map.marketing) {
     try { await A().close(); } catch (e) {}
     await X.open('marketing');
