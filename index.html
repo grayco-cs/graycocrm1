@@ -52109,12 +52109,15 @@ function sbHeaders(){
    same list meanwhile waits and goes up once, with the newest value, after it. A caller still gets its answer after the
    timeout (the sync moves on), and sbWrite.flying[key] says the upload is still on its way; its end is reported to
    sbWrite.onDone(key, value, ok) — the sync records the late arrival instead of showing "not sent". An upload with no
-   answer in twice its timeout (at least 60 s) is given up (no signal) as a failure, and tried again. */
+   answer at all is given up (no signal) as a failure and tried again: a small one at its timeout, a big list at 3x it. */
 var _sbwQ = {};
 function _sbwPump(key){
   var st = _sbwQ[key]; if(!st || st.busy || !st.next) return;
   var job = st.next; st.next = null; st.busy = job;
-  var body = job.body, hard = Math.min(240000, Math.max(60000, 2 * (job.tmo || 30000)));   /* no answer in twice its timeout: given up (no signal), tried again */
+  /* no answer at all: given up (no signal) and tried again — a small save after its timeout, as before; a big list (≥ 50 KB) after
+     5 minutes: on one bar its upload (with the field guard's read of the cloud row first) really can take minutes, and giving up
+     threw that work away and started it again */
+  var t0 = job.tmo || 30000, body = job.body, hard = body.length < 50000 ? t0 : 300000;
   var ac = null; try{ ac = new AbortController(); }catch(e){}
   var hardT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ try{ if(ac) ac.abort(); }catch(e){} }, hard);
   var p;
@@ -62825,6 +62828,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function push(k){
     try{
       if(localStorage.getItem(k)==null) return;
+      try{ if(window.__gcFG && typeof window.__gcFG.isHeld==='function' && window.__gcFG.isHeld(k)) return; }catch(_h){}   /* APPLAG: a phone's field guard keeps it back — not read and merged for nothing */
       if(k!=='gc_office_tasks'){ rawPush(k, localStorage.getItem(k)); return; }    /* the category order: a list of names, as before */
       _pushChain=_pushChain.then(function(){
         window.__gcOTPush={ state:'pushing', at:Date.now() };
@@ -62861,15 +62865,23 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     });
     return Object.keys(byId).map(function(k){ return byId[k]; });
   }
+  /* APPLAG: the to-do list is ~500 KB now ("tiny payload" no more): every minute it came down whole — on the owner's phone on one
+     bar, 30 MB an hour sharing the line with his approvals. It now asks for the row's updated_at first (~100 bytes) and only
+     downloads a list that changed since it last looked (or that this computer has never merged). */
+  var _otSeen={};
   function pull(){
     var cr=creds(); if(!cr.k) return;
     KEYS.forEach(function(k){
       try{
-        fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(k)+'&select=value,updated_at',
-          {headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k}})
-          .then(function(r){ return r.json(); })
+        var base=cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(k), hd={headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k}};
+        fetch(base+'&select=updated_at', hd).then(function(r){ return r.ok ? r.json() : null; }).then(function(st){
+          var at=st&&st[0]&&st[0].updated_at; if(!at) return null;
+          if(_otSeen[k]===at) return null;   /* unchanged since this computer last merged it */
+          return fetch(base+'&select=value,updated_at', hd).then(function(r){ return r.json(); });
+        })
           .then(function(rows){
             if(!(Array.isArray(rows)&&rows.length&&rows[0].value!=null)) return;
+            try{ _otSeen[k]=rows[0].updated_at; }catch(_s){}
             var local=localStorage.getItem(k);
             var cloud=rows[0].value;
             if(typeof cloud!=='string'){ try{ cloud=JSON.stringify(cloud); }catch(e){ return; } } /* TODO: the cloud copy may be a list */
@@ -84824,6 +84836,10 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
         var sig=JSON.stringify(val).length+':'+(Array.isArray(val)?val.length:0);
         if(_lastPush[key]===sig) continue;   // unchanged since last push
         try{ if(window.__gcFG && typeof window.__gcFG.isHeld==='function' && window.__gcFG.isHeld(key)){ _lastPush[key]=sig; continue; } }catch(_h){}
+        try{ if(typeof sbWrite==='function' && sbWrite.flying && sbWrite.flying(key)) continue; }catch(_f){}   /* the main sync's upload of it is on its way: not a second one */
+        /* on a phone under the field guard the main sync uploads the synced lists (one at a time, the guard's checks) — this second
+           uploader read and sent the same big lists again over one bar */
+        try{ if(window.__gcFG && typeof window.__gcFG.guarded==='function' && window.__gcFG.guarded() && (window._gcSyncKeys||[]).indexOf(key)>=0){ _lastPush[key]=sig; continue; } }catch(_g){}
         var body;
         if(Array.isArray(val) && val.length && val[0] && typeof val[0]==='object' && window._gcUnionMerge){
           // union with cloud so we only ADD (never wipe another machine's records)
@@ -108277,12 +108293,17 @@ window._gcSyncNote = noteResult;
 (function watchResults(){
   var raw = window.fetch;
   if(!raw || raw.__gcCount) return;
-  var w = function(input){
+  var w = function(input, init){
     var u = (typeof input==='string') ? input : (input && input.url) || '';
     var p = raw.apply(this, arguments);
     if(!u || u.indexOf('/rest/v1/gc_kv') < 0) return p;
-    return p.then(function(res){ noteResult(!!res.ok); return res; },
-                  function(err){ noteResult(false); throw err; });
+    /* APPLAG: only the database's own answers to uploads count. A read cut short on this phone (one bar of signal, a page that
+       was closed), answered "503 offline" here by NETSAFE, was counted as a refused upload — measured on the throttled phone,
+       eight of those stopped all uploading for good ("Eight uploads refused in a row"), right after he approved something. */
+    var m = 'GET'; try{ m = String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase(); }catch(e){}
+    if(m === 'GET' || m === 'HEAD') return p;
+    return p.then(function(res){ if(!(res && !res.ok && res.type === 'default')) noteResult(!!(res && res.ok)); return res; },
+                  function(err){ throw err; });
   };
   w.__gcCount = true; w.__gcWhy = true;
   try{ window.fetch = w; }catch(e){}
@@ -163733,7 +163754,7 @@ function unionJobs(local, cloud){
 }
 async function readCloudJobs(nf, self, base, init){
   var c = creds(init);
-  var r = await nf.call(self, base + '/rest/v1/gc_kv?key=eq.projects&select=value', { headers:{ apikey:c.apikey, Authorization:c.auth }, cache:'no-store' });
+  var r = await nf.call(self, base + '/rest/v1/gc_kv?key=eq.projects&select=value,updated_at', { headers:{ apikey:c.apikey, Authorization:c.auth }, cache:'no-store' });   /* APPLAG: + updated_at — a phone's field guard then reuses this read instead of downloading the job list a second time */
   if(!r || !r.ok){ if(r && (r.status >= 500 || r.status === 429) && r.type !== 'default') backoff(r.status); throw busyErr('the cloud\'s job list could not be read (' + (r ? r.status : 'no answer') + ') — the push waits'); }
   var rows = await r.json();
   if(!Array.isArray(rows)) throw busyErr('the cloud answered with no job list — the push waits');

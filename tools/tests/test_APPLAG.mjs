@@ -101,6 +101,7 @@ async function line(r){
   await sleep(LAT / 2); await xfer('up', up); await sleep(LAT / 2);
   if (m === 'POST' && NET.slowKey && keys.includes(NET.slowKey) && Date.now() < NET.slowUntil) await sleep(NET.slowUntil - Date.now());   /* everything for that list waits on the line until then */
   await xfer('down', down);
+  e.end = Date.now();
   return r.fallback();
 }
 
@@ -110,6 +111,7 @@ try {
   console.log('B. admin on an iPhone, one bar of signal (400 kbps / 300 ms), storage nearly full');
   const c = await H.computer('Phone', { build, mobile: true, init: INIT }); OPEN.push(c);
   const p = c.page();
+  const CLOG = [], ESTK = []; p.on('console', m => { if (CLOG.length < 3000) CLOG.push(m.text().slice(0, 200)); }); p.on('pageerror', e => { if (ESTK.length < 3) ESTK.push(String(e && e.stack || e).slice(0, 700)); });
   ok(await H.signIn(c, ADMIN, 30000), 'the admin signs in on the phone');
   await sleep(30000);                                   // first open on a good line: the phone has the data
   await c.ctx.route('**/*', line); NET.on = true;
@@ -145,17 +147,23 @@ try {
   const fg0 = await c.ev(() => window.__gcFG.state());
   const tB = Date.now();
   await c.ev(async () => { const L = await window.idbGet('projects'); for (let i = 0; i < 5; i++) window._gcSbPush('projects', L); });
-  let landed = false; for (let i = 0; i < 150 && !landed; i++) { await sleep(1000); landed = ((H.cget('projects') || []).find(x => x.id === 'P5') || {}).notes === (await c.ev(async () => ((await window.idbGet('projects')).find(x => x.id === 'P5') || {}).notes)); }
+  let landed = false; for (let i = 0; i < 300 && !landed; i++) { await sleep(1000); landed = ((H.cget('projects') || []).find(x => x.id === 'P5') || {}).notes === (await c.ev(async () => ((await window.idbGet('projects')).find(x => x.id === 'P5') || {}).notes)); }
   await sleep(5000);
   const projPosts = NET.log.filter(e => e.t >= tB && e.m === 'POST' && e.keys.includes('projects')).length;
   const fg1 = await c.ev(() => window.__gcFG.state());
   console.log('    5 saves of projects: ' + JSON.stringify({ landed, projPosts, fullReads: fg1.fullReads - fg0.fullReads, cheapReads: fg1.cheapReads - fg0.cheapReads, cacheHits: fg1.cacheHits - fg0.cacheHits }));
+  if (!landed) {
+    console.log('    (diagnosis) projects on the line: ' + JSON.stringify(NET.log.filter(e => e.t >= tB - 5000 && e.keys.some(k => /projects/.test(k || ''))).map(e => [Math.round((e.t - tB) / 1000), e.m, e.sel, e.up, e.down, e.end ? Math.round((e.end - tB) / 1000) : null])));
+    console.log('    (diagnosis) page: ' + JSON.stringify(await c.ev(() => ({ fg: window.__gcFG.state().log.slice(-12), dirty: Object.keys(window.__gcFG.state().dirty), pjx: window._gcPJX ? window._gcPJX.status() : null, unsent: window._gcUnsent(), sending: window._gcSending ? window._gcSending() : null }))).slice(0, 2500));
+    console.log('    (diagnosis) console: ' + JSON.stringify(CLOG.filter(x => /project|GC Sync|PJX|push|union/i.test(x)).slice(-25)));
+  }
   ok(landed, 'the job edited on the phone reaches the cloud');
+  if (process.env.APPLAG_STOP === '3') throw new Error('stop after step 3');
   ok(projPosts >= 1 && projPosts <= 2, 'five saves of the same list at once → ' + projPosts + ' upload(s) (at most 2)', projPosts);
   /* the next upload of the same row: the guard checks updated_at (~100 bytes) instead of downloading the 600 KB row again */
   await p.touchscreen.tap(195, 300); await sleep(200);
   await c.ev(async () => { const L = await window.idbGet('projects'); const j = L.find(x => x.id === 'P6'); j.notes = 'Second change on the phone'; j.updatedAt = new Date().toISOString(); await window.idbSet('projects', L); window._gcSbPush('projects', L); });
-  let l2 = false; for (let i = 0; i < 90 && !l2; i++) { await sleep(1000); l2 = ((H.cget('projects') || []).find(x => x.id === 'P6') || {}).notes === 'Second change on the phone'; }
+  let l2 = false; for (let i = 0; i < 240 && !l2; i++) { await sleep(1000); l2 = ((H.cget('projects') || []).find(x => x.id === 'P6') || {}).notes === 'Second change on the phone'; }
   const fg2 = await c.ev(() => window.__gcFG.state());
   ok(l2 && fg2.cacheHits > fg1.cacheHits && fg2.fullReads === fg1.fullReads, 'a second upload of the row uses a cheap updated_at check (no second full download)', { l2, before: [fg1.fullReads, fg1.cacheHits], after: [fg2.fullReads, fg2.cacheHits] });
 
@@ -164,7 +172,7 @@ try {
   NET.slowKey = 'gcAcctRegister'; NET.slowUntil = Date.now() + 70000;
   await c.ev(async () => { const L = await window.idbGet('gcAcctRegister'); L[3] = Object.assign({}, L[3], { desc: 'Recategorized on the phone', updatedAt: new Date().toISOString() }); await window.idbSet('gcAcctRegister', L); window._gcSyncDirty(['gcAcctRegister']); });
   let sawSending = false, reg = false; const tC = Date.now();
-  for (let i = 0; i < 150 && !reg; i++) { await sleep(1000); const s = await c.ev(() => window._gcSending ? window._gcSending().map(x => x.key) : []); if (s.includes('gcAcctRegister')) sawSending = true; reg = ((H.cget('gcAcctRegister') || [])[3] || {}).desc === 'Recategorized on the phone'; }
+  for (let i = 0; i < 300 && !reg; i++) { await sleep(1000); const s = await c.ev(() => window._gcSending ? window._gcSending().map(x => x.key) : []); if (s.includes('gcAcctRegister')) sawSending = true; reg = ((H.cget('gcAcctRegister') || [])[3] || {}).desc === 'Recategorized on the phone'; }
   await sleep(6000);
   const after = await c.ev(() => ({ unsent: window._gcUnsent(), sending: window._gcSending(), q: window._gcSyncQ.waiting() }));
   console.log('    slow upload: ' + JSON.stringify({ secs: Math.round((Date.now() - tC) / 1000), sawSending, reg, after }));
@@ -185,7 +193,7 @@ try {
   ok(worst[1] <= 3, 'no list uploaded more than 3 times (' + worst.join(': ') + ')', per);
   ok(posts.length < 40 && upMB < 4, 'fewer than 40 uploads, under 4 MB up (' + posts.length + ', ' + upMB.toFixed(2) + ' MB)', per);
   { const g = {}; kv.filter(e => e.m === 'GET').forEach(e => { const k = (e.keys[0] || '(bulk)') + (/value/.test(e.sel) ? '' : ' [' + e.sel + ']'); const x = g[k] || (g[k] = [0, 0]); x[0]++; x[1] += e.down; }); console.log('    GETs: ' + JSON.stringify(Object.entries(g).sort((a, b) => b[1][1] - a[1][1]).slice(0, 14))); }
-  ok(!c.errs.length, 'no page errors', { errs: c.errs.slice(0, 3), stacks: await c.ev(() => window.__al.err) });
+  ok(!c.errs.length, 'no page errors', { errs: c.errs.slice(0, 3), stacks: ESTK });
 } catch (e) { fail++; console.log('  ✗ FAIL threw: ' + (e && e.stack || e)); }
 finally { clearInterval(tick); for (const c of OPEN) { try { await c.close(); } catch (e) {} } }
 console.log(`APPLAG ${pass}/${pass + fail}`);
