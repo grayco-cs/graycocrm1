@@ -8052,6 +8052,8 @@ function push(){
   try { W.__GC_UPDATE_PENDING__ = true; } catch (e) {}          /* the next tap on a menu or tab reloads (existing rule) */
   try {
     var D = W.document; if (!D || !D.body) return;
+    /* AUTOUPD (owner 11/19): no bar — the update runs by itself (BOOTWATCH); the uploads stay held until it does */
+    try { if (W._gcBootWatch && typeof W._gcBootWatch.auto === 'function' && W._gcBootWatch.auto()) return; } catch (e) {}
     var note = D.getElementById('gc-stalegate-note'); if (note) return;
     note = D.createElement('div'); note.id = 'gc-stalegate-note'; note.setAttribute('data-gc-keep', '1'); note.setAttribute('role', 'alert');
     note.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483646;background:#7c2d12;color:#fff;padding:10px 16px;font:700 13px/1.35 -apple-system,Segoe UI,Arial,sans-serif;text-align:center;cursor:pointer';
@@ -8077,9 +8079,10 @@ function holdSweeps(){ if (off) return false; var h = ST.state !== 'current'; if
 function gateUpload(f, self, args){
   var key = s(args[0]);
   if (off || ST.state === 'current' || OWN.test(key) || person()) { if (ST.state === 'stale') ST.passed++; return f.apply(self, args); }
-  if (ST.state === 'unknown') return new Promise(function(res, rej){ waiting.push({ f: f, self: self, args: args, res: res, rej: rej }); });
+  /* (a held upload's promise is marked handled: a caller that fires and forgets does not raise an unhandled-rejection page error) */
+  if (ST.state === 'unknown') { var pw = new Promise(function(res, rej){ waiting.push({ f: f, self: self, args: args, res: res, rej: rej }); }); pw.catch(function(){}); return pw; }
   ST.held++; ST.heldKeys[key] = Date.now();
-  return Promise.reject(new Error('held: this copy of the CRM is out of date — update to save'));
+  var ph = Promise.reject(new Error('held: this copy of the CRM is out of date — update to save')); ph.catch(function(){}); return ph;
 }
 function wrap(name){
   var f = W[name];
