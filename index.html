@@ -213216,26 +213216,17 @@ function alsoPm(){ var n = low(myName()); if (!n) return false; return arr(C().p
 function kindOf(p){ try { return W._gcFieldMore && W._gcFieldMore.kind ? s(W._gcFieldMore.kind(p)) : ''; } catch (e) { return ''; } }
 function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins' || (kindOf(p) === 'mit' && insFlag(p)); }); }
 function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
-/* LEANHOME (owner 11/19: "Don't need a lot of buttons on the Field view"): Home keeps the big tiles + Leads + Today's to-dos (a PM's
-   📒 Daily log too); the rest moved to ☰ More → "From Home" (movedOf), nothing removed. Mitigation / environmental keep their tiles. */
-function movedOf(a, k){
-  var L = [];
-  if (a === 'admin') L = ['viewas', 'systems', 'addjob', 'sendest'];
-  else if (a === 'pm') L = ['sendest'];
-  if ((a === 'pm' || a === 'admin') && insJobs()) L.push('claims', 'tpa');
-  if ((a === 'pm' || a === 'admin') && mitJobsMine()) L.push('equip', 'drying');
-  var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; try { return k.shown(id); } catch (e) { return false; } });
-}
 function extrasOf(a, k){
   var L = [];
-  if (a === 'admin') L = ['leads', 'todo'].concat(alsoPm() ? ['log'] : []);   /* LEANHOME; 🧾 Snap a receipt: a quick action; 💵 Money: ☰ More (owner 11/16) */
-  else if (a === 'pm') L = ['log', 'todo'];   /* LEANHOME: 📤 Send estimate → ☰ More; ☐ Punch list / 💬 Messages: on each job page */
+  if (a === 'admin') L = ['leads', 'viewas', 'systems', 'addjob', 'todo'].concat(alsoPm() ? ['log', 'sendest'] : []);   /* 🧾 Snap a receipt: a quick action */   /* 💵 Money: ☰ More (owner 11/16) */
+  else if (a === 'pm') L = ['log', 'todo', 'sendest'];   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
   else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
   else if (a === 'env') L = ['emerg'];   /* 🚨 Emergency leads (trauma / biohazard calls included — no "trauma" button, owner 11/16) + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
     if (a === 'ins') ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });
     L.push('todo'); }
-  /* LEANHOME: a PM's / admin's 📆 TPA dates · 🛡 Claim info · 🌀 Equipment · 💧 Drying are in ☰ More → From Home (movedOf) */
+  if ((a === 'pm' || a === 'admin') && insJobs()) ['claims', 'tpa'].forEach(function(id){ if (L.indexOf(id) < 0) L.push(id); });   /* insurance jobs: 📆 TPA dates · 🛡 Claim info */
+  if (a === 'pm' || a === 'admin') ['equip', 'drying'].forEach(function(id){ if (mitJobsMine() && L.indexOf(id) < 0) L.push(id); });
   var seen = {}; return L.filter(function(id){ if (seen[id]) return false; seen[id] = 1; return k.shown(id); });
 }
 /* environmental: the jobs whose hazard papers (lead / asbestos / mold) are not in the customer's hands yet — patch DOCAUTO2's Start-job gate */
@@ -213268,7 +213259,7 @@ function dashHtml(a, h0){
     : '<div class="fh-empty">Nothing on your schedule today. Tap <b>📅 New appointment</b> or <b>🛠 Schedule work</b>.</div>';
   /* 2. the quick actions — big tiles */
   var com = !hourly();
-  h += '<div class="gc-pmf-q">' + QUICK.filter(function(q){ return q[0] === 'sched' ? false : q[0] === 'clock' ? !com : true; }).map(function(q){   /* LEANHOME: 📅 My Schedule is in the bottom bar; ⏱ Clock in (optional) → ☰ More (an hourly person keeps Start / end my day) */
+  h += '<div class="gc-pmf-q">' + QUICK.map(function(q){
     var l = q[2], sm = q[3];
     if (q[0] === 'clock') { try { l = RA() && RA().label ? RA().label('clock') || l : l; } catch (e) {} sm = com ? 'Optional — only if you want to log it' : 'Start / end my day'; }
     return '<button type="button" class="gc-pmf-t" data-pmf-a="' + q[0] + '"><span class="e">' + q[1] + '</span><span class="l">' + esc(l) + '</span>' + (sm ? '<small>' + esc(sm) + '</small>' : '') + '</button>';
@@ -213653,11 +213644,6 @@ W._gcRaMoreHook = function(a, o, pk){
   var box = D.createElement('div'); box.className = 'gc-pmf-less';
   box.innerHTML = '<div class="gc-fm-k" data-fm="less">Less often</div>' + lessRows(a).map(function(r){ return '<button type="button" class="gc-fm-r" data-pmf-a="' + r[0] + '"><span class="e">' + r[1] + '</span><span>' + esc(r[2]) + '<small>' + esc(r[3]) + '</small></span></button>'; }).join('');
   pk.insertBefore(box, pk.firstChild);
-  /* LEANHOME: what left Home is here, first */
-  try { var k9 = K(), mv = movedOf(a, k9), fh = D.createElement('div'); fh.className = 'gc-pmf-less gc-pmf-fromhome';
-    fh.innerHTML = '<div class="gc-fm-k" data-fm="fromhome">From Home</div>' + (!hourly() ? '<button type="button" class="gc-fm-r" data-pmf-a="clock"><span class="e">⏱</span><span>Clock in (optional)<small>Only if you want to log it</small></span></button>' : '') +
-      '<button type="button" class="gc-fm-r" data-pmf-a="sched"><span class="e">📅</span><span>My Schedule<small>Day · week · time off</small></span></button>' + mv.map(function(id){ return k9.tileHtml(id, 'gc-fm-r'); }).join('');
-    pk.insertBefore(fh, pk.firstChild); } catch (e) { warn(e); }
   var anchor = off0 ? off0.nextSibling : null;
   moved.forEach(function(b){ if (off0) pk.insertBefore(b, anchor); else pk.appendChild(b); });
   if (!pk.querySelector('[data-m="search"],[data-ra-a="search"]') && K() && K().shown('search')) { var sr = D.createElement('button'); sr.type = 'button'; sr.className = 'gc-fm-r'; sr.setAttribute('data-ra-a', 'search'); sr.setAttribute('data-m', 'search'); sr.setAttribute('data-ra-close', ''); sr.innerHTML = '<span class="e">🔍</span><span>Search</span>'; pk.insertBefore(sr, pk.querySelector('[data-m="tools"]') || null); }

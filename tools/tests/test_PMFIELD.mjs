@@ -181,7 +181,7 @@ try {
   console.log('    PM home: ' + JSON.stringify({ secs: d1 && d1.secs, today: d1 && d1.today, quick: d1 && d1.quick, extra: d1 && d1.extra, nums: d1 && d1.nums }));
   ok(d1 && d1.app === 'pm', 'PM: 🏠 Home is the dashboard', d1);
   ok(d1 && d1.today.includes('SCHa') && !d1.today.includes('SCHb'), 'PM Today: the work on my job today, not another PM\'s job', d1 && d1.today);
-  ok(d1 && /^appt,work,update,photo,receipt,(clock,)?lead$/.test(d1.quick.join()), 'PM quick actions in order (LEANHOME, owner 11/19): New appointment · Schedule work · Update job · Photo · 🧾 Snap a receipt · (⏱ Clock only for hourly staff) · New lead — 📅 My Schedule is in the bar (💬 Messages is on each job page)', d1 && d1.quick);
+  ok(d1 && d1.quick.join() === 'appt,work,update,photo,receipt,clock,lead,sched', 'PM quick actions in order: New appointment · Schedule work · Update job · Photo · 🧾 Snap a receipt · Clock · New lead · My Schedule (💬 Messages is on each job page)', d1 && d1.quick);
   ok(d1 && d1.quickH >= 72, 'PM: the quick actions are big tap targets (≥ 72 px)', d1 && d1.quickH);
   ok(d1 && ['log', 'todo'].every(k => d1.extra.includes(k)) && !d1.extra.includes('punch') && !d1.extra.includes('msgs') && !d1.extra.includes('money'), 'PM: 📒 Daily log · ☑ To-dos on Home; ☐ Punch / 💬 Messages are on the job page, not Home', d1 && d1.extra);
   ok(d1 && /Bids due|bids? due/i.test(d1.need), 'PM Needs you: ⏰ Bids due', d1 && d1.need);
@@ -353,7 +353,7 @@ try {
   const d2 = await dash(nk);
   console.log('    Nick home: ' + JSON.stringify({ secs: d2 && d2.secs, today: d2 && d2.today, extra: d2 && d2.extra, nums: d2 && d2.nums }));
   ok(d2 && d2.app === 'admin' && d2.today.includes('SCHa') && d2.today.includes('SCHb'), 'Nick Today: the company\'s day (every job)', d2 && d2.today);
-  ok(d2 && ['leads', 'todo'].every(k => d2.extra.includes(k)) && !['viewas', 'systems', 'addjob', 'money'].some(k => d2.extra.includes(k)), 'Nick: a lean Home (owner 11/19) — 📥 Leads + ☑ To-dos; 👁 View as · ▦ All systems · ＋ Add job in ☰ More → From Home, 💵 Money in ☰ More', d2 && d2.extra);
+  ok(d2 && ['leads', 'viewas', 'systems'].every(k => d2.extra.includes(k)) && !d2.extra.includes('money'), 'Nick: the admin tiles are on Home (💵 Money is in ☰ More)', d2 && d2.extra);
   const close = d2 && (d2.nums.find(x => /^close=/.test(x)) || '');
   ok(close === 'close=67%', 'Close rate (res + ins): jobs made from leads are won, stale clean-ups and commercial bids are left out (2 won · 1 lost = 67%)', d2 && d2.nums);
   ok(d2 && /Close rate \(res \+ ins\)/i.test(d2.text), 'the tile says the close rate is residential + insurance');
@@ -389,7 +389,7 @@ try {
     if (r.cover !== 'ok') console.log('    ⚠ after ' + sel + ' the bar is covered by: ' + r.cover);
     if (nk.errs.length > e0) { r.err = nk.errs.slice(e0); console.log('    ⚠ page error after ' + sel + ': ' + r.err.join(' | ')); }
     return r; };
-  const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'receipt', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
+  const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'receipt', 'clock', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
   for (const k of (d2 ? d2.extra : [])) nr.push([k, await tryN('.gc-pmf-x [data-ra-a="' + k + '"]')]);
   for (const k of ['appr', 'jobs', 'ra-sched', 'more']) nr.push(['bar:' + k, await tryN('#gc-fh-tabs [data-t="' + k + '"]')]);
   await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]');
@@ -430,7 +430,7 @@ try {
   ok(b5.keys.join() === 'ra-claims,jobs,home,ra-sched,more' && b5.homeIdx === 2 && b5.homeE >= 56, 'Mitigation PM bar: 💧 Drying · Jobs · 🏠 Home (big, middle) · 📅 My Schedule · More', b5);
   const d5 = await dash(mp);
   console.log('    Mitigation home: ' + JSON.stringify({ secs: d5 && d5.secs, today: d5 && d5.today, extra: d5 && d5.extra, nums: d5 && d5.nums }));
-  ok(d5 && d5.app === 'mit' && /^appt,work,update,photo,receipt,(clock,)?lead$/.test(d5.quick.join()), 'Mitigation PM: the same Home dashboard and quick actions', d5 && { app: d5.app, q: d5.quick });
+  ok(d5 && d5.app === 'mit' && d5.quick.join() === 'appt,work,update,photo,receipt,clock,lead,sched', 'Mitigation PM: the same Home dashboard and quick actions', d5 && { app: d5.app, q: d5.quick });
   ok(d5 && ['emerg', 'drying', 'equip', 'tpa'].every(k => d5.extra.includes(k)) && !d5.extra.some(k => /^mws_/.test(k)), 'Mitigation Home: 🚨 Emergency / new losses · 💧 Readings due · 🌀 Equipment out · 📆 TPA dates (the drying tools are on each job page)', d5 && d5.extra);
   const eqN = await mp.ev(() => { const b = document.querySelector('.gc-pmf-x [data-ra-a="equip"] .gc-ra-n'); return b ? +b.textContent : 0; });
   console.log('    Mitigation Home: 🌀 Equipment count badge = ' + eqN + ' (the claims app\'s equipmentOut)');
