@@ -298,6 +298,15 @@ try {
       removed once. This frees about 1.2 M characters of a full store.
    Admins and the office, on any device, and every desk computer: nothing changes. An admin whose role was not known yet
    when a list was held gets it sent once the role is known.
+   APPLAG (owner's iPhone on one bar, 11/19: "so many lags on approvals", "keeps saying saved on phone not sent to office yet"):
+   4. "A person's change" is a write within 8 s of the person's input (it was 20 s: a sweep that ran when a page was opened —
+      the accounting pass over the register — counted as his change and went up). An upload itself marks its key only within
+      3 s of the input (an upload 4 s after a background write is the sync, not the person). Answering a confirm / prompt is
+      input. A list this guard keeps back is not read from the cloud first (__gcFG.wouldHold(key), used by the save queue).
+   5. The cloud row is not downloaded again for every upload: the copy this page last saw (its own pull, its own last
+      upload, or the last read here) is used when the row's updated_at (a ~100-byte read) says the cloud has not changed
+      since; reads of the same row at the same moment are shared. Measured at 400 kbps: 9 reads of the 360 KB register for
+      one save.
    Console: __gcFG.state()   Off: localStorage gc_fieldguard_off = '1'. */
 (function(){
 'use strict';
@@ -308,8 +317,8 @@ try {
   try { if (LS && LS.getItem('gc_fieldguard_off') === '1') return; } catch (e) {}
   var inner = W.fetch; if (typeof inner !== 'function') return;
   var NST = W.setTimeout, now = function(){ return Date.now(); };
-  var FG = W.__gcFG = { held: {}, dirty: {}, sentAgain: 0, stampOnly: 0, sameAsCloud: 0, passed: 0, personSent: 0, lsRefused: 0, lsRemoved: 0, lastInput: 0 };
-  var EDIT = 20000, DK = 'gc_fieldguard_dirty';
+  var FG = W.__gcFG = { held: {}, dirty: {}, sentAgain: 0, stampOnly: 0, sameAsCloud: 0, passed: 0, personSent: 0, lsRefused: 0, lsRemoved: 0, lastInput: 0, fullReads: 0, cheapReads: 0, cacheHits: 0, pullSeeds: 0 };
+  var EDIT = 8000, POSTWIN = 3000, DK = 'gc_fieldguard_dirty';   /* APPLAG: 20 s → 8 s; an upload marks only within 3 s */
   var LOG = FG.log = [], note = function(k, act){ try { LOG.push([now(), String(k).slice(0, 60), act]); if (LOG.length > 60) LOG.shift(); } catch (e) {} };
   var SP = W.Storage && W.Storage.prototype, pSet = SP && SP.setItem, pGet = SP && SP.getItem;
 
@@ -338,7 +347,7 @@ try {
   };
 
   /* ── a person's own input, and the keys a person changed ── */
-  var personNow = function(){ return !!FG.lastInput && now() - FG.lastInput < EDIT; };
+  var personNow = function(win){ return !!FG.lastInput && now() - FG.lastInput < (win || EDIT); };
   var base = function(k){ k = String(k || ''); if (/^doc:/.test(k)) return 'projectDocs'; return k.replace(/__(chunk\d+|manifest)$/, ''); };
   try { var dj = JSON.parse((LS && pGet.call(LS, DK)) || '{}'); if (dj && typeof dj === 'object') FG.dirty = dj; } catch (e) {}
   var dT = 0, flushDirty = function(){ dT = 0; try { if (LS) pSet.call(LS, DK, JSON.stringify(FG.dirty)); } catch (e) {} };
@@ -350,8 +359,8 @@ try {
     if (!dT) dT = NST.call(W, flushDirty, 1000);
   };
   try { W.addEventListener('pagehide', flushDirty); } catch (e) {}
-  var touchKey = function(k){
-    if (!personNow() || typeof k !== 'string' || !k || k === DK || !guarded()) return;
+  var touchKey = function(k, win){
+    if (!personNow(win) || typeof k !== 'string' || !k || k === DK || !guarded()) return;
     var b = base(k); if (FG.dirty[b] && now() - FG.dirty[b] < 1000) return;
     FG.dirty[b] = now(); saveDirty(); note(b, 'person');
   };
@@ -363,6 +372,10 @@ try {
   };
   ['pointerdown', 'keydown', 'input', 'change'].forEach(function(t){ try { W.addEventListener(t, mark, { capture: true, passive: true }); } catch (e) {} });
   /* the CRM's _gcManualNow note is NOT input: background code calls it too (the Cordova lift, sweeps) */
+  /* APPLAG: answering a confirm / prompt / alert is the person acting (the save that follows it is theirs) */
+  ['confirm', 'prompt', 'alert'].forEach(function(n){
+    try { var o = W[n]; if (typeof o !== 'function' || o.__gcFG) return; var w = function(){ try { return o.apply(this, arguments); } finally { FG.lastInput = now(); } }; w.__gcFG = true; W[n] = w; } catch (e) {}
+  });
   /* a write of a key while a person is acting marks it */
   try {
     var IP = W.IDBObjectStore && W.IDBObjectStore.prototype, oPut = IP && IP.put;
@@ -405,12 +418,56 @@ try {
     try { new Headers((init && init.headers) || undefined).forEach(function(v, k){ if (/^(apikey|authorization)$/i.test(k)) o[k] = v; }); } catch (e) {}
     return o;
   };
+  /* APPLAG: the cloud's copy of a row, as this page last saw it — checked with a ~100-byte read of updated_at before use */
+  var CACHE = {}, CROW = {}, PULLS = [];
+  var tsEq = function(a, b){ if (!a || !b) return false; if (String(a) === String(b)) return true; var x = Date.parse(a), y = Date.parse(b); return !isNaN(x) && x === y; };
+  var cacheSet = function(k, at, v){
+    if (!Array.isArray(v) || !at) return;
+    CACHE[k] = { at: String(at), v: v, t: now() };
+    var ks = Object.keys(CACHE); if (ks.length > 16) { ks.sort(function(x, y){ return CACHE[x].t - CACHE[y].t; }); delete CACHE[ks[0]]; }
+  };
+  /* the page's own pulls (select … value, updated_at): kept as text, read only when a row is needed */
+  var ONE = {};   /* key → the last single-row read of it (key=eq.) — many of those, so kept apart from the bulk pulls */
+  var seePull = function(r, url){
+    try {
+      var c = r.clone(); var p = { at: now(), t: c.text().then(null, function(){ return ''; }), map: null };
+      var m1 = /[?&]key=eq\.([^&]+)/.exec(url), k1 = m1 ? decodeURIComponent(m1[1]) : '';
+      if (k1) { ONE[k1] = p; var ks = Object.keys(ONE); if (ks.length > 12) { ks.sort(function(x, y){ return ONE[x].at - ONE[y].at; }); delete ONE[ks[0]]; } }
+      else { PULLS.push(p); if (PULLS.length > 3) PULLS.shift(); }
+    } catch (e) {}
+  };
+  var fromPulls = function(k){
+    var i = PULLS.length - 1, one = ONE[k] ? [ONE[k]] : [];
+    var next = function(){
+      var p = one.length ? one.shift() : (i >= 0 ? PULLS[i--] : null);
+      if (!p) return Promise.resolve(null);
+      return (p.map ? Promise.resolve(p.map) : p.t.then(function(txt){
+        var m = {}; p.t = Promise.resolve(''); p.map = m;
+        if (!txt || txt.length > 8000000) return m;
+        try { var rows = JSON.parse(txt); if (Array.isArray(rows)) rows.forEach(function(x){ if (x && x.key && Array.isArray(x.value) && x.updated_at) m[x.key] = { at: String(x.updated_at), v: x.value, t: now() }; }); } catch (e) {}
+        return m;
+      })).then(function(m){ var c = m && m[k]; if (c) { FG.pullSeeds++; return c; } return next(); });
+    };
+    return next();
+  };
+  var getJ = function(u, init){ return inner.call(W, u, { method: 'GET', headers: hdrs(init) }).then(function(r){ return r.ok ? r.json() : null; }); };
+  var cloudRow = function(url, init, k){
+    if (CROW[k]) return CROW[k];
+    var base0; try { base0 = new URL(url, location.href); } catch (e) { return Promise.resolve(null); }
+    var q = function(sel){ var u = new URL(base0.toString()); u.search = '?key=eq.' + encodeURIComponent(k) + '&select=' + sel; return u.toString(); };
+    var full = function(){ FG.fullReads++; return getJ(q('value,updated_at'), init).then(function(rows){ var r = rows && rows[0]; if (!r) return null; cacheSet(k, r.updated_at, r.value); return { at: r.updated_at, v: r.value }; }); };
+    var p = (CACHE[k] ? Promise.resolve(CACHE[k]) : fromPulls(k)).then(function(c){
+      if (!c) return full();
+      FG.cheapReads++;
+      return getJ(q('updated_at'), init).then(function(rows){ var r = rows && rows[0]; if (!r) return null; if (tsEq(r.updated_at, c.at)) { FG.cacheHits++; CACHE[k] = c; c.t = now(); return c; } return full(); });
+    }).then(null, function(){ return null; });
+    CROW[k] = p; var clr = function(){ if (CROW[k] === p) delete CROW[k]; }; p.then(clr, clr);
+    return p;
+  };
   var unstamp = function(url, init, k, val){
     if (!Array.isArray(val) || !val.length || /__(chunk\d+|manifest)$/.test(k)) return Promise.resolve(val);
-    var u; try { u = new URL(url, location.href); } catch (e) { return Promise.resolve(val); }
-    u.search = '?key=eq.' + encodeURIComponent(k) + '&select=value';
-    return inner.call(W, u.toString(), { method: 'GET', headers: hdrs(init) }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
-      var cv = rows && rows[0] && rows[0].value;
+    return cloudRow(url, init, k).then(function(row){
+      var cv = row && row.v;
       if (!Array.isArray(cv)) return val;
       var c = {}; cv.forEach(function(r){ var id = idOf(r); if (id != null) c[id] = r; });
       var n = 0;
@@ -429,7 +486,13 @@ try {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || String(input);
       var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
-      if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return inner.apply(this, arguments);
+      if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') {
+        /* APPLAG: a pull of rows with their values: what the cloud had, for the stamp check of a later upload */
+        if (m === 'GET' && /\/rest\/v1\/gc_kv\?/.test(url) && /select=[^&]*value/.test(url) && /select=[^&]*updated_at/.test(url) && guarded()) {
+          var pg = inner.apply(this, arguments); try { pg.then(function(r){ if (r && r.ok) seePull(r, url); }, function(){}); } catch (e) {} return pg;
+        }
+        return inner.apply(this, arguments);
+      }
       if (!/\/rest\/v1\/gc_kv(\?|$)/.test(url)) {
         /* a file / photo upload a person started: when it ends, the save that follows it is the person's */
         if (personNow() && /\/storage\/v1\/|\/\.netlify\/functions\//.test(url)) { var pr = inner.apply(this, arguments); try { pr.then(echo, echo); } catch (e) {} return pr; }
@@ -440,14 +503,14 @@ try {
       var at = now();
       if (m === 'DELETE' || m === 'PATCH') {
         var qk = /[?&]key=eq\.([^&]+)/.exec(url), dk = qk ? decodeURIComponent(qk[1]) : '';
-        touchKey(dk);
+        touchKey(dk, POSTWIN);
         if (allowed(dk)) { FG.passed++; var pd = inner.apply(this, arguments); try { pd.then(function(r){ if (r && r.ok) sentOk([dk], at); }, function(){}); } catch (e) {} return pd; }
         hold(dk || '?'); return Promise.resolve(EMPTY(pref));
       }
       if (m !== 'POST' || !init || typeof init.body !== 'string') return inner.apply(this, arguments);
       var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
       var rows = Array.isArray(b) ? b : [b], keep = [];
-      rows.forEach(function(r){ var k = r && r.key != null ? String(r.key) : ''; touchKey(k); if (allowed(k)) keep.push(r); else hold(k); });
+      rows.forEach(function(r){ var k = r && r.key != null ? String(r.key) : ''; touchKey(k, POSTWIN); if (allowed(k)) keep.push(r); else hold(k); });
       if (!keep.length) return Promise.resolve(EMPTY(pref));
       var self = this;
       return Promise.all(keep.map(function(r){ var k = String(r.key || ''); return mine(k) ? Promise.resolve(r) : unstamp(url, init, k, r.value).then(function(v){ if (v === null) return null; if (v === r.value) return r; var c = Object.assign({}, r); c.value = v; return c; }); })).then(function(out){
@@ -457,11 +520,14 @@ try {
         FG.passed += out.length;
         var body = Array.isArray(b) ? JSON.stringify(out) : JSON.stringify(out[0]);
         keys.forEach(function(k){ note(k, 'send'); });
-        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
+        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; try { out.forEach(function(x){ if (x && x.key && x.updated_at) cacheSet(String(x.key), x.updated_at, x.value); }); } catch (e) {} } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
       });
     } catch (e) { return inner.apply(this, arguments); }
   };
   guardedFetch.__gcFG = true;
+  /* APPLAG: would an upload of this key be kept back right now (the save queue does not read the cloud row for nothing) */
+  FG.isHeld = function(k){ try { return guarded() && !allowed(String(k || '')); } catch (e) { return false; } };   /* the same, without marking */
+  FG.wouldHold = function(k){ try { k = String(k || ''); if (!guarded()) return false; touchKey(k, POSTWIN); return !allowed(k); } catch (e) { return false; } };
   W.fetch = guardedFetch;
 
   /* ── office-sized local copies stay off a Field phone; a person's write marks its key ── */
@@ -490,7 +556,7 @@ try {
     })(0);
   }
 
-  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, log: LOG.slice(-25), lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved }; };
+  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, log: LOG.slice(-25), lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved, fullReads: FG.fullReads, cheapReads: FG.cheapReads, cacheHits: FG.cacheHits, pullSeeds: FG.pullSeeds, cached: Object.keys(CACHE) }; };
 } catch (e) { try { console.warn('[GC] FIELDGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
@@ -1963,7 +2029,12 @@ function load(why){
   if (H.p) return;
   var w = screenWants(), now = Date.now();
   if (w) { load(w); return; }
-  if (now - H.t0 > 75000 && now - H.lastInput > 20000) { load('idle'); return; }
+  /* APPLAG: on a phone the estimates (several MB: estimates, the builder's copy, folded invoices) wait for a screen that wants them,
+     or 10 idle minutes — measured on one bar, this idle load took the line for minutes right while the owner approved things. An
+     early save held for them (H.held) loads them at once, so it is sent. */
+  var ph = false; try { ph = /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(String(navigator.userAgent || '')) || document.documentElement.classList.contains('_fieldmode'); } catch (e) {}
+  if (ph && H.held.some(function(x){ var fg = W.__gcFG, k = String(x[2]).replace(/__(chunk\d+|manifest)$/, ''); return !(fg && typeof fg.isHeld === 'function' && fg.isHeld(k)); })) { load('a save waited for them'); return; }
+  if (now - H.t0 > (ph ? 600000 : 75000) && now - H.lastInput > 20000) { load('idle'); return; }
   NST.call(W, watch, 1000);
 })();
 W._gcHeavy = { state: function(){ return { phase: H.phase, why: H.why, allowed: Object.keys(H.allowed), loaded: H.loaded, filteredReads: H.filtered, held: H.held.slice(-20), at: H.at }; }, load: load, loaded: function(){ return H.loaded; } };
@@ -51721,6 +51792,17 @@ function _gcsvSoon(){
 window._gcSyncDirty = function(keys){ try{ (Array.isArray(keys) ? keys : [keys]).forEach(function(k){ if(SYNC_KEYS.indexOf(k) < 0) return; _idbSnapshot[k] = '__gc_local_differs__'; if(_spWritten) _spWritten[k] = 1; }); _gcsvSoon(); }catch(e){} };   /* SAVES: "this list was not really sent" */
 window._gcSyncDebug = function(){ var o = {}; try{ o.written = _spWritten ? Object.keys(_spWritten) : null; o.soon = !!_gcsvSoonT; o.lastAuto = _gcsvLastAuto; o.syncing = _syncing; o.bad = _gcsvBad; o.snap = {}; ['estimates','__est__gc_ests_v2','projects','leads'].forEach(function(k){ o.snap[k] = typeof _idbSnapshot[k] === 'string' ? _idbSnapshot[k].length : null; }); }catch(e){ o.err = String(e); } return o; };   /* SAVES: console */
 window._gcUnsent = function(){ return Object.keys(_gcsvBad).map(function(k){ return Object.assign({ key: k }, _gcsvBad[k]); }); };
+/* APPLAG: lists whose upload is still on its way after its timeout (a weak signal) — "sending", not "not sent". When it ends:
+   arrived → as sent (the note never shows for it); refused / no answer at all → not sent, tried again, shown. */
+var _gcsvFly = {};
+window._gcSending = function(){ return Object.keys(_gcsvFly).map(function(k){ return { key: k, since: new Date(_gcsvFly[k].at).toISOString() }; }); };
+sbWrite.onDone = function(key, value, ok, status){
+  var f = _gcsvFly[key]; if(!f) return;
+  if(f.v !== value && sbWrite.flying(key)) return;   /* a newer value of the list is still on its way: its end decides */
+  delete _gcsvFly[key];
+  if(ok){ if(f.v === value && f.sig) _idbSnapshot[key] = f.sig; else { try{ if(_spWritten) _spWritten[key] = 1; }catch(e){} _gcsvSoon(); } _gcsvOk(key); try{ console.log('[GC Sync] "'+key+'" reached the cloud (it took a while).'); }catch(e){} }
+  else { sbWrite.lastStatus = status || 0; _gcsvFail(key, status ? 'upload refused' : 'no answer'); }
+};
 /* SAVES: say it on screen — a change that could not be sent for 20 s shows a small amber note until it is sent */
 (window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){
   try{
@@ -51774,7 +51856,8 @@ window._gcPushAll = async function(force){
       }
       /* SAVES: "sent" is recorded only once the database took it. It was recorded BEFORE the upload, so a 503 / no signal
          left the list marked as sent: the change stayed on this one computer until the same list changed again here. */
-      if(await sbWrite(_k, _v)){ if(_sig) _idbSnapshot[_k] = _sig; else { try{ _idbSnapshot[_k] = _s; }catch(e){} } _gcsvOk(_k); _n++; }
+      if(await sbWrite(_k, _v)){ if(_sig) _idbSnapshot[_k] = _sig; else { try{ _idbSnapshot[_k] = _s; }catch(e){} } delete _gcsvFly[_k]; _gcsvOk(_k); _n++; }
+      else if(sbWrite.flying(_k)){ _gcsvFly[_k] = { at: (_gcsvFly[_k] || {}).at || Date.now(), v: _v, sig: _sig || _s }; }   /* APPLAG: still on its way — its end decides */
       else _gcsvFail(_k, 'upload refused');
     }catch(e){}
   }
@@ -52019,6 +52102,37 @@ function sbHeaders(){
 }
 
 // ── Write a key to Supabase ──────────────────────────────────────────────
+/* patch APPLAG: ONE UPLOAD OF A LIST AT A TIME. The owner's iPhone on one bar ("keeps saying saved on phone not sent to office
+   yet"): an upload that took longer than its timeout was counted as failed and tried again while the first one was still on its
+   way — measured offline at 400 kbps, 7–9 copies of the 376 KB register going up at once (each with its own read of the cloud
+   row), ~6 MB for one list, so every later upload timed out too. Now a list has at most one upload on its way; a save of the
+   same list meanwhile waits and goes up once, with the newest value, after it. A caller still gets its answer after the
+   timeout (the sync moves on), and sbWrite.flying[key] says the upload is still on its way; its end is reported to
+   sbWrite.onDone(key, value, ok) — the sync records the late arrival instead of showing "not sent". An upload with no
+   answer in twice its timeout (at least 60 s) is given up (no signal) as a failure, and tried again. */
+var _sbwQ = {};
+function _sbwPump(key){
+  var st = _sbwQ[key]; if(!st || st.busy || !st.next) return;
+  var job = st.next; st.next = null; st.busy = job;
+  var body = job.body, hard = Math.min(240000, Math.max(60000, 2 * (job.tmo || 30000)));   /* no answer in twice its timeout: given up (no signal), tried again */
+  var ac = null; try{ ac = new AbortController(); }catch(e){}
+  var hardT = (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ try{ if(ac) ac.abort(); }catch(e){} }, hard);
+  var p;
+  try{
+    p = fetch(SB_URL+'/rest/v1/gc_kv', Object.assign({
+      method: 'POST',
+      headers: Object.assign({}, sbHeaders(), {'Prefer':'return=minimal,resolution=merge-duplicates'}),
+      body: body
+    }, ac ? { signal: ac.signal } : {}));
+  }catch(e){ p = Promise.reject(e); }
+  Promise.resolve(p).then(function(res){ return { ok: !!(res && res.ok), status: res ? res.status : 0 }; }, function(){ return { ok: false, status: 0 }; }).then(function(r){
+    try{ clearTimeout(hardT); }catch(e){}
+    st.busy = null;
+    job.done.forEach(function(f){ try{ f(r); }catch(e){} });
+    try{ if(typeof sbWrite.onDone === 'function') sbWrite.onDone(key, job.value, r.ok, r.status); }catch(e){}
+    if(st.next) _sbwPump(key); else if(!st.busy) delete _sbwQ[key];
+  });
+}
 async function sbWrite(key, value){
   if(!key || value===undefined) return false;
   try{
@@ -52031,25 +52145,34 @@ async function sbWrite(key, value){
       console.warn('[GC Sync] "'+key+'" is '+(_body.length/1048576).toFixed(1)+'MB — too large to sync reliably.');
     }
     /* SAVES: an upload that never gets an answer (no signal) used to hold this whole sync forever — every later save
-       on this computer waited behind it. It now counts as failed after a while (the list is tried again). */
-    var _tmo = Math.min(120000, 30000 + Math.round(_body.length / 100000) * 1000);
-    var res = await Promise.race([fetch(SB_URL+'/rest/v1/gc_kv', {
-      method: 'POST',
-      headers: Object.assign({}, sbHeaders(), {'Prefer':'return=minimal,resolution=merge-duplicates'}),
-      body: _body
-    }), new Promise(function(_r, rej){ (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ rej(new Error('no answer in ' + Math.round(_tmo / 1000) + ' s')); }, _tmo); })]);
-    sbWrite.lastStatus = res.status;   /* SAVES */
-    if(!res.ok){
-      console.warn('[GC Sync] Upload rejected for "'+key+'" (HTTP '+res.status+'). Will retry.');
+       on this computer waited behind it. It now counts as failed after a while (the list is tried again).
+       APPLAG: a while that fits the list on a weak signal (1 s per 20 KB, plus the 30 s) — 1 s per 100 KB was a fast line's. */
+    var _tmo = Math.min(120000, 30000 + Math.round(_body.length / 20000) * 1000);
+    var st = _sbwQ[key] || (_sbwQ[key] = { busy: null, next: null });
+    var mine = new Promise(function(res){
+      if(st.next){ st.next.body = _body; st.next.value = value; st.next.tmo = _tmo; st.next.done.push(res); }   /* the newest value goes in the waiting upload */
+      else st.next = { body: _body, value: value, tmo: _tmo, done: [res] };
+    });
+    _sbwPump(key);
+    var r = await Promise.race([mine, new Promise(function(res){ (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(window, function(){ res(null); }, _tmo); })]);
+    if(!r){
+      sbWrite.lastStatus = 0;
+      console.warn('[GC Sync] "'+key+'": no answer in ' + Math.round(_tmo / 1000) + ' s — still on its way.');
+      return false;
+    }
+    sbWrite.lastStatus = r.status;   /* SAVES */
+    if(!r.ok){
+      console.warn('[GC Sync] Upload rejected for "'+key+'" (HTTP '+r.status+'). Will retry.');
       return false;
     }
     return true;
   }catch(e){
     sbWrite.lastStatus = 0;   /* SAVES: no answer */
-    console.warn('[GC Sync] Write failed:', key, e.message);
+    console.warn('[GC Sync] Write failed:', key, e && e.message);
     return false;
   }
 }
+sbWrite.flying = function(key){ var st = _sbwQ[key]; return !!(st && (st.busy || st.next)); };   /* APPLAG */
 
 // ── Read a key from Supabase ─────────────────────────────────────────────
 async function sbRead(key){
@@ -66037,15 +66160,22 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{ if(window._gcOpenProject && window._gcOpenProject.id) return false; }catch(e){}
     return true;
   }
+  /* APPLAG (owner's desk, "lag" on the Dashboard / Projects): this ran after every change on the page and every 4 s, on every
+     page, and for each 4-character span looked through all ~480 jobs — measured, 2.2 s of a minute of clicking around on the
+     desk. The jobs are looked up in a map made once per job list, and a span's text is checked before its layout is asked. */
+  var _poMapFor=null, _poMap=null;
   function findProjectByPO(code){
     code=String(code||'').trim().toUpperCase();
     var ps=crm().projects||[];
-    for(var i=0;i<ps.length;i++){
-      var p=ps[i];
-      var po=String(p.autoPO||p.po||'').trim().toUpperCase();
-      if(po && po===code) return p;
+    if(_poMapFor!==ps || !_poMap){
+      _poMap={}; _poMapFor=ps;
+      for(var i=0;i<ps.length;i++){
+        var p=ps[i]; if(!p) continue;
+        var po=String(p.autoPO||p.po||'').trim().toUpperCase();
+        if(po && !_poMap[po]) _poMap[po]=p;
+      }
     }
-    return null;
+    return _poMap[code]||null;
   }
   function inject(){
     try{
@@ -66059,10 +66189,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       var max=Math.min(spans.length, 600);
       for(var i=0;i<max;i++){
         var el=spans[i];
-        if(el.offsetParent===null) continue;
         if(el.children.length>0) continue;
         var t=(el.textContent||'').trim();
         if(!/^[A-Z]\d{3}$|^\d{4}$/.test(t)) continue;
+        if(el.offsetParent===null) continue;
         var proj=findProjectByPO(t);
         if(!proj) continue;
         // Stable guard: skip if THIS row/PO already has a messenger button for this
@@ -69817,10 +69947,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }
     function idsOf(v){ var o = []; (Array.isArray(v)?v:[]).forEach(function(r){ if(r && r.id!=null) o.push(String(r.id)); }); return o; }
     function creds(){ try{ return { u:(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k:localStorage.getItem('grayco_sb_key') }; }catch(e){ return {}; } }
-    function cloudGet(key){
+    function cloudGet(key, tmo){
       var c = creds(); if(!c.u || !c.k) return Promise.reject(new Error('not signed in to the cloud'));
       return Promise.race([fetch(c.u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', { headers:{ apikey:c.k, Authorization:'Bearer '+c.k } }),
-                           new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('cloud read: no answer')); }, 30000); })])   /* SAVES */
+                           new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('cloud read: no answer')); }, tmo || 30000); })])   /* SAVES */
         .then(function(r){ if(!r || !r.ok) throw new Error('cloud read answered '+(r && r.status)); return r.json(); })
         .then(function(rows){ return (Array.isArray(rows) && rows.length) ? rows[0].value : undefined; });
     }
@@ -69892,8 +70022,15 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       if(typeof now !== 'function') return Promise.reject(new Error('no direct save'));
       var v = item.v, lv = asList(v);
       var prep = Promise.resolve(v);
-      if(lv && isIdList(lv.list)){
-        prep = cloudGet(key).then(function(cloud){
+      /* APPLAG: the waits fit the list on a weak signal (the 500 KB office to-dos took longer than 30 s to read at 1 bar,
+         every time — the save was counted as failed and "not sent" showed while it was arriving) */
+      var sz = 0; try{ sz = typeof v === 'string' ? v.length : JSON.stringify(v).length; }catch(e){}
+      var tRead = Math.min(150000, 30000 + Math.round(sz / 20)), tSend = Math.min(180000, 45000 + Math.round(sz / 10));
+      /* APPLAG: a list this phone's field guard keeps back (not changed by the person here) is not read first just to be kept back */
+      var held = false; try{ held = !!(window.__gcFG && typeof window.__gcFG.wouldHold === 'function' && window.__gcFG.wouldHold(key)); }catch(e){}
+      if(held){}
+      else if(lv && isIdList(lv.list)){
+        prep = cloudGet(key, tRead).then(function(cloud){
           var lc = asList(cloud);
           if(!lc) return (cloud === undefined || cloud === null) ? v : v;
           var mine = {}; idsOf(lv.list).forEach(function(id){ mine[id] = 1; });
@@ -69905,11 +70042,11 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         });
       } else if(isMap(v) && (/tombstone|deleted/i.test(key) || item.recover)){
         /* delete-lists / tombstone maps (and recovered settings) only ever grow: union of the keys */
-        prep = cloudGet(key).then(function(cloud){ return isMap(cloud) ? Object.assign({}, cloud, v) : v; });
+        prep = cloudGet(key, tRead).then(function(cloud){ return isMap(cloud) ? Object.assign({}, cloud, v) : v; });
       }
       return prep.then(function(val){
         /* SAVES: a send with no answer (no signal) froze the queue — flushing stayed on, every later save waited forever */
-        var _tq = new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('no answer')); }, 45000); });
+        var _tq = new Promise(function(_r, rej){ ST.call(window, function(){ rej(new Error('no answer')); }, tSend); });
         return Promise.race([Promise.resolve(now(key, val)), _tq]).then(function(res){
           if(res && res.blocked) return true;                          /* the shrink guard kept the cloud copy */
           /* a send refused on this computer (the cloud-busy pause for this list, no signal) comes back from NETSAFE's wrapper as
@@ -84670,7 +84807,14 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
   var _busy=false, _lastPush={};
 
   // PUSH: upload any list that changed locally (merged with cloud first so it only adds).
+  /* APPLAG: one pass at a time (every 12 s; on one bar a pass takes longer — measured, 4–5 passes at once, each reading and
+     sending the same lists), and a list a phone's field guard keeps back is not read from the cloud just to be kept back */
+  var _pushing=false;
   async function pushChanged(){
+    if(_pushing) return; _pushing=true;
+    try{ await pushChanged1(); }finally{ _pushing=false; }
+  }
+  async function pushChanged1(){
     var cr=creds(); if(!cr.u||!cr.k) return;
     for(var i=0;i<CORE.length;i++){
       var key=CORE[i];
@@ -84679,6 +84823,7 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
         if(val==null) continue;
         var sig=JSON.stringify(val).length+':'+(Array.isArray(val)?val.length:0);
         if(_lastPush[key]===sig) continue;   // unchanged since last push
+        try{ if(window.__gcFG && typeof window.__gcFG.isHeld==='function' && window.__gcFG.isHeld(key)){ _lastPush[key]=sig; continue; } }catch(_h){}
         var body;
         if(Array.isArray(val) && val.length && val[0] && typeof val[0]==='object' && window._gcUnionMerge){
           // union with cloud so we only ADD (never wipe another machine's records)
@@ -201475,6 +201620,7 @@ function hookApprovals(){
 function syncState(){
   var waiting = 0; try { waiting = W._gcSyncQ ? arr(W._gcSyncQ.waiting()).filter(function(x){ return x && /^(projects|gc_sitebook|gc_office_tasks|gc_job_messages|gc_timeclock_.*|leads|customers|schedule|invs|expenses|estimates|projectDocs)$/.test(x.key); }).length : 0; } catch (e) {}
   try { if (typeof W._gcUnsent === 'function') waiting += arr(W._gcUnsent()).length; } catch (e) {}   /* SAVES: an upload that failed is not "All sent" */
+  try { if (typeof W._gcSending === 'function') waiting += arr(W._gcSending()).length; } catch (e) {}   /* APPLAG: still on its way (weak signal) — "sending…" */
   try { var cs = W._gcClaims && W._gcClaims.status && W._gcClaims.status(); if (cs && cs.dirty && cs.dirty.claims) waiting++; } catch (e) {}   /* SAVES: a drying reading not sent yet */
   var sbDirty = false; try { sbDirty = !!(W._gcRP && W._gcRP.site && W._gcRP.site().state().dirty); } catch (e) {}
   if (!navigator.onLine) return { k: 'off', t: '📴 Saved on phone, will send' };

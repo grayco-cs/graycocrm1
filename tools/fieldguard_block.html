@@ -24,6 +24,15 @@
       removed once. This frees about 1.2 M characters of a full store.
    Admins and the office, on any device, and every desk computer: nothing changes. An admin whose role was not known yet
    when a list was held gets it sent once the role is known.
+   APPLAG (owner's iPhone on one bar, 11/19: "so many lags on approvals", "keeps saying saved on phone not sent to office yet"):
+   4. "A person's change" is a write within 8 s of the person's input (it was 20 s: a sweep that ran when a page was opened —
+      the accounting pass over the register — counted as his change and went up). An upload itself marks its key only within
+      3 s of the input (an upload 4 s after a background write is the sync, not the person). Answering a confirm / prompt is
+      input. A list this guard keeps back is not read from the cloud first (__gcFG.wouldHold(key), used by the save queue).
+   5. The cloud row is not downloaded again for every upload: the copy this page last saw (its own pull, its own last
+      upload, or the last read here) is used when the row's updated_at (a ~100-byte read) says the cloud has not changed
+      since; reads of the same row at the same moment are shared. Measured at 400 kbps: 9 reads of the 360 KB register for
+      one save.
    Console: __gcFG.state()   Off: localStorage gc_fieldguard_off = '1'. */
 (function(){
 'use strict';
@@ -34,8 +43,8 @@ try {
   try { if (LS && LS.getItem('gc_fieldguard_off') === '1') return; } catch (e) {}
   var inner = W.fetch; if (typeof inner !== 'function') return;
   var NST = W.setTimeout, now = function(){ return Date.now(); };
-  var FG = W.__gcFG = { held: {}, dirty: {}, sentAgain: 0, stampOnly: 0, sameAsCloud: 0, passed: 0, personSent: 0, lsRefused: 0, lsRemoved: 0, lastInput: 0 };
-  var EDIT = 20000, DK = 'gc_fieldguard_dirty';
+  var FG = W.__gcFG = { held: {}, dirty: {}, sentAgain: 0, stampOnly: 0, sameAsCloud: 0, passed: 0, personSent: 0, lsRefused: 0, lsRemoved: 0, lastInput: 0, fullReads: 0, cheapReads: 0, cacheHits: 0, pullSeeds: 0 };
+  var EDIT = 8000, POSTWIN = 3000, DK = 'gc_fieldguard_dirty';   /* APPLAG: 20 s → 8 s; an upload marks only within 3 s */
   var LOG = FG.log = [], note = function(k, act){ try { LOG.push([now(), String(k).slice(0, 60), act]); if (LOG.length > 60) LOG.shift(); } catch (e) {} };
   var SP = W.Storage && W.Storage.prototype, pSet = SP && SP.setItem, pGet = SP && SP.getItem;
 
@@ -64,7 +73,7 @@ try {
   };
 
   /* ── a person's own input, and the keys a person changed ── */
-  var personNow = function(){ return !!FG.lastInput && now() - FG.lastInput < EDIT; };
+  var personNow = function(win){ return !!FG.lastInput && now() - FG.lastInput < (win || EDIT); };
   var base = function(k){ k = String(k || ''); if (/^doc:/.test(k)) return 'projectDocs'; return k.replace(/__(chunk\d+|manifest)$/, ''); };
   try { var dj = JSON.parse((LS && pGet.call(LS, DK)) || '{}'); if (dj && typeof dj === 'object') FG.dirty = dj; } catch (e) {}
   var dT = 0, flushDirty = function(){ dT = 0; try { if (LS) pSet.call(LS, DK, JSON.stringify(FG.dirty)); } catch (e) {} };
@@ -76,8 +85,8 @@ try {
     if (!dT) dT = NST.call(W, flushDirty, 1000);
   };
   try { W.addEventListener('pagehide', flushDirty); } catch (e) {}
-  var touchKey = function(k){
-    if (!personNow() || typeof k !== 'string' || !k || k === DK || !guarded()) return;
+  var touchKey = function(k, win){
+    if (!personNow(win) || typeof k !== 'string' || !k || k === DK || !guarded()) return;
     var b = base(k); if (FG.dirty[b] && now() - FG.dirty[b] < 1000) return;
     FG.dirty[b] = now(); saveDirty(); note(b, 'person');
   };
@@ -89,6 +98,10 @@ try {
   };
   ['pointerdown', 'keydown', 'input', 'change'].forEach(function(t){ try { W.addEventListener(t, mark, { capture: true, passive: true }); } catch (e) {} });
   /* the CRM's _gcManualNow note is NOT input: background code calls it too (the Cordova lift, sweeps) */
+  /* APPLAG: answering a confirm / prompt / alert is the person acting (the save that follows it is theirs) */
+  ['confirm', 'prompt', 'alert'].forEach(function(n){
+    try { var o = W[n]; if (typeof o !== 'function' || o.__gcFG) return; var w = function(){ try { return o.apply(this, arguments); } finally { FG.lastInput = now(); } }; w.__gcFG = true; W[n] = w; } catch (e) {}
+  });
   /* a write of a key while a person is acting marks it */
   try {
     var IP = W.IDBObjectStore && W.IDBObjectStore.prototype, oPut = IP && IP.put;
@@ -131,12 +144,56 @@ try {
     try { new Headers((init && init.headers) || undefined).forEach(function(v, k){ if (/^(apikey|authorization)$/i.test(k)) o[k] = v; }); } catch (e) {}
     return o;
   };
+  /* APPLAG: the cloud's copy of a row, as this page last saw it — checked with a ~100-byte read of updated_at before use */
+  var CACHE = {}, CROW = {}, PULLS = [];
+  var tsEq = function(a, b){ if (!a || !b) return false; if (String(a) === String(b)) return true; var x = Date.parse(a), y = Date.parse(b); return !isNaN(x) && x === y; };
+  var cacheSet = function(k, at, v){
+    if (!Array.isArray(v) || !at) return;
+    CACHE[k] = { at: String(at), v: v, t: now() };
+    var ks = Object.keys(CACHE); if (ks.length > 16) { ks.sort(function(x, y){ return CACHE[x].t - CACHE[y].t; }); delete CACHE[ks[0]]; }
+  };
+  /* the page's own pulls (select … value, updated_at): kept as text, read only when a row is needed */
+  var ONE = {};   /* key → the last single-row read of it (key=eq.) — many of those, so kept apart from the bulk pulls */
+  var seePull = function(r, url){
+    try {
+      var c = r.clone(); var p = { at: now(), t: c.text().then(null, function(){ return ''; }), map: null };
+      var m1 = /[?&]key=eq\.([^&]+)/.exec(url), k1 = m1 ? decodeURIComponent(m1[1]) : '';
+      if (k1) { ONE[k1] = p; var ks = Object.keys(ONE); if (ks.length > 12) { ks.sort(function(x, y){ return ONE[x].at - ONE[y].at; }); delete ONE[ks[0]]; } }
+      else { PULLS.push(p); if (PULLS.length > 3) PULLS.shift(); }
+    } catch (e) {}
+  };
+  var fromPulls = function(k){
+    var i = PULLS.length - 1, one = ONE[k] ? [ONE[k]] : [];
+    var next = function(){
+      var p = one.length ? one.shift() : (i >= 0 ? PULLS[i--] : null);
+      if (!p) return Promise.resolve(null);
+      return (p.map ? Promise.resolve(p.map) : p.t.then(function(txt){
+        var m = {}; p.t = Promise.resolve(''); p.map = m;
+        if (!txt || txt.length > 8000000) return m;
+        try { var rows = JSON.parse(txt); if (Array.isArray(rows)) rows.forEach(function(x){ if (x && x.key && Array.isArray(x.value) && x.updated_at) m[x.key] = { at: String(x.updated_at), v: x.value, t: now() }; }); } catch (e) {}
+        return m;
+      })).then(function(m){ var c = m && m[k]; if (c) { FG.pullSeeds++; return c; } return next(); });
+    };
+    return next();
+  };
+  var getJ = function(u, init){ return inner.call(W, u, { method: 'GET', headers: hdrs(init) }).then(function(r){ return r.ok ? r.json() : null; }); };
+  var cloudRow = function(url, init, k){
+    if (CROW[k]) return CROW[k];
+    var base0; try { base0 = new URL(url, location.href); } catch (e) { return Promise.resolve(null); }
+    var q = function(sel){ var u = new URL(base0.toString()); u.search = '?key=eq.' + encodeURIComponent(k) + '&select=' + sel; return u.toString(); };
+    var full = function(){ FG.fullReads++; return getJ(q('value,updated_at'), init).then(function(rows){ var r = rows && rows[0]; if (!r) return null; cacheSet(k, r.updated_at, r.value); return { at: r.updated_at, v: r.value }; }); };
+    var p = (CACHE[k] ? Promise.resolve(CACHE[k]) : fromPulls(k)).then(function(c){
+      if (!c) return full();
+      FG.cheapReads++;
+      return getJ(q('updated_at'), init).then(function(rows){ var r = rows && rows[0]; if (!r) return null; if (tsEq(r.updated_at, c.at)) { FG.cacheHits++; CACHE[k] = c; c.t = now(); return c; } return full(); });
+    }).then(null, function(){ return null; });
+    CROW[k] = p; var clr = function(){ if (CROW[k] === p) delete CROW[k]; }; p.then(clr, clr);
+    return p;
+  };
   var unstamp = function(url, init, k, val){
     if (!Array.isArray(val) || !val.length || /__(chunk\d+|manifest)$/.test(k)) return Promise.resolve(val);
-    var u; try { u = new URL(url, location.href); } catch (e) { return Promise.resolve(val); }
-    u.search = '?key=eq.' + encodeURIComponent(k) + '&select=value';
-    return inner.call(W, u.toString(), { method: 'GET', headers: hdrs(init) }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
-      var cv = rows && rows[0] && rows[0].value;
+    return cloudRow(url, init, k).then(function(row){
+      var cv = row && row.v;
       if (!Array.isArray(cv)) return val;
       var c = {}; cv.forEach(function(r){ var id = idOf(r); if (id != null) c[id] = r; });
       var n = 0;
@@ -155,7 +212,13 @@ try {
     try {
       var url = typeof input === 'string' ? input : (input && input.url) || String(input);
       var m = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
-      if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return inner.apply(this, arguments);
+      if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') {
+        /* APPLAG: a pull of rows with their values: what the cloud had, for the stamp check of a later upload */
+        if (m === 'GET' && /\/rest\/v1\/gc_kv\?/.test(url) && /select=[^&]*value/.test(url) && /select=[^&]*updated_at/.test(url) && guarded()) {
+          var pg = inner.apply(this, arguments); try { pg.then(function(r){ if (r && r.ok) seePull(r, url); }, function(){}); } catch (e) {} return pg;
+        }
+        return inner.apply(this, arguments);
+      }
       if (!/\/rest\/v1\/gc_kv(\?|$)/.test(url)) {
         /* a file / photo upload a person started: when it ends, the save that follows it is the person's */
         if (personNow() && /\/storage\/v1\/|\/\.netlify\/functions\//.test(url)) { var pr = inner.apply(this, arguments); try { pr.then(echo, echo); } catch (e) {} return pr; }
@@ -166,14 +229,14 @@ try {
       var at = now();
       if (m === 'DELETE' || m === 'PATCH') {
         var qk = /[?&]key=eq\.([^&]+)/.exec(url), dk = qk ? decodeURIComponent(qk[1]) : '';
-        touchKey(dk);
+        touchKey(dk, POSTWIN);
         if (allowed(dk)) { FG.passed++; var pd = inner.apply(this, arguments); try { pd.then(function(r){ if (r && r.ok) sentOk([dk], at); }, function(){}); } catch (e) {} return pd; }
         hold(dk || '?'); return Promise.resolve(EMPTY(pref));
       }
       if (m !== 'POST' || !init || typeof init.body !== 'string') return inner.apply(this, arguments);
       var b; try { b = JSON.parse(init.body); } catch (e) { return inner.apply(this, arguments); }
       var rows = Array.isArray(b) ? b : [b], keep = [];
-      rows.forEach(function(r){ var k = r && r.key != null ? String(r.key) : ''; touchKey(k); if (allowed(k)) keep.push(r); else hold(k); });
+      rows.forEach(function(r){ var k = r && r.key != null ? String(r.key) : ''; touchKey(k, POSTWIN); if (allowed(k)) keep.push(r); else hold(k); });
       if (!keep.length) return Promise.resolve(EMPTY(pref));
       var self = this;
       return Promise.all(keep.map(function(r){ var k = String(r.key || ''); return mine(k) ? Promise.resolve(r) : unstamp(url, init, k, r.value).then(function(v){ if (v === null) return null; if (v === r.value) return r; var c = Object.assign({}, r); c.value = v; return c; }); })).then(function(out){
@@ -183,11 +246,14 @@ try {
         FG.passed += out.length;
         var body = Array.isArray(b) ? JSON.stringify(out) : JSON.stringify(out[0]);
         keys.forEach(function(k){ note(k, 'send'); });
-        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
+        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; try { out.forEach(function(x){ if (x && x.key && x.updated_at) cacheSet(String(x.key), x.updated_at, x.value); }); } catch (e) {} } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
       });
     } catch (e) { return inner.apply(this, arguments); }
   };
   guardedFetch.__gcFG = true;
+  /* APPLAG: would an upload of this key be kept back right now (the save queue does not read the cloud row for nothing) */
+  FG.isHeld = function(k){ try { return guarded() && !allowed(String(k || '')); } catch (e) { return false; } };   /* the same, without marking */
+  FG.wouldHold = function(k){ try { k = String(k || ''); if (!guarded()) return false; touchKey(k, POSTWIN); return !allowed(k); } catch (e) { return false; } };
   W.fetch = guardedFetch;
 
   /* ── office-sized local copies stay off a Field phone; a person's write marks its key ── */
@@ -216,7 +282,7 @@ try {
     })(0);
   }
 
-  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, log: LOG.slice(-25), lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved }; };
+  FG.state = function(){ return { guarded: guarded(), phone: phone(), full: full(), email: myEmail(), lastInput: FG.lastInput ? new Date(FG.lastInput).toISOString() : '', held: JSON.parse(JSON.stringify(FG.held)), dirty: JSON.parse(JSON.stringify(FG.dirty)), sentAgain: FG.sentAgain, stampOnly: FG.stampOnly, sameAsCloud: FG.sameAsCloud, passed: FG.passed, personSent: FG.personSent, log: LOG.slice(-25), lsRefused: FG.lsRefused, lsRemoved: FG.lsRemoved, fullReads: FG.fullReads, cheapReads: FG.cheapReads, cacheHits: FG.cacheHits, pullSeeds: FG.pullSeeds, cached: Object.keys(CACHE) }; };
 } catch (e) { try { console.warn('[GC] FIELDGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
