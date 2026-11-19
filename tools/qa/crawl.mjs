@@ -107,6 +107,9 @@ export async function crawlProfile(X, screens, opt){
     const d = pathD[pathD.length - 1];
     const res = { level, text: d.text, ids: (d.ids || []).slice(0, 4), data: d.data || [], key: d.key, nth: d.nth, via: pathD.slice(0, -1).map(x => x.text).join(' › '), features: match(d), result: 'OK', kind: '', why: [], ms: null, sends: [], writes: [] };
     if (DESTRUCTIVE.test(d.text)) { res.result = 'SKIP'; res.why.push('destructive — listed, not tapped'); return res; }
+    /* a bare ✕ / × inside a panel is most often a row's "remove" (the table editor's paper rows): not tapped as a control — a
+       panel's way out is judged by the way back after it opened */
+    if (level > 1 && /^[✕×✖xX]$/.test(String(d.text).trim())) { res.result = 'SKIP'; res.why.push('a bare ✕ inside a panel (a row\'s remove, or the panel\'s close — judged by the way back)'); return res; }
     if (!(await fresh(scr))) { res.result = 'FAIL'; res.why.push('could not reopen the screen "' + scr.name + '"'); return res; }
     for (const p of pathD.slice(0, -1)) { p.__noBars = !curBars; const a = await aim(p); if (!a) { res.result = 'SKIP'; res.why.push('the panel did not open again (' + p.text + ')'); return res; } await X.tapAt(a.x, a.y); await sleep(1200); }
     /* let the saves of the previous tap finish first, so each tap is judged on its own writes */
