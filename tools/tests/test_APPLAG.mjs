@@ -177,7 +177,8 @@ try {
   const sm0 = await c.ev(() => Object.assign(window.__gcSame.state(), { fgSame: window.__gcFG.state().sameAsCloud })), tD = Date.now();
   await p.touchscreen.tap(195, 300); await sleep(200);
   await c.ev(async () => { const L = await window.idbGet('projects'); window._gcSbPush('projects', L); });
-  await sleep(40000);
+  for (let i = 0; i < 120; i++) { await sleep(1000); const x = await c.ev(() => Object.assign(window.__gcSame.state(), { fgSame: window.__gcFG.state().sameAsCloud })); if (x.skipped > sm0.skipped || x.fgSame > sm0.fgSame || NET.log.some(e => e.t >= tD && e.m === 'POST' && e.keys.includes('projects'))) break; }
+  await sleep(3000);
   const samePosts = NET.log.filter(e => e.t >= tD && e.m === 'POST' && e.keys.includes('projects')).length, sm1 = await c.ev(() => Object.assign(window.__gcSame.state(), { fgSame: window.__gcFG.state().sameAsCloud }));
   console.log('    the same job list again: ' + JSON.stringify({ samePosts, before: sm0, after: sm1 }));
   ok(l2 && samePosts === 0 && (sm1.skipped > sm0.skipped || sm1.fgSame > sm0.fgSame), 'the unchanged job list is not uploaded again (the cloud already has it)', { samePosts, sm0, sm1 });

@@ -246,7 +246,7 @@ try {
         FG.passed += out.length;
         var body = Array.isArray(b) ? JSON.stringify(out) : JSON.stringify(out[0]);
         keys.forEach(function(k){ note(k, 'send'); });
-        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; try { out.forEach(function(x){ if (x && x.key && x.updated_at) cacheSet(String(x.key), x.updated_at, x.value); }); } catch (e) {} } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
+        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; try { out.forEach(function(x){ if (x && x.key && Array.isArray(x.value)) { var k0 = String(x.key), v0 = x.value; cacheSet(k0, x.updated_at || new Date(0).toISOString(), v0); try { var u0 = new URL(url, location.href); u0.search = '?key=eq.' + encodeURIComponent(k0) + '&select=updated_at'; getJ(u0.toString(), init).then(function(rr){ var a0 = rr && rr[0] && rr[0].updated_at; if (a0 && CACHE[k0] && CACHE[k0].v === v0) CACHE[k0].at = String(a0); }, function(){}); } catch (e2) {} } }); } catch (e) {} }   /* the row's updated_at as the database keeps it (~100 bytes) */ else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
       });
     } catch (e) { return inner.apply(this, arguments); }
   };

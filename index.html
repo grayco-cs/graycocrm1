@@ -607,7 +607,7 @@ try {
         FG.passed += out.length;
         var body = Array.isArray(b) ? JSON.stringify(out) : JSON.stringify(out[0]);
         keys.forEach(function(k){ note(k, 'send'); });
-        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; try { out.forEach(function(x){ if (x && x.key && x.updated_at) cacheSet(String(x.key), x.updated_at, x.value); }); } catch (e) {} } else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
+        return inner.call(self, input, Object.assign({}, init, { body: body })).then(function(r){ if (r && r.ok) { sentOk(keys, at); FG.personSent++; try { out.forEach(function(x){ if (x && x.key && Array.isArray(x.value)) { var k0 = String(x.key), v0 = x.value; cacheSet(k0, x.updated_at || new Date(0).toISOString(), v0); try { var u0 = new URL(url, location.href); u0.search = '?key=eq.' + encodeURIComponent(k0) + '&select=updated_at'; getJ(u0.toString(), init).then(function(rr){ var a0 = rr && rr[0] && rr[0].updated_at; if (a0 && CACHE[k0] && CACHE[k0].v === v0) CACHE[k0].at = String(a0); }, function(){}); } catch (e2) {} } }); } catch (e) {} }   /* the row's updated_at as the database keeps it (~100 bytes) */ else keys.forEach(function(k){ note(k, 'refused ' + (r && r.status)); }); return r; }, function(e){ keys.forEach(function(k){ note(k, 'no answer'); }); throw e; });
       });
     } catch (e) { return inner.apply(this, arguments); }
   };
@@ -70632,14 +70632,19 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
   // Snapshot shortly after load (so a backup always exists once the app is open).
   /* patch STORECUT: not at every start-up -- after 2 min, and only when today's copy here is older than 3 h */
+  /* APPLAG: a phone makes no automatic day copy — it read every company list from the cloud (projects, register, invoices …,
+     several MB) and wrote the day copy back up, on one bar of signal, and with a full localStorage its "done today" mark could
+     not be kept, so it did it on every open. The office computers keep the day copies; 💎 → Daily Backups still works here. */
+  function _gcIsPhoneDB(){ try{ return /iPhone|iPod|Android.+Mobile|Windows Phone/i.test(String(navigator.userAgent||'')) || document.documentElement.classList.contains('_fieldmode'); }catch(e){ return false; } }
   setTimeout(function(){ (async function(){
+    if(_gcIsPhoneDB()) return;
     /* the time of today's copy: a tiny mark (gc_daily_at) instead of reading the whole ~7 MB day copy back from IndexedDB */
     try{ var _da = localStorage.getItem('gc_daily_at') || ''; if(_da.slice(0,10) === today() && Date.now() - Date.parse(_da) < 3*3600e3){ console.log('[GC] Daily backup: today copy is fresh (patch STORECUT)'); return; }
       if(!_da){ var _sv = await _idbGet(keyFor(today())); if(_sv && _sv.savedAt && Date.now() - Date.parse(_sv.savedAt) < 3*3600e3){ try{ localStorage.setItem('gc_daily_at', String(_sv.savedAt)); }catch(_le){} console.log('[GC] Daily backup: today copy is fresh (patch STORECUT)'); return; } } }catch(e){}
     try{ await snapshotToday(); try{ localStorage.setItem('gc_daily_at', new Date().toISOString()); }catch(_le){} }catch(e){}
   })(); }, 120000);
   // Keep a gentle periodic snapshot as a fallback (updates today's copy).
-  setInterval(snapshotToday, 3*60*60*1000);
+  setInterval(function(){ if(!_gcIsPhoneDB()) snapshotToday(); }, 3*60*60*1000);
   // AND schedule a precise snapshot at 12:00 AM every day, so each day is frozen
   // as a clean end-of-day/start-of-day copy — exactly "yesterday's data" to fall back on.
   // Fire a snapshot at set times every day. We snapshot at 5:00 PM (captures the
@@ -70661,7 +70666,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var ms=msUntilNextTarget();
     if(ms<0) ms=60000;
     setTimeout(function(){
-      try{ snapshotToday(); }catch(e){}
+      try{ if(!_gcIsPhoneDB()) snapshotToday(); }catch(e){}
       scheduleNextSnapshot();   // re-arm for the following target time
     }, ms);
   }
@@ -124231,6 +124236,10 @@ var dirtyAt = {};
 function editAtOf(k){ var d = dirtyAt[k]; return d ? new Date(d).toISOString() : new Date().toISOString(); }
 async function pushKey(k, cr){
   var t0 = performance.now();
+  /* APPLAG: on a phone under the field guard, a list the guard keeps back is not read from the cloud (a full download) just to be
+     kept back, and a synced list that lives in IndexedDB is left to the main sync (one upload at a time, the guard's checks) —
+     measured on one bar: 10 full reads of the job list / register from here, and the job list uploaded 5 times */
+  try{ var FG = window.__gcFG; if(FG && typeof FG.guarded === 'function' && FG.guarded()){ if(typeof FG.isHeld === 'function' && FG.isHeld(k)) return; if((window._gcSyncKeys || []).indexOf(k) >= 0 && !lsBacked(k)) return; } }catch(_g){}
   var local = await localValue(k);
   if(local === undefined || local === null) return;
   var ls = JSON.stringify(local);
@@ -158557,7 +158566,18 @@ function openInv(r){ return r && /client/.test(s(r.type) || 'client') && !/sub/.
 function balOf(r){ if (r.openBalance != null && r.openBalance !== '') return num(r.openBalance); var a = num(r.amt != null ? r.amt : r.amount); var pd = typeof r.paid === 'number' ? r.paid : num(r.amountPaid || r.paidAmount); return Math.max(0, a - pd); }
 var REGC = null;   /* the register is only in window._crm once the money screens loaded it: else the cloud copy */
 function regList(){ var a = crm().gcAcctRegister; return Array.isArray(a) ? arr(a) : arr(REGC); }
-function loadReg(){ if (Array.isArray(crm().gcAcctRegister)) return Promise.resolve(); return kvGet('gcAcctRegister').then(function(v){ REGC = arr(v); }, function(){}); }
+/* APPLAG: every 90 s this read the whole register (~400 KB) from the cloud when the money screens had not loaded it — on the
+   owner's phone, 16 MB an hour on one bar. This device's own copy (IndexedDB, kept current by the sync) is used; the cloud only
+   when there is none, and then at most every 10 minutes. */
+var REGC_AT = 0;
+function loadReg(){
+  if (Array.isArray(crm().gcAcctRegister)) return Promise.resolve();
+  return Promise.resolve(typeof W.idbGet === 'function' ? W.idbGet('gcAcctRegister') : null).then(function(v){
+    if (Array.isArray(v) && v.length) { REGC = v; return; }
+    if (REGC && Date.now() - REGC_AT < 600000) return;
+    return kvGet('gcAcctRegister').then(function(v2){ REGC = arr(v2); REGC_AT = Date.now(); }, function(){});
+  }, function(){});
+}
 function moneyIn(x){ return x && (x.type === 'income' || x.isIncome === true || x.direction === 'in') && !x.srcInvId && !x.matchedInv && x.deleted !== true; }
 function regId(x){ return s(x._id || x.id); }
 function scoreMatch(x, inv){
