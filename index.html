@@ -132955,6 +132955,22 @@ function merge(id, intoId){
   });
 }
 function autoPO(){ var L = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', used = {}; projects().forEach(function(p){ if (p && p.autoPO) used[p.autoPO] = 1; }); var x, n = 0; do { x = L[Math.floor(Math.random() * 26)] + String(Math.floor(100 + Math.random() * 900)); } while (used[x] && n++ < 500); return x; }
+/* patch BIDPO (owner 11/19: "Always have the same PO throughout"): a job made from a lead that is on the bid site keeps the bid job's PO —
+   the bid site gave it one the CRM's way (netlify/functions/_lib/bidpo.js) and subs may already have it. Only when no CRM job has it. */
+function bidJobOfLead(lead){
+  var jid = s(lead && lead.subPortal && lead.subPortal.jobId), J = [];
+  try { var S2 = window._gcSys; J = S2 && S2.bp ? arr(S2.bp.jobs()) : []; } catch (e) {}
+  return J.filter(function(j){ return j && ((jid && j.id === jid) || (s(j.crmLeadId) && s(j.crmLeadId) === s(lead && lead.id)) || (s(lead && lead.inboxId) && s(j.leadId) === s(lead.inboxId))); })[0] || (jid ? { id: jid } : null);
+}
+function freePo(po){ po = s(po).toUpperCase(); if (!/^[A-Z0-9-]{2,20}$/.test(po)) return ''; return projects().some(function(p){ return p && [p.autoPO, p.po, p.poNumber].some(function(x){ return s(x).toUpperCase() === po; }); }) ? '' : po; }
+function bidPoFor(lead){
+  var j = bidJobOfLead(lead); if (!j) return Promise.resolve('');
+  if (s(j.po)) return Promise.resolve(freePo(j.po));
+  var F = window._gcSys && window._gcSys.fn; if (!F) return Promise.resolve('');
+  return Promise.race([Promise.resolve().then(function(){ return F('bid-hub?manage=' + encodeURIComponent(j.id)); }).then(function(r){ return freePo(r && r.job && r.job.po); }, function(){ return ''; }),
+    new Promise(function(res){ setTimeout(function(){ res(''); }, 5000); })]);
+}
+window._gcBidPoFor = bidPoFor; window._gcBidPoSync = function(lead){ var j = bidJobOfLead(lead); return j ? freePo(j.po) : ''; };
 function planDoc(pid, d, leadId){ return { id: rid('DOC'), pid: pid, cat: 'Plans/Drawings', name: d.name || 'plan.pdf', size: d.size || 0, type: d.type || 'application/pdf', data: d.ref, ref: d.ref, hash: d.hash || '', uploaded: today(), by: myName(), fromLead: leadId || '', kind: d.kind || '', updatedAt: nowIso() }; }
 function addPlansToJob(pid, docs, leadId){
   var want = arr(docs).filter(function(d){ return d && d.ref && d.kind !== 'email'; });
@@ -132971,10 +132987,13 @@ function createJob(id){
   if (isRs(l)) return Promise.reject(new Error('A RoofScout lead becomes a job from RoofScout ("Bring to CRM as a job").'));
   return Promise.resolve(l).then(function(lead){
     if (lead.pid && projects().some(function(p){ return p && p.id === lead.pid; })) return { ok: true, pid: lead.pid, existed: true, lead: lead };
+    return bidPoFor(lead).then(function(bpo){ return makeJob(lead, bpo); }, function(){ return makeJob(lead, ''); });
+  });
+  function makeJob(lead, bpo){
     var kind = kindOf(lead), pid = rid('PRJ');
     var p = stamp({ id: pid, name: lead.name, client: lead.gc || lead.owner || lead.contactName || lead.name, clientPhone: lead.phone || '', clientEmail: lead.email || '', address: lead.address || '',
       type: kind === 'Insurance' ? 'Insurance Claim' : kind === 'Residential' ? (lead.type || 'Roofing') : 'Commercial Reno', status: 'bidding', pm: lead.pm || '', estimator: lead.estimator || '', contract: 0, estId: '',   /* patch BIDROLE */
-      startDate: '', endDate: '', scope: lead.scope || '', autoPO: autoPO(), subs: [], created: today(), createdAt: nowIso(), isInsurance: kind === 'Insurance',
+      startDate: '', endDate: '', scope: lead.scope || '', autoPO: bpo || autoPO(), subs: [], created: today(), createdAt: nowIso(), isInsurance: kind === 'Insurance',   /* patch BIDPO: the bid job's PO */
       leadId: lead.id, leadSource: srcOf(lead), bidDue: lead.bidDue || '', preBid: lead.preBid || '', bidNumber: lead.bidNumber || '', plansLinks: arr(lead.plansLinks),
       notes: 'Bid job from the Lead Inbox (' + (lead.source || 'lead') + ').' + (lead.bidDue ? ' Bid due ' + fmtWhen(lead.bidDue) + '.' : '') + (lead.notes ? '\n' + lead.notes : '') });
     try { if (window._gcJA) window._gcJA.stamp(p, 'lead'); } catch (_ja) {}
@@ -132982,7 +133001,7 @@ function createJob(id){
       .then(function(){ return addPlansToJob(pid, lead.docs, lead.id); })
       .then(function(n){ return patchLead(lead.id, function(x){ x.pid = pid; x.inboxState = 'job'; }).then(function(){ return n; }); })
       .then(function(n){ if (lfOwnIb(lead)) act({ id: lead.inboxId, op: 'job', pid: pid }); emit('job'); render(); badge(); return { ok: true, pid: pid, plans: n, lead: lead }; });
-  });
+  }
 }
 function openJob(pid){
   try { if (typeof window._gcGoToTaskJob === 'function') window._gcGoToTaskJob(pid, ''); else if (window._setView) window._setView('projects'); } catch (e) {}
@@ -199819,7 +199838,8 @@ function ensureJob(e){
   var l = leadOf(e), list = projects().slice();
   var NJ = W._gcNewJobPeople ? W._gcNewJobPeople(e, l) : { pm: s(e.pm) || s(l && l.pm), estimator: s(l && l.estimator) };
   var pos = list.map(function(x){ return x && (x.autoPO || x.po); }).filter(Boolean), po = '';
-  try { po = W.nextPO ? W.nextPO(pos) : ''; } catch (x) {} if (!po) po = 'PO-' + Date.now().toString().slice(-6);
+  try { po = (l && W._gcBidPoSync && W._gcBidPoSync(l)) || ''; } catch (x) {}   /* patch BIDPO: a lead on the bid site → the bid job's PO */
+  try { if (!po) po = W.nextPO ? W.nextPO(pos) : ''; } catch (x) {} if (!po) po = 'PO-' + Date.now().toString().slice(-6);
   p = { id: 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), name: s(e.name) || s(l && (l.name || l.company)) || 'Estimate', client: s(e.client) || s(l && (l.contact || l.name)),
     address: s(e.address) || s(l && l.address), autoPO: po, status: 'bidding', type: W._gcJobTypeFor ? W._gcJobTypeFor({ est: e, lead: l }) : (s(e.jobType || e.type) || s(l && l.projectType)), contract: 0, estimateId: s(e.id), _lastEstId: s(e.id),
     pm: NJ.pm, estimator: NJ.estimator, estimatorDefault: !!NJ.byDefault || undefined,   /* patch DUPJOB: the estimator is never made the PM */ clientEmail: s(e.clientEmail || e.email) || s(l && l.email), clientPhone: s(e.clientPhone || e.phone) || s(l && l.phone),
@@ -209631,7 +209651,8 @@ function ensureJob(e){
   var p = jobOf(e) || (W._gcJobForEstimate ? W._gcJobForEstimate(e) : null); if (p) return p;   /* patch DUPJOB */
   if (W._gcJobsNotReady && W._gcJobsNotReady()) throw new Error('The job list is still loading on this computer — try again in a moment.');
   var l = leadOf(e), pos = projects().map(function(x){ return x && (x.autoPO || x.po); }).filter(Boolean), po = '';
-  try { po = W.nextPO ? W.nextPO(pos) : ''; } catch (x) {} if (!po) po = 'PO-' + Date.now().toString().slice(-6);
+  try { po = (l && W._gcBidPoSync && W._gcBidPoSync(l)) || ''; } catch (x) {}   /* patch BIDPO: a lead on the bid site → the bid job's PO */
+  try { if (!po) po = W.nextPO ? W.nextPO(pos) : ''; } catch (x) {} if (!po) po = 'PO-' + Date.now().toString().slice(-6);
   p = { id: 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), name: s(e.name) || s(l && l.name) || 'Estimate', client: s(e.client) || s(l && (l.contactName || l.name)),
     address: s(e.address) || s(l && l.address), autoPO: po, status: 'bidding', type: W._gcJobTypeFor ? W._gcJobTypeFor({ est: e, lead: l }) : (s(e.jobType) || s(l && l.projectType)), contract: 0, estimateId: s(e.id), _lastEstId: s(e.id),
     pm: W._gcNewJobPeople ? W._gcNewJobPeople(e, l).pm : (s(e.pm) || s(l && l.pm)), estimator: W._gcNewJobPeople ? W._gcNewJobPeople(e, l).estimator : '', clientEmail: s(e.clientEmail || e.email) || s(l && l.email), clientPhone: s(e.clientPhone) || s(l && l.phone), leadId: l ? l.id : '', fromLeadId: l ? l.id : '',

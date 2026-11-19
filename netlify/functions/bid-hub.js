@@ -75,7 +75,8 @@ async function jobsList(){
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
   const reqN = {}, reqAt = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (SP.prOpen && SP.prOpen(r.data)) { reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; const a = s(r.data && r.data.at); if (a && (!reqAt[r.job_id] || a < reqAt[r.job_id])) reqAt[r.job_id] = a; } });   /* + the oldest open one (patch BPAPPR) */   /* patch PLANREQ: 📩 open plan / info requests */
   const c = counts(invites, bids, mail, plans, qs);
-  return jobs.map(r => r.data || {}).filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
+  const ps = await SP.poSync(jobs.map(r => r.data || {}), { by: 'bidpo-sync' }).catch(() => ({ jobs: jobs.map(r => r.data || {}) }));   /* patch BIDPO: the CRM's PO on every bid job */
+  return ps.jobs.filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
     const k = c(j.id);
     return {
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
@@ -214,6 +215,9 @@ async function postjob(who, b){
       let ts = arr(job.tradeScopes).find(y => low(y.trade) === low(tr)); if (!ts) { ts = { id: 'ts_' + crypto.randomBytes(4).toString('hex'), trade: tr, scope: '', files: [] }; job.tradeScopes = arr(job.tradeScopes).concat([ts]); }
       ts.files = arr(ts.files); if (!ts.files.some(f => f.fileRef === x.fileRef)) ts.files.push({ name: x.name, size: x.size, type: x.type, fileRef: x.fileRef, at, by: who.email }); })); }
   logTo(job, who, (isNew ? '📢 Put on the bid portal' : wasGone ? '📢 Back on the bid portal' : '📢 Bid portal job changed') + ' (' + (vis === 'public' ? '🌐 public' : '🔒 private, invited subs only') + ')' + (trades.length ? ' · trades: ' + trades.join(', ') : '') + (copied.length ? ' · ' + copied.length + ' file(s)' : ''));
+  /* patch BIDPO: the bid job's PO is its CRM job's (matched / assigned the CRM's way when it has none) */
+  try { const pd = await SP.poData(); if (arr(pd.projects).length) { const all = (await SP.listRows([SP.eq('collection', 'jobs')])).map(r => r.data || {}).filter(x => x.id !== job.id);
+    const pr = require('./_lib/bidpo.js').apply(job, pd, { jobs: all, by: who.email }); job = pr.job; } } catch (e) {}
   const rows = [SP.rowFor('jobs', job)];
   if (copied.length) rows.push({ collection: 'plans', id: job.id, job_id: job.id, data: { items: pl0.concat(copied) } });
   await SP.upsertRows(rows, who.email);
@@ -436,12 +440,14 @@ function awardMail(o, es){
   const lines = es ? [
     '¡Felicidades! GrayCo Construction Services le adjudicó ' + (trade ? '<b>' + SP.esc(trade) + '</b> en ' : '') + '<b>' + SP.esc(title) + '</b>' + (s(o.job.address) ? ' (' + SP.esc(o.job.address) + ')' : '') + '.',
     amt ? 'Su oferta: <b>' + amt + '</b>' : '',
+    s(o.po || o.job.poNumber) ? 'PO del trabajo: <b>' + SP.esc(s(o.po || o.job.poNumber)) + '</b> (póngalo en cada factura y recibo)' : '',   /* patch BIDPO */
     pmBits ? 'Su gerente de proyecto en GrayCo: <b>' + pmBits + '</b>' : '',
     'Próximos pasos: GrayCo le enviará su contrato de subcontratista / el alcance para firmar en su Portal GrayCo.',
     ex.length ? '<b>Por favor confirme esto antes de finalizar:</b><br>' + exHtml : ''
   ] : [
     'Congratulations! GrayCo Construction Services has awarded you ' + (trade ? '<b>' + SP.esc(trade) + '</b> on ' : '') + '<b>' + SP.esc(title) + '</b>' + (s(o.job.address) ? ' (' + SP.esc(o.job.address) + ')' : '') + '.',
     amt ? 'Your bid: <b>' + amt + '</b>' : '',
+    s(o.po || o.job.poNumber) ? 'Job PO: <b>' + SP.esc(s(o.po || o.job.poNumber)) + '</b> (put it on every invoice and receipt)' : '',   /* patch BIDPO */
     pmBits ? 'Your GrayCo project manager: <b>' + pmBits + '</b>' : '',
     'Next steps: GrayCo will send your sub agreement / scope to sign in your GrayCo Portal.',
     ex.length ? '<b>Please confirm these before we finalize:</b><br>' + exHtml : ''
@@ -467,7 +473,7 @@ async function award(who, b){
   const on = b.on !== false, id = s(b.id), at = nowIso(), src = s(b.source);
   const found = await jobRow(b.jobId).catch(() => null), job = found || { id: s(b.jobId), title: '' };
   const pm = pmOf(b, who), exclusions = cleanList(b.exclusions), wantMail = on && b.mail !== false;
-  const awardPo = on ? s(b.po).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30) : '';   /* patch BIDMULTI: the job's PO for the awarded sub */
+  const awardPo = on ? (s(job.poNumber) || s(b.po)).toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30) : '';   /* patch BIDMULTI: the job's PO for the awarded sub · patch BIDPO: the bid job's PO (= the CRM job's) first */
   const us = on ? await users() : [], uByEmail = {}; us.forEach(u => { if (u && u.email) uByEmail[low(u.email)] = u; });
   let crmByEmail = null; const langFor = async e => { if (!crmByEmail) { crmByEmail = {}; (await crmSubsRaw()).forEach(r => { if (r && r.email) crmByEmail[low(r.email)] = r; }); } return langOf(uByEmail[low(e)], crmByEmail[low(e)]); };
   const out = { ok: true, awarded: on, notSelected: 0, mail: { sent: false } };
@@ -477,7 +483,7 @@ async function award(who, b){
     if (mailedAt && !b.mailAgain) return { sent: false, skipped: 'already e-mailed ' + mailedAt.slice(0, 10) + ' (tick "Send again")', mailedAt };
     if (!SP.okEmail(low(email))) return { sent: false, skipped: 'no e-mail address on this bid' };
     const gate = await mailGate(); if (gate) return { sent: false, skipped: gate };
-    const es = (await langFor(email)) === 'es', m = awardMail({ job, trade, amount, pm, exclusions }, es);
+    const es = (await langFor(email)) === 'es', m = awardMail({ job, trade, amount, pm, exclusions, po: awardPo }, es);
     const ok = await sendOne(low(email), m);
     return ok ? { sent: true, to: low(email), lang: es ? 'es' : 'en', mailedAt: at } : { sent: false, skipped: 'the e-mail could not be sent' };
   }
