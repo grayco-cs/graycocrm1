@@ -244273,7 +244273,7 @@ try {
   function field(){ return H.classList.contains('_fieldmode'); }
   function cs(e){ return W.getComputedStyle(e); }
   function shown(e){ if (!e || !e.isConnected) return false; var s = cs(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0; }
-  function txt(e){ return String((e && (e.innerText || e.textContent)) || '').replace(/\s+/g, ' ').trim(); }
+  function txt(e){ return String((e && e.textContent) || '').replace(/\s+/g, ' ').trim(); }   /* textContent: no layout */
 
   var BACKBTN = '<span class="gc-pu-chev" aria-hidden="true">‹</span><span>Back</span>';
   var CSS =
@@ -244285,6 +244285,7 @@ try {
     'html.gc-pu-ownback #_gcNavBk{display:none!important}' +
     'html.gc-pu .gc-pu-page .gc-pu-fab,html.gc-pu .gc-pu-sheet .gc-pu-fab{bottom:calc(12px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu .gc-pu-fab{width:max-content!important;max-width:calc(100% - 32px)!important;position:sticky!important;left:auto!important;right:auto!important;top:auto!important;transform:none!important;bottom:calc(var(--gc-pu-tabs,0px) + 12px + env(safe-area-inset-bottom,0px))!important;display:block!important;margin:auto auto 12px!important;z-index:6!important}' +
+    'html.gc-pu .gc-rpb-x,html.gc-pu [aria-label="Close"]{min-width:44px!important;min-height:44px!important}' +
     'html.gc-pu .gc-pu-x44{min-width:44px!important;min-height:44px!important;display:inline-flex!important;align-items:center;justify-content:center;box-sizing:border-box}' +
     /* the app back button (pages, sheets) */
     '.gc-pu-back{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px 0 4px;margin:0;border:0;border-radius:22px;background:transparent;color:#1d4ed8;font:600 17px/1 -apple-system,Inter,Arial,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent}' +
@@ -244405,20 +244406,22 @@ try {
   /* ── 2. notes stack above the bottom bar; the 🔔 card under the Field header ── */
   var NOTES = '#gc-unsent-note,#gc-save-note,.gc-away-toast,#gc-ra-toast,#gc-fd-toast,#_gcNavToast,#gc-rpb-toast,body > .gcautai-pill';
   function tabsH(){ var t = D.getElementById('gc-fh-tabs'); if (!t || !shown(t)) return 0; var r = t.getBoundingClientRect(); return Math.max(0, Math.round((W.innerHeight || 0) - r.top)); }
+  var lastTabs = -1;
   function stackSweep(){
-    var base = tabsH(); H.style.setProperty('--gc-pu-tabs', base + 'px');
+    var base = tabsH(); if (base !== lastTabs) { lastTabs = base; H.style.setProperty('--gc-pu-tabs', base + 'px'); }
     var list = Array.prototype.filter.call(D.querySelectorAll(NOTES), function(n){ return n.parentNode === D.body && shown(n) && cs(n).position === 'fixed'; });
+    var hs = list.map(function(n){ return Math.round(n.getBoundingClientRect().height); });   /* all reads first, then the writes */
     var y = (base || 12) + 8;
-    list.forEach(function(n){
+    list.forEach(function(n, i){
       var want = y + 'px';
       if (n.style.getPropertyValue('bottom') !== want || n.style.getPropertyPriority('bottom') !== 'important') { n.style.setProperty('bottom', want, 'important'); n.style.setProperty('top', 'auto', 'important'); n.style.setProperty('margin-bottom', '0', 'important'); PU.stacked++; }
-      y += Math.round(n.getBoundingClientRect().height) + 6;
+      y += hs[i] + 6;
     });
   }
   /* a floating action button inside a page that is mid-screen (over the list) or under the bottom bar: it sits at the
      bottom of its page, just above the bottom bar (sticky), never over content */
   function fabSweep(){
-    var S = sat(), vh = W.innerHeight || 0, tb = tabsH(); if (!vh) return;
+    var S = sat(), vh = W.innerHeight || 0; if (!vh) return;
     Array.prototype.forEach.call(D.querySelectorAll('body > * button[style*="fixed"], body > * a[style*="fixed"], body > * .gc-fab'), function(b){
       if (b.classList.contains('gc-pu-fab') || b.parentNode === D.body || closeish(b)) return;
       if (b.closest('#gc-fh-tabs,#_gcAppHead,.gc-pu-bar,#gc-update-bar,#gc-bw-update')) return;
@@ -244429,9 +244432,19 @@ try {
     });
   }
   function homeCard(){
-    var c = D.getElementById('gc-away-pushcard'), home = D.querySelector('#_gcJobPick.gc-fh'); if (!c || !home) return;
+    var home = D.querySelector('#_gcJobPick.gc-fh');
+    if (home && !home.__puMo) { home.__puMo = 1; try { new MutationObserver(function(){ try { homeCard(); head(); } catch (e) {} }).observe(home, { childList: true }); } catch (e) {} }
+    var c = D.getElementById('gc-away-pushcard'); if (!c || !home) return;
     var top = home.querySelector('.fh-top'); if (top && top.nextElementSibling !== c && !(top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills' && top.nextElementSibling.nextElementSibling === c)) top.parentNode.insertBefore(c, (top.nextElementSibling && top.nextElementSibling.id === 'gc-pu-pills') ? top.nextElementSibling.nextSibling : top.nextSibling);
     if (!c.__gcPu) { c.__gcPu = 1; c.style.margin = '8px 12px'; }
+  }
+  /* Close / Back buttons of a panel: at least 44 x 44 (checked when the panel appears, and twice more as it fills) */
+  function closeCheck(L){
+    var small = Array.prototype.filter.call(L.querySelectorAll('button,[role=button],[data-x]'), function(b){
+      if (b.classList.contains('gc-pu-x44') || !closeish(b) || !shown(b)) return false;
+      var r = b.getBoundingClientRect(); return r.width < 44 || r.height < 44;
+    });
+    small.forEach(function(b){ b.classList.add('gc-pu-x44'); PU.x44++; });
   }
 
   /* ── 3. app pages ── */
@@ -244447,8 +244460,6 @@ try {
     if (o.classList.contains('gc-pu-sheet')) return;
     var inn = o.querySelector(':scope > .in'); if (!inn) return;
     o.classList.add('gc-pu-sheet'); PU.pages++;
-    try { new MutationObserver(function(){ lightSoon(o); }).observe(o, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] }); } catch (e) {}
-    lightSoon(o);
     if (o.classList.contains('gc-ra-sheet')) {
       var hd = inn.querySelector(':scope > .hd'), x = hd && hd.querySelector('[data-x]');
       if (hd && !hd.querySelector('.gc-pu-back')) {
@@ -244464,6 +244475,7 @@ try {
         if (h3 && h3.parentNode === inn) h3.classList.add('gc-pu-hide');
       }
     }
+    watch(o); pend(o, true);
   }
   /* any other panel opened over the Field (Approvals, Job Info, Documents, the Schedule page, lead details, Away, …):
      a full-screen white page (no dim backdrop, no card edge), its dark colors made light, an app header ‹ Back · title
@@ -244471,10 +244483,12 @@ try {
   var NOT_PAGE = /^(_gcJobPick|_gcJobDash|gcuOv|gc-fh-tabs|root|gc-pu-sat|_gcNavBk|_gcAppHead|_masterSearch|gc-update-bar|gc-bw-update)$/;
   function pageable(L){
     if (!L || L.parentNode !== D.body || L.nodeType !== 1 || /^(SCRIPT|STYLE|LINK)$/.test(L.tagName)) return false;
-    if ((L.id && (NOT_PAGE.test(L.id) || /^gc-auth|gate$|splash|^_gcLock|toast/i.test(L.id))) || /toast|gc-ra-sheet|gc-fh-sheet|gcautai-pill/.test(String(L.className || ''))) return false;
     if (L.classList.contains('gc-pu-page')) return true;
-    var s = cs(L); if (s.position !== 'fixed' || !shown(L) || parseFloat(s.opacity) < 0.05 || s.pointerEvents === 'none') return false;
-    var r = L.getBoundingClientRect(), vw = W.innerWidth, vh = W.innerHeight;
+    if ((L.id && (NOT_PAGE.test(L.id) || /^gc-auth|gate$|splash|^_gcLock|toast/i.test(L.id))) || /toast|gc-ra-sheet|gc-fh-sheet|gcautai-pill/.test(String(L.className || ''))) return false;
+    /* cheap first: big enough to be a screen (offset sizes are kept by the browser), only then its computed style */
+    var vw = W.innerWidth, vh = W.innerHeight; if (L.offsetWidth * L.offsetHeight < 0.5 * vw * vh) return false;
+    var s = cs(L); if (s.position !== 'fixed' || s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) < 0.05 || s.pointerEvents === 'none') return false;
+    var r = L.getBoundingClientRect();
     if ((Math.min(r.right, vw) - Math.max(r.left, 0)) * (Math.min(r.bottom, vh) - Math.max(r.top, 0)) < 0.55 * vw * vh) return false;
     if (L.querySelector('#gc-auth-email,#gc-auth-password')) return false;
     return true;
@@ -244484,10 +244498,9 @@ try {
     Array.prototype.forEach.call(L.children, function(c){ if (c.classList.contains('gc-pu-bar') || /^(SCRIPT|STYLE)$/.test(c.tagName) || !shown(c)) return; var r = c.getBoundingClientRect(), a = r.width * r.height; if (a > ba) { ba = a; best = c; } });
     return best;
   }
-  function titleOf(L){ var t = titleEl(L); return t ? txt(t).slice(0, 48) : ''; }
   function titleEl(L){
-    var all = L.querySelectorAll('h1,h2,h3,b,strong,div,span');
-    for (var i = 0; i < all.length && i < 400; i++) {
+    var all = Array.prototype.slice.call(L.querySelectorAll('h1,h2,h3,b,strong'), 0, 40).concat(Array.prototype.slice.call(L.querySelectorAll('div,span'), 0, 80));
+    for (var i = 0; i < all.length; i++) {
       var e = all[i]; if (e.closest('.gc-pu-bar,button')) continue;
       var direct = ''; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3) direct += n.nodeValue;
       direct = direct.replace(/\s+/g, ' ').trim(); if (!direct) continue;
@@ -244507,80 +244520,167 @@ try {
     if (own) { try { own.click(); } catch (e) {} }
     if (L.isConnected) ST.call(W, function(){ if (L.isConnected) L.remove(); backHome(); }, 60); else backHome();
   }
+  /* (each pass reads first and writes after, and the passes run after a frame is drawn: no layout is forced) */
   function genericPage(L){
     if (!L.classList.contains('gc-pu-page')) {
-      if (/flex/.test(cs(L).display)) L.classList.add('gc-pu-flex');
-      L.classList.add('gc-pu-page'); PU.pages++;
+      var flex = /flex/.test(cs(L).display), card = mainCard(L);
+      if (flex) L.classList.add('gc-pu-flex');
+      L.classList.add('gc-pu-page'); PU.pages++; L.__puChecks = 3;
       if (L.hasAttribute('data-gc-sa')) { L.style.removeProperty('padding-top'); L.removeAttribute('data-gc-sa'); }
-      var card = mainCard(L); if (card) card.classList.add('gc-pu-card');
-      try { new MutationObserver(function(){ lightSoon(L); }).observe(L, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] }); } catch (e) {}
-      lightSoon(L);
+      if (card) card.classList.add('gc-pu-card');
+      watch(L); pend(L, true); soon();   /* its header: the next pass, once it is drawn as a page */
+      return;
     }
+    /* the header and the 44 px close: when it opens, and the next two passes (its content can come a moment later) */
+    if (!shown(L) || (!(L.__puChecks > 0) && L.hasAttribute('data-gc-pu-bar'))) return;
+    if (L.__puChecks > 0) { L.__puChecks--; closeCheck(L); }
     if (!L.hasAttribute('data-gc-pu-bar')) {
       var mine = /My Approvals/.test(String((L.firstElementChild && L.firstElementChild.textContent) || '').slice(0, 200));
       if (mine || !ownBackAtTop(L)) {
-        var te = mine ? null : titleEl(L);
+        var te = mine ? null : titleEl(L), hide = te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input');
         var br = bar(mine ? 'My Approvals' : (te ? txt(te).slice(0, 48) : ''), function(){ closeLayer(L); });
         /* a flex panel: at the end, drawn first (order:-1), so code that reads the panel's first child still finds its own */
         if (L.classList.contains('gc-pu-flex')) L.appendChild(br); else L.insertBefore(br, L.firstChild);
         L.setAttribute('data-gc-pu-bar', '1');
-        if (te && te.getBoundingClientRect().top < sat() + 160 && !te.querySelector('button,input')) te.classList.add('gc-pu-hide');
+        if (hide) te.classList.add('gc-pu-hide');
       }
     }
   }
+  function apprTitle(L){ var c0 = L.querySelector(':scope > .gc-pu-card'); if (c0 && L.hasAttribute('data-gc-pu-bar')) { var t0 = c0.firstElementChild; if (t0 && !t0.classList.contains('gc-pu-hide') && txt(t0) === 'My Approvals') t0.classList.add('gc-pu-hide'); } }
   function pageSweep(){
     Array.prototype.forEach.call(D.querySelectorAll('body > .gc-ra-sheet, body > .gc-fh-sheet'), sheetPage);
-    Array.prototype.forEach.call(D.body.children, function(L){ if (pageable(L)) genericPage(L); });
-    /* and once a second over what is open (a color can change without a node being added) */
-    Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet'), function(L){ if (shown(L)) lightSoon(L); });
+    Array.prototype.forEach.call(D.body.children, function(L){ if (pageable(L)) { genericPage(L); apprTitle(L); } });
+    /* GrayCo Photos: its screens light too (its own ‹ and sheets stay); the camera itself is left dark */
+    var g = D.getElementById('gcuOv');
+    if (g && shown(g)) { var cam = false; try { cam = !!(W._gcPhotos && W._gcPhotos.state && /^(camera|photo)$/.test(String(W._gcPhotos.state.screen || ''))) || !!g.querySelector('video'); } catch (e) {}
+      g.classList.toggle('gc-pu-cam', cam); if (!cam) { if (!g.__puW) { watch(g); g.__puW = 1; } if (g.__puCam !== false) pend(g, true); } g.__puCam = cam; }
+    /* (a desk page opened from the Field — Leads, Schedule, Customers — is light already; its navy page background and
+       header are changed by the stylesheet above, which costs nothing per element) */
   }
 
-  /* dark → light: backgrounds that are dark become a light tint of the same hue; text then gets ≥ 4.5:1 against what is
-     under it (same hue, darker). Saturated mid-tone buttons (green Approve, red, blue) are left as they are. */
+  /* ── dark → light, in small slices (never a long task): backgrounds that are dark become a light tint of the same
+     hue; text then gets ≥ 4.5:1 against what is under it (same hue, darker). Saturated mid-tone buttons (green Approve,
+     red, blue) are left as they are. Each panel is walked once when it opens; after that only what is added or restyled. ── */
   function rgb(s){ var m = String(s || '').match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?/); if (!m) return null; var a = m[4] == null ? 1 : (/%$/.test(m[4]) ? parseFloat(m[4]) / 100 : +m[4]); return [+m[1], +m[2], +m[3], a]; }
   function lum(c){ var f = function(v){ v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); }
   function ratio(a, b){ var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
   function hsl(c){ var r = c[0] / 255, g = c[1] / 255, b = c[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, h = 0, s = 0; if (mx !== mn) { var d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; } return [h, s, l]; }
   function fromHsl(h, s, l){ var k = function(n){ return (n + h / 30) % 12; }, a = s * Math.min(l, 1 - l), f = function(n){ return Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))); }; return [f(0), f(8), f(4), 1]; }
   function css3(c){ return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
-  function bgOf(e, stop){
-    for (var x = e; x; x = x.parentElement) { var c = rgb(cs(x).backgroundColor); if (c && c[3] > 0.5) return c; if (x === stop) break; }
-    return [255, 255, 255, 1];
-  }
   function keepColor(c){ var q = hsl(c); return q[1] > 0.35 && q[2] > 0.28 && q[2] < 0.72; }
-  function light(root){
-    if (!root || !root.isConnected) return;
-    var c0 = root.querySelector(':scope > .gc-pu-card'); if (c0 && root.hasAttribute('data-gc-pu-bar')) { var t0 = c0.firstElementChild; if (t0 && txt(t0) === 'My Approvals') t0.classList.add('gc-pu-hide'); }
-    var all = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));
-    all.forEach(function(e){
-      if (e.classList && (e.classList.contains('gc-pu-bar') || e.classList.contains('gc-pu-page') || e.classList.contains('gc-pu-card'))) return;
-      if (e.closest && e.closest('.gc-pu-bar')) return;
-      var s = cs(e), c = rgb(s.backgroundColor), gi = String(s.backgroundImage || '');
-      if (gi.indexOf('gradient') >= 0) { var g = rgb(gi); if (g && hsl(g)[2] < 0.3) { e.style.setProperty('background-image', 'none', 'important'); c = g; c[3] = 1; } }
-      if (c && c[3] > 0.3 && !keepColor(c)) { var q = hsl(c); if (q[2] < 0.3) { e.style.setProperty('background-color', css3(fromHsl(q[0], Math.min(q[1], 0.25), e === root ? 1 : 0.97)), 'important'); PU.lit++; } }
-      ['Top', 'Right', 'Bottom', 'Left'].forEach(function(sd){ var bc = rgb(s['border' + sd + 'Color']); if (bc && parseFloat(s['border' + sd + 'Width']) > 0 && bc[3] > 0.3 && hsl(bc)[2] < 0.3 && !keepColor(bc)) { var bq = hsl(bc); e.style.setProperty('border-' + sd.toLowerCase() + '-color', css3(fromHsl(bq[0], Math.min(bq[1], 0.2), 0.86)), 'important'); } });
-      if (e.tagName === 'BUTTON' && e.style.getPropertyValue('background-color') && !e.__gcPuB) { e.__gcPuB = 1; if (!(parseFloat(s.borderTopWidth) > 0)) e.style.setProperty('border', '1px solid #cbd5e1', 'important'); }
-    });
-    all.forEach(function(e){
-      var direct = false; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) { direct = true; break; }
-      if (!direct && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return;
-      var fg = rgb(cs(e).color); if (!fg) return;
-      var bg = bgOf(e); if (keepColor(bg)) return;   /* on a colored button: as it was */
-      if (ratio(fg, bg) >= 4.6) return;
-      var q = hsl(fg), l = q[1] < 0.2 ? 0.16 : Math.min(q[2], 0.5), c2 = fromHsl(q[0], q[1], l), lb = lum(bg) > 0.4;
-      for (var k = 0; k < 14 && ratio(c2, bg) < 4.6; k++) { l = lb ? Math.max(0, l - 0.05) : Math.min(1, l + 0.05); c2 = fromHsl(q[0], q[1], l); }
-      e.style.setProperty('color', css3(c2), 'important');
-    });
+  var WHITE = [255, 255, 255, 1], BG = new WeakMap(), OBS = [], Q = [], qT = 0, ROOTS = [];
+  var NOWALK = /^(SCRIPT|STYLE|LINK|VIDEO|CANVAS|IMG|svg|SVG|IFRAME|OBJECT|TEMPLATE|NOSCRIPT)$/;
+  function rootOf(e){ for (var i = 0; i < ROOTS.length; i++) if (ROOTS[i] === e || ROOTS[i].contains(e)) return ROOTS[i]; return null; }
+  function watch(root){
+    if (ROOTS.indexOf(root) >= 0) return; ROOTS.push(root);
+    try {
+      var o = new MutationObserver(function(ms){
+        if (!root.isConnected) { o.disconnect(); ROOTS.splice(ROOTS.indexOf(root), 1); return; }
+        for (var i = 0; i < ms.length; i++) {
+          var m = ms[i];
+          if (m.type === 'childList') { for (var k = 0; k < m.addedNodes.length; k++) { var n = m.addedNodes[k]; if (n.nodeType === 1) pend(n, true); else if (n.nodeType === 3 && m.target.nodeType === 1) pend(m.target, false); } }
+          else if (m.target.nodeType === 1) { if (m.attributeName === 'class') unlight(m.target); pend(m.target, m.attributeName === 'class'); }
+        }
+      });
+      o.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      OBS.push(o);
+    } catch (e) {}
   }
-  /* run straight from the MutationObserver (already one call per batch of changes; the page's own timers can be held while
-     a field has the focus); our own color changes come back once and change nothing */
-  var lighting = false;
-  function lightSoon(root){ if (lighting) return; lighting = true; try { light(root); } catch (e) {} lighting = false; }
+  /* its class changed (picked / not picked, a state): our colors come off and it is looked at again as it is now */
+  function unlight(e){
+    if (e.hasAttribute('data-gc-lit')) { e.style.removeProperty('background-color'); e.removeAttribute('data-gc-lit'); }
+    if (e.hasAttribute('data-gc-col')) { e.style.removeProperty('color'); e.removeAttribute('data-gc-col'); }
+    BG.delete(e);
+  }
+  function pend(e, deep){
+    if (!e || e.nodeType !== 1 || NOWALK.test(e.tagName)) return;
+    if (e.closest && e.closest('.gc-pu-bar')) return;
+    var r = rootOf(e); if (!r || (r.id === 'gcuOv' && r.classList.contains('gc-pu-cam'))) return;
+    Q.push(deep ? D.createTreeWalker(e, 1, { acceptNode: function(x){ return (NOWALK.test(x.tagName) || (x.classList && x.classList.contains('gc-pu-bar'))) ? 2 : 1; } }) : e);
+    kickQ();
+  }
+  var qAt = 0;
+  function kickQ(){ if (qT && Date.now() - qAt < 500) return; qAt = Date.now(); qT = ST.call(W, slice, 16); }
+  var cur = null, curFirst = false;
+  function next(){
+    for (;;) {
+      if (cur) { var n = curFirst ? cur.currentNode : cur.nextNode(); curFirst = false; if (n) return n; cur = null; }
+      if (!Q.length) return null;
+      var t = Q.shift();
+      if (t.nodeType === 1) return t.isConnected ? t : null;
+      cur = t; curFirst = true;
+    }
+  }
+  function effBg(e){
+    for (var x = e.parentElement; x; x = x.parentElement) {
+      var b = BG.get(x); if (b) return b;
+      var c = rgb(cs(x).backgroundColor); if (c && c[3] > 0.5) { BG.set(x, c); return c; }
+      if (x === D.body) break;
+    }
+    return WHITE;
+  }
+  function slice(){
+    qT = 0; var t0 = performance.now(), n0 = 0;
+    try {
+      for (var round = 0; round < 1; round++) {
+        /* read first (one style pass for the whole slice, 4 ms at most), then write */
+        var batch = [], e;
+        var R = [];
+        while (performance.now() - t0 < 4 && (e = next())) { var s = cs(e); R.push({ e: e, bg: s.backgroundColor, gi: s.backgroundImage, color: s.color, bw: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth], bc: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor] }); }
+        if (!R.length) break;
+        batch = R;
+        R.forEach(function(r){
+          var e = r.e, isPage = e.classList.contains('gc-pu-page') || e.classList.contains('gc-pu-card'), c = rgb(r.bg), mine = null;
+          /* the chosen tab / chip / view keeps its dark fill (so the choice stays obvious) */
+          var picked = /(^|\s)(on|active|selected|sel|is-active|current)(\s|$)/.test(typeof e.className === 'string' ? e.className : '') || e.getAttribute('aria-selected') === 'true' || e.getAttribute('aria-pressed') === 'true';
+          if (picked && (e.hasAttribute('data-gc-lit') || e.hasAttribute('data-gc-col'))) { unlight(e); pend(e, false); return; }
+          if (!isPage && !picked) {
+            if (String(r.gi).indexOf('gradient') >= 0) { var g = rgb(r.gi); if (g && hsl(g)[2] < 0.3) { e.style.setProperty('background-image', 'none', 'important'); c = g; c[3] = 1; } }
+            if (c && c[3] > 0.3 && !keepColor(c)) { var q = hsl(c); if (q[2] < 0.3) { mine = fromHsl(q[0], Math.min(q[1], 0.25), 0.97); e.style.setProperty('background-color', css3(mine), 'important'); PU.lit++; e.setAttribute('data-gc-lit', '1'); } }
+            for (var i = 0; i < 4; i++) { var bc = rgb(r.bc[i]); if (bc && parseFloat(r.bw[i]) > 0 && bc[3] > 0.3 && hsl(bc)[2] < 0.3 && !keepColor(bc)) { var bq = hsl(bc); e.style.setProperty('border-' + ['top', 'right', 'bottom', 'left'][i] + '-color', css3(fromHsl(bq[0], Math.min(bq[1], 0.2), 0.86)), 'important'); } }
+            if (mine && e.tagName === 'BUTTON' && !(parseFloat(r.bw[0]) > 0)) e.style.setProperty('border', '1px solid #cbd5e1', 'important');
+          } else mine = e.classList.contains('gc-pu-card') ? WHITE : [245, 247, 250, 1];
+          var own = mine || (c && c[3] > 0.5 ? c : null), bg = own || effBg(e); BG.set(e, bg);
+          if (picked) return;
+          var direct = false; for (var n = e.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && /\S/.test(n.nodeValue)) { direct = true; break; }
+          if (!direct && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return;
+          var fg = rgb(r.color); if (!fg || keepColor(bg) || ratio(fg, bg) >= 4.6) return;
+          var qq = hsl(fg), l = qq[1] < 0.2 ? 0.16 : Math.min(qq[2], 0.5), c2 = fromHsl(qq[0], qq[1], l), lb = lum(bg) > 0.4;
+          for (var k = 0; k < 14 && ratio(c2, bg) < 4.6; k++) { l = lb ? Math.max(0, l - 0.05) : Math.min(1, l + 0.05); c2 = fromHsl(qq[0], qq[1], l); }
+          e.style.setProperty('color', css3(c2), 'important'); e.setAttribute('data-gc-col', '1');
+        });
+        n0 += batch.length;
+        OBS.forEach(function(o){ o.takeRecords(); });   /* our own changes are not news */
+      }
+    } catch (e) {}
+    var dt = performance.now() - t0; cost(dt); PU.cost.light += dt; PU.cost.els += n0;
+    if (cur || Q.length) kickQ();   /* the rest after the browser has had a frame */
+  }
+  function light(root){ watch(root); pend(root, true); }
 
   /* ── 4. the header: never swept as a notice; the pills ride in it; main follows its real height ── */
   var lastH = -1;
+  /* a desk page in the Field without its header yet (the Field app draws it on a 1 s loop, which the CRM slows to 30 s
+     when nobody has touched the phone for a minute): the same header, drawn now */
+  var TITLES = { projects: 'Jobs', schedule: 'Schedule', documents: 'Documents', subs: 'Subcontractors', scopes: 'Scopes', estbuilder: 'Estimates', insurance: 'Insurance', mitigation: 'Mitigation', messages: 'Messages', approvals: 'Approvals', bidportal: 'Bid portal', systems: 'GrayCo Systems', sitebook: 'Site Book', leads: 'Leads', estimates: 'Estimates', todo: 'To-Do', customers: 'Customers', docs: 'Docs', products: 'Products' };
+  function makeHead(){
+    if (!H.classList.contains('gc-pu-app') || D.getElementById('_gcAppHead') || D.getElementById('_gcFieldHomeOv') || D.getElementById('_gcJobPick') || D.getElementById('_gcJobDash') || typeof W._gcFieldHome !== 'function') return null;
+    var view = ''; try { view = W.localStorage.getItem('grayco_view') || ''; } catch (e) {}
+    var hd = D.createElement('div'); hd.id = '_gcAppHead'; hd.setAttribute('data-gc-keep', '1');
+    hd.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99985;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;background:rgba(12,24,44,0.97);border-bottom:1px solid rgba(255,255,255,0.06);';
+    hd.innerHTML = '<button id="_gcAppBack" style="background:transparent;border:none;color:#3b82f6;font-size:26px;cursor:pointer;padding:0 4px;line-height:1;">\u2039</button><span id="_gcAppTitle" style="color:#fff;font-size:18px;font-weight:800;"></span>';
+    hd.querySelector('#_gcAppTitle').textContent = TITLES[view] || 'GrayCo';
+    hd.querySelector('#_gcAppBack').onclick = function(){ W._gcFieldHome(); };
+    D.body.appendChild(hd);
+    if (!D.getElementById('_gcAppHeadPad')) { var st = D.createElement('style'); st.id = '_gcAppHeadPad'; st.textContent = 'html._fieldmode main{padding-top:64px!important;}'; D.head.appendChild(st); }
+    PU.made = (PU.made || 0) + 1; return hd;
+  }
   function head(){
     var hd = D.getElementById('_gcAppHead');
+    /* the same rules as the Field app's own header loop: not over the Field home / job page, only in the Field */
+    if (hd && H.classList.contains('gc-pu-app') && (D.getElementById('_gcFieldHomeOv') || D.getElementById('_gcJobPick') || D.getElementById('_gcJobDash'))) { hd.remove(); hd = null; }
+    if (!hd) hd = makeHead();
+    if (hd && H.classList.contains('gc-pu-app')) { var ti = D.getElementById('_gcAppTitle'), v = ''; try { v = W.localStorage.getItem('grayco_view') || ''; } catch (e) {} if (ti && TITLES[v] && ti.textContent !== TITLES[v]) ti.textContent = TITLES[v]; }
     if (hd && hd.getAttribute('data-gc-keep') !== '1') { hd.setAttribute('data-gc-keep', '1'); PU.kept++; }
     var app = H.classList.contains('gc-pu-app');
     tog('gc-pu-head', app && !!hd);
@@ -244600,31 +244700,46 @@ try {
         host = row;
       }
     }
-    if (host) ['_gcSubDocPill', '_gcPayPill'].forEach(function(id){
-      var p = D.getElementById(id); if (p && p.parentNode !== host) { host.appendChild(p); PU.moves++; }
-    });
+    if (host) pills.forEach(function(p){ if (p.parentNode !== host) { host.appendChild(p); PU.moves++; } });
     if (!hd) return;
     var h = hd.offsetHeight || 0;
     if (h && h !== lastH) { lastH = h; H.style.setProperty('--gc-pu-hh', h + 'px'); }
   }
 
-  function run(){
+  function cost(dt){ PU.cost.ms += dt; PU.cost.n++; if (dt > PU.cost.max) PU.cost.max = dt; }
+  PU.cost = { ms: 0, n: 0, max: 0, light: 0, els: 0, runMax: 0 };
+  function run(full){
+    var t0 = performance.now();
     try {
       var ph = phoneDev();
       tog('gc-pu', ph || (W.innerWidth || 0) <= 640);
       tog('gc-pu-app', ph && field());
       head();
       if (!ph || !D.body) return;
-      if (field()) { try { pageSweep(); } catch (e) {}
-        try { var Ls = W._gcNavLayers ? W._gcNavLayers() : [], tl = Ls[Ls.length - 1]; tog('gc-pu-ownback', !!tl && (tl.hasAttribute('data-gc-pu-bar') || tl.classList.contains('gc-pu-sheet') || (tl.classList.contains('gc-pu-page') && ownBackAtTop(tl)))); } catch (e) {} try { homeCard(); } catch (e) {} try { stackSweep(); } catch (e) {} }
-      try { safeSweep(); } catch (e) {}
-      try { fabSweep(); } catch (e) {}
-      try { closeSweep(); } catch (e) {}
-    } catch (e) {}
+      if (full) PU.full = (PU.full || 0) + 1;
+      if (field()) {
+        if (full) try { pageSweep(); } catch (e) { PU.err = String(e && e.stack || e).slice(0, 300); }
+        try { var tl = null; Array.prototype.forEach.call(D.querySelectorAll('body > .gc-pu-page, body > .gc-pu-sheet'), function(x){ if (shown(x)) tl = x; });
+          tog('gc-pu-ownback', !!tl && (tl.hasAttribute('data-gc-pu-bar') || tl.classList.contains('gc-pu-sheet') || tl.classList.contains('gc-pu-page'))); } catch (e) {}
+        if (full) try { homeCard(); } catch (e) {}
+        try { stackSweep(); } catch (e) {}
+      }
+      if (full) { try { safeSweep(); } catch (e) {} try { fabSweep(); } catch (e) {} }
+    } catch (e) {} finally { var dt = performance.now() - t0; cost(dt); if (dt > PU.cost.runMax) PU.cost.runMax = dt; }
   }
-  var soonT = 0;
-  function soon(){ if (soonT) return; soonT = ST.call(W, function(){ soonT = 0; run(); }, 60); }
-  run();
+  /* when: something is added to the page, the page's class changes, the window turns — one pass per frame at most; and a
+     slow look every 2 s for what changes without either (a panel shown again with a class, a note that lights up) */
+  /* (a timer can be held or cleared by the page's own timer governors: one older than half a second is not waited for) */
+  var soonT = 0, soonAt = 0;
+  function soon(){
+    PU.soon = (PU.soon || 0) + 1;
+    if (soonT && Date.now() - soonAt < 500) return; soonAt = Date.now(); soonT = 1;
+    var tok = soonAt, go = function(){ if (soonT !== 1 || soonAt !== tok) return; soonT = 0; run(true); };
+    /* after the next frame is drawn (its layout is then clean, and reading it costs nothing) — or in 150 ms at the latest */
+    if (W.requestAnimationFrame && !D.hidden) W.requestAnimationFrame(function(){ ST.call(W, go, 0); });
+    ST.call(W, go, 150);
+  }
+  run(true);
   try {
     new MutationObserver(function(ms){
       for (var i = 0; i < ms.length; i++) if (ms[i].addedNodes.length) { var a = ms[i].addedNodes; for (var k = 0; k < a.length; k++) if (a[k].nodeType === 1 && a[k].id !== 'gc-pu-sat') { if (a[k].id === '_gcAppHead') head(); soon(); return; } }
@@ -244632,10 +244747,13 @@ try {
     new MutationObserver(function(){ head(); soon(); }).observe(H, { attributes: true, attributeFilter: ['class'] });
   } catch (e) {}
   W.addEventListener('resize', soon);
-  SI.call(W, function(){ if (!D.hidden) run(); }, 1000);
-  SI.call(W, function(){ if (!D.hidden && H.classList.contains('gc-pu-app')) { try { stackSweep(); } catch (e) {} } }, 300);
-  PU.run = run; PU.light = light; PU.sat = sat; PU.ratio = function(a, b){ return ratio(rgb(a), rgb(b)); };
-  PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), sat: sat(), hh: lastH, moves: PU.moves, kept: PU.kept, pads: PU.pads.slice(), tops: PU.tops, x44: PU.x44, pages: PU.pages, lit: PU.lit, stacked: PU.stacked, fabs: PU.fabs || 0 }; };
+  /* the light look every 2 s (classes, header, notes); the full look (panels, the status bar strip, buttons) every 6 s —
+     anything added to the page gets the full look at once, above */
+  var tick = 0;
+  SI.call(W, function(){ if (!D.hidden) run(++tick % 3 === 0); }, 2000);
+  SI.call(W, function(){ if (!D.hidden && H.classList.contains('gc-pu-app')) { var t0 = performance.now(); try { stackSweep(); } catch (e) {} cost(performance.now() - t0); } }, 700);
+  PU.run = function(){ run(true); }; PU.light = light; PU.sat = sat; PU.ratio = function(a, b){ return ratio(rgb(a), rgb(b)); };
+  PU.state = function(){ return { pu: H.classList.contains('gc-pu'), app: H.classList.contains('gc-pu-app'), head: H.classList.contains('gc-pu-head'), sat: sat(), hh: lastH, moves: PU.moves, kept: PU.kept, pads: PU.pads.slice(), tops: PU.tops, x44: PU.x44, pages: PU.pages, lit: PU.lit, stacked: PU.stacked, fabs: PU.fabs || 0, roots: ROOTS.length, soon: PU.soon, full: PU.full, err: PU.err, soonT: soonT, soonAge: Date.now() - soonAt, cost: PU.cost }; };
   try { console.log('[GC] PHONEUI: phone safe area, app pages, no desk top bar in Field, bigger Leads views — __gcPhoneUI.state()'); } catch (e) {}
 } catch (e) { try { console.warn('[GC] PHONEUI', e); } catch (x) {} }
 })();

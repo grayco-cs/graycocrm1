@@ -123,6 +123,9 @@ async function phone(who, email){
   const c = await H.computer(who, { build, mobile: true, init: INIT }); OPEN.push(c);
   ok(await H.signIn(c, email, 20000), `${who}: signs in`);
   ok(!!(await H.waitFor(c, () => !!document.querySelector('#_gcJobPick.gc-fh') && !!document.querySelector('#gc-fh-tabs [data-t]'), null, 45000)), `${who}: the iPhone opens GrayCo Field`);
+  /* the sign-in reloads the page (twice) a few seconds after signIn() returns: wait until the page has stopped reloading */
+  for (let i = 0, last = -1; i < 20; i++) { const o = await c.ev(() => performance.timeOrigin).catch(() => -2); if (o === last && o > 0) break; last = o; await sleep(2500); }
+  await H.waitFor(c, () => !!document.querySelector('#_gcJobPick.gc-fh'), null, 45000);
   await H.waitFor(c, () => (window._crm && window._crm.projects || []).length >= 1, null, 30000);
   await sleep(2500); await c.ev(LIB);
   await c.ev(() => document.querySelectorAll('#gc-update-bar,#gc-bw-update').forEach(o => o.remove()));   /* the offline harness's "newer version" bar (tested on its own below) */
@@ -150,6 +153,7 @@ async function checkPanel(c, who, name, open, opt = {}){
   await sleep(opt.wait || 2800);
   const p = await c.ev(() => window.__pu.panel());
   if (!p || (opt.cls && !new RegExp(opt.cls).test(p.cls + ' ' + p.id))) { ok(false, `${who} ${name}: opens a panel`, p); return null; }
+  if (!/gc-pu-(page|sheet)/.test(p.cls) && TAG !== 'before') console.log('    PHONEUI state: ' + JSON.stringify(await c.ev(() => window.__gcPhoneUI && window.__gcPhoneUI.state())).slice(0, 600));
   await shot(c, `${who.toLowerCase()}_${name}`);
   console.log(`    ${who} ${name}: ${p.cls || p.id} bg=${p.bg} backs=${JSON.stringify(p.backs)} title=${JSON.stringify(p.title)} texts=${p.nText} lowContrast=${p.nBad}`);
   if (TAG === 'before') return p;
