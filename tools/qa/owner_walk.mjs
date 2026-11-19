@@ -81,7 +81,7 @@ function runLocked(p, jf, snapDir, logf, mode){
   return new Promise(res => {
     const locks = ['browser.lock', 'browser2.lock'].map(f => path.join(LOCKS, f));
     const tryOnce = i => {
-      const args = ['-w', '20', '-E', '211', locks[i], 'timeout', '3000', process.execPath, fileURLToPath(import.meta.url), build, '--child', p, '--json', jf, '--snap', snapDir, '--out', OUT, '--build', buildName, '--mode', mode || 'walk', '--crawl-min', String(opt('crawl-min', '35')), '--features', featFile];
+      const args = ['-w', '20', '-E', '211', locks[i], 'timeout', '3000', process.execPath, fileURLToPath(import.meta.url), build, '--child', p, '--json', jf, '--snap', snapDir, '--out', OUT, '--build', buildName, '--mode', mode || 'walk', '--crawl-min', String(opt('crawl-min', '35')), '--features', featFile].concat(opt('screens') ? ['--screens', opt('screens')] : []);
       const log = fs.openSync(logf, 'w');
       const c = spawn('flock', args, { stdio: ['ignore', log, log], env: Object.assign({}, process.env, { NODE_PATH: NM }) });
       c.on('exit', code => { fs.closeSync(log); if (code === 211) { if (i + 1 < locks.length) return tryOnce(i + 1); return setTimeout(() => tryOnce(0), 200); } res(code); });
@@ -281,7 +281,8 @@ import('./walks.mjs').then(async W => {
       await open(PID === 'owner' ? 'admin' : PID === 'pm' ? 'pm' : 'office');
       S.link.off = true;   /* the crawl taps hundreds of controls: fast link, full CPU (crawl.mjs); the walk times the slow phone */
       const ready = () => until(() => A.ev(ph => ph ? !!document.querySelector('#_gcJobPick.gc-fh') : document.querySelectorAll('nav button, aside button').length > 5, phone), 120000);
-      const screens = W.crawlScreens(X);
+      const scrRx = opt('screens') ? new RegExp(opt('screens'), 'i') : null;
+      const screens = W.crawlScreens(X).filter(sc => !scrRx || scrRx.test(sc.name));
       R.crawl = await C.crawlProfile(X, screens, { minutes: +opt('crawl-min', '35'), shots: SHOTS, outRoot: OUT, match: m, ready, back: crawlBack,
         progress: (s, r) => console.log(`  [${s}] L${r.level} ${r.result} "${String(r.text).slice(0, 40)}" ${r.kind || ''} ${r.why.join('; ').slice(0, 160)}`) });
     } catch (e) { R.stopped = String(e && e.message || e).split('\n')[0].slice(0, 300); console.log('crawl stopped: ' + (e && e.stack || e)); }
@@ -302,9 +303,14 @@ async function summarize(results, snapDir, feats){
   const btns = []; results.forEach(r => ((r.crawl || {}).screens || []).forEach(sc => sc.buttons.forEach(b => btns.push(Object.assign({ profile: r.profile, label: r.label, screen: sc.name }, b)))));
   /* one judgment for every crawl (also ones recorded by an older crawler): a background toast is not a reaction; SLOW = over 5 s */
   const FT = await import(pathToFileURL(path.join(HERE, 'features.mjs')).href); const fm = FT.matcher(feats);
+  /* findings that only involve the harness host's "WRONG SITE" bar are the harness's, not the release's */
+  results.forEach(r => (r.steps || []).forEach(s0 => { s0.fails = s0.fails.filter(f => { if (f.list) f.list = f.list.filter(x => !/WRONG SITE/.test(x)); return !(/WRONG SITE/.test(f.msg + (f.el || '')) || ((f.check === 'behind' || f.check === 'closeback') && f.list && !f.list.length)); }); }));
+  for (const b of btns) { if ((b.why || []).some(w => /WRONG SITE/.test(w))) { b.result = 'SKIP'; b.why = ['blocked by the harness host bar (WRONG SITE), not judged']; } }
   for (const b of btns) {
     b.features = fm({ ids: b.ids || [], data: b.data || [], text: b.text });
     if (/^toast: /.test(b.kind || '') && BG_TOAST.test(b.kind.slice(7)) && b.result !== 'FAIL') { b.kind = 'nothing (only a background toast: ' + b.kind.slice(7, 50) + ')'; b.result = 'FAIL'; b.why = ['dead button — nothing happened'].concat((b.why || []).filter(w => !/^reacted after/.test(w))); }
+    /* the menu item of the screen you are on does nothing — that is right */
+    { const t = String(b.text || '').replace(/[^\p{L}&' ]/gu, '').trim().toLowerCase(); if (b.result === 'FAIL' && /^nothing/.test(b.kind || '') && t.length > 3 && String(b.screen).toLowerCase().includes(t)) { b.result = 'OK'; b.why = ['already on this screen']; } }
     /* a write the crawler cannot tie to this tap for sure (the CRM keeps saving by itself — see the walk's shared-write bugs) */
     if (b.result === 'FAIL' && !(b.why || []).some(w => /dead button|page error|covered|no way back|outside host/.test(w))) b.result = 'WARN';
     if (b.result === 'SLOW' && (b.ms || 0) < SLOW_MS) { b.result = 'OK'; b.why = (b.why || []).map(w => w.replace(/^reacted after/, 'first visible change after')); }
@@ -335,7 +341,7 @@ function renderHTML(S, file){
   const rel = f => f ? esc(path.relative(path.dirname(file), path.join(OUT, f))) : '';
   const sevC = { critical: 'crit', major: 'maj', minor: 'min' };
   const fl = f => `<li class="${sevC[f.sev] || 'min'}"><b>${esc(f.sev)}</b> · <code>${esc(f.check)}</code> ${esc(f.msg)}${f.atEnd ? ' <i>(scrolled to the end)</i>' : ''}${f.el ? `<div class="sub">${esc(f.el)}</div>` : ''}${f.list ? `<ul class="sub">${f.list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</li>`;
-  const prof = p => `<section><h2>${esc(p.label)} <span class="muted">(${esc(p.setup && p.setup.account ? p.setup.account.name + ' · ' + p.setup.account.crmRole : '')})</span></h2>
+  const prof = p => !p.device ? '' : `<section><h2>${esc(p.label)} <span class="muted">(${esc(p.setup && p.setup.account ? p.setup.account.name + ' · ' + p.setup.account.crmRole : '')})</span></h2>
     <p class="muted">${esc(p.device.viewport.width + '×' + p.device.viewport.height)} @${p.device.dsf}x · ${p.device.net ? `${p.device.net.down} kbps down / ${p.device.net.up} up / ${p.device.net.rtt} ms RTT` : 'fast network'} · CPU ×${p.device.cpu}${p.device.safe && p.device.safe.top ? ` · safe area ${p.device.safe.top}/${p.device.safe.bottom}` : ''} · ${p.steps.length} steps · ${p.wallSec || '?'} s</p>
     ${p.setup && p.setup.firstOpen ? `<p>First open of this build (download, untimed setup): <b>${p.setup.firstOpen.wireMB} MB</b> over the wire (${p.setup.firstOpen.rawMB} MB unpacked, ${p.setup.firstOpen.requests} requests)${p.setup.firstOpen.estSec ? ` — about <b>${p.setup.firstOpen.estSec} s</b> on this link` : ''}. ${p.setup.ls ? `localStorage: ${p.setup.ls.keys} keys, ${p.setup.ls.chars.toLocaleString()} chars.` : ''}</p>` : ''}
     ${p.notes && p.notes.length ? `<ul>${p.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}

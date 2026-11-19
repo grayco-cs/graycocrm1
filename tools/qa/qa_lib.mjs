@@ -78,6 +78,9 @@ export function lsInitScript(plan){
 export const PROBE_INIT = `(() => {
   const Q = window.__qa = { lt: [], err: [] };
   try { new PerformanceObserver(l => { for (const e of l.getEntries()) Q.lt.push({ t: e.startTime, ms: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
+  /* the offline harness serves the CRM as app.local: the CRM's own "⛔ WRONG SITE" bar (for copies on other hosts) is the
+     harness's doing, not the release's — take it away so it does not cover the real screen */
+  try { new MutationObserver(l => { for (const m of l) for (const n of m.addedNodes) if (n.nodeType === 1 && /^\u26D4 WRONG SITE/.test(n.textContent || '')) { n.remove(); Q.wrongSiteBar = (Q.wrongSiteBar || 0) + 1; } }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
 })()`;
 
 /* ── the slow link: every answer the offline harness gives is held back the way a 400 kbps / 300 ms phone link would.
@@ -206,9 +209,13 @@ export function pageAudit(opt){
      desk page the Field layer covers */
   const layerOf = e => { for (let a = e; a && a !== document.body; a = a.parentElement) if (getComputedStyle(a).position === 'fixed') return a; return document.body; };
   const zOf = e => { if (e === document.body) return 0; let m = 0; for (let a = e; a && a !== document.body; a = a.parentElement) { const v = parseInt(getComputedStyle(a).zIndex); if (!isNaN(v)) m = Math.max(m, v); } return m; };
-  const topL = layerOf(document.elementFromPoint(vw / 2, vh * 0.42) || document.body);
   const bigL = l => { const r = l.getBoundingClientRect(); return r.width * r.height > vw * vh * 0.3; };
-  const onScreen = e => { const l = layerOf(e); return l === topL || (l !== document.body && !bigL(l) && zOf(l) >= zOf(topL)); };
+  const visL = e => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; };
+  const bigLayers = [...document.querySelectorAll('body *')].filter(e => { if (getComputedStyle(e).position !== 'fixed' || !visL(e)) return false; for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) if (getComputedStyle(a).position === 'fixed') return false; return bigL(e); });
+  const withBtn = l => [...l.querySelectorAll(BTN)].some(vis);
+  const topRec = bigLayers.map((e, i) => ({ e, i, z: zOf(e) })).sort((a, b) => b.z - a.z || b.i - a.i).find(x => withBtn(x.e));
+  const topL = topRec ? topRec.e : document.body;
+  const onScreen = e => { const l = layerOf(e); return l === topL || (l !== document.body && (bigL(l) ? zOf(l) >= zOf(topL) && withBtn(l) : zOf(l) >= zOf(topL))); };
   /* a fixed / sticky bar at the top or bottom edge: content scrolls under it (not "behind") */
   const edgeBar = h => { for (let a = h; a && a !== document.body; a = a.parentElement) { const s = getComputedStyle(a); if (s.position === 'fixed' || s.position === 'sticky') { const r = a.getBoundingClientRect(); return r.width >= vw * 0.8 && r.height < vh * 0.3 && (r.top <= (safe.top || 0) + 8 || r.bottom >= vh - 2); } } return false; };
   const buttons = [...document.querySelectorAll(BTN)].filter(vis).filter(b => !b.closest('[aria-hidden=true]')).filter(onScreen);
