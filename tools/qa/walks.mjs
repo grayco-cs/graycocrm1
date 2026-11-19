@@ -150,6 +150,30 @@ async function owner(X){
   await step('🆘 Problem reports', {}, async st => { if (!(await A().ev(() => !!document.querySelector('.gc-fh-sheet[data-ra-more]')))) { await goHome(); await tap({ sel: '#gc-fh-tabs [data-t="more"]' }, st); await sleep(800); } return K.tapOpen(st, { rx: 'Problem reports' }); });
   await step('📸 Photos / projects page', {}, async st => { await goHome(); await tap({ sel: '#gc-fh-tabs [data-t="jobs"]' }, st); await sleep(800); return K.tapOpen(st, { rx: 'GrayCo Photos' }, () => !!(window._gcPhotos && window._gcPhotos.state && window._gcPhotos.state.open) || true); });
   await step('Back to 🏠 Home', { scroll: false }, async st => { try { await back(st); } catch (e) {} await goHome(); return !!(await fieldHome()); });
+  /* owner 11/19: a lead's TEXT link (crm.grayco-cs.com/#leads&lead=LEADIN-…) opened cold on his iPhone showed a navy Leads page,
+     "No lead pipeline" (an empty list), ‹ Back over the title, the "New here? Tap Field" tip over a COI pill and the floating
+     🎤 / 💎 / 💬. The newest lead from the Lead Inbox, opened the same way: the list loads, that lead opens, nothing in the way. */
+  let LL = X.snap.get('leads'); if (typeof LL === 'string') { try { LL = JSON.parse(LL); } catch (e) { LL = []; } } const ll = (Array.isArray(LL) ? LL : []).filter(l => l && /^LEADIN-/.test(String(l.id)) && !l.deleted && !l.archived).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0];
+  if (ll) await step('Lead text link → that lead (cold open, #leads&lead=…)', { scroll: false, timed: false }, async st => {
+    st.info.lead = ll.id; const nm = String(ll.name || '').replace(/\s+/g, ' ').trim().slice(0, 14);
+    await page().goto('http://app.local/#leads&lead=' + encodeURIComponent(ll.id), { waitUntil: 'commit' }).catch(() => {});
+    await page().reload({ waitUntil: 'commit' }).catch(() => {});
+    const t0 = Date.now(); let open = false, emptyAt = null, tipAt = null;
+    while (Date.now() - t0 < 90000) {
+      await sleep(400);
+      const v = await A().ev(nm => { const vis = e => !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).visibility !== 'hidden';
+        const txt = document.body ? document.body.innerText : ''; const d = document.getElementById('gcl-drawer');
+        return { empty: /No lead pipeline/.test(txt), tip: /New here\? Tap/.test(txt), drawer: vis(d) && (!nm || (d.innerText || '').indexOf(nm) >= 0) }; }, nm).catch(() => ({}));
+      if (v.empty && emptyAt == null) emptyAt = Date.now() - t0;
+      if (v.tip && tipAt == null) tipAt = Date.now() - t0;
+      if (v.drawer) { open = true; break; }
+    }
+    st.info.leadOpenSec = open ? Math.round((Date.now() - t0) / 1000) : null;
+    if (emptyAt != null) st.fails.push({ check: 'stuck', sev: 'major', msg: `"No lead pipeline" (an empty lead list) showed ${(emptyAt / 1000).toFixed(1)} s into the open — the leads are there` });
+    if (tipAt != null) st.fails.push({ check: 'floating', sev: 'major', msg: 'the desk tip "New here? Tap Field…" showed on the phone' });
+    if (!open) st.fails.push({ check: 'stuck', sev: 'critical', msg: `the linked lead (${ll.id}) did not open within 90 s` });
+    return true;
+  });
 }
 
 /* ═════ a PM on his iPhone ═════ */
