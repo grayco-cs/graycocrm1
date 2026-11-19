@@ -244296,6 +244296,19 @@ try {
     'html.gc-pu #gc-update-bar{padding-top:max(10px,var(--gc-sat))!important;flex-wrap:wrap}' +
     'html.gc-pu #gc-bw-update{padding-top:calc(10px + var(--gc-sat))!important}' +
     'html.gc-pu-ownback #_gcNavBk{display:none!important}' +
+    /* in the Field on a phone every page has its own ‹ Back now (the app header, a panel's bar, the job page's ‹ Jobs, the
+       Site Book's ‹ All jobs): NAV's floating one only stacked on top of them */
+    'html.gc-pu-app #_gcNavBk{display:none!important}' +
+    /* the 🎤 voice note and 💎 menu: docked in a strip just above the bottom bar, never floating over the page */
+    '#gc-pu-dock{position:fixed;left:0;right:0;bottom:var(--gc-pu-tabsonly,0px);height:52px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px;background:#fff;border-top:1px solid #e5e7eb;z-index:100049;box-sizing:border-box;font:600 13px -apple-system,Inter,Arial,sans-serif;color:#334155}' +
+    'html:not(.gc-pu-app) #gc-pu-dock{display:none!important}' +
+    '#gc-pu-dock > .gc-pu-dk{display:flex;align-items:center;gap:8px}' +
+    'html.gc-pu-app #gc-pu-dock #_gcMicBtn,html.gc-pu-app #gc-pu-dock #_gcFieldHubBtn{position:static!important;transform:none!important;left:auto!important;top:auto!important;right:auto!important;bottom:auto!important;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:0!important;padding:0!important;border-radius:22px!important;font-size:20px!important;line-height:44px!important;box-shadow:none!important;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 auto}' +
+    'html.gc-pu-app main{padding-bottom:calc(var(--gc-pu-tabs,0px) + 24px)!important}' +
+    /* desk: the "Connect Google / Use my Gmail" bar sat on the top bar's buttons (✅ 💎 💬 🎤 📷): at the bottom of the
+       screen instead; its green button readable (4.5:1) */
+    'html:not(._fieldmode) #_gConnBar{top:auto!important;bottom:0!important}' +
+    '#_gConnBar #_gConnGo{background:#15803d!important;color:#fff!important}' +
     'html.gc-pu .gc-pu-page .gc-pu-fab,html.gc-pu .gc-pu-sheet .gc-pu-fab{bottom:calc(12px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu .gc-pu-fab{width:max-content!important;max-width:calc(100% - 32px)!important;position:sticky!important;left:auto!important;right:auto!important;top:auto!important;transform:none!important;bottom:calc(var(--gc-pu-tabs,0px) + 12px + env(safe-area-inset-bottom,0px))!important;display:block!important;margin:auto auto 12px!important;z-index:6!important}' +
     'html.gc-pu .gc-rpb-x,html.gc-pu [aria-label="Close"]{min-width:44px!important;min-height:44px!important}' +
@@ -244435,7 +244448,8 @@ try {
   }
   var lastTabs = -1;
   function stackSweep(){
-    var base = tabsH(); if (base !== lastTabs) { lastTabs = base; H.style.setProperty('--gc-pu-tabs', base + 'px'); }
+    var only = tabsH(), dk = D.getElementById('gc-pu-dock'), base = only + (dk && dk.firstElementChild && dk.style.display !== 'none' && H.classList.contains('gc-pu-app') ? 52 : 0);
+    if (base !== lastTabs) { lastTabs = base; H.style.setProperty('--gc-pu-tabs', base + 'px'); H.style.setProperty('--gc-pu-tabsonly', only + 'px'); }
     var all = D.querySelectorAll(NOTES); if (!all.length) return;
     var list = Array.prototype.filter.call(all, function(n){ if (n.parentNode !== D.body) return false; var s = cs(n); return s.display !== 'none' && s.visibility !== 'hidden' && s.position === 'fixed'; });
     if (!list.length) return;
@@ -244563,6 +244577,9 @@ try {
       watch(L); pend(L, true); soon();   /* its header: the next pass, once it is drawn as a page */
       return;
     }
+    /* a panel that redraws itself (innerHTML) loses our card mark and header bar: put them back */
+    if (!L.querySelector(':scope > .gc-pu-card')) { var c2 = mainCard(L); if (c2) c2.classList.add('gc-pu-card'); }
+    if (L.hasAttribute('data-gc-pu-bar') && !L.querySelector(':scope > .gc-pu-bar')) { L.removeAttribute('data-gc-pu-bar'); }
     /* the header and the 44 px close: when it opens, and the next two passes (its content can come a moment later) */
     if (!shown(L) || (!(L.__puChecks > 0) && L.hasAttribute('data-gc-pu-bar'))) return;
     if (L.__puChecks > 0) { L.__puChecks--; closeCheck(L); }
@@ -244619,6 +244636,7 @@ try {
         if (!root.isConnected) { o.disconnect(); ROOTS.splice(ROOTS.indexOf(root), 1); return; }
         for (var i = 0; i < ms.length; i++) {
           var m = ms[i];
+          if (m.type === 'childList' && m.target === root && root.classList.contains('gc-pu-page')) soon();   /* redrawn: its card / bar again */
           if (m.type === 'childList') { for (var k = 0; k < m.addedNodes.length; k++) { var n = m.addedNodes[k]; if (n.nodeType === 1) pend(n, true); else if (n.nodeType === 3 && m.target.nodeType === 1) pend(m.target, false); } }
           else if (m.target.nodeType === 1) { if (m.attributeName === 'class') unlight(m.target); pend(m.target, m.attributeName === 'class'); }
         }
@@ -244667,7 +244685,7 @@ try {
         /* read first (one style pass for the whole slice, 4 ms at most), then write */
         var batch = [], e;
         var R = [];
-        while (performance.now() - t0 < 2.5 && R.length < 80 && (e = next())) { var s = cs(e); R.push({ e: e, bg: s.backgroundColor, gi: s.backgroundImage, color: s.color, bw: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth], bc: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor] }); }
+        while (performance.now() - t0 < 2.5 && R.length < 40 && (e = next())) { var s = cs(e); R.push({ e: e, bg: s.backgroundColor, gi: s.backgroundImage, color: s.color, bw: [s.borderTopWidth, s.borderRightWidth, s.borderBottomWidth, s.borderLeftWidth], bc: [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor] }); }
         if (!R.length) break;
         batch = R;
         R.forEach(function(r){
@@ -244732,7 +244750,21 @@ try {
     if (!D.getElementById('_gcAppHeadPad')) { var st = D.createElement('style'); st.id = '_gcAppHeadPad'; st.textContent = 'html._fieldmode main{padding-top:64px!important;}'; D.head.appendChild(st); }
     PU.made = (PU.made || 0) + 1; return hd;
   }
+  function dock(){
+    var app = H.classList.contains('gc-pu-app'), d = D.getElementById('gc-pu-dock');
+    var mic = D.getElementById('_gcMicBtn'), hub = D.getElementById('_gcFieldHubBtn');
+    if (!app) { if (d) { if (mic && mic.parentNode !== D.body && d.contains(mic)) D.body.appendChild(mic); if (hub && d.contains(hub)) D.body.appendChild(hub); d.remove(); } return; }
+    if (!mic && !hub) { if (d) d.style.display = 'none'; return; }
+    if (!d) { d = D.createElement('div'); d.id = 'gc-pu-dock'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('data-gcnav-ignore', '1'); d.innerHTML = '<span class="gc-pu-dk" data-k="mic"></span><span class="gc-pu-dk" data-k="hub"></span>'; D.body.appendChild(d); }
+    d.style.display = '';
+    var sm = d.querySelector('[data-k="mic"]'), sh = d.querySelector('[data-k="hub"]');
+    if (mic && mic.parentNode !== sm) { sm.appendChild(mic); var l1 = D.createElement('span'); l1.textContent = 'Voice note'; if (!sm.querySelector('.gc-pu-l')) { l1.className = 'gc-pu-l'; sm.appendChild(l1); } }
+    if (hub && hub.parentNode !== sh) { var l2 = D.createElement('span'); if (!sh.querySelector('.gc-pu-l')) { l2.className = 'gc-pu-l'; l2.textContent = 'Menu'; sh.appendChild(l2); } sh.appendChild(hub); }
+    if (!mic) { var a = sm.querySelector('.gc-pu-l'); if (a) a.remove(); }
+    if (!hub) { var b = sh.querySelector('.gc-pu-l'); if (b) b.remove(); }
+  }
   function head(){
+    try { dock(); } catch (e) {}
     var hd = D.getElementById('_gcAppHead');
     /* the same rules as the Field app's own header loop: not over the Field home / job page, only in the Field */
     if (hd && H.classList.contains('gc-pu-app') && (D.getElementById('_gcFieldHomeOv') || D.getElementById('_gcJobPick') || D.getElementById('_gcJobDash'))) { hd.remove(); hd = null; }

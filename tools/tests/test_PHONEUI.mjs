@@ -77,7 +77,7 @@ const LIB = `window.__pu = (() => {
   const box = e => { const r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), b: Math.round(r.bottom), r: Math.round(r.right) }; };
   function top(){
     const vw = innerWidth, vh = innerHeight;
-    const L = [...document.body.children].filter(e => !/^(SCRIPT|STYLE|LINK)$/.test(e.tagName) && !/^(gc-fh-tabs|_gcNavBk|gc-pu-sat|_gcFieldHubBtn|_gcMicBtn)$/.test(e.id) && cs(e).position === 'fixed' && shown(e)).filter(e => { const r = e.getBoundingClientRect(); return r.width * Math.min(r.height, vh) >= 0.45 * vw * vh; });
+    const L = [...document.body.children].filter(e => !/^(SCRIPT|STYLE|LINK)$/.test(e.tagName) && !/^(gc-fh-tabs|_gcNavBk|gc-pu-sat|_gcFieldHubBtn|_gcMicBtn)$/.test(e.id) && cs(e).position === 'fixed' && shown(e)).filter(e => { const r = e.getBoundingClientRect(); const w = Math.min(r.right, vw) - Math.max(r.left, 0), h = Math.min(r.bottom, vh) - Math.max(r.top, 0); return w > 0 && h > 0 && w * h >= 0.45 * vw * vh; });
     L.sort((a, b) => (+cs(a).zIndex || 0) - (+cs(b).zIndex || 0) || ([...document.body.children].indexOf(a) - [...document.body.children].indexOf(b)));
     return L[L.length - 1] || null;
   }
@@ -98,7 +98,7 @@ const LIB = `window.__pu = (() => {
     });
     const main = [...L.children].filter(c => shown(c) && !c.classList.contains('gc-pu-bar')).sort((x, y) => { const a = x.getBoundingClientRect(), b = y.getBoundingClientRect(); return b.width * b.height - a.width * a.height; })[0];
     const cards = main ? [{ rad: cs(main).borderTopLeftRadius, w: Math.round(main.getBoundingClientRect().width), vw: innerWidth }] : [];
-    const titleOk = (() => { const h = [...L.querySelectorAll('*')].filter(e => { if (!shown(e) || e.closest('button')) return false; let d = ''; for (let c = e.firstChild; c; c = c.nextSibling) if (c.nodeType === 3) d += c.nodeValue; return /[A-Za-z]{3}/.test(d) && parseFloat(cs(e).fontSize) >= 17 && e.getBoundingClientRect().height > 0; })[0]; return h ? { t: txt(h).slice(0, 40), y: Math.round(h.getBoundingClientRect().top) } : null; })();
+    const titleOk = (() => { const h = [...L.querySelectorAll('*')].filter(e => { if (!shown(e) || e.closest('button')) return false; let d = ''; for (let c = e.firstChild; c; c = c.nextSibling) if (c.nodeType === 3) d += c.nodeValue; return /[A-Za-z]{3}/.test(d) && (parseFloat(cs(e).fontSize) >= 17 || (parseFloat(cs(e).fontSize) >= 15 && +cs(e).fontWeight >= 700)) && e.getBoundingClientRect().height > 0; })[0]; return h ? { t: txt(h).slice(0, 40), y: Math.round(h.getBoundingClientRect().top) } : null; })();
     const tabsHit = tabs && shown(tabs) ? (() => { const r = tabs.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width * 0.3, r.top + r.height / 2); return !!h && tabs.contains(h); })() : null;
     return { id: L.id, cls: String(L.className).slice(0, 60), bg: cs(L).backgroundColor, bgLum: bgc ? Math.round(lum(bgc) * 100) / 100 : null, bgA: bgc ? bgc[3] : 0, backs, nText: n, bad: bad.slice(0, 8), nBad: bad.length, cards, title: titleOk, tabsHit, S, tTop: Math.round(tTop) };
   }
@@ -118,6 +118,12 @@ const LIB = `window.__pu = (() => {
   return { panel, scrollEnd, lastBtn, top, sat, box, hits, txt, shown, ratio, rgb, closeish };
 })();`;
 
+/* the 🎤 / 💎 / 💬 buttons: docked (not floating), never over another button */
+const FLOATCHK = () => { const P = window.__pu; const ids = ['_gcMicBtn', '_gcFieldHubBtn', '_gcJobMsgFab'];
+  const out = []; ids.forEach(id => { const f = document.getElementById(id); if (!f || !P.shown(f)) return; const r = f.getBoundingClientRect(); const docked = !!f.closest('#gc-pu-dock');
+    const under = [...document.querySelectorAll('button,a[href],[role=button],input,select')].filter(b => b !== f && !f.contains(b) && !b.contains(f) && P.shown(b) && !b.closest('#gc-pu-dock')).filter(b => { const q = b.getBoundingClientRect(); return q.width > 0 && q.left < r.right && r.left < q.right && q.top < r.bottom && r.top < q.bottom && document.elementFromPoint(Math.max(q.left, r.left) + 2, Math.max(q.top, r.top) + 2) !== b; }).map(b => P.txt(b).slice(0, 20));
+    const dk = document.getElementById('gc-pu-dock'), bg = dk ? getComputedStyle(dk).backgroundColor : '';
+    out.push({ id, docked, y: Math.round(r.top), opaqueDock: /rgb\(255, 255, 255\)/.test(bg), under: docked ? [] : under }); }); return out; };
 const OPEN = [];
 async function phone(who, email){
   const c = await H.computer(who, { build, mobile: true, init: INIT }); OPEN.push(c);
@@ -163,6 +169,8 @@ async function checkPanel(c, who, name, open, opt = {}){
   ok(bk.length > 0, `${who} ${name}: a ‹ Back / ✕ Close below the status bar (y ≥ ${p.S}), ≥ 44 x 44, that a tap reaches`, p.backs);
   ok(!p.backs.some(b => b.y < p.S - 0.5 && b.hit), `${who} ${name}: no Back / Close under the status bar`, p.backs);
   ok(p.title && p.title.y >= p.S - 1, `${who} ${name}: the title is below the status bar`, p.title);
+  const nb = await c.ev(() => { const b = document.getElementById('_gcNavBk'); return !!b && getComputedStyle(b).display !== 'none'; });
+  ok(!nb, `${who} ${name}: one Back only (no floating "‹ Back" stacked on the page's own)`);
   ok(p.nText >= 3 && p.nBad === 0, `${who} ${name}: text contrast ≥ 4.5:1 (${p.nText} texts; colored buttons aside)`, p.bad);
   if (p.tabsHit !== null) ok(p.tabsHit, `${who} ${name}: the bottom bar is there and tappable`);
   await c.ev(() => window.__pu.scrollEnd()); await sleep(500);
@@ -195,6 +203,8 @@ try {
     ok(r.after && r.card && r.card.y >= r.S && r.head && r.card.y >= r.head.b - 1, 'Field home: the 🔔 "Get your approvals" card is under the GrayCo Field header, below the status bar', r);
     ok(r.head && r.head.y + 4 < r.S + 30 && r.headText && r.headText.y >= r.S - 1, 'Field home: the header text is below the status bar, no blank gap above it', r);
     await shot(c, 'owner_home');
+    const fl = await c.ev(new Function('return (' + FLOATCHK.toString() + ')()'));
+    if (TAG !== 'before') ok(fl.length && fl.every(x => x.docked && x.opaqueDock && !x.under.length), 'Field home: the 🎤 / 💎 buttons are docked above the bottom bar, over no tile', fl);
   }
   /* notes stack */
   {
@@ -263,6 +273,8 @@ try {
     ok(r.vsw <= r.vcw && new Set(r.views.map(v => v.y)).size >= 2, `${who} Leads: the views wrap into rows (no sideways strip)`, { sw: r.vsw, cw: r.vcw });
     ok(r.views.filter(v => v.on).length === 1 && /rgb\(36, 25, 104\)/.test(r.views.find(v => v.on).bg), `${who} Leads: the chosen view is dark`, r.views.filter(v => v.on));
     ok(r.chips.length >= 4 && r.chsw <= r.chcw && r.chips.every(b => b.r <= r.vw && b.h >= 44 && b.sw <= b.cw), `${who} Leads: the filter chips wrap, each ≥ 44 px, inside the screen`, { sw: r.chsw, cw: r.chcw, chips: r.chips.filter(b => !(b.r <= r.vw && b.h >= 44)) });
+    const fl = await c.ev(new Function('return (' + FLOATCHK.toString() + ')()'));
+    if (TAG !== 'before') ok(fl.length && fl.every(x => x.docked && x.opaqueDock && !x.under.length), `${who} Leads: the 🎤 / 💎 buttons are docked above the bottom bar, over no button`, fl);
     if (r.pill && TAG !== 'before') ok(r.pill.inHead, `${who} Leads: the COI / W-9 pill rides in the header, not over the page`, r.pill);
     return r;
   }
@@ -285,6 +297,22 @@ try {
     const f2 = await a.ev(() => { const b = document.getElementById('_fsAdd'); if (!b) return null; const tabs = document.getElementById('gc-fh-tabs'); const tt = tabs.getBoundingClientRect().top; const P = window.__pu; return { ...P.box(b), tt: Math.round(tt), hit: P.hits(b), rows: [...document.querySelectorAll('._fsRow')].length }; });
     await shot(a, 'owner_schedulepage_fab');
     if (TAG !== 'before') ok(f2 && f2.b <= f2.tt && f2.b >= f2.tt - 110 && f2.hit, 'the Schedule page: "+ Add to Schedule" sits at the bottom just above the bottom bar (not mid-screen), tappable', f2);
+  }
+  P.push(await checkPanel(a, 'OWNER', 'messages', async () => { await a.ev(() => { if (window._gcOpenJobMessages) window._gcOpenJobMessages('P1'); }); }));
+  /* ☑ To-Do (a page of its own or the desk To-Do): scrolled to the end, its last button is above the bottom bar */
+  {
+    await home(a);
+    await a.ev(() => { const b = document.querySelector('#_gcJobPick [data-pmf-a="todo"],#_gcJobPick [data-ra-a="todo"]'); if (b) b.click(); else if (window._gcTD2 && window._gcTD2.openField) window._gcTD2.openField(); });
+    await sleep(2800);
+    const t = await a.ev(() => { const P = window.__pu, L = P.top(); const root = L && !/_gcJobPick/.test(L.id) ? L : document.querySelector('main'); if (!root) return null;
+      [root, ...root.querySelectorAll('*')].forEach(e => { if (/(auto|scroll)/.test(getComputedStyle(e).overflowY)) e.scrollTop = e.scrollHeight; }); window.scrollTo(0, document.documentElement.scrollHeight);
+      return { root: root.id || root.tagName, cls: String(root.className).slice(0, 40) }; });
+    await sleep(600);
+    const lb = await a.ev(r => { const P = window.__pu; const root = r && r.root === 'MAIN' ? document.querySelector('main') : P.top(); const tabs = document.getElementById('gc-fh-tabs'), dk = document.getElementById('gc-pu-dock'); const tTop = Math.min(tabs ? tabs.getBoundingClientRect().top : innerHeight, dk && P.shown(dk) ? dk.getBoundingClientRect().top : innerHeight);
+      const b = [...root.querySelectorAll('button,a[href],[role=button]')].filter(x => P.shown(x) && x.getBoundingClientRect().width > 0 && !x.closest('.gc-pu-bar')).pop(); if (!b) return null; const q = b.getBoundingClientRect(); return { t: P.txt(b).slice(0, 20), b: Math.round(q.bottom), tTop: Math.round(tTop), hit: P.hits(b) }; }, t);
+    console.log('    OWNER todo: ' + JSON.stringify(t) + ' last ' + JSON.stringify(lb));
+    await shot(a, 'owner_todo_end');
+    if (TAG !== 'before') ok(lb && lb.b <= lb.tTop + 0.5 && lb.hit, 'To-Do: scrolled to the end, the last button is above the bottom bar and the dock, and tappable', lb);
   }
   P.push(await checkPanel(a, 'OWNER', 'problemreports', () => a.ev(() => window._gcReportProb.list()), { cls: 'gc-rpb', cardOk: true }));
   P.push(await checkPanel(a, 'OWNER', 'away', () => a.ev(() => window._gcAway.open())));
@@ -321,6 +349,9 @@ try {
     ok(!dk.cls.length, 'DESK: no phone classes on the page', dk.cls);
     ok(dk.views && dk.views !== 'grid', 'DESK: the Leads views are the same strip as before (not the phone grid)', dk.views);
   }
+  const gm = await d.ev(() => { const g = document.getElementById('_gConnBar'); if (!g || !g.getClientRects().length) return null; const r = g.getBoundingClientRect(); const tb = [...document.querySelectorAll('#gc-topbar button, #_masterSearch button, #_masterSearch input')].filter(b => b.getClientRects().length).filter(b => { const q = b.getBoundingClientRect(); return q.left < r.right && r.left < q.right && q.top < r.bottom && r.top < q.bottom; }).map(b => (b.textContent || b.placeholder || '').trim().slice(0, 12)); const go = document.getElementById('_gConnGo'); return { top: Math.round(r.top), covered: tb, go: go && [getComputedStyle(go).color, getComputedStyle(go).backgroundColor] }; });
+  console.log('    DESK Google bar: ' + JSON.stringify(gm));
+  if (gm && TAG !== 'before') ok(!gm.covered.length, 'DESK: the "Connect Google" bar covers none of the top bar\'s buttons', gm);
   ok(!d.errs.length, 'DESK: no page errors', d.errs);
 } catch (e) {
   ok(false, 'the test ran to the end', String(e && e.stack || e).slice(0, 600));
