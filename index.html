@@ -51961,7 +51961,13 @@ function docFingerprint(d){
   return [d.id, d.name||'', d.size||0, d.uploaded||'', d.type||'', d.pid||'', d.cat||''].join('|');
 }
 
+/* QA gate 11/19: on a new device (or after its storage was cleared) the documents came down with the job lists, and the first
+   push — before the first document pull had fingerprinted them — sent every one of them back up (360–580 doc:* rows, the same
+   documents the cloud has, from the owner's phone on one bar). Documents go up once this page has pulled them once (or after
+   3 minutes whatever happened, so a receipt saved here is never held for good). */
+var _docsPulled = false, _docsT0 = Date.now();
 async function pushDocs(){
+  if(!_docsPulled && Date.now() - _docsT0 < 180000) return;
   var docs = await idbGet('projectDocs');
   if(!Array.isArray(docs) || !docs.length) return;
   for(var i=0; i<docs.length; i++){
@@ -51988,7 +51994,8 @@ async function pullDocs(){
   var r = await fetch(SB_URL+'/rest/v1/gc_kv?key=like.'+_DOC_PREFIX+'*&select=key,updated_at',
     {headers: {'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY}});
   var rows = await r.json();
-  if(!Array.isArray(rows) || !rows.length) return false;
+  if(!Array.isArray(rows)) return false;
+  if(!rows.length){ _docsPulled = true; return false; }
 
   var changed = rows.filter(function(row){ return _docSeen[row.key] !== row.updated_at; });
   /* APPLAG (QA gate): the upload fingerprints (gc_doc_snap, localStorage) were gone — a full store, or the files sweep clearing
@@ -52000,7 +52007,7 @@ async function pullDocs(){
     if(Array.isArray(_locD)) _locD.forEach(function(d){ if(d && d.id && _docSnap[d.id] == null && _seenNow[_DOC_PREFIX + d.id]){ _docSnap[d.id] = docFingerprint(d); _fill++; } });
     if(_fill) _saveDocSnap();
   }catch(e){}
-  if(!changed.length) return false;
+  if(!changed.length){ _docsPulled = true; return false; }
 
   var local = await idbGet('projectDocs');
   if(!Array.isArray(local)) local = [];
@@ -52025,6 +52032,7 @@ async function pullDocs(){
   merged.forEach(function(d){ try{ if(d && d.id) _docSnap[d.id] = docFingerprint(d); }catch(e){} });
   _saveDocSnap();
   try{ _applyOrQueue('projectDocs', merged); }catch(e){}
+  _docsPulled = true;
   console.log('[GC Sync] Documents updated from cloud: '+changed.length+' (now '+merged.length+' total).');
   try{ await window._gcFlagBigDocs(); }catch(e){}
   return true;
@@ -94605,6 +94613,18 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
 
   // ── Commission: earned on job completion, paid the FOLLOWING period ──────
   async function queue(){ var q=await window.idbGet(COMM); return Array.isArray(q)?q:[]; }
+  var _cloudQ=null;
+  async function cloudQueue(){
+    if(_cloudQ) return _cloudQ;
+    try{
+      var r=await fetch(SB_URL+'/rest/v1/gc_kv?key=eq.'+COMM+'&select=value',{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+      if(!r || !r.ok) return null;
+      var rows=await r.json(); if(!Array.isArray(rows)) return null;
+      var v=rows[0] ? rows[0].value : []; if(typeof v==='string'){ try{ v=JSON.parse(v); }catch(e){ v=null; } }
+      if(rows.length && !Array.isArray(v)) return null;
+      _cloudQ=v||[]; return _cloudQ;
+    }catch(e){ return null; }
+  }
   async function saveQueue(q){
     await window.idbSet(COMM, q);
     try{ if(window._supaUpsert) window._supaUpsert(COMM, q); }catch(e){}
@@ -94622,6 +94642,11 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
        devices were merged into the cloud list: 584 records for 51 jobs (up to 13 each), ~1 KB more on every open. A voided
        one stays voided (never brought back as owed), and the id is the job's, so two devices queueing it at once make ONE. */
     if(q.some(function(c){ return c && c.pid===projectId; })) return null; // already queued (or voided)
+    /* this list is not among the lists a device pulls: its own copy has only what IT queued — so the cloud's copy is looked at
+       too (read once per open, kept in memory, nothing written); if it cannot be read, nothing is queued now (the next open
+       looks again) */
+    var cq=await cloudQueue(); if(!cq) return null;
+    if(cq.some(function(c){ return c && c.pid===projectId; })) return null;
 
     var closedOn = opts.closedOn || proj.completionDate || proj.endDate || ymd(new Date());
     var earnedPeriod = window._gcPayPeriodContaining(closedOn);
@@ -98004,9 +98029,10 @@ window._gcSupplierTask = async function(){
 
   function push(l){
     try{ localStorage.setItem('gc_office_tasks', JSON.stringify(l)); }catch(e){}
-    try{ if(window._gcOfficeTasksPush) window._gcOfficeTasksPush(); }catch(e){}
     try{ if(window._gcApplyOrQueue) window._gcApplyOrQueue('gc_office_tasks', l); }catch(e){}
-    try{ if(window._supaUpsert) window._supaUpsert('gc_office_tasks', l); }catch(e){}
+    /* the to-do list goes up ONE way: merged with the cloud's (it also went up raw, unmerged, a second time — 733 KB from a
+       phone, and a raw copy can drop another person's new to-do); the raw upload only where the merged push is missing */
+    try{ if(window._gcOfficeTasksPush) window._gcOfficeTasksPush(); else if(window._supaUpsert) window._supaUpsert('gc_office_tasks', l); }catch(e){}
   }
 };
 
