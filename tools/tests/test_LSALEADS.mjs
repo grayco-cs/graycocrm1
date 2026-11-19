@@ -94,6 +94,7 @@ try {
   const pi = POSTS.find(p => p.q === 'lsaintake');
   ok('no rating needed: 💾 Save → ?lsaintake { rating unsure, the description, the address, action admin }', pi && pi.body.leadId === 'LI-lsa1' && pi.body.rating === 'unsure' && pi.body.action === 'admin' && !pi.body.pmEmail && /roof leak/.test(pi.body.desc) && /12 Oak/.test(pi.body.address), pi);
   ok('the form closes', await O.ev(() => !document.getElementById('gc-in-ov')));
+  ok('patch MKTOFFICE: the intake asks "How did you hear about us?" (Google LSA preselected) and sends it', pi && pi.body.howHeard === 'Google LSA', pi && pi.body);
   POSTS.length = 0; await O.ev(() => window._gcLsaCalls.intake('LI-lsa0')); await sleep(500);
   await O.page().click('#gc-in-ov [data-in-r="good"]'); await O.page().click('#gc-in-ov [data-in-go="admin"]'); await sleep(1000);
   ok('👍 + Save → ?lsaintake rating good, action admin', POSTS.some(p => p.q === 'lsaintake' && p.body.leadId === 'LI-lsa0' && p.body.action === 'admin' && p.body.rating === 'good'), POSTS);
