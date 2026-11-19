@@ -7714,6 +7714,119 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   setTimeout(checkVersion, 8000);             // and shortly after load
 })();
 </script>
+<script id="gc-patch-regfix-stalegate">
+/* __GC_PATCH_STALEGATE__ (patch REGFIX, 11/19) — an OUT-OF-DATE copy of the CRM does not run the machine's own sweeps or
+   upload shared lists.
+   11/19 04:14Z the owner's PC opened on a cached r36c (last used 11-16) while r36p was live. Its timers re-posted 27
+   register lines and its duplicate fold folded 43 live supplier-bill lines into copies that had been deleted on 11-17 —
+   all from its stale local data, before it reloaded at 04:20. 44 lines ($125,064.44) left the register.
+   The rule now: while /version.txt on the server is NEWER than this page's build ("A newer version is ready"),
+     • the automatic duplicate fold, the register de-dupe, the accounting reconcile (and any sweep that asks
+       _gcStaleGate.holdSweeps()) do not run;
+     • a write of a shared list to the cloud (_supaUpsert / _supaUpsertNow) is not sent, unless a PERSON just pressed or
+       typed something (a real tap / key in the last 15 s): a person's own save still goes, through the same merge guards
+       as always. Device reports (boot / perf / activity) always go.
+     • the update bar asks, and the next tap on a menu or tab reloads into the live build.
+   Until the first answer from /version.txt (normally under a second; at most 20 s, then it opens up) the same hold
+   applies, and a held upload is sent the moment the answer says this build is current.
+   Only an OLDER build is held: a page newer than the server (a test copy, mid-deploy) is never held.
+   This protects every device from the first build that has it on; a copy older than this build has no such gate.
+   Console: _gcStaleGate.state() / .info()   Off on this device: localStorage gc_stalegate_off = '1'. */
+(function(){
+'use strict';
+var W = window;
+if (W._gcStaleGate) return;
+var off = false; try { off = W.localStorage.getItem('gc_stalegate_off') === '1'; } catch (e) {}
+var NST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, NSI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval, NF = W.fetch;
+var s = function(v){ return v == null ? '' : String(v); };
+var ST = { state: off ? 'current' : 'unknown', mine: s(W.__GC_BUILD_ID__), live: '', checkedAt: 0, tries: 0, held: 0, passed: 0, heldKeys: {}, sweepsHeld: 0, since: Date.now() };
+var waiting = [];          /* uploads held while the answer is not in yet: [{f, self, args, res, rej}] */
+var lastPerson = 0;
+try {
+  ['pointerdown', 'mousedown', 'touchstart', 'keydown'].forEach(function(ev){
+    W.addEventListener(ev, function(e){ if (e && e.isTrusted !== false) lastPerson = Date.now(); }, true);
+  });
+} catch (e) {}
+function person(){ return Date.now() - lastPerson < 15000; }
+function num(v){ var m = /^(\d+)\.(\d+)(?:-(\d{4}-\d\d-\d\d))?(.*)$/.exec(s(v).trim()); return m ? [+m[1], +m[2], m[3] || '', m[4] || ''] : null; }
+function older(mine, live){
+  try { if (W._gcBootWatch && typeof W._gcBootWatch.older === 'function') return !!W._gcBootWatch.older(mine, live); } catch (e) {}
+  mine = s(mine).trim(); live = s(live).trim(); if (!mine || !live || mine === live) return false;
+  var a = num(mine), b = num(live); if (!a || !b) return false;
+  for (var i = 0; i < 4; i++) { if (a[i] < b[i]) return true; if (a[i] > b[i]) return false; }
+  return false;
+}
+/* keys that are this device's own report, never a shared list */
+var OWN = /^(gc_bootrep_|gc_perfrep_|gc_adm_dev_|gc_activity_|_probe_|gc_lead_seen__|gc_adm_dismiss__|gc_appr_seen|gc_datafull_report)/;
+function setState(v){
+  var was = ST.state; ST.state = v;
+  if (v === 'current' && waiting.length) {
+    var q = waiting; waiting = [];
+    q.forEach(function(w){ try { Promise.resolve(w.f.apply(w.self, w.args)).then(w.res, w.rej); } catch (e) { w.rej(e); } });
+  }
+  if (v === 'stale') {
+    var q2 = waiting; waiting = [];
+    q2.forEach(function(w){ ST.held++; ST.heldKeys[s(w.args[0])] = Date.now(); w.rej(new Error('held: this copy of the CRM is out of date — update to save')); });
+    if (was !== 'stale') { try { console.warn('[GC] STALEGATE: this copy (' + ST.mine + ') is older than the live CRM (' + ST.live + '). Sweeps and shared uploads are held until it updates.'); } catch (e) {} push(); }
+  }
+}
+function push(){
+  try { W.__GC_UPDATE_PENDING__ = true; } catch (e) {}          /* the next tap on a menu or tab reloads (existing rule) */
+  try {
+    var D = W.document; if (!D || !D.body) return;
+    var note = D.getElementById('gc-stalegate-note'); if (note) return;
+    note = D.createElement('div'); note.id = 'gc-stalegate-note'; note.setAttribute('data-gc-keep', '1'); note.setAttribute('role', 'alert');
+    note.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483646;background:#7c2d12;color:#fff;padding:10px 16px;font:700 13px/1.35 -apple-system,Segoe UI,Arial,sans-serif;text-align:center;cursor:pointer';
+    note.textContent = 'This copy of the CRM is out of date. Automatic saving to the shared CRM is paused until you update. Tap here to update now.';
+    note.addEventListener('click', function(){ try { if (W._gcBootWatch && W._gcBootWatch.update && W._gcBootWatch.update()) return; } catch (e) {} try { W.__GC_USER_WANTS_RELOAD__ = true; W.location.reload(); } catch (e) {} });
+    D.body.appendChild(note);
+  } catch (e) {}
+}
+function check(){
+  if (off) return Promise.resolve(ST.state);
+  ST.mine = s(W.__GC_BUILD_ID__) || ST.mine;
+  var quick = ''; try { quick = W._gcBootWatch && W._gcBootWatch.live ? W._gcBootWatch.live(60000) : ''; } catch (e) {}
+  var p = quick ? Promise.resolve(quick) : (typeof NF === 'function' ? NF.call(W, '/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r && r.ok ? r.text() : ''; }, function(){ return ''; }) : Promise.resolve(''));
+  return p.then(function(v){
+    v = s(v).trim().slice(0, 60); ST.tries++;
+    if (!v) { if (ST.state === 'unknown' && Date.now() - ST.since > 20000) setState('current'); return ST.state; }   /* no answer: open up after 20 s */
+    ST.live = v; ST.checkedAt = Date.now();
+    setState(older(ST.mine, v) ? 'stale' : 'current');
+    return ST.state;
+  });
+}
+function holdSweeps(){ if (off) return false; var h = ST.state !== 'current'; if (h) ST.sweepsHeld++; return h; }
+function gateUpload(f, self, args){
+  var key = s(args[0]);
+  if (off || ST.state === 'current' || OWN.test(key) || person()) { if (ST.state === 'stale') ST.passed++; return f.apply(self, args); }
+  if (ST.state === 'unknown') return new Promise(function(res, rej){ waiting.push({ f: f, self: self, args: args, res: res, rej: rej }); });
+  ST.held++; ST.heldKeys[key] = Date.now();
+  return Promise.reject(new Error('held: this copy of the CRM is out of date — update to save'));
+}
+function wrap(name){
+  var f = W[name];
+  if (typeof f !== 'function' || f.__staleGate) return;
+  var w = function(){ return gateUpload(f, this, arguments); };
+  try { Object.keys(f).forEach(function(k){ try { w[k] = f[k]; } catch (e) {} }); } catch (e) {}
+  w.__staleGate = true;
+  try { W[name] = w; } catch (e) {}
+}
+var n = 0;
+var iv = NSI.call(W, function(){ wrap('_supaUpsert'); wrap('_supaUpsertNow'); if (++n > 600) clearInterval(iv); }, 250);   /* the outermost wrapper, for 2.5 min of other wrappers arriving */
+NSI.call(W, function(){ wrap('_supaUpsert'); wrap('_supaUpsertNow'); }, 30000);
+NSI.call(W, check, 120000);
+try { W.addEventListener('focus', check); W.document && W.document.addEventListener('visibilitychange', function(){ if (!W.document.hidden) check(); }); } catch (e) {}
+NST.call(W, check, 0); NST.call(W, check, 5000); NST.call(W, check, 21000);
+W._gcStaleGate = {
+  state: function(){ return ST.state; },
+  info: function(){ return JSON.parse(JSON.stringify(ST)); },
+  holdSweeps: holdSweeps,
+  stale: function(){ return ST.state === 'stale'; },
+  check: check,
+  _gate: gateUpload, _older: older, _person: function(t){ lastPerson = t == null ? Date.now() : t; }, _set: setState
+};
+})();
+</script>
 <style>html._fieldmode #gc-hub-btn{display:none !important;}</style><style id="_gcHideFabs">/* Only the diamond hub + voice stay out; everything else lives in the diamond menu. *//* HUBFIX: #_cashPos, #_ctrRevWrap, #_pmComm, #_subXtra, #_teamStat are the SCREENS 💎 Cash Position / contract review / PM Commission Setup / Sub Details / Team Status open, not floating buttons — hiding them made those items do nothing */#_gc1099Btn,#_gcAlertsBtn,#_gcContractBtn,#_gcDeskProfileBtn,#_gcFinBtn,#_gcHelpBtn,#_gcInvPill,#_gcMergeBtn,#_gcMergeProjBtn,#_gcMoveSchedBtn,#_gcMyFinBtn,#_gcPmApprovalPill,#_gcPmBell,#_gcPrintSchedBtn,#_gcProgPill,#_gcQAFab,#_gcRunOfficeBtn,#_gcSubPill,#_gcSubSearchBtn,#_officeHomeBtn,#_officeHomeWrap{display:none !important;}</style>
 </head>
   <body>
@@ -23242,6 +23355,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\u2601", label: "Check the cloud", fn: function(){ if(window._gcOpenCloudCheck) window._gcOpenCloudCheck(); } },
         { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
         { icon: "\uD83D\uDD0D", label: "Duplicate check", fn: function(){ if(window._gcOpenDupCheck) window._gcOpenDupCheck(); } },
+        { icon: "\u267B\uFE0F", label: "Restore 44 register lines", adminOnly: true, fn: function(){ if(window._gcRegRestore) window._gcRegRestore.open(); else alert("Still loading, try again in a moment."); } },   /* patch REGFIX */
         { icon: "\uD83D\uDCE5", label: "Import from QuickBooks (CSV)", fn: function(){ if(window._gcOpenQbCsvImport) window._gcOpenQbCsvImport(); } },
         { icon: "👤", label: "Card holders", adminOnly: true, fn: function(){ if(window._gcCardHolders) window._gcCardHolders.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "🔗", label: "QuickBooks ↔ CRM", adminOnly: true, fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
@@ -35109,6 +35223,8 @@ window._gcRemoveFromRegister = async function(recId){
 // amount+date+payee. Keeps the richer row (the one that carries a source link).
 window._gcDedupeRegister = async function(){
   try{
+    /* patch REGFIX: not on an out-of-date copy of the CRM */
+    try{ if(window._gcStaleGate && window._gcStaleGate.holdSweeps()){ if(window._gcStaleGate.state()==='unknown') setTimeout(function(){ window._gcDedupeRegister(); }, 20000); return; } }catch(_g){}
     /* the once-per-computer flag is gone: it is exactly why duplicates came back.
        __GC_NODUPES__ now keeps this true continuously. */
     var rows = (await _gcAc(EXP_KEY)) || [];
@@ -74030,6 +74146,8 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     try{
       var busy = window.__GC_IS_TYPING__===true || window.__GC_FORM_OPEN__===true || (typeof window.__GC_UNSAVED_TYPING__==='function' && window.__GC_UNSAVED_TYPING__());
       if(busy){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout)(window._gcReconcileAccounting, 20000); return; }
+      /* patch REGFIX: not on an out-of-date copy of the CRM (it only tries again; the 2-minute pass picks it up after the update) */
+      if(window._gcStaleGate && window._gcStaleGate.holdSweeps()){ if(window._gcStaleGate.state()==='unknown') (window.__GC_NATIVE_SETTIMEOUT__||setTimeout)(window._gcReconcileAccounting, 20000); return; }
     }catch(e){}
     return _recAcctReal.apply(this, arguments);
   };
@@ -121557,7 +121675,49 @@ window._gcInvIdKey = invKey;
 /* ═══════════════════════════ 2. FOLD (never delete) ═══════════════════════════ */
 var FOLDK='gc_folded', foldCache=null, foldAt=0;
 async function foldList(){ var l=await getList(FOLDK); foldCache=l; foldAt=Date.now(); return l; }
+/* patch REGFIX (11/19): a register row folded into a survivor that is DELETED (tombstoned / gc_deleted_gcAcctRegister),
+   or into one that is itself folded back into it (A into B and B into A), is NOT folded: it shows, it is kept, nothing drops it.
+   11/19 04:15Z an old cached copy folded 43 live supplier-bill lines into deleted copies and both went (44 lines, $125,064.44). */
+var _rfDelAt=0, _rfDel=null;
+function regDeleted(id){
+  id=s(id); if(!id) return false;
+  try{ if(window._gcIsTombstoned && window._gcIsTombstoned('gcAcctRegister', id)) return true; }catch(e){}
+  if(!_rfDel || Date.now()-_rfDelAt>5000){ _rfDelAt=Date.now(); _rfDel={}; try{ (JSON.parse(localStorage.getItem('gc_deleted_gcAcctRegister')||'[]')||[]).forEach(function(x){ _rfDel[String(x)]=1; }); }catch(e){} }
+  return !!_rfDel[id];
+}
+function rowDead(key, r){
+  if(!r) return true;
+  if(r.deleted===true || r._deleted===true) return true;
+  var ids=[r._id, r.id].filter(Boolean).map(String);
+  for(var i=0;i<ids.length;i++){
+    if(key==='gcAcctRegister'){ if(regDeleted(ids[i])) return true; }
+    else { try{ if(window._gcIsTombstoned && window._gcIsTombstoned(key, ids[i])) return true; }catch(e){} }
+  }
+  return false;
+}
+function regFoldOf(id){
+  if(!foldCache) return null; var sid=s(id);
+  for(var i=foldCache.length-1;i>=0;i--){ var f=foldCache[i]; if(f && !f.unfolded && f.list==='gcAcctRegister' && f.recordId===sid) return f; }
+  return null;
+}
+/* the row a register fold ends at: '' = folded with no survivor (a person's "not real"); null = the fold does not stand */
+function regFoldEnd(id){
+  var cur=s(id), seen={}; seen[cur]=1;
+  for(var hop=0; hop<12; hop++){
+    var f=regFoldOf(cur); if(!f) return hop ? cur : null;
+    var k=s(f.keptId); if(!k) return '';
+    if(seen[k] || regDeleted(k)) return null;       /* a cycle, or a deleted survivor */
+    seen[k]=1; cur=k;
+  }
+  return null;
+}
+window._gcRegFoldEnd = regFoldEnd;
 function folded(list, id){
+  if(!foldedRaw(list, id)) return false;
+  if(list!=='gcAcctRegister') return true;
+  return regFoldEnd(id)!==null;
+}
+function foldedRaw(list, id){
   if(!foldCache) return false;
   /* patch IDLETRIM: one index of the undo list (rebuilt when the list or its length changes); unfolded is checked live */
   if(!_itOff()){
@@ -121602,7 +121762,10 @@ function absorb(keep, gone){
     return Promise.resolve(out).then(function(list){
       if(!Array.isArray(list) || !foldCache || !foldCache.length) return list;
       var kl=key==='invoices'?'invs':key, any=false;
-      var keep=list.filter(function(r){ var id=r && (kl==='gcAcctRegister' ? (r._id||r.id) : (r.id||r._id)); var f=!!(id && folded(kl, String(id))); if(f) any=true; return !f; });
+      var here=null; if(kl==='gcAcctRegister'){ here={}; list.forEach(function(r){ if(r){ if(r._id) here[String(r._id)]=1; if(r.id) here[String(r.id)]=1; } }); }   /* patch REGFIX */
+      var keep=list.filter(function(r){ var id=r && (kl==='gcAcctRegister' ? (r._id||r.id) : (r.id||r._id)); var f=!!(id && folded(kl, String(id)));
+        if(f && here){ var end=regFoldEnd(id); if(end && !here[end]) f=false; }   /* patch REGFIX: never hide a row whose survivor is not on the list */
+        if(f) any=true; return !f; });
       return any ? keep : list;
     });
   }
@@ -121631,6 +121794,13 @@ window._gcFold = async function(key, keepId, dropIds, rule, reason, opts){
   key = key==='invoices' ? 'invs' : key;
   var list=await getList(key), idOf=function(r){ return s(r && (key==='gcAcctRegister' ? (r._id||r.id) : (r.id||r._id))); };
   var keep=list.find(function(r){ return idOf(r)===String(keepId); });
+  /* patch REGFIX: a timer never folds on an out-of-date copy of the CRM; and nothing is folded into a survivor that is gone */
+  try{ if(!opts.person && window._gcStaleGate && window._gcStaleGate.holdSweeps()){ console.warn('[GC] fold held: this copy of the CRM is older than the live one.'); return 0; } }catch(_g){}
+  if(s(keepId)){
+    var _why = !keep ? 'the row to keep is not on the list' : (rowDead(key, keep) ? 'the row to keep was deleted' : (folded(key, String(keepId)) ? 'the row to keep is itself folded away' : ''));
+    if(!_why && (dropIds||[]).some(function(i){ var f=key==='gcAcctRegister' ? regFoldOf(keepId) : null; return f && s(f.keptId)===s(i); })) _why='that would fold two rows into each other';
+    if(_why){ console.warn('[GC] fold refused ('+key+' '+keepId+'): '+_why+'.'); return 0; }
+  }
   var drop={}; (dropIds||[]).forEach(function(i){ if(String(i)!==String(keepId)) drop[String(i)]=1; });
   var gone=list.filter(function(r){ return r && drop[idOf(r)]; });
   if(!gone.length) return 0;
@@ -121652,6 +121822,18 @@ window._gcFold = async function(key, keepId, dropIds, rule, reason, opts){
   if(fch){ await saveList(FOLDK, F, 'fold duplicates'); foldCache=F; }   /* patch SYNCFIX */
   await saveList(key, kept, 'fold duplicates');
   return gone.length;
+};
+/* patch REGFIX: un-fold (or fold again) several entries in one write; returns how many changed */
+window._gcUnfoldMany = async function(foldIds, why, back){
+  var want={}; (foldIds||[]).forEach(function(i){ want[String(i)]=1; });
+  var F=await foldList(), n=0;
+  F.forEach(function(f){
+    if(!f || !want[f.id]) return;
+    if(!back && !f.unfolded){ f.unfolded=true; f.unfoldedAt=nowISO(); f.unfoldedBy=me().name||''; f.unfoldWhy=String(why||''); f.updatedAt=nowISO(); n++; }
+    else if(back && f.unfolded){ f.unfolded=false; f.refoldedAt=nowISO(); f.refoldedBy=me().name||''; f.updatedAt=nowISO(); n++; }
+  });
+  if(n){ await saveList(FOLDK, F, back?'fold again':'undo fold'); foldCache=F; }
+  return n;
 };
 window._gcUnfold = async function(foldId){
   var F=await foldList(); var f=F.find(function(x){ return x && x.id===foldId; });
@@ -121684,6 +121866,8 @@ window._gcDupCheck = async function(opts){
   opts=opts||{};
   await foldList();
   var invs=(await getList('invs')).filter(Boolean), exps=(await getList('expenses')).filter(Boolean), reg=(await getList('gcAcctRegister')).filter(Boolean);
+  /* patch REGFIX: a deleted row is never grouped, so it can never be picked as the one to keep */
+  invs=invs.filter(function(r){ return !rowDead('invs', r); }); exps=exps.filter(function(r){ return !rowDead('expenses', r); }); reg=reg.filter(function(r){ return !rowDead('gcAcctRegister', r); });
   var out=[];
   function add(list, rule, g, strong, note){
     var keep=pickKeep(g, list);
@@ -121727,6 +121911,7 @@ window._gcDupCheck = async function(opts){
 /* the automatic part: only STRONG groups, never a row a person typed, every fold written to gc_folded */
 window._gcAutoFold = async function(){
   if(window.__GC_IS_TYPING__ || window.__GC_FORM_OPEN__) return 0;
+  try{ if(window._gcStaleGate && window._gcStaleGate.holdSweeps()) return 0; }catch(_g){}   /* patch REGFIX */
   var r=await window._gcDupCheck({quiet:true}), n=0;
   for(var i=0;i<r.groups.length;i++){
     var g=r.groups[i]; if(!g.strong) continue;
@@ -121867,7 +122052,7 @@ function collapse(key, list){
     } else if(kl==='expenses'){
       twin=out.find(function(x){ return x.id!==r.id && ((x.subInvId && x.subInvId===r.subInvId && isCostRow(x) && isCostRow(r) && cents(amtOf(x))===cents(amtOf(r))) || (!handEntered(x) && !handEntered(r) && isCostRow(x) && isCostRow(r) && x.pid===r.pid && cents(amtOf(x))===cents(amtOf(r)) && ymd(x.date)===ymd(r.date) && nk(x.desc)===nk(r.desc) && nk(party(x))===nk(party(r)) && s(x.type)===s(r.type))); });
     } else if(kl==='gcAcctRegister'){
-      twin=out.find(function(x){ return s(x._id||x.id)!==s(r._id||r.id) && x.srcInvId && x.srcInvId===r.srcInvId && cents(amtOf(x))===cents(amtOf(r)) && !!x.isIncome===!!r.isIncome; });
+      twin=rowDead(kl, r) ? null : out.find(function(x){ return s(x._id||x.id)!==s(r._id||r.id) && !rowDead(kl, x) && x.srcInvId && x.srcInvId===r.srcInvId && cents(amtOf(x))===cents(amtOf(r)) && !!x.isIncome===!!r.isIncome; });   /* patch REGFIX: never a deleted twin */
     }
     if(!twin){ out.push(r); return; }
     var keep=oldest(twin, r), gone=keep===twin?r:twin;
@@ -122577,6 +122762,136 @@ window._gcJMenu = [
 console.log('[GC] Never allow duplicates (patch J): _gcDupCheck() · 💎 → Duplicate check · 💎 → Import from QuickBooks (CSV).');
 })();
 
+</script>
+<script id="gc-patch-regfix-restore">
+/* __GC_PATCH_REGRESTORE__ (patch REGFIX, 11/19) — 💎 → "Restore 44 register lines" (admin).
+   44 accounting-register lines left the register on 11/16 and 11/19 (one supplier bill each, all still in Sub Invoices as
+   paid): 43 were folded at 04:15–04:21Z into copies that had been deleted on 11/17, then those copies were removed as
+   deleted; CH Plumbing #1250 was folded into a copy that was folded back into it. Nothing else on the register stands for
+   them. The lines below are the exact rows from the 11/18 04:40Z copy of the register.
+   The screen shows each line, its bill, and what Restore would do (restore / already there / deleted on purpose — left
+   alone); Restore writes them back as a person's action and un-folds their gc_folded entries (kept, marked unfolded);
+   Undo takes exactly those lines off again and folds the entries back. Each restore is logged in gc_regrestore_log.
+   Console: _gcRegRestore.plan() */
+(function(){
+'use strict';
+var W = window;
+if (W._gcRegRestore) return;
+var KEY = 'gcAcctRegister', LOGK = 'gc_regrestore_log';
+var LINES = [{"id":"EXPmw3s6ayfsifh","po":"","_id":"EXPmw3s6ayfsifh","amt":3750,"pid":"","date":"2026-01-21","desc":"Altus Electric — QuickBooks bill #85388 — PANNEL SWAP","type":"expense","payee":"Altus Electric","amount":2000,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Altus Electric","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43w9krk05","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6bd5l7y0","po":"","_id":"EXPmw3s6bd5l7y0","amt":2555,"pid":"","date":"2026-02-09","desc":"Ross Home Services LLC — QuickBooks bill #1336 — 407C Refrigerant","type":"expense","payee":"Ross Home Services LLC","amount":1200,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Ross Home Services LLC","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wapo8me","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6bkp93r7","po":"","_id":"EXPmw3s6bkp93r7","amt":244.57,"pid":"","date":"2026-02-16","desc":"Tom Eubanks Lumber — QuickBooks bill #369502 — 3-1/4`` Primed M.E. Base 16' (85-59)","type":"expense","payee":"Tom Eubanks Lumber","amount":134.4,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wakepfd","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6cenuhs1","po":"","_id":"EXPmw3s6cenuhs1","amt":2748.63,"pid":"","date":"2026-03-03","desc":"ABC Supply — QuickBooks bill #2007011749-001 — Max Roofing Maxfelt 15 10SQ/RL","type":"expense","payee":"ABC Supply","amount":1237.5,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wbg7bm0","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6d85vfdy","po":"","_id":"EXPmw3s6d85vfdy","amt":12087.63,"pid":"","date":"2026-03-17","desc":"L&W Supply — QuickBooks bill #1017240209-001 — 8\" x 8' Stud 1-5/8\" Flange 16ga","type":"expense","payee":"L&W Supply","amount":6745.2,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"L&W Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wc8qlt4","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6dfpz2nz","po":"","_id":"EXPmw3s6dfpz2nz","amt":309.43,"pid":"","date":"2026-03-17","desc":"L&W Supply — QuickBooks bill #1017219460-002 — #8 x 1-1/4\" Grabber Flat Wafer Head Hi-Lo Thread Self Piercing Point GrabberGard 5M","type":"expense","payee":"L&W Supply","amount":220,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"L&W Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wcba4lf","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6e9943pk","po":"","_id":"EXPmw3s6e9943pk","amt":176.01,"pid":"","date":"2026-03-23","desc":"L&W Supply — QuickBooks bill #1017283343-001 — Dryvit Quarzputz Pastel Base 5g No tint. To be painted.","type":"expense","payee":"L&W Supply","amount":158,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"L&W Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wdl077y","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6f4eap6b","po":"","_id":"EXPmw3s6f4eap6b","amt":632.45,"pid":"","date":"2026-04-08","desc":"Tom Eubanks Lumber — QuickBooks bill #370584 — 2x8x16` #2 Yellow Pine (99) black stripe","type":"expense","payee":"Tom Eubanks Lumber","amount":253.3,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wdux0nb","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6fbro0v4","po":"","_id":"EXPmw3s6fbro0v4","amt":492.02,"pid":"","date":"2026-04-08","desc":"Tom Eubanks Lumber — QuickBooks bill #370586 — 2x4x10 #2 Spruce (93)","type":"expense","payee":"Tom Eubanks Lumber","amount":175.52,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wdj1ta6","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6fj4foa3","_id":"EXPmw3s6fj4foa3","amt":2300,"pid":"PRJmwf9iwz4k4","date":"2026-04-11","desc":"CH Plumbing — QuickBooks bill #1250 — 3161 Hwy 64 Ped. Office top out (2/3)","type":"expense","projPO":"O046","status":"paid","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","paidDate":"2026-06-10","projAddr":"6382 Stage Rd","projName":"New Office","srcInvId":"SUB_INVmw3s43wden8b8","updatedAt":"2026-11-16T16:32:28.892Z"},{"id":"EXPmw3s6fqdeouj","po":"","_id":"EXPmw3s6fqdeouj","amt":655.33,"pid":"","date":"2026-04-13","desc":"Tom Eubanks Lumber — QuickBooks bill #370661 — 11-7/8\" LVL Microlam two-18 footers","type":"expense","payee":"Tom Eubanks Lumber","amount":258.84,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43we5cu0c","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6fxudrrk","po":"","_id":"EXPmw3s6fxudrrk","amt":248.08,"pid":"","date":"2026-04-13","desc":"Tom Eubanks Lumber — QuickBooks bill #370678 — 2x6x10' #2 Yellow Pine (131) black stripe","type":"expense","payee":"Tom Eubanks Lumber","amount":191.04,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wejcih3","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6g5fu4k6","po":"","_id":"EXPmw3s6g5fu4k6","amt":74.64,"pid":"","date":"2026-04-14","desc":"SouthernCarlson — QuickBooks bill #3006118 — Nail 2-1/4in X.092 Eg Sm Dia ICB 8.0mm Pitch","type":"expense","payee":"SouthernCarlson","amount":35,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"SouthernCarlson","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wettnik","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6gkkksd6","po":"","_id":"EXPmw3s6gkkksd6","amt":130.61,"pid":"","date":"2026-04-20","desc":"SouthernCarlson — QuickBooks bill #3024034 — Coiled Strap 100ft 1-1/4in 18ga Simpson","type":"expense","payee":"SouthernCarlson","amount":119,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"SouthernCarlson","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wfluqsj","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6ht2g2g3","po":"","_id":"EXPmw3s6ht2g2g3","amt":2942.09,"pid":"","date":"2026-04-27","desc":"57 FLOORS — QuickBooks bill #29636 — SOLID 3/4 2 1/4 RED OAK SB RQ (bundle Size 19.69 sq ft)","type":"expense","payee":"57 FLOORS","amount":2480.94,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"57 FLOORS","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wgmq1lg","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6iux98av","po":"","_id":"EXPmw3s6iux98av","amt":946.87,"pid":"","date":"2026-05-11","desc":"Tom Eubanks Lumber — QuickBooks bill #371299 — 2x6x16 #2 Yellow Pine (134) black stripe","type":"expense","payee":"Tom Eubanks Lumber","amount":285.6,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43whdkfge","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6j9vkjff","po":"","_id":"EXPmw3s6j9vkjff","amt":266.69,"pid":"","date":"2026-05-12","desc":"Tom Eubanks Lumber — QuickBooks bill #371373 — 11-7/8\" LVL Microlam 2-18' Deliver to","type":"expense","payee":"Tom Eubanks Lumber","amount":243,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wih01if","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6joo7zrj","po":"","_id":"EXPmw3s6joo7zrj","amt":21432.79,"pid":"","date":"2026-05-15","desc":"ABC Supply — QuickBooks bill #2009583107-001 — ΜΗ 060 ΤΡΟ 10'X100' White","type":"expense","payee":"ABC Supply","amount":5160,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wia9h2n","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6jvueffa","po":"","_id":"EXPmw3s6jvueffa","amt":1380.87,"pid":"","date":"2026-05-15","desc":"ABC Supply — QuickBooks bill #20097725590-001 — Drain Aluminator 2.75X12 CR","type":"expense","payee":"ABC Supply","amount":1258.2,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wigwczi","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6k3a2hza","po":"","_id":"EXPmw3s6k3a2hza","amt":208.49,"pid":"","date":"2026-05-15","desc":"ABC Supply — QuickBooks bill #2009788281-001 — Drain Roof 4\" PVC W/Plast Dome","type":"expense","payee":"ABC Supply","amount":128.58,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wi1ltxv","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6kav924e","po":"","_id":"EXPmw3s6kav924e","amt":7170.02,"pid":"","date":"2026-05-18","desc":"Tom Eubanks Lumber — QuickBooks bill #371454 — 4x8 SmartSide","type":"expense","payee":"Tom Eubanks Lumber","amount":5355,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wiehpqg","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6kxeh86f","po":"","_id":"EXPmw3s6kxeh86f","amt":2307,"pid":"","date":"2026-05-19","desc":"ABC Supply — QuickBooks bill #2009802480-001 — MH 4\" Aluminator Drain TPO Flange Orig Inv#: 2009583107-001","type":"expense","payee":"ABC Supply","amount":1198.5,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wj6p7zb","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6l4z780c","po":"","_id":"EXPmw3s6l4z780c","amt":368.32,"pid":"","date":"2026-05-19","desc":"Tom Eubanks Lumber — QuickBooks bill #371496 — 2-1/4 Clear 3 Step Casing (blue79)","type":"expense","payee":"Tom Eubanks Lumber","amount":250.74,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wjxnurk","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6mdorr9x","po":"","_id":"EXPmw3s6mdorr9x","amt":92.19,"pid":"","date":"2026-05-26","desc":"ABC Supply — QuickBooks bill #2010088752-001 — ΜΗ 060 ΤΡΟ 10'X100' White Orig Inv#: 2009583107-001","type":"expense","payee":"ABC Supply","amount":5160,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wlw92su","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6ml7lvn4","po":"","_id":"EXPmw3s6ml7lvn4","amt":900,"pid":"","date":"2026-06-04","desc":"Nashville Commercial Window &amp; Door LLC. — QuickBooks bill #1101 — Work shall include: Removal and disposal of one (1) existing insulated glass unit. Verification of field dimensions prior to fabrication. Furnishing of one (1) new clear over clear tempered insulated glass unit. Installation of the new insulated glass unit utilizing the existing glazing system and components where suitable. Replacement of glazing materials as required for proper installation. Adjustment and alignment of glass to ensure proper fit, performance, and appearance. Final cleaning of installed glass and work area upon completion. Glass Size: Insulated Glass Unit: 27-1/2\" Wide x 117\" Tall Glass Type: Clear Over Clear Tempered Insulated Glass All work shall be performed in a professional manner in accordance with industry standards and applicable building requirements. Any concealed conditions, unforeseen site conditions, damaged framing, or additional repairs not specifically identified herein shall be considered outside the scope of this","type":"expense","payee":"Nashville Commercial Window &amp; Door LLC.","amount":1800,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Nashville Commercial Window &amp; Door LLC.","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wlhkoa5","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6ntk6lm7","po":"","_id":"EXPmw3s6ntk6lm7","amt":418,"pid":"","date":"2026-06-25","desc":"Jonathan Cabellero Rodriguez — QuickBooks bill #793615 — Labor","type":"expense","payee":"Jonathan Cabellero Rodriguez","amount":250,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Jonathan Cabellero Rodriguez","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43woeop1x","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6pp5ixeo","po":"","_id":"EXPmw3s6pp5ixeo","amt":7236.91,"pid":"","date":"2026-08-10","desc":"ABC Supply — QuickBooks bill #2013045509-001 — GAF SG Timb HDZ Weathered Wood 3/S","type":"expense","payee":"ABC Supply","amount":4988,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wrk3qza","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6pwnjn06","po":"","_id":"EXPmw3s6pwnjn06","amt":159.97,"pid":"","date":"2026-08-12","desc":"ABC Supply — QuickBooks bill #2013251716-001 — Lomanco PRO4-N Omniridge Pro 4'W/NL","type":"expense","payee":"ABC Supply","amount":107.5,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wsucpk9","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6q3w210t","po":"","_id":"EXPmw3s6q3w210t","amt":9310.8,"pid":"","date":"2026-08-12","desc":"ABC Supply — QuickBooks bill #2013165954-001 — GAF SG Timb HDZ Barkwood 3/S","type":"expense","payee":"ABC Supply","amount":5405,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wsmunk9","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6qy0pylj","po":"","_id":"EXPmw3s6qy0pylj","amt":3792.96,"pid":"","date":"2026-08-17","desc":"ABC Supply — QuickBooks bill #2013383625-001 — GAF SG Timb HDZ Charcoal 3/S","type":"expense","payee":"ABC Supply","amount":2415,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43ws6alef","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6r6maz2s","po":"","_id":"EXPmw3s6r6maz2s","amt":1747.13,"pid":"","date":"2026-08-18","desc":"Hurst Glass LLC — QuickBooks bill #1535 — Aluminum Frame with 1 way mirror pane Vision Kit into wood door, 1 @ $1,150.00","type":"expense","payee":"Hurst Glass LLC","amount":1150,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Hurst Glass LLC","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wtzlfdq","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6rlue2t0","po":"","_id":"EXPmw3s6rlue2t0","amt":3591.19,"pid":"","date":"2026-08-19","desc":"ABC Supply — QuickBooks bill #2013491452-001 — GAF SG Timb HDZ Charcoal 3/S","type":"expense","payee":"ABC Supply","amount":1955,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wtqhiyh","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6sg00q8g","po":"","_id":"EXPmw3s6sg00q8g","amt":995.64,"pid":"","date":"2026-08-20","desc":"ABC Supply — QuickBooks bill #2013577509-001 — Lomanco PRO4-N Omniridge Pro 4'W/NL","type":"expense","payee":"ABC Supply","amount":806.25,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wumjvpo","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6snbicjy","po":"","_id":"EXPmw3s6snbicjy","amt":9326.25,"pid":"","date":"2026-08-20","desc":"ABC Supply — QuickBooks bill #2013523073-001 — OC Oakridge AR Driftwood 3/SQ","type":"expense","payee":"ABC Supply","amount":7131.3,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wuzms4q","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6twknf5c","po":"","_id":"EXPmw3s6twknf5c","amt":283.16,"pid":"","date":"2026-08-28","desc":"Gates Lumber Company — QuickBooks bill #12560300 — STOCK EXTERIOR DOORS 2868 1-3/4 FSC BIRCH","type":"expense","payee":"Gates Lumber Company","amount":258,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Gates Lumber Company","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wxws00c","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6v59er3n","po":"","_id":"EXPmw3s6v59er3n","amt":2106.16,"pid":"","date":"2026-09-04","desc":"planHub — QuickBooks bill #CB-202609-129929 — Subcontractor Takeoff - 3 Years - Prorated Charges","type":"expense","payee":"planHub","amount":1919.06,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"planHub","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wyo8for","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6qqm2874","po":"","_id":"EXPmw3s6qqm2874","amt":49.19,"pid":"","date":"2026-09-25","desc":"Tom Eubanks Lumber — QuickBooks bill #373642 — 3x6x16 Deck Boards","type":"expense","payee":"Tom Eubanks Lumber","amount":31484.7,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:01.336Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43wsos9iq","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6xf2gyj9","po":"","_id":"EXPmw3s6xf2gyj9","amt":2070.1,"pid":"","date":"2026-09-25","desc":"Tom Eubanks Lumber — QuickBooks bill #373627 — 5/4x6x16 Std Treated RED (69)","type":"expense","payee":"Tom Eubanks Lumber","amount":1467.84,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x1cepo3","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6xmdo7k7","po":"","_id":"EXPmw3s6xmdo7k7","amt":1017.29,"pid":"","date":"2026-09-25","desc":"Tom Eubanks Lumber — QuickBooks bill #373691 — 5/4x6x16` Std Treated RED (69)","type":"expense","payee":"Tom Eubanks Lumber","amount":764.5,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Tom Eubanks Lumber","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x1pn3ws","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6xttux9e","po":"","_id":"EXPmw3s6xttux9e","amt":2800.73,"pid":"","date":"2026-09-28","desc":"ABC Supply — QuickBooks bill #2015049144-001 — GAF SG Timb HDZ Weathered Wood 3/S Orig Inv#: 2014277573-001","type":"expense","payee":"ABC Supply","amount":2784,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x1yauoe","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6yfiligs","po":"","_id":"EXPmw3s6yfiligs","amt":654.84,"pid":"","date":"2026-09-29","desc":"ABC Supply — QuickBooks bill #2015074504-001 — Alum 1-1/2X3-3/4 OF Drip Edge Black","type":"expense","payee":"ABC Supply","amount":570,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x2hytyr","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6ymwfgfe","po":"","_id":"EXPmw3s6ymwfgfe","amt":4193.83,"pid":"","date":"2026-09-29","desc":"ABC Supply — QuickBooks bill #2015049144-002 — GAF SG Timb HDZ Charcoal 3/S","type":"expense","payee":"ABC Supply","amount":3450,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x28gaxz","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6zggk6ha","po":"","_id":"EXPmw3s6zggk6ha","amt":173.85,"pid":"","date":"2026-09-30","desc":"Google LLC — QuickBooks bill #5696071659 — Usage","type":"expense","payee":"Google LLC","amount":158.4,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"Google LLC","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x353ckd","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"},{"id":"EXPmw3s6zvirvt9","po":"","_id":"EXPmw3s6zvirvt9","amt":10716.71,"pid":"","date":"2026-10-02","desc":"ABC Supply — QuickBooks bill #2015293715-001 — GAF SG Timb HDZ Charcoal 3/S","type":"expense","payee":"ABC Supply","amount":7424.64,"method":"payment","projPO":"","source":"subinvoice","status":"paid","vendor":"ABC Supply","savedAt":"2026-11-05T16:50:00.731Z","category":"Subcontractor","isIncome":false,"paidDate":"2026-11-05","projAddr":"","projName":"","srcInvId":"SUB_INVmw3s43x37jet6","direction":"out","updatedAt":"2026-11-17T18:00:22.637Z"}];
+function s(v){ return v == null ? '' : String(v); }
+function num(v){ var x = parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function money(n){ n = num(n); return (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowISO(){ return new Date().toISOString(); }
+function me(){ try { return (W._gcMeUserJSON ? W._gcMeUserJSON('{}') : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
+function idOf(r){ return s(r && (r._id || r.id)); }
+function amtOf(r){ return r ? (r.amt != null && r.amt !== '' ? r.amt : r.amount) : 0; }
+function cents(v){ return Math.round(Math.abs(num(v)) * 100); }
+function deleted(id){
+  id = s(id); if (!id) return false;
+  try { if (W._gcIsTombstoned && W._gcIsTombstoned(KEY, id)) return true; } catch (e) {}
+  try { return (JSON.parse(localStorage.getItem('gc_deleted_' + KEY) || '[]') || []).map(String).indexOf(id) >= 0; } catch (e) { return false; }
+}
+async function getList(k){ try { var v = await (W._gcAc && k === KEY ? W._gcAc(k) : W.idbGet(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+async function putList(k, list, why){
+  try { if (W._gcManualNow) W._gcManualNow(why); } catch (e) {}
+  try { await (k === KEY && W._gcAcW ? W._gcAcW(k, list) : W.idbSet(k, list)); } catch (e) {}
+  try { if (W._crm) W._crm[k] = list; } catch (e) {}
+  try { var up = W._supaUpsertNow || W._supaUpsert; if (up) await up(k, list); } catch (e) { try { console.warn('[GC] restore upload:', e && e.message || e); } catch (_e) {} }
+  if (k === KEY) { try { if (W._gcRegisterFlush) await W._gcRegisterFlush(); } catch (e) {} try { if (W._gcRefreshSpend) W._gcRefreshSpend(); } catch (e) {} }
+}
+function foldIdOf(line){ return 'FOLD_' + KEY + '_' + idOf(line); }
+
+/* what Restore would do, line by line — reads only */
+async function plan(){
+  var reg = await getList(KEY), byId = {}, bySrc = {};
+  reg.forEach(function(r){ if (!r) return; if (r._id) byId[s(r._id)] = r; if (r.id) byId[s(r.id)] = r; if (r.srcInvId) (bySrc[s(r.srcInvId)] = bySrc[s(r.srcInvId)] || []).push(r); });
+  var bills = {}; try { ((W._crm && (W._crm.invs && W._crm.invs.length ? W._crm.invs : W._crm.invoices)) || []).forEach(function(b){ if (b && b.id) bills[b.id] = b; }); } catch (e) {}
+  return LINES.map(function(l){
+    var id = idOf(l), src = s(l.srcInvId), bare = src.replace(/^(SUB_|SUPPLIER_)/, ''), bill = bills[bare] || null;
+    var twin = (bySrc[src] || []).concat(bySrc[bare] || []).filter(function(r){ return cents(amtOf(r)) === cents(amtOf(l)); })[0];
+    var what = byId[id] ? 'already' : (twin ? 'already' : ((deleted(id) || deleted(src) || deleted(bare)) ? 'deleted' : 'restore'));
+    return { id: id, what: what, why: byId[id] ? 'this line is on the register' : (twin ? 'the register has a line for this bill (' + idOf(twin) + ')' : (what === 'deleted' ? 'deleted on purpose — left alone' : 'missing')),
+      date: l.date, payee: l.payee || l.vendor || '', desc: s(l.desc), amount: l.amount, amt: l.amt, bill: bill ? { id: bill.id, num: bill.invNum || '', amt: bill.amt, status: bill.status || '' } : null,
+      mismatch: l.amount != null && l.amt != null && cents(l.amount) !== cents(l.amt) };
+  });
+}
+
+/* a person's action: put the missing lines back, un-fold their entries, log it */
+async function apply(opts){
+  opts = opts || {};
+  var P = await plan(), todo = P.filter(function(p){ return p.what === 'restore'; });
+  if (!todo.length) return { restored: 0, plan: P };
+  var ids = {}; todo.forEach(function(p){ ids[p.id] = 1; });
+  var who = me().name || '', at = nowISO();
+  var rows = LINES.filter(function(l){ return ids[idOf(l)]; }).map(function(l){ return Object.assign(JSON.parse(JSON.stringify(l)), { updatedAt: at, _restoredAt: at, _restoredBy: who, _restoredWhy: 'REGFIX: lost to a fold into a deleted copy (11/19)' }); });
+  var folds = rows.map(foldIdOf);
+  try { if (W._gcUnfoldMany) await W._gcUnfoldMany(folds, 'restore: the row it was folded into was deleted'); } catch (e) {}
+  var reg = await getList(KEY);
+  reg = reg.filter(function(r){ return !(r && ids[idOf(r)]); }).concat(rows);
+  await putList(KEY, reg, 'restore register lines');
+  var log = await getList(LOGK);
+  var rec = { id: 'RR' + Date.now().toString(36), at: at, by: who, ids: Object.keys(ids), folds: folds, total: Math.round(rows.reduce(function(t, r){ return t + num(amtOf(r)); }, 0) * 100) / 100 };
+  log.push(rec); await putList(LOGK, log, 'restore register lines (log)');
+  try { console.log('[GC] REGFIX: restored ' + rows.length + ' register line(s), ' + money(rec.total) + ' (' + rec.id + ').'); } catch (e) {}
+  return { restored: rows.length, log: rec, plan: P };
+}
+
+/* Undo: exactly the lines that restore put back (if still there), and fold their entries again */
+async function undo(logId){
+  var log = await getList(LOGK), rec = log.filter(function(x){ return x && x.id === logId && !x.undoneAt; })[0];
+  if (!rec) return { removed: 0 };
+  var ids = {}; (rec.ids || []).forEach(function(i){ ids[s(i)] = 1; });
+  try { if (W._gcManualNow) W._gcManualNow('remove restored register lines'); } catch (e) {}   /* a person's removal: the keep-everything guard lets it through */
+  var reg = await getList(KEY), kept = reg.filter(function(r){ return !(r && ids[idOf(r)] && r._restoredAt); });
+  var removed = reg.length - kept.length;
+  await putList(KEY, kept, 'remove restored register lines');
+  try { if (W._gcUnfoldMany) await W._gcUnfoldMany(rec.folds || [], 'undo restore', true); } catch (e) {}
+  rec.undoneAt = nowISO(); rec.undoneBy = me().name || '';
+  await putList(LOGK, log, 'undo register restore (log)');
+  return { removed: removed };
+}
+
+async function open(){
+  var D = W.document, P = await plan(), log = (await getList(LOGK)).filter(function(x){ return x && !x.undoneAt; });
+  var old = D.getElementById('_gcRegRestoreOv'); if (old) old.remove();
+  var n = P.filter(function(p){ return p.what === 'restore'; }), tot = n.reduce(function(t, p){ return t + num(p.amt != null ? p.amt : p.amount); }, 0);
+  var BTN = 'border:none;border-radius:7px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;';
+  var rowsHtml = P.map(function(p){
+    var col = p.what === 'restore' ? '#14532d' : (p.what === 'deleted' ? '#7f1d1d' : '#64748b');
+    return '<tr style="border-top:1px solid #e2e8f0"><td style="padding:4px 6px;white-space:nowrap">' + esc(p.date) + '</td><td style="padding:4px 6px">' + esc(p.payee) + '<div style="color:#64748b;font-size:11px">' + esc(p.desc.slice(0, 90)) + '</div></td>'
+      + '<td style="padding:4px 6px;text-align:right;white-space:nowrap">' + money(p.amt != null ? p.amt : p.amount) + (p.mismatch ? '<div style="color:#b45309;font-size:11px">amount field ' + money(p.amount) + '</div>' : '') + '</td>'
+      + '<td style="padding:4px 6px;font-size:11px">' + (p.bill ? ('#' + esc(p.bill.num) + ' · ' + money(p.bill.amt) + ' · ' + esc(p.bill.status)) : '<span style="color:#b45309">bill not found</span>') + '</td>'
+      + '<td style="padding:4px 6px;color:' + col + ';font-weight:700;font-size:12px">' + esc(p.what) + '<div style="font-weight:400;font-size:11px">' + esc(p.why) + '</div></td></tr>';
+  }).join('');
+  var ov = D.createElement('div'); ov.id = '_gcRegRestoreOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(6,12,20,.88);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Arial,sans-serif';
+  ov.innerHTML = '<div style="background:#fff;color:#111;border-radius:13px;width:min(1000px,98vw);padding:20px;margin:auto">'
+    + '<div style="display:flex;gap:10px;align-items:center"><div style="font-size:19px;font-weight:800;flex:1">Restore register lines</div><button id="_rrX" style="' + BTN + 'background:#e5e7eb">Close</button></div>'
+    + '<div style="font-size:12.5px;margin:8px 0 12px;padding:9px 12px;border-radius:9px;background:#eff6ff;border:1px solid #bfdbfe">These ' + LINES.length + ' supplier-bill lines left the accounting register on 11/16–11/19 when a duplicate fold kept a copy that had been deleted. The bills are still in Sub Invoices. '
+    + '<b>' + n.length + '</b> are missing now (' + money(tot) + '). Restore puts back exactly those lines (as they were on 11/18) and can be undone. Lines already on the register, or deleted on purpose, are left alone. '
+    + 'Where a line\'s amount field differs from its bill it is shown in orange: it is restored as it was — check those against the bill.</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:10px">' + (n.length ? '<button id="_rrGo" style="' + BTN + 'background:#166534;color:#fff">Restore ' + n.length + ' register lines</button>' : '<span style="font-weight:700;color:#166534">Nothing to restore.</span>')
+    + log.map(function(x){ return '<button class="_rrUndo" data-id="' + esc(x.id) + '" style="' + BTN + 'background:#7f1d1d;color:#fff">Undo restore of ' + esc(x.at.slice(0, 16).replace('T', ' ')) + ' (' + (x.ids || []).length + ')</button>'; }).join('') + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tr style="text-align:left;color:#475569"><th style="padding:4px 6px">Date</th><th style="padding:4px 6px">Line</th><th style="padding:4px 6px;text-align:right">Amount</th><th style="padding:4px 6px">Bill</th><th style="padding:4px 6px">Restore</th></tr>' + rowsHtml + '</table></div>';
+  D.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+  ov.querySelector('#_rrX').onclick = function(){ ov.remove(); };
+  var go = ov.querySelector('#_rrGo');
+  if (go) go.onclick = async function(){
+    var ok = true; try { ok = confirm('Put ' + n.length + ' lines (' + money(tot) + ') back on the accounting register?\n\nUndo is on this screen.'); } catch (e) {}
+    if (!ok) return; this.disabled = true; this.textContent = 'Restoring…';
+    var r = await apply(); try { alert('Restored ' + r.restored + ' line(s).'); } catch (e) {} open();
+  };
+  Array.prototype.forEach.call(ov.querySelectorAll('._rrUndo'), function(b){ b.onclick = async function(){
+    var ok = true; try { ok = confirm('Take the restored lines off the register again?'); } catch (e) {}
+    if (!ok) return; this.disabled = true; var r = await undo(this.getAttribute('data-id')); try { alert('Removed ' + r.removed + ' line(s).'); } catch (e) {} open();
+  }; });
+  return P;
+}
+W._gcRegRestore = { plan: plan, apply: apply, undo: undo, open: open, lines: function(){ return JSON.parse(JSON.stringify(LINES)); } };
+})();
 </script>
 <script>
 /* ============================================================================
