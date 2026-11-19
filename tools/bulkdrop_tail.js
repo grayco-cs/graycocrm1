@@ -477,6 +477,7 @@ function summary(batch){
 
 /* ════════ 8. the window ════════ */
 var CSS = '.gc-bd-ov{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:inherit;box-sizing:border-box}' +
+  '.gc-bd-ov:empty{display:none!important;pointer-events:none!important}' +   /* patch BTNFIX: an emptied window never covers the page */
   '.gc-bd-card{background:#fff;color:#0f172a;border-radius:12px;width:min(820px,100%);padding:18px;margin-top:8px;box-sizing:border-box}' +
   '.gc-bd-zone{display:block;border:3px dashed #93c5fd;border-radius:12px;background:#eff6ff;padding:28px 12px;text-align:center;cursor:pointer;margin:10px 0;transition:background .15s}' +
   '.gc-bd-zone.on{background:#dbeafe;border-color:#1d4ed8}.gc-bd-zone b{display:block;font-size:19px;color:#1e3a8a}.gc-bd-zone span{font-size:13px;color:#475569}' +
@@ -535,7 +536,8 @@ function go(link){
 }
 function open(){
   css(); load().then(function(){ if (!Q.view) Q.view = lastBatch(); run(); render(); });
-  if (OV && D.body.contains(OV)) return OV;
+  if (OV && D.body.contains(OV) && OV.querySelector('.gc-bd-card')) return OV;
+  if (OV) { try { OV.remove(); } catch (e) {} OV = null; }   /* patch BTNFIX: its window was taken away (an emptied backdrop): make a new one — the button was dead */
   OV = D.createElement('div'); OV.className = 'gc-bd-ov'; OV.setAttribute('data-gc-keep', '1'); OV.setAttribute('data-gc-linked', '1');
   OV.innerHTML = '<div class="gc-bd-card" role="dialog" aria-label="Drop invoices and receipts">' +
     '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:18px">📥 Drop invoices & receipts</b><button type="button" data-bd="x" aria-label="Close" style="border:none;background:none;font-size:22px;cursor:pointer">✕</button></div>' +
@@ -597,6 +599,7 @@ function paintBtns(){
 /* ════════ 10. the light tick + the resume ════════ */
 var booted = false;
 function tick(){
+  if (OV && !(D.body.contains(OV) && OV.querySelector('.gc-bd-card'))) close();   /* patch BTNFIX: no emptied backdrop left over the page */
   if (D.hidden) return;
   try { paintBtns(); } catch (e) {}
   if (!booted && moneyPerson() && arr(crm().projects).length && typeof W._gcStoreFile === 'function') {

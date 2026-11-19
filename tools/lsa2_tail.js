@@ -124,9 +124,16 @@ function panel(){
   var ov = D.createElement('div'); ov.id = 'gc-lsa2-ov'; ov.setAttribute('data-gc-keep', '1');
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:12px;font:14px Inter,Arial,sans-serif';
   ov.innerHTML = h; D.body.appendChild(ov);
-  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-lsa2x]'))) { ov.remove(); return; } var b = e.target.closest && e.target.closest('[data-lsa2d]'); if (b) { disputed(b.getAttribute('data-lsa2d')); ST.call(W, panel, 400); } });
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-lsa2x]'))) { ov.remove(); return; } var b = e.target.closest && e.target.closest('[data-lsa2d]'); if (b) { var id = b.getAttribute('data-lsa2d'); disputed(id);
+    /* patch BTNFIX: the row says so at once; the table is redrawn only while this panel is still open (it used to come back by itself
+       400 ms later, even after Close — a panel left on the page over the next screen) */
+    var ok = D.createElement('span'); ok.setAttribute('data-lsa2done', id); ok.style.cssText = 'font-weight:700;color:#166534'; ok.textContent = '✓ Disputed — saved'; b.parentNode.replaceChild(ok, b);
+    ST.call(W, function(){ if (D.body.contains(ov) && D.getElementById('gc-lsa2-ov') === ov) panel(); }, 1500); } });
   return M;
 }
+/* patch BTNFIX: an emptied panel (its window taken away) never stays over the page */
+function noEmpty(){ var o = D.getElementById('gc-lsa2-ov'); if (o && !o.querySelector('[role=dialog]')) o.remove(); }
+(function(){ try { var st = D.createElement('style'); st.id = 'gc-lsa2-empty-css'; st.textContent = '#gc-lsa2-ov:empty,#gc-lc-ov:empty{display:none!important;pointer-events:none!important}'; (D.head || D.documentElement).appendChild(st); } catch (e) {} })();
 function panelBtn(){
   try {
     var hub = D.getElementById('gc-leads-hub'), views = hub && hub.getClientRects().length ? hub.querySelector('.gclu-views') : null, btn = D.getElementById('gc-lsa2-btn');
@@ -137,6 +144,6 @@ function panelBtn(){
   } catch (e) {}
 }
 D.addEventListener('click', function(e){ var t = e.target && e.target.closest ? e.target.closest('#gc-lsa2-btn') : null; if (!t) return; e.preventDefault(); e.stopPropagation(); panel(); }, true);
-SI.call(W, function(){ if (D.hidden) return; bar(); panelBtn(); }, 900); ST.call(W, sweep, 40000); SI.call(W, sweep, 300000);
+SI.call(W, function(){ noEmpty(); if (D.hidden) return; bar(); panelBtn(); }, 900); ST.call(W, sweep, 40000); SI.call(W, sweep, 300000);
 W._gcLsa2 = { pend: pend, sweep: sweep, panel: panel, months: months, disputed: disputed };
 })(window);

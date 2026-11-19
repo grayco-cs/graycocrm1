@@ -50578,8 +50578,8 @@ function getCurrentUser(){
 // CSS
 var css=document.createElement('style');
 css.textContent=[
-  '#gc-est-notes-panel{position:fixed;top:0;right:0;bottom:0;width:min(380px,96vw);background:#0f1d2f;border-left:2px solid #d4a017;z-index:8500;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;box-shadow:-8px 0 30px rgba(0,0,0,.5)}',
-  '#gc-est-notes-panel.open{transform:translateX(0)}',
+  '#gc-est-notes-panel{position:fixed;top:0;right:0;bottom:0;width:min(380px,96vw);background:#0f1d2f;border-left:2px solid #d4a017;z-index:8500;display:flex;flex-direction:column;transform:translateX(100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;box-shadow:-8px 0 30px rgba(0,0,0,.5)}',
+  '#gc-est-notes-panel.open{transform:translateX(0);visibility:visible;transition:transform .25s ease}',   /* patch BTNFIX: closed, its ✕ / Done are not on the page (they were the "✕" a desk screen offered as its way back) */
   '.gc-en-header{background:#0c1e2b;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e3a5f;flex-shrink:0}',
   '.gc-en-list{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}',
   '.gc-en-comment{background:#1a2e45;border-radius:8px;padding:10px 12px;margin-bottom:8px;border-left:3px solid #d4a017}',
@@ -170712,7 +170712,7 @@ function tabHtml(){
     + '</div>';
   var lim = UI.lim || 25;   /* patch TODOPERF: the first 25, then "Show more" */
   h += list.length ? '<div class="apx-list">' + list.slice(0, lim).map(function(r){ return rowHtml(r, now, 'tab'); }).join('') + '</div>' + (list.length > lim ? '<button type="button" class="apx-more" data-apx-more="1">Show more (' + (list.length - lim) + ')</button>' : '')
-    : '<div class="apx-empty">' + (!UI.f ? '✓ Nothing is waiting on ' + (sc.preview ? 'them' : 'you') + ' right now.' : 'Nothing here.') + '</div>';
+    : '<div class="apx-empty">' + (!UI.f ? '✓ Nothing is waiting on ' + (sc.preview ? 'them' : 'you') + ' right now.' : UI.f === 'office' ? '✓ Nothing is escalated to the office right now (an approval goes up after 24 hours with no answer).' : 'Nothing here.') + '</div>'   /* patch BTNFIX: Escalated says what it shows */;
   var rec = recent(sc, now);
   h += '<div class="apx-rh">🕘 Recently approved <span>(14 days — who approved each step, and when)</span></div>'
     + (rec.length ? '<div class="apx-rec">' + rec.map(function(x){ return '<div class="apx-rr"><div><b>' + x.icon + ' ' + esc(x.title) + '</b>' + (x.job ? ' <span class="apx-j2">· ' + esc(x.job) + '</span>' : '') + '</div><div class="apx-ch">' + esc(x.chain) + '</div></div>'; }).join('') + '</div>' : '<div class="apx-empty sm">Nothing approved in the last 14 days.</div>');
@@ -171043,6 +171043,8 @@ function overlay(title, sub){
   var c = D.createElement('div'); c.className = 'gcx10-card';
   c.innerHTML = '<button type="button" class="gcx10-x">Close</button><h2>' + esc(title) + '</h2>' + (sub ? '<div class="gcx10-mut">' + esc(sub) + '</div>' : '') + '<div class="gcx10-body"></div>';
   ov.appendChild(c); D.body.appendChild(ov);
+  /* patch BTNFIX: opened from a window that sits higher (📅 Inspections → 🏛 City permit checklist): it opened under it, unseen */
+  try { var zt = 100200, vw = W.innerWidth, vh = W.innerHeight; Array.prototype.forEach.call(D.body.children, function(e){ if (e === ov) return; var cs = W.getComputedStyle(e), z = parseInt(cs.zIndex, 10), r; if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden' || !(z >= zt) || z >= 2147483500) return; r = e.getBoundingClientRect(); if (r.width * r.height >= vw * vh * 0.5) zt = z + 1; }); if (zt > 100200) ov.style.zIndex = String(zt); } catch (e) {}
   c.querySelector('.gcx10-x').onclick = function(){ ov.remove(); };
   ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
   return { ov: ov, body: c.querySelector('.gcx10-body') };
@@ -185090,8 +185092,12 @@ function bar(ov, pid){
   });
   b.querySelector('.gctx-send').onclick = function(){
     var to = d10(b.querySelector('.gctx-to').value), tx = s(b.querySelector('.gctx-msg').value), btn = this;
-    if (to.length !== 10) { toast('Type a 10-digit phone number.', true); return; }
-    if (!tx) { toast('Type the text first.', true); return; }
+    /* patch BTNFIX: the answer shows in the bar itself (the note at the bottom of the screen sat under the job page) */
+    var er = b.querySelector('.gctx-err'); if (!er) { er = D.createElement('div'); er.className = 'gctx-err'; er.setAttribute('role', 'alert'); er.style.cssText = 'color:#b91c1c;font-weight:700;font-size:12.5px;margin-top:4px'; b.insertBefore(er, b.querySelector('.gctx-note')); }
+    var say = function(m, el){ er.textContent = m; toast(m, true); try { el.focus(); } catch (e) {} };
+    er.textContent = '';
+    if (!tx) { say('Type a message first.', b.querySelector('.gctx-msg')); return; }
+    if (to.length !== 10) { say('Type a 10-digit phone number.', b.querySelector('.gctx-to')); return; }
     btn.disabled = true; btn.textContent = 'Sending…';
     send(to, tx, pid).then(function(o){
       btn.disabled = false; btn.textContent = 'Send text';
@@ -197049,6 +197055,7 @@ function summary(batch){
 
 /* ════════ 8. the window ════════ */
 var CSS = '.gc-bd-ov{position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:inherit;box-sizing:border-box}' +
+  '.gc-bd-ov:empty{display:none!important;pointer-events:none!important}' +   /* patch BTNFIX: an emptied window never covers the page */
   '.gc-bd-card{background:#fff;color:#0f172a;border-radius:12px;width:min(820px,100%);padding:18px;margin-top:8px;box-sizing:border-box}' +
   '.gc-bd-zone{display:block;border:3px dashed #93c5fd;border-radius:12px;background:#eff6ff;padding:28px 12px;text-align:center;cursor:pointer;margin:10px 0;transition:background .15s}' +
   '.gc-bd-zone.on{background:#dbeafe;border-color:#1d4ed8}.gc-bd-zone b{display:block;font-size:19px;color:#1e3a8a}.gc-bd-zone span{font-size:13px;color:#475569}' +
@@ -197107,7 +197114,8 @@ function go(link){
 }
 function open(){
   css(); load().then(function(){ if (!Q.view) Q.view = lastBatch(); run(); render(); });
-  if (OV && D.body.contains(OV)) return OV;
+  if (OV && D.body.contains(OV) && OV.querySelector('.gc-bd-card')) return OV;
+  if (OV) { try { OV.remove(); } catch (e) {} OV = null; }   /* patch BTNFIX: its window was taken away (an emptied backdrop): make a new one — the button was dead */
   OV = D.createElement('div'); OV.className = 'gc-bd-ov'; OV.setAttribute('data-gc-keep', '1'); OV.setAttribute('data-gc-linked', '1');
   OV.innerHTML = '<div class="gc-bd-card" role="dialog" aria-label="Drop invoices and receipts">' +
     '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:18px">📥 Drop invoices & receipts</b><button type="button" data-bd="x" aria-label="Close" style="border:none;background:none;font-size:22px;cursor:pointer">✕</button></div>' +
@@ -197169,6 +197177,7 @@ function paintBtns(){
 /* ════════ 10. the light tick + the resume ════════ */
 var booted = false;
 function tick(){
+  if (OV && !(D.body.contains(OV) && OV.querySelector('.gc-bd-card'))) close();   /* patch BTNFIX: no emptied backdrop left over the page */
   if (D.hidden) return;
   try { paintBtns(); } catch (e) {}
   if (!booted && moneyPerson() && arr(crm().projects).length && typeof W._gcStoreFile === 'function') {
@@ -209251,7 +209260,7 @@ function css(){
     '#gcpe .pe-seg{flex:0 0 auto;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px;background:#0F1D2F}',
     '#gcpe .pe-seg button{min-height:44px;border-radius:10px;border:1px solid #2B4466;background:transparent;color:#C9D3DF;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer}',
     '#gcpe .pe-seg button[aria-pressed="true"]{background:#D4A017;border-color:#D4A017;color:#0F1D2F}',
-    '#gcpe .pe-seg button:disabled{opacity:.45}',
+    '#gcpe .pe-seg button:disabled,#gcpe .pe-seg button[aria-disabled="true"]{opacity:.45}',
     '#gcpe .pe-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 10px calc(28px + env(safe-area-inset-bottom,0px))}',
     '#gcpe .pe-frame{flex:1 1 auto;border:0;width:100%;background:#fff}',
     '#gcpe .pe-card{background:#fff;border:1px solid #E2DCCD;border-radius:14px;padding:12px;margin:0 0 10px}',
@@ -209376,7 +209385,8 @@ function head(){
   o.querySelector('.pe-tt b').textContent = '👤 ' + (s(p.client) ? s(p.client) + '’s portal' : 'Customer portal');
   o.querySelector('.pe-tt small').textContent = [s(p.name), s(p.autoPO || p.po)].filter(Boolean).join(' · ');
   var has = !!linkOf(p);
-  Array.prototype.forEach.call(o.querySelectorAll('[data-pe="mode"]'), function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-m') === CUR.mode ? 'true' : 'false'); if (b.getAttribute('data-m') === 'cust') b.disabled = !has; });
+  /* patch BTNFIX: with no portal yet 👁 Customer view stays tappable (it says why there is nothing to see) — a disabled button was dead */
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pe="mode"]'), function(b){ b.setAttribute('aria-pressed', b.getAttribute('data-m') === CUR.mode ? 'true' : 'false'); if (b.getAttribute('data-m') === 'cust') { b.disabled = false; if (has) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true'); } });
 }
 function paint(){
   var o = ov(), p = proj(CUR.pid); if (!o || !p) return;
@@ -209600,7 +209610,15 @@ function onClick(e){
   var a = b.getAttribute('data-pe'), pid = CUR.pid, p = proj(pid); if (!p) return;
   var who = first(p.client) || 'the customer';
   if (a === 'close') { close(); return; }
-  if (a === 'mode') { CUR.mode = b.getAttribute('data-m'); if (CUR.mode === 'cust') CUR.frameT = Date.now(); paint(); return; }
+  if (a === 'mode') {
+    if (b.getAttribute('data-m') === 'cust' && !linkOf(proj(CUR.pid))) {   /* patch BTNFIX: no portal yet — say so, next to 🏠 Make the portal */
+      var mk = body() && body().querySelector('[data-pe-make]'), nt = mk && mk.querySelector('[data-pe-nocust]');
+      if (mk && !nt) { nt = D.createElement('p'); nt.className = 'pe-sub'; nt.setAttribute('data-pe-nocust', '1'); nt.setAttribute('role', 'status'); nt.style.cssText = 'font-weight:800;color:#b45309'; mk.insertBefore(nt, mk.firstChild); }
+      var why = proj(CUR.pid) && proj(CUR.pid).portalOff ? '👁 There is nothing for the customer to see: the portal link is turned off for this job.' : '👁 The customer sees nothing yet — this job has no portal. 🏠 Make the portal first, then 👁 Customer view shows it as they see it.';
+      if (nt) nt.textContent = why; else toast(why, true);
+      return;
+    }
+    CUR.mode = b.getAttribute('data-m'); if (CUR.mode === 'cust') CUR.frameT = Date.now(); paint(); return; }
   if (a === 'view') { CUR.mode = 'cust'; CUR.frameT = Date.now(); paint(); return; }
   if (a === 'make') { var c0 = b.closest('.pe-make'); if (c0 && !c0.querySelector('[data-pe-makeok]')) c0.insertAdjacentHTML('beforeend', makeConfirmHtml(p)); return; }
   if (a === 'make-no') { var x0 = b.closest('[data-pe-makeok]'); if (x0) x0.remove(); return; }
@@ -227097,7 +227115,7 @@ function jobRow(p){
 function draw(){
   var el = UI.el; if (!el || !el.isConnected) return; css(); wireDocLib();
   if (!canSee()) { el.innerHTML = '<div class="gcsds"><h2>🧪 Materials &amp; SDS</h2><p class="sub">For admins, the Mitigation and Environmental teams.</p></div>'; return; }
-  if (W._gcSdsCo && !W._gcSdsCo.ctxOk()) { el.innerHTML = W._gcSdsCo.offHtml(); return; }   /* patch SDSCO: Construction picked */
+  if (W._gcSdsCo && !W._gcSdsCo.ctxOk()) { UI.fromCo = ''; el.innerHTML = W._gcSdsCo.offHtml(); return; }   /* patch SDSCO: Construction picked */
   var co = coPick(), L = list(), q = low(UI.q);
   var shown = L.filter(function(m){ return (UI.g === 'all' || arr(m.groups).indexOf(UI.g) >= 0) && (!q || low([m.name, m.use, m.hazards].join(' ')).indexOf(q) >= 0); });
   var cnt = function(g){ return L.filter(function(m){ return g === 'all' || arr(m.groups).indexOf(g) >= 0; }).length; };
@@ -227105,7 +227123,8 @@ function draw(){
     .sort(function(a, b){ return warnings(b).length - warnings(a).length; });
   var opts = jobs().filter(function(p){ try { return !W._gcCo || W._gcCo.passJob(p); } catch (e) { return true; } }).filter(function(p){ return !/complete|closed|cancel|lost/i.test(s(p.status)); }).filter(function(p){ return !W._gcSdsCo || W._gcSdsCo.isJob(p); }).slice(0, 400);   /* patch SDSCO: Mitigation / Environmental jobs only */
   var coName = W._gcSdsCo ? W._gcSdsCo.title(co) : co === 'all' ? '' : (function(){ try { return W._gcCo.get(co).short; } catch (e) { return ''; } })();   /* patch SDSCO: All companies → "· Mitigation & Environmental" */
-  var h = '<div class="gcsds"><h2>🧪 Materials &amp; SDS' + (coName ? ' <span style="font-size:15px;color:#64748b">· ' + esc(coName) + '</span>' : '') + '</h2>'
+  var h = '<div class="gcsds">' + (UI.fromCo ? '<button type="button" class="gcsds-btn" data-sds="coback" style="margin:0 0 6px">‹ Back to ' + esc((function(){ try { return W._gcCo.get(UI.fromCo).short; } catch (e) { return 'Construction'; } })() || 'Construction') + '</button>' : '')   /* patch BTNFIX: the way back after 💧 / ☢️ / 🏢 on the Construction page */
+    + '<h2>🧪 Materials &amp; SDS' + (coName ? ' <span style="font-size:15px;color:#64748b">· ' + esc(coName) + '</span>' : '') + '</h2>'
     + '<p class="sub">The products and equipment we use, by kind of work — what each is for, hazards, PPE, do\'s and don\'ts, re-entry, first aid — and, per job, which ones the customer approved in their portal before we use them.</p>'
     + (W._gcIicrc ? W._gcIicrc.chips(co) : '')   /* patch IICRCTRAIN */
     + '<div class="typ">⚠ ' + esc(TYPICAL) + '</div>'
@@ -227363,7 +227382,8 @@ D.addEventListener('click', function(e){
   if (t.hasAttribute('data-sds-reset')) { hideMat(t.getAttribute('data-sds-reset'), true).then(function(){ closeM(); toast('↺ Back to the typical information'); }); return; }
   var a = t.getAttribute('data-sds');
   if (a === 'close') { closeM(); if (UI.backTo) { var b2 = UI.backTo; UI.backTo = ''; jobModal(b2); } return; }
-  if (a === 'coall' || a === 'co') { try { W._gcCo.setFilter(a === 'coall' ? 'all' : t.getAttribute('data-sds-co')); } catch (e2) {} ST.call(W, draw, 60); return; }   /* patch SDSCO */
+  if (a === 'coall' || a === 'co') { try { var c0 = W._gcCo.filter(); W._gcCo.setFilter(a === 'coall' ? 'all' : t.getAttribute('data-sds-co')); UI.fromCo = c0 === 'construction' ? c0 : ''; } catch (e2) {} ST.call(W, draw, 60); return; }   /* patch SDSCO (+ BTNFIX: remember where it came from) */
+  if (a === 'coback') { var c1 = UI.fromCo; UI.fromCo = ''; try { if (c1) W._gcCo.setFilter(c1); } catch (e2) {} ST.call(W, draw, 60); return; }   /* patch BTNFIX */
   if (a === 'add') { editForm(''); return; }
   if (a === 'pickall') { savePicks(); PICK.all = !PICK.all; ST.call(W, function(){ jobModal(PICK.pid); }, 50); return; }
   if (a === 'savepick') { savePicks(); toast('✓ Materials saved on the job'); ST.call(W, function(){ jobModal(PICK.pid); draw(); }, 120); return; }
@@ -239511,7 +239531,7 @@ function week(){
   var G = weekGroups(), pd = G[0] ? G[0].payDay : '';
   var ov = sheet('🧾 This week\'s supplier checks', '<div class="sub">Supplier bills due by this week\'s pay day' + (pd ? ' (' + esc(pd) + ')' : '') + ', approved and not on hold — one check per vendor. "💵 Write one check" opens the payment screen with them ticked, so the check is written down against each job.</div>' +
     (G.length ? '<table><thead><tr><th>Vendor</th><th class="n">Bills</th><th class="n">Check</th><th></th></tr></thead><tbody>' + G.map(function(g){ return '<tr data-party="' + esc(g.name) + '"><td><b>' + esc(g.name) + '</b>' + (g.waiting ? ' <span class="sub">(' + g.waiting + ' more waiting on approval)</span>' : '') + '</td><td class="n">' + g.ids.length + '</td><td class="n"><b>' + money(g.total) + '</b></td><td><button type="button" class="b ok" data-va="one">💵 Write one check</button> <button type="button" class="b" data-va="acct">📒</button></td></tr>'; }).join('') + '</tbody></table>' : '<p class="sub">Nothing due this week.</p>'));
-  ov.addEventListener('click', function(e){ var t = e.target, a = t.getAttribute && t.getAttribute('data-va'); if (!a) return; var nm = t.closest('tr').getAttribute('data-party'), g = G.filter(function(x){ return x.name === nm; })[0];
+  ov.addEventListener('click', function(e){ var t = e.target, a = t.getAttribute && t.getAttribute('data-va'), tr = a && a !== 'close' && t.closest ? t.closest('tr[data-party]') : null; if (!tr) return; var nm = tr.getAttribute('data-party'), g = G.filter(function(x){ return x.name === nm; })[0];   /* patch BTNFIX: ✕ (data-va="close", no row) threw "reading 'getAttribute'" */
     if (a === 'one') { ov.remove(); W._gcLumpSum.open({ side: 'pay', party: nm, preselect: g.ids, amount: g.total, ref: 'Week of ' + g.payDay }); }
     if (a === 'acct') openAcct(nm, 'pay'); });
   return { ok: true, groups: G };
@@ -240379,11 +240399,14 @@ function openEditor(){
   var ov = D.createElement('div'); ov.id = 'gc-jd-ed'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Paperwork by job type');
   ov.style.cssText = 'position:fixed;inset:0;z-index:1000020;background:rgba(8,15,28,.75);display:flex;align-items:center;justify-content:center;padding:16px;font:14px Inter,Arial,sans-serif;color:#0f172a';
   var draw = function(t){
-    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:auto;padding:16px;box-sizing:border-box">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:16px">📑 Paperwork by job type</b><button type="button" data-e="x" aria-label="Close" style="background:none;border:none;font-size:22px;cursor:pointer">✕</button></div>'
+    /* patch BTNFIX: the list scrolls between the title and the button row (the row used to float over the last papers — a paper's
+       form picker sat under "↺ Built-in table") */
+    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:hidden;padding:16px;box-sizing:border-box;display:flex;flex-direction:column">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0"><b style="font-size:16px">📑 Paperwork by job type</b><button type="button" data-e="x" aria-label="Close" style="background:none;border:none;font-size:22px;cursor:pointer">✕</button></div>'
+      + '<div data-jd-scroll="1" style="flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch">'
       + '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">Each job type\'s papers go on its jobs by themselves (new jobs, and when a job\'s type changes). Pick the form for each paper from the library; a paper with no form shows <b>needs a form — upload yours</b> on the job. Nothing is sent by itself. Conditions you can use in "Only if": ' + esc(Object.keys(CONDS).join(', ')) + '.' + (t.at ? ' Last saved ' + esc(nice(t.at)) + (t.by ? ' by ' + esc(t.by) : '') + '.' : ' Built-in table.') + '</div>'
-      + '<div data-e="types">' + t.types.map(typeBlock).join('') + '</div>'
-      + '<div style="display:flex;flex-wrap:wrap;gap:8px;position:sticky;bottom:-16px;background:#fff;padding:10px 0">'
+      + '<div data-e="types">' + t.types.map(typeBlock).join('') + '</div></div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;flex-shrink:0;background:#fff;padding:10px 0 0;border-top:1px solid #e2e8f0">'
       + '<button type="button" data-e="tadd" style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">＋ Add a job type</button>'
       + '<button type="button" data-e="reset" style="border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:9px 12px;font-weight:600;cursor:pointer">↺ Built-in table</button>'
       + '<button type="button" data-e="save" style="margin-left:auto;border:0;background:#16a34a;color:#fff;border-radius:8px;padding:9px 18px;font-weight:800;cursor:pointer">💾 Save</button></div></div>';
@@ -240610,9 +240633,16 @@ function panel(){
   var ov = D.createElement('div'); ov.id = 'gc-lsa2-ov'; ov.setAttribute('data-gc-keep', '1');
   ov.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:12px;font:14px Inter,Arial,sans-serif';
   ov.innerHTML = h; D.body.appendChild(ov);
-  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-lsa2x]'))) { ov.remove(); return; } var b = e.target.closest && e.target.closest('[data-lsa2d]'); if (b) { disputed(b.getAttribute('data-lsa2d')); ST.call(W, panel, 400); } });
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-lsa2x]'))) { ov.remove(); return; } var b = e.target.closest && e.target.closest('[data-lsa2d]'); if (b) { var id = b.getAttribute('data-lsa2d'); disputed(id);
+    /* patch BTNFIX: the row says so at once; the table is redrawn only while this panel is still open (it used to come back by itself
+       400 ms later, even after Close — a panel left on the page over the next screen) */
+    var ok = D.createElement('span'); ok.setAttribute('data-lsa2done', id); ok.style.cssText = 'font-weight:700;color:#166534'; ok.textContent = '✓ Disputed — saved'; b.parentNode.replaceChild(ok, b);
+    ST.call(W, function(){ if (D.body.contains(ov) && D.getElementById('gc-lsa2-ov') === ov) panel(); }, 1500); } });
   return M;
 }
+/* patch BTNFIX: an emptied panel (its window taken away) never stays over the page */
+function noEmpty(){ var o = D.getElementById('gc-lsa2-ov'); if (o && !o.querySelector('[role=dialog]')) o.remove(); }
+(function(){ try { var st = D.createElement('style'); st.id = 'gc-lsa2-empty-css'; st.textContent = '#gc-lsa2-ov:empty,#gc-lc-ov:empty{display:none!important;pointer-events:none!important}'; (D.head || D.documentElement).appendChild(st); } catch (e) {} })();
 function panelBtn(){
   try {
     var hub = D.getElementById('gc-leads-hub'), views = hub && hub.getClientRects().length ? hub.querySelector('.gclu-views') : null, btn = D.getElementById('gc-lsa2-btn');
@@ -240623,7 +240653,7 @@ function panelBtn(){
   } catch (e) {}
 }
 D.addEventListener('click', function(e){ var t = e.target && e.target.closest ? e.target.closest('#gc-lsa2-btn') : null; if (!t) return; e.preventDefault(); e.stopPropagation(); panel(); }, true);
-SI.call(W, function(){ if (D.hidden) return; bar(); panelBtn(); }, 900); ST.call(W, sweep, 40000); SI.call(W, sweep, 300000);
+SI.call(W, function(){ noEmpty(); if (D.hidden) return; bar(); panelBtn(); }, 900); ST.call(W, sweep, 40000); SI.call(W, sweep, 300000);
 W._gcLsa2 = { pend: pend, sweep: sweep, panel: panel, months: months, disputed: disputed };
 })(window);
 </script>
@@ -245710,7 +245740,7 @@ function openAdd(pid){
   g('file').addEventListener('change', function(){ var f = (g('file').files || [])[0]; if (f && !s(g('label').value)) g('label').value = f.name.replace(/\.[a-z0-9]{2,5}$/i, ''); });
   g('due').addEventListener('change', function(){ g('dueDate').hidden = g('due').value !== 'date'; });
   o.addEventListener('click', function(e){
-    var kb = e.target.closest && e.target.closest('[data-xr-kind]'); if (kb) { setKind(kb.getAttribute('data-xr-kind')); return; }
+    var kb = e.target.closest && e.target.closest('[data-xr-kind]'); if (kb) { setKind(kb.getAttribute('data-xr-kind')); if (kind === 'upload') { try { g('file').click(); } catch (x) {} } return; }   /* patch BTNFIX: 📁 Upload opens the file picker at once */
     var sv = e.target.closest && e.target.closest('[data-xr-save]'); if (!sv) return;
     var spec = { kind: kind, label: s(g('label').value), party: g('party').value, act: g('act').value, due: g('due').value, dueDate: s(g('dueDate').value), hold: g('hold') ? g('hold').value : '', why: s(g('why').value), allType: !!(g('allType') && g('allType').checked), typeKey: g('typeKey') ? g('typeKey').value : '' };
     var go = function(){ var r = add(pid, spec); if (!r.ok) { toast(r.error, true); sv.disabled = false; return; } o.remove(); toast('✓ "' + spec.label + '" is on the job\'s 📑 Paperwork' + (spec.hold ? ' — ' + (spec.hold === 'start' ? 'Start job' : 'the final invoice') + ' waits for it' : '')); };
@@ -247390,6 +247420,7 @@ function saveInfo(p, box){
 }
 function bindInfo(o, pid){
   var box = o.querySelector('.gcji-form'); if (!box) return;
+  ['input', 'change'].forEach(function(t){ box.addEventListener(t, function(){ var e2 = box.querySelector('[data-ji-err][data-ji-ok]'); if (e2) { e2.textContent = ''; e2.removeAttribute('data-ji-ok'); } }); });   /* patch BTNFIX: "✓ Saved" goes once something is changed again */
   box.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-ji-a],[data-ji-st],[data-ji-copy]'); if (!b || !box.contains(b)) return;
     var p = proj(pid); if (!p) return;
@@ -247414,9 +247445,12 @@ function bindInfo(o, pid){
       var er = box.querySelector('[data-ji-err]'); b.disabled = true; b.textContent = 'Saving…';
       saveInfo(p, box).then(function(r){
         b.disabled = false; b.textContent = '💾 Save job info';
-        if (!r.ok) { if (er) er.textContent = r.why; toast(r.why); return; }
-        if (er) er.textContent = '';
-        toast(r.none ? 'Nothing changed.' : '✓ Saved — the office sees it on the desk.');
+        if (!r.ok) { if (er) { er.textContent = r.why; er.removeAttribute('data-ji-ok'); } toast(r.why); return; }
+        /* patch BTNFIX: the answer also shows right above the button (a note at the bottom can sit behind other bars); with no
+           change it still says Saved — what is on the page is what the office has */
+        var okT = r.none ? '✓ Saved — nothing had changed.' : '✓ Saved — the office sees it on the desk.';
+        if (er) { er.textContent = okT; er.setAttribute('data-ji-ok', '1'); }
+        toast(okT);
         later(function(){ var q = proj(pid); if (!q || !D.body.contains(o)) return; var hd = o.querySelector('.gcji-hd b'); if (hd) hd.textContent = 'Job info · ' + s(q.name); var lk = box.querySelector('[data-ji-linked]'); var c = custOf(q); if (lk && c) lk.textContent = '🔗 Linked to the customer record "' + s(c.name) + '"'; try { paintCard(pid); } catch (x) {} }, 700);
       });
     }
@@ -247783,7 +247817,7 @@ function css(){
     '.gcji-cur{font-size:20px;font-weight:800;margin-bottom:8px}.gcji-ok{color:#166534;font-weight:800;margin:4px 0 10px}',
     '.gcji-chips{display:flex;flex-wrap:wrap;gap:6px}.gcji-chips button{min-height:40px;padding:6px 12px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#111827;font:700 13.5px Inter,sans-serif;cursor:pointer}.gcji-chips button.on{background:#111827;border-color:#111827;color:#fff}',
     '.gcji-note{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:14px}',
-    '.gcji-hint{color:#6b7280;font-size:12.5px;margin:4px 0 10px}.gcji-err{color:#b91c1c;font-weight:700;font-size:14px;min-height:0}.gcji-mut{color:#6b7280;font-size:13px}',
+    '.gcji-hint{color:#6b7280;font-size:12.5px;margin:4px 0 10px}.gcji-err{color:#b91c1c;font-weight:700;font-size:14px;min-height:0}.gcji-err[data-ji-ok]{color:#166534}.gcji-mut{color:#6b7280;font-size:13px}',
     '.gcji-link-st{font-size:13px;color:#374151;background:#f8fafc;border-radius:10px;padding:8px 10px}',
     '.gcji-sec{font-size:12.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#374151;margin:16px 0 8px}.gcji-sec small{text-transform:none;letter-spacing:0;font-weight:500;color:#6b7280;margin-left:4px}',
     '.gcji-ev{display:flex;gap:10px;align-items:center;width:100%;box-sizing:border-box;min-height:56px;margin:0 0 8px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#111827;text-align:left;font:600 14px Inter,sans-serif;cursor:pointer}',
