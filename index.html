@@ -62947,6 +62947,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       setMsgs(merged); pushMsgs();
     }; _afterPull.__pushes=true;   /* FIELDFIX3: this pull is followed by its own push */
     pullMsgs(_afterPull);
+    try{ if(window._gcJobMsgNotify) window._gcJobMsgNotify(newMsg); }catch(e){}   /* patch JOBMSG: a push + a text for the people told */
     return newMsg;   /* patch JOBMENTION */
   }
 
@@ -62989,7 +62990,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         +'<textarea id="_jmText" placeholder="Message the team about this job..." style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:13px;font-family:Arial;resize:vertical;min-height:46px"></textarea>'
         +'<div id="_jmMn" role="listbox" aria-label="Mention someone on the team" data-gc-keep="1" style="display:none"></div>'
         +'<div id="_jmTags" style="margin:6px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:11px;color:#64748b;margin-right:2px">Tag:</span>'+tagOpts+'</div>'
-        +'<div style="font-size:11px;color:#64748b;margin:-2px 0 4px">Tap a name or type @ — they get it in their 💬 Messages. No @: the job\'s PM is told.</div>'   /* patch JOBMENTION */
+        +'<div style="font-size:11px;color:#64748b;margin:-2px 0 4px">Tap a name or type @ — they get a text / phone notification and it is in their 💬 Messages. No @: the job\'s PM is told.</div>'   /* patch JOBMENTION */
         +'<div style="text-align:right"><button id="_jmSend" style="padding:8px 18px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Send</button></div>'
         +'</div></div>';
 
@@ -184540,7 +184541,9 @@ function bar(ov, pid){
   if (!ov || ov.querySelector('.gctx-bar')) return;
   var card = ov.firstElementChild; if (!card) return;
   var ph = phoneFor(pid);
+  try { if (W._gcJobPhones) { var jph = W._gcJobPhones(pid); if (jph.length) ph = jph[0].d; } } catch (e) {}   /* patch JOBMSG: + the customer record, the lead, the address */
   if (DRAFT.pid !== pid) DRAFT = { pid: pid, to: ph ? tidy(ph) : '', text: '' };
+  else if (!s(DRAFT.to) && !DRAFT.typed && ph) DRAFT.to = tidy(ph);   /* patch JOBMSG */
   var b = D.createElement('div'); b.className = 'gctx-bar'; b.setAttribute('data-gc-keep', '1');
   b.style.cssText = 'background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;padding:8px 10px;margin:8px 10px;font:13px Inter,sans-serif;color:#0f2440';
   b.innerHTML = '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>📱 Text them</b>'
@@ -184550,7 +184553,8 @@ function bar(ov, pid){
     + '<div class="gctx-note" style="font-size:11px;color:#475569;margin-top:4px">Goes out from the GrayCo texting number and shows on this thread. Customers can text that number too — their texts land here.</div>';
   var thr = card.querySelector('#_jmThread');
   if (thr && thr.parentNode === card) card.insertBefore(b, thr); else card.insertBefore(b, card.children[1] || null);
-  b.addEventListener('input', function(){ DRAFT.to = b.querySelector('.gctx-to').value; DRAFT.text = b.querySelector('.gctx-msg').value; });
+  try { if (W._gcJobPhonePick) W._gcJobPhonePick(b, pid, DRAFT); } catch (e) {}   /* patch JOBMSG: several numbers → a picker */
+  b.addEventListener('input', function(ev){ DRAFT.to = b.querySelector('.gctx-to').value; DRAFT.text = b.querySelector('.gctx-msg').value; if (ev && ev.target && ev.target.classList && ev.target.classList.contains('gctx-to')) DRAFT.typed = true; });   /* patch JOBMSG: typed = keep it */
   status().then(function(st){
     var n = b.querySelector('.gctx-note'); if (!n || !st) return;
     if (!st.ready) n.textContent = 'Texting is not set up yet (Netlify TWILIO_* — see docs/TEXT-MESSAGES.md).';
@@ -220300,6 +220304,137 @@ function paint(){
 RI.call(W, paint, 1500);
 later(paint, 1200);
 try { console.log('[GC] 💬 Job message @mentions + who is told (patch JOBMENTION): _gcJM, _gcJobMsgForMe()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-jobmsg">
+/* __GC_PATCH_JOBMSG__ — 💬 Job Messages (tools/patch_JOBMSG.py). Owner 11/19 on his iPhone, PO C846 · Outdoor Entertainment Area:
+   1. "The phone should auto-enter if they have a number." The 📱 Text them phone is filled in every time a job's thread opens
+      (or the Switch job… search moves to another job) with the customer's phone: the number that last texted in on this job,
+      the job's own phone fields (clientPhone / phone / customerPhone / contactPhone / cell …), the linked customer record
+      (customerId, else the customer whose name is the job's client), the lead it came from (leadId, the lead's pid /
+      customerPid / fromProjectId, the same CompanyCam project), else a customer / lead at the same street address.
+      It stays editable; with more than one number a small picker under the box switches between them. No number → a short
+      line says where to add one (the job has none anywhere — e.g. a job made from a CompanyCam project with no contact).
+   2. "Make sure if I message the team down there they get a notification." Every team message posted on a thread asks
+      /.netlify/functions/job-notify to tell the people it is for — each @tagged person (@Office = the office role), or the
+      job's PM when nobody is tagged, never the sender — with a phone push (when their phone has notifications on) plus a
+      text to their cell from the GrayCo alerts number; quiet hours, Away and a 5-minute throttle per person per job are
+      the server's (netlify/functions/_lib/jobmsgnotify.js). A short note says who was reached and how.
+   API: window._gcJobPhones(pid) → [{ d: '9015551234', label }], window._gcJobPhonePick(bar, pid, draft),
+        window._gcJobMsgNotify(m) → Promise<answer|null>. Kill switch: localStorage gc_jobmsg_off = '1'. */
+(function(){
+'use strict';
+if (window.__GC_PATCH_JOBMSG__) return; window.__GC_PATCH_JOBMSG__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function off(){ try { return localStorage.getItem('gc_jobmsg_off') === '1'; } catch (e) { return false; } }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+function crm(){ return W._crm || {}; }
+function list(k){ try { return arr(crm()[k]); } catch (e) { return []; } }
+function msgs(){ try { return arr(JSON.parse(localStorage.getItem('gc_job_messages') || '[]')); } catch (e) { return []; } }
+function proj(pid){ var l = list('projects'); for (var i = 0; i < l.length; i++) if (l[i] && l[i].id === pid) return l[i]; return null; }
+function street(v){ return low(s(v).split(',')[0]).replace(/[.#]/g, ' ').replace(/\b(drive)\b/g, 'dr').replace(/\b(street)\b/g, 'st').replace(/\b(road)\b/g, 'rd').replace(/\b(avenue)\b/g, 'ave').replace(/\b(lane)\b/g, 'ln').replace(/\b(cove)\b/g, 'cv').replace(/\b(valley)\b/g, 'vly').replace(/\b(court)\b/g, 'ct').replace(/\b(circle)\b/g, 'cir').replace(/\s+/g, ' ').trim(); }
+var PFIELDS = ['clientPhone', 'phone', 'customerPhone', 'contactPhone', 'clientCell', 'cell', 'mobile', 'ownerPhone', 'homeownerPhone'];
+
+/* ── 1. the job's phone numbers, best first ── */
+function jobPhones(pid){
+  var out = [], seen = {};
+  function add(v, label){ var d = d10(v); if (d.length !== 10 || seen[d]) return; seen[d] = 1; out.push({ d: d, label: label }); }
+  if (!pid) return out;
+  /* the number that last texted in on this job (what the bar used before) */
+  msgs().filter(function(m){ return m && m.pid === pid && m.smsFrom; }).sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); }).slice(0, 2).forEach(function(m){ add(m.smsFrom, 'texted in'); });
+  var p = proj(pid); if (!p) return out;
+  var who = s(p.client || p.customer || p.clientName);
+  PFIELDS.forEach(function(k){ add(p[k], who ? who : 'on the job'); });
+  if (p.contact && typeof p.contact === 'object') add(p.contact.phone || p.contact.phone_number, s(p.contact.name) || 'job contact');
+  arr(p.contacts).forEach(function(c){ if (c && typeof c === 'object') add(c.phone || c.cell, s(c.name) || 'job contact'); });
+  /* the customer record: its id, else the one customer whose name / company is the job's client */
+  var cust = list('customers'), cid = s(p.customerId || p.custId || p.clientId), c = null;
+  if (cid) c = cust.filter(function(x){ return x && s(x.id) === cid; })[0] || null;
+  if (!c && who) { var hits = cust.filter(function(x){ return x && (low(x.name) === low(who) || low(x.company) === low(who)); }); if (hits.length === 1) c = hits[0]; }
+  if (c) { add(c.phone, 'customer ' + (s(c.name) || s(c.company))); add(c.cell || c.mobile, 'customer ' + (s(c.name) || s(c.company))); }
+  /* the lead it came from */
+  var leads = list('leads'), lid = s(p.leadId || p.fromLead || p.sourceLeadId), ccid = s(p.ccamId || p.ccProjectId);
+  leads.filter(function(l){ return l && ((lid && (s(l.id) === lid || s(l.inboxId) === lid)) || s(l.pid) === pid || s(l.customerPid) === pid || s(l.fromProjectId) === pid || (ccid && s(l.ccamId) === ccid)); }).forEach(function(l){
+    var nm = s(l.contactName || l.client || l.name);
+    add(l.phone, 'lead ' + nm); if (l.contact && typeof l.contact === 'object') add(l.contact.phone, 'lead ' + nm);
+  });
+  /* last: a customer / lead at the same street address */
+  var st = street(p.address);
+  if (st && /^\d+\s+\S+/.test(st)) {
+    cust.forEach(function(x){ if (!x) return; var at = [x.address].concat(arr(x.properties).map(function(y){ return y && y.address; })); if (at.some(function(a){ return street(a) === st; })) add(x.phone, 'customer at this address'); });
+    leads.forEach(function(l){ if (l && street(l.address) === st) add(l.phone, 'lead at this address'); });
+  }
+  return out;
+}
+W._gcJobPhones = function(pid){ if (off()) return []; try { return jobPhones(pid); } catch (e) { return []; } };
+
+/* the picker under the 📱 Text them box (one number: where it came from; several: a chip each; none: where to add one) */
+function pick(b, pid, draft, tries){
+  if (!b || !b.isConnected || off()) return;
+  var inp = b.querySelector('.gctx-to'); if (!inp) return;
+  var l = jobPhones(pid);
+  if (!l.length && (tries || 0) < 6) { later(function(){ pick(b, pid, draft, (tries || 0) + 1); }, 1500); }   /* the lists may still be loading */
+  if (l.length && !s(inp.value) && !(draft && draft.typed)) { inp.value = tidy(l[0].d); if (draft && draft.pid === pid) draft.to = inp.value; }
+  var box = b.querySelector('.gcjp-pick');
+  if (!box) { box = D.createElement('div'); box.className = 'gcjp-pick'; box.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:11px;color:#475569'; var row = b.firstElementChild; if (row && row.nextSibling) b.insertBefore(box, row.nextSibling); else b.appendChild(box); }
+  var cur = d10(inp.value);
+  var html = !l.length ? '<span class="gcjp-none">No customer phone on this job yet — add it in the job\'s customer info (or the customer / lead it came from), or type one.</span>'
+    : l.length === 1 ? '<span class="gcjp-one">📇 ' + esc(tidy(l[0].d)) + ' — ' + esc(l[0].label) + '</span>'
+    : '<span>📇 Numbers on this job:</span>' + l.slice(0, 5).map(function(x){ var on = x.d === cur; return '<button type="button" class="gcjp-n" data-d="' + esc(x.d) + '" aria-pressed="' + on + '" style="border:1px solid ' + (on ? '#0e7490' : '#cbd5e1') + ';background:' + (on ? '#cffafe' : '#fff') + ';color:#0f2440;border-radius:12px;padding:5px 9px;font:600 12px Inter,Arial,sans-serif;min-height:30px;cursor:pointer">' + esc(tidy(x.d)) + ' <span style="font-weight:400;color:#64748b">' + esc(x.label) + '</span></button>'; }).join('');
+  if (box.__h !== html) { box.innerHTML = html; box.__h = html; }
+  if (!box.__w) {
+    box.__w = true;
+    box.addEventListener('click', function(ev){
+      var bt = ev.target.closest && ev.target.closest('.gcjp-n'); if (!bt) return;
+      ev.preventDefault();
+      inp.value = tidy(bt.getAttribute('data-d'));
+      if (draft) { draft.to = inp.value; draft.typed = true; }
+      box.__h = ''; pick(b, pid, draft, 99);
+    });
+    inp.addEventListener('input', function(){ if (draft) draft.typed = true; box.__h = ''; later(function(){ pick(b, pid, draft, 99); }, 0); });
+  }
+}
+W._gcJobPhonePick = function(b, pid, draft){ try { pick(b, pid, draft, 0); } catch (e) { try { console.warn('[GC] job phone', e); } catch (x) {} } };
+
+/* ── 2. a team message → a real notification (job-notify.js) ── */
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function team(m){ return !(m.smsFrom || m.smsTo || m.channel === 'sms' || m.source === 'sms'); }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.className = 'gcjp-toast'; t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100400;background:' + (bad ? '#7f1d1d' : '#0f2440') + ';color:#fff;padding:9px 14px;border-radius:10px;font:600 12px Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw;text-align:center';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 6000); } catch (e) {}
+}
+function line(o){
+  var l = arr(o && o.to); if (!l.length) return '';
+  return '🔔 ' + l.map(function(x){
+    var how = x.throttled ? 'told a moment ago' : x.held ? 'at 7 AM (quiet hours)' : x.pushed && x.texted ? 'text + phone' : x.texted ? 'text' : x.pushed ? 'phone' : 'no phone on file';
+    return s(x.name) + ': ' + how;
+  }).join(' · ');
+}
+function post(body, n){
+  return W.fetch('/.netlify/functions/job-notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); },
+      function(e){ if ((n || 0) < 2) return new Promise(function(res){ later(function(){ res(post(body, (n || 0) + 1)); }, 4000); }); return { ok: false, error: s(e && e.message) || 'offline' }; });
+}
+W._gcJobMsgNotify = function(m){
+  if (off() || !m || !m.pid || !m.id || !s(m.text) || !team(m) || !signedIn()) return Promise.resolve(null);
+  var body = { pid: s(m.pid), msgId: s(m.id), text: s(m.text).slice(0, 2000), tags: arr(m.tags).slice(0, 30) };
+  W.__gcJobMsgNotifyLast = body;
+  return post(body, 0).then(function(o){
+    W.__gcJobMsgNotifyAns = o;
+    var t = o && o.ok ? line(o) : '';
+    if (t) toast(t); else if (o && !o.ok && o.error) toast('Notification not sent: ' + s(o.error).slice(0, 120), true);
+    return o;
+  });
+};
+try { console.log('[GC] 💬 Job Messages: the job\'s phone in 📱 Text them + a real notification for the people told (patch JOBMSG): _gcJobPhones, _gcJobMsgNotify'); } catch (e) {}
 })();
 </script>
 <script>

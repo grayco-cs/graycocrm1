@@ -350,7 +350,7 @@ async function notify(o){
      staff cells, tagged 'staff', which _lib/pause.js lets through */
   if (!(await require('./automations.js').isOn('staff_text_alerts'))) return Object.assign(out, await require('./automations.js').held('staff_text_alerts', want.length, [s(o.type)]));
   const opt = await _D.optouts();
-  let hours = null; if (!o.emergency) { try { hours = await _D.hours(); } catch (e) { hours = null; } }
+  let hours = null; if (!o.emergency && !o.sqOnly) { try { hours = await _D.hours(); } catch (e) { hours = null; } }   /* patch JOBMSG: sqOnly = only the staff quiet hours (a team message at 6 PM / on a Saturday goes) */
   const t = now(), at = new Date(t).toISOString(), day = centralDay(t), thread = s(o.thread) || o.type;
   /* QUIET (owner 11/16: "From 9 [PM] – 6 [AM] only call-outs and emergency notifications go through; all else wait until 7 AM"):
      inside the staff quiet window (_lib/staffquiet.js, default 9 PM → 7 AM, an admin setting) every non-emergency text is HELD
@@ -367,7 +367,7 @@ async function notify(o){
          every lead text (LSA too) waits outside business hours / quiet hours and goes out when the office opens; emergencies go now */
       if (!o.emergency && (sqNow || quietNow(p, t, hours))) {
         if (o.hold || o.type === 'lead' || sqNow) { const l = Array.isArray(st.held[e]) ? st.held[e] : []; const body0 = typeof o.body === 'function' ? o.body(0, { newbie: true, email: e }) : o.text;
-          if (l.length < 25 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), body: clip(body0, 600), link: s(o.link), kind: s(o.type), lsa: o.lsa || null, from: (o.type === 'lead' || o.lsa) ? 'lead' : 'alert' }); st.held[e] = l; skip.held.push(e); }
+          if (l.length < 25 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), body: clip(body0, 600), link: s(o.link), kind: s(o.type), lsa: o.lsa || null, from: (o.type === 'lead' || o.lsa) ? 'lead' : 'alert', sq: o.sqOnly ? true : undefined });   /* patch JOBMSG: sq = sent once the staff quiet hours end (7 AM) */ st.held[e] = l; skip.held.push(e); }
         else skip.quiet.push(e);
         return;
       }
@@ -409,7 +409,14 @@ async function flushHeld(){
   let hours = null; try { hours = await _D.hours(); } catch (e) { hours = null; }
   /* OVERNIGHT: held lead texts go when the office opens (business hours) and the person's own quiet window is over */
   let sqNow = false; try { const SQ = require('./staffquiet.js'); sqNow = SQ.quiet(t, await SQ.settings()); } catch (e) { sqNow = false; }   /* QUIET: nothing before 7 AM */
-  await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !sqNow && !quietNow(p, t, hours)) { held[e] = st.held[e]; delete st.held[e]; } }); return Object.keys(held).length ? st : undefined; });
+  /* patch JOBMSG: an item marked sq (a team message on a job) waits only for the staff quiet hours (and the person's own window), not
+     for business hours; its person may have no 📱 Text alerts row — their CRM cell is used (a row switched off = nobody) */
+  const SL = {}; staffList(pp).forEach(x => { SL[x.email] = x; });
+  const sqP = e => { if (R[e]) return R[e]; const x = SL[e], sp = set.people[e]; return x && x.phone && (!sp || sp.on !== false) ? { on: true, name: x.name, phone: x.phone } : null; };
+  await _D.kvCas(SKEY, v => { const st = loadState(v); held = {}; Object.keys(st.held).forEach(e => { const p = R[e]; if (p && !sqNow && !quietNow(p, t, hours)) { held[e] = st.held[e]; delete st.held[e]; return; }
+    const ps = sqP(e), l = arr(st.held[e]); if (!ps || sqNow || (!ps.qOff && inQuiet(ps, t)) || !l.some(x => x.sq)) return;
+    held[e] = l.filter(x => x.sq); const rest = l.filter(x => !x.sq); if (rest.length) st.held[e] = rest; else delete st.held[e]; R[e] = R[e] || ps; });
+    return Object.keys(held).length ? st : undefined; });
   const out = { sent: 0 };
   if (!Object.keys(held).length) return out;
   if (!(await require('./automations.js').isOn('staff_text_alerts'))) return Object.assign(out, { held: 'staff_text_alerts' });   /* patch AUTOPANEL (staff texts go in data-entry mode) */
