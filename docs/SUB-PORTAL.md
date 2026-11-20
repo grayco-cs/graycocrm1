@@ -203,3 +203,14 @@ Both sign-ins and the sub portal have an **English / Español** toggle, remember
     - ➕ Add to our estimate puts a $0 line in the project's open estimate, the same record the Estimate Builder uses.
   - **📝 Add to our estimate notes** copies the agreed inclusions and exclusions into that estimate's Inclusions and Exclusions.
   - Who was asked and which lines were reviewed are kept on the bid job. Subs never see them (`subJobView`).
+
+## 📐 Measure — the plan measure tool (patch MEASURE, owner 11/20)
+
+- **Where:** bids.grayco-cs.com → a job → Plans → **📐 Measure** (PDF or picture plans), and portal.grayco-cs.com → a job → **Plans & documents** → **📐 Measure** (opens the same tool on bids.grayco-cs.com for that one CRM plan, no bid-site sign-in: a signed 12-hour link for that sub, that job, that file). GrayCo staff get it on bid jobs too (the 🔨 Sub Portal tab); a staff takeoff is saved to the job.
+- **Phone first:** pinch or drag to zoom and move, + / − / Fit buttons, every page of a PDF (‹ 1/12 ›).
+- **Scale per page:** 1/8"=1', 3/16"=1', 1/4"=1', 3/8"=1', 1/2"=1', 1"=10', 1"=20', 1"=30', 1"=50' (PDFs printed to scale), or tap both ends of a known length and type it (12'6" or 12.5). "Use on every page" is on by default.
+- **Tools:** 📏 Line (LF; a wall height gives wall SF) · ▭ Rect and ⬡ Area (SF and perimeter LF; a depth in inches gives CY) · ⊕ Count (EA) · 📝 Note (a pin with text). Every measurement has a **name** (it groups the totals) and a **note**.
+- **☰ List:** totals by name and unit, every measurement (tap to open, 🗑 to delete), **⬇ Export CSV**.
+- **Saved on the server** as you go (sp_rows collection `takeoffs`, one row per person + job + plan file, every page inside; `_lib/takeoffs.js`), so it is there on any phone or computer. A sub's takeoff is theirs only (the server checks the job and the plan file are open to them); no price is ever in it.
+- **📐 Attach my takeoff to this bid** (on the bid form when they have one): the server adds the totals of their saved takeoffs on that job to the bid (`takeoff`), shown to GrayCo with the bid.
+- Server: `subportal.js` action `takeoffs` (`get` / `put` / `job` / `open`), `portal-access.js` `p-measure`. Test: `tools/tests/test_MEASURE.mjs`.

@@ -950,10 +950,20 @@ function myJobCard(j){
     h('button', { type: 'button', class: 'btn gold', 'data-myjob-inv': j.id, style: 'grid-column:1/-1', text: t('ssInvBtn'), on: { click: function(){ quickInvoiceSheet(j.id); } } })]));
   return h('div', { class: 'myjob', 'data-myjob': j.id }, kids);
 }
+/* patch MEASURE: 📐 Measure — a PDF / picture plan opens in the bid site's measure tool (scale, LF / SF / EA, notes; saved to them) */
+Object.assign(L.en, { measureBtn: '📐 Measure', measureErr: 'The measure tool could not open. Try again.' });
+Object.assign(L.es, { measureBtn: '📐 Medir', measureErr: 'No se pudo abrir la herramienta de medir. Intente otra vez.' });
+function measureBtn(pid, f){
+  if (!pid || !/pdf|image/.test(f.type || '')) return null;
+  return h('button', { type: 'button', class: 'btn', 'data-measure': f.name, text: t('measureBtn'), on: { click: function(){
+    var w = null; try { w = window.open('', '_blank'); } catch (e) {}
+    api('p-measure', { projectId: pid, name: f.name }).then(function(r){ if (w) w.location.href = r.url; else location.href = r.url; },
+      function(){ if (w) try { w.close(); } catch (e) {} toast(t('measureErr'), true); }); } } });
+}
 function ssDocs(pid, box){
   function paint(list){ box.innerHTML = ''; box.appendChild(h('b', { text: t('ssDocsL') }));
     if (!list.length) { box.appendChild(h('div', { class: 'muted', text: t('ssDocsNone') })); return; }
-    list.slice(0, 12).forEach(function(f){ box.appendChild(h('div', { class: 'ss-doc' }, [h('span', { text: /pdf/.test(f.type || '') ? '📄' : /image/.test(f.type || '') ? '🖼️' : '📎' }), f.url && safeUrl(f.url) ? h('a', { href: f.url, target: '_blank', rel: 'noopener', text: f.name }) : h('span', { text: f.name })])); }); }
+    list.slice(0, 12).forEach(function(f){ box.appendChild(h('div', { class: 'ss-doc' }, [h('span', { text: /pdf/.test(f.type || '') ? '📄' : /image/.test(f.type || '') ? '🖼️' : '📎' }), f.url && safeUrl(f.url) ? h('a', { href: f.url, target: '_blank', rel: 'noopener', text: f.name }) : h('span', { text: f.name }), measureBtn(pid, f)])); }); }
   if (SS_DOCS[pid]) return paint(SS_DOCS[pid]);
   api('p-job', { projectId: pid }).then(function(r){ SS_DOCS[pid] = r.docs || []; paint(SS_DOCS[pid]); }, function(){ paint([]); });
 }
@@ -1109,7 +1119,7 @@ function overview(){
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
   /* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) */
   var docs = JOB.docs || [];
-  out.push(h('section', { class: 'card', 'data-subdocs': '1' }, [h('h2', { text: t('jobDocs') })].concat(docs.length ? docs.map(function(f){ return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow', text: f.name }), h('button', { type: 'button', class: 'btn', 'data-subdoc': f.name, text: t('open'), on: { click: function(){ viewer(f); } } })]); }) : [h('div', { class: 'empty', text: t('noDocs') })])));
+  out.push(h('section', { class: 'card', 'data-subdocs': '1' }, [h('h2', { text: t('jobDocs') })].concat(docs.length ? docs.map(function(f){ return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow', text: f.name }), h('button', { type: 'button', class: 'btn', 'data-subdoc': f.name, text: t('open'), on: { click: function(){ viewer(f); } } }), measureBtn(j.id || (JOB.job && JOB.job.id), f)]); }) : [h('div', { class: 'empty', text: t('noDocs') })])));
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));
   return out;
 }

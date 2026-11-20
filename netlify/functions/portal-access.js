@@ -1411,6 +1411,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-avail' || action === 'p-avail-set') return pAvail(ctx, body, action);   /* patch X10: my schedule + the days I can't work */
   if (action === 'p-codes') return pCodes(ctx, body.projectId);   /* patch X10: the job's access codes — only on my scheduled days, every look logged */   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
   if (action === 'p-job') return pJob(ctx, body.projectId);
+  if (action === 'p-measure') return pMeasure(ctx, body);   /* patch MEASURE */
   if (action === 'p-insp-req') return pInspReq(ctx, body);   /* patch INSPECT2: 📋 Request an inspection → the job's PM (superintendent on commercial) To-Do */
   if (action === 'p-upload') {
     if (body.projectId) jobOf(ctx, body.projectId);
@@ -1584,13 +1585,27 @@ async function allPhotos(ctx, p){
 }
 const SUBDOC_OK = /plan|drawing|blue.?print|\bspec|survey|elevation|layout|architect|engineer|structural|submittal|cut.?sheet|install(ation)? (guide|instructions)/i;
 const SUBDOC_NO = /proposal|estimate|contract|invoice|insurance|\bclaim|carrier|adjust|\bcost|budget|pric|\bbid|quote|agreement|w-?9|\bcoi\b|payment|check|receipt|lien|statement|change.?order|xactimate|scope of loss|\btax|payroll|commission|profit|margin|\$/i;
-async function subDocs(data, p){
-  const pick = arr(data.projectDocs).filter(function(d){
+function subDocPick(data, p){
+  return arr(data.projectDocs).filter(function(d){
     if (s(d.pid || d.projectId) !== s(p.id) || d.deleted === true || d.hideFromSubs === true || d.hideSubs === true || !refPath(d.ref)) return false;
     if (d.shareSubs === true) return true;
     const t = s(d.cat) + ' | ' + s(d.name) + ' | ' + s(d.kind);
     return SUBDOC_OK.test(t) && !SUBDOC_NO.test(t);
   }).slice(0, 60);
+}
+/* patch MEASURE: 📐 Measure on a plan in the job's Plans & documents → the bid site's measure tool for that one file (a signed 12-hour
+   ticket: this sub, this job, this file; their takeoff is saved to them on the server) */
+async function pMeasure(ctx, body){
+  const p = jobOf(ctx, body.projectId);
+  const d = subDocPick(ctx.data, p).find(function(x){ return clip(SS().clean(x.name) || 'File', 120) === s(body.name); });
+  if (!d) throw Fail(404, 'That plan is not shared with you.');
+  const type = s(d.type) || (/\.pdf$/i.test(s(d.ref)) ? 'application/pdf' : '');
+  if (!/pdf|image/.test(type + ' ' + s(d.ref))) throw Fail(415, 'Only a PDF or a picture can be measured.');
+  const tk = require('./_lib/takeoffs.js').mint({ sub: ctx.sub.id, pid: p.id, ref: refPath(d.ref), name: clip(SS().clean(d.name) || 'File', 120), type: type, job: clip(SS().clean(p.name), 120) });
+  return { ok: true, url: bidsBase() + '/#measure=' + tk };
+}
+async function subDocs(data, p){
+  const pick = subDocPick(data, p);
   const signed = await signRefs(pick.map(function(d){ return d.ref; }));
   return pick.map(function(d){ const u = signed[s(d.ref)]; return u ? { name: clip(SS().clean(d.name) || 'File', 120), cat: clip(d.cat, 40), type: s(d.type) || (/\.pdf$/i.test(s(d.ref)) ? 'application/pdf' : ''), url: u, at: ymd(d.uploadedAt || d.uploaded || d.savedAt) } : null; }).filter(Boolean);
 }

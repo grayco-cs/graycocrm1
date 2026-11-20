@@ -820,7 +820,11 @@ async function saveCollection(who, key, upsert, del, ctx){
           docs: arr(x.docs), submittedAt: x.submittedAt || new Date().toISOString(), updatedAt: new Date().toISOString()
         });
         ['trade', 'inclusions', 'exclusions', 'notesOwn'].forEach(function(k){ if (x[k] !== undefined) b[k] = s(x[k]).slice(0, k === 'trade' ? 80 : 4000); });   /* patch BIDMULTI: the sub portal's bid form (the bid site's own page leaves them as they are) */
-        if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
+        if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);
+        if (x.attachTakeoff === true) {   /* patch MEASURE: 📐 Attach my takeoff — the totals of their own saved takeoffs on this job (made here, never typed in) */
+          const tr = (await listRows([eq('collection', 'takeoffs'), eq('user_id', me), eq('job_id', jobId)])).map(function(r){ return r.data || {}; });
+          const tt = TK().totals(tr).slice(0, 80); if (tt.length) { b.takeoff = tt; b.takeoffAt = new Date().toISOString(); }
+        } else if (x.attachTakeoff === false) { delete b.takeoff; delete b.takeoffAt; }   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (prev && prev.read && JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs))) delete b.read;   /* patch SUBSIMPLE: a new PDF → GrayCo reads it again ("Not read yet") */
         if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
@@ -2127,6 +2131,53 @@ async function mrToPo(d, job){
   return made || { id: '', why: 'already on a PO' };
 }
 
+/* patch MEASURE: the plan measure tool's saved takeoffs (_lib/takeoffs.js) — per person + job + plan file, every page inside.
+   A sub: their own only, on a job they may see and a plan file they may open. GrayCo staff: owner 'gc' (saved to the job).
+   A measure ticket (portal.grayco-cs.com → a CRM job's plan): that sub + that CRM job + that one file, nothing else. */
+function TK(){ return require('./_lib/takeoffs.js'); }
+async function takeoffsAct(who, body){
+  const op = s(body.op), T = TK();
+  let owner, job, file, tk = null;
+  if (body.mt) {
+    tk = T.read(body.mt); if (!tk) throw Fail(403, 'This measure link has expired. Open the plan again from your portal.');
+    owner = 'crm.' + tk.s; job = 'crm.' + tk.p; file = { name: tk.n, type: tk.t };
+  } else {
+    needSub(who, true);
+    if (who.isSupplier) throw Fail(403, 'Subcontractors only.');
+    const jobId = s(body.jobId); if (!okId(jobId)) throw Fail(400, 'Pick a job.');
+    owner = who.isAdmin ? 'gc' : who.profile.id; job = jobId;
+    if (!who.isAdmin) { const sc = await subScope(who); if (!sc.jobs[jobId]) throw Fail(403, 'That job is not open to you.'); body._job = sc.jobs[jobId].data; }
+    if (op !== 'job') {
+      file = { name: s(body.file && body.file.name).slice(0, 200), type: s(body.file && body.file.type).slice(0, 60) };
+      if (!file.name) throw Fail(400, 'Pick a plan file.');
+      if (!who.isAdmin) { const r0 = await getRow('plans', jobId); const ok = r0 && subPlans(r0.data.items, body._job).some(function(f){ return s(f.name) === file.name; });
+        if (!ok) throw Fail(403, 'That plan file is not open to you.'); }
+    }
+  }
+  if (op === 'open') {
+    if (!tk) throw Fail(400, 'Bad request');
+    let url = '';
+    try { const r = await fetch(sbUrl() + '/storage/v1/object/sign/crm-files', { method: 'POST', headers: H(), body: JSON.stringify({ expiresIn: SIGN_SECS, paths: [tk.r] }) });
+      const l = r.ok ? await r.json() : []; const x = Array.isArray(l) ? l[0] : null; if (x && x.signedURL && !x.error) url = sbUrl() + '/storage/v1' + x.signedURL; } catch (e) {}
+    if (!url) throw Fail(404, 'The plan file could not be opened. Try again from your portal.');
+    return { ok: true, file: { name: file.name, type: file.type, url: url }, job: s(tk.j) };
+  }
+  if (op === 'job') {
+    const rows = (await listRows([eq('collection', 'takeoffs'), eq('user_id', owner), eq('job_id', job)])).map(function(r){ return r.data || {}; });
+    return { ok: true, plans: rows.map(function(d){ return { file: d.file, totals: T.totals([d]), updatedAt: d.updatedAt }; }), totals: T.totals(rows) };
+  }
+  const id = T.rowId(owner, job, T.fileKey(file.name));
+  if (op === 'get') { const r = await getRow('takeoffs', id); return { ok: true, doc: r ? r.data : null }; }
+  if (op === 'put') {
+    const d = T.clean(body.doc, file);
+    d.updatedAt = new Date().toISOString(); d.by = tk ? 'portal' : who.email;
+    if (JSON.stringify(d).length > MAX_ROW) throw Fail(413, 'This takeoff is too big to save. Split it over another plan file.');
+    await upsertRows([{ collection: 'takeoffs', id: id, user_id: owner, job_id: job, data: d }], tk ? 'portal:' + tk.s : who.email);
+    return { ok: true, saved: d.items.length, updatedAt: d.updatedAt, totals: T.totals([d]) };
+  }
+  throw Fail(400, 'Unknown takeoff step.');
+}
+
 exports.handler = async function (event) {
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
@@ -2163,6 +2214,10 @@ exports.handler = async function (event) {
       return J(200, { ok: true, email: s(inv.data.email), jobTitle: job && !isDraft(job.data) ? s(job.data.title) : '' });
     }
 
+    if (action === 'takeoffs' && body.mt) {   /* patch MEASURE: a measure ticket from portal.grayco-cs.com (no bid-site sign-in) */
+      if (limited(ipOf(event), 120)) return J(429, { error: 'Too many tries. Wait a minute.' });
+      return J(200, await takeoffsAct(null, body));
+    }
     const who = await whoAmI(event);
     const ctx = {};
     if (action === 'me') {
@@ -2217,6 +2272,7 @@ exports.handler = async function (event) {
       if (target.role === 'supplier') return J(200, await supplierWork(target));   /* patch SUPPLIER: their POs + supplier bills */
       return J(200, await myWork(target));
     }
+    if (action === 'takeoffs') return J(200, await takeoffsAct(who, body));   /* patch MEASURE */
     if (action === 'invite-send') return J(200, await inviteSend(who, body));   /* patch BIDSITE3 B: Invite → the e-mail at once */
     if (action === 'bidmail-cfg') return J(200, await bidmailCfg(who, body));   /* patch BIDSITE3 C: Admin → 📧 Bid site e-mails */
     if (action === 'matreq') return J(200, await matReq(who, body, ctx));       /* patch BIDSITE3 F: "Request more materials" */

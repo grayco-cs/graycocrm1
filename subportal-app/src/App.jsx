@@ -15,6 +15,7 @@ import { authToken, signIn as authSignIn, signUp as authSignUp, signOut as authS
   checkPassword, getCurrentUser, inviteInfo as fetchInviteInfo, requestPasswordReset, takeRecoveryFromUrl, api, keepSignedIn, onSignedOut, hasSession } from './auth.js';
 import { EMBEDDED, COMPANY as CFG_COMPANY, PORTAL_URL } from './config.js';
 import logoUrl from './grayco-logo.png';
+import MeasureTool, { MeasureFromPortal, canMeasure } from './Measure.jsx';   // patch MEASURE
 
 /* ============================================================
    TRANSLATIONS — every visible string is keyed
@@ -1157,7 +1158,13 @@ function ChangePasswordModal({ t, user, onPasswordChanged, onClose, mode = 'volu
 (function(){ try { const m = /(?:^#|&)t=([A-Za-z0-9_-]{43})(?:&|$)/.exec(window.location.hash || ''); if (m && !EMBEDDED) window.location.replace(PORTAL_URL + '/#t=' + m[1]); } catch (e) { /* ignore */ } })();
 function savedLang(){ try { const v = localStorage.getItem('gc_lang'); return v === 'es' ? 'es' : 'en'; } catch (e) { return 'en'; } }
 
+/* patch MEASURE: bids.grayco-cs.com/#measure=<ticket> — a CRM job's plan opened from portal.grayco-cs.com (no bid-site sign-in) */
 export default function App() {
+  const m = typeof location !== 'undefined' && /^#measure=([A-Za-z0-9_.-]+)/.exec(location.hash || '');
+  if (m) return <MeasureFromPortal ticket={m[1]} lang={savedLang()} />;
+  return <BidApp />;
+}
+function BidApp() {
   const [lang, setLangRaw] = useState(savedLang);
   const setLang = (l) => { setLangRaw(l); try { localStorage.setItem('gc_lang', l); } catch (e) { /* ignore */ } };
   const [users, setUsers] = useState([]);
@@ -2764,6 +2771,10 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
   const [fullPlans, setFullPlans] = useState(null);  // plans with binary data, lazy-loaded
   const [takeoffPlan, setTakeoffPlan] = useState(null);  // currently-open takeoff modal
+  /* patch MEASURE: the totals of their saved takeoffs on this job (📐 Attach my takeoff to the bid) */
+  const [tkSum, setTkSum] = useState(null);
+  const [attachTk, setAttachTk] = useState(null);
+  useEffect(() => { if (user.role !== 'sub' || tkSum) return; api('takeoffs', { op: 'job', jobId: job.id }).then(r => setTkSum(r.totals || []), () => setTkSum([])); }, [job.id, tkSum]); // eslint-disable-line
 
   // Lazy-load the plan binaries when the job is opened (not in the list)
   useEffect(() => {
@@ -2809,6 +2820,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       scope: bidForm.scope, notes: bidForm.notes,
       docs: bidDocs, lines: (job.bidForm || []).map(x => ({ id: x.id, amount: (bidLines[x.id] || {}).amount === '' || (bidLines[x.id] || {}).amount == null ? null : parseFloat((bidLines[x.id] || {}).amount), note: (bidLines[x.id] || {}).note || '' })),
       submittedAt: new Date().toISOString(),
+      ...((attachTk ?? !!(myBid && myBid.takeoff)) ? { attachTakeoff: true } : (myBid && myBid.takeoff ? { attachTakeoff: false } : {})),   // patch MEASURE
     };
     if (myBid) {
       setBids(bids.map(b => b.id === myBid.id ? { ...newBid, id: myBid.id } : b));
@@ -3638,7 +3650,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       {isAdmin && <VisToggle t={t} item={plan} kind="plan" onChange={v => setVis('plans', plan, v)} />}
                       {/* Takeoff button — only shown for PDF plans */}
-                      {(plan.name.toLowerCase().endsWith('.pdf') || plan.type === 'application/pdf') && (
+                      {canMeasure(plan) && user.role !== 'supplier' && (
                         <Btn size="sm" variant="ghost" onClick={() => {
                           // Pull the plan with its dataUrl (hydrated version)
                           const hydrated = (fullPlans || []).find(p => p.name === plan.name) || plan;
@@ -3680,8 +3692,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
           {/* TAKEOFF MODAL */}
           {takeoffPlan && (
-            <TakeoffModal plan={takeoffPlan} jobId={job.id} user={user} t={t}
-              onClose={() => setTakeoffPlan(null)} />
+            <MeasureTool file={{ name: takeoffPlan.name, type: takeoffPlan.type || '', url: takeoffPlan.dataUrl }} jobId={job.id} staff={isAdmin}
+              lang={t === T.es ? 'es' : 'en'} onClose={() => { setTakeoffPlan(null); setTkSum(null); }} />
           )}
 
           {/* patch SUPPLIER: the material list (suppliers + admins) and the suppliers' quotes (admins) */}
@@ -3730,6 +3742,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                     </div>
                     {b.scope && <div style={{ fontSize: 13, marginTop: 8 }}><strong>Scope:</strong> {b.scope}</div>}
                     {b.notes && <div style={{ fontSize: 13, marginTop: 4, color: styles.text2 }}><strong>Notes:</strong> {b.notes}</div>}
+                    {(b.takeoff || []).length > 0 && <div data-bid-tk={b.id} style={{ fontSize: 13, marginTop: 4, color: styles.text2 }}><strong>📐 Takeoff:</strong> {b.takeoff.map(r => `${r.name} ${Number(r.qty).toLocaleString('en-US')} ${r.unit}`).join(' · ')}</div>}
                     {b.docs && b.docs.length > 0 && (
                       <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: styles.text2, letterSpacing: '-0.005em' }}>
@@ -3869,6 +3882,14 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                   value={bidForm.notes}
                   onChange={e => setBidForm({ ...bidForm, notes: e.target.value })} />
               </Field>
+              {(tkSum || []).length > 0 && (
+                <div data-bid-takeoff="1" style={{ border: `1px solid ${styles.border}`, borderRadius: 8, padding: 10, marginBottom: 12, background: styles.cream }}>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                    <input type="checkbox" data-bid-attachtk="1" checked={attachTk ?? !!(myBid && myBid.takeoff)} onChange={e => setAttachTk(e.target.checked)} />
+                    📐 {t === T.es ? 'Adjuntar mi medición a la oferta' : 'Attach my takeoff to this bid'}
+                  </label>
+                  <div style={{ fontSize: 12, color: styles.text2, marginTop: 4 }}>{tkSum.slice(0, 8).map(r => `${r.name}: ${r.qty.toLocaleString('en-US')} ${r.unit}`).join(' · ')}{tkSum.length > 8 ? ' …' : ''}</div>
+                </div>)}
               <AttachmentList t={t} label={t.bidAttachments} hint={t.bidAttachmentsHint}
                 docs={bidDocs} setDocs={setBidDocs} showToast={showToast} />
               <Btn size="lg" icon={Send} style={{ width: '100%', justifyContent: 'center' }}
@@ -4256,629 +4277,6 @@ function AttachmentList({ t, label, hint, docs, setDocs, accept, showToast }) {
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ============================================================
-   TAKEOFF MODAL — full-featured (Bluebeam-style basics)
-   
-   Tools: Line, Rectangle, Polygon/Area, Set Scale
-   Multi-page navigation (all pages, per-page scale)
-   Zoom in/out/reset with pan (mouse-drag on background)
-   Trade layers with color coding + toggle visibility
-   Per-measurement label + share-with-GrayCo toggle
-   CSV export (all measurements across pages)
-   Read-only viewer mode for admins viewing a sub's shared takeoffs
-   
-   Storage: `takeoff:{userId}:{jobId}:{planName}` holds the full doc:
-     { perPageScale, measurements, layers, hiddenLayerIds }
-   
-   Shared-with-GrayCo model: each measurement has `.shared: bool`.
-   Admins can browse subs who have any `.shared` measurements on this job's
-   plans, and open the modal in read-only mode filtered to shared only.
-   ============================================================ */
-
-const DEFAULT_TAKEOFF_LAYERS = [
-  { id: 'l_gen',   name: 'General',    color: '#DC2626' },
-  { id: 'l_dw',    name: 'Drywall',    color: '#2563EB' },
-  { id: 'l_frm',   name: 'Framing',    color: '#059669' },
-  { id: 'l_mep',   name: 'MEP',        color: '#7C3AED' },
-  { id: 'l_flr',   name: 'Flooring',   color: '#EA580C' },
-  { id: 'l_roof',  name: 'Roofing',    color: '#DB2777' },
-];
-
-// Shoelace area formula for polygon (returns absolute pixel area)
-function polygonArea(pts) {
-  if (!pts || pts.length < 3) return 0;
-  let sum = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const j = (i + 1) % pts.length;
-    sum += pts[i].x * pts[j].y;
-    sum -= pts[j].x * pts[i].y;
-  }
-  return Math.abs(sum) / 2;
-}
-
-function polygonPerimeter(pts) {
-  if (!pts || pts.length < 2) return 0;
-  let sum = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    sum += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
-  }
-  // close the loop for polygon
-  if (pts.length >= 3) {
-    sum += Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y);
-  }
-  return sum;
-}
-
-function parseFeetInput(str) {
-  if (!str) return null;
-  const s = str.toString().trim().replace(/["]/g, '');
-  const ftInMatch = s.match(/^(\d+(?:\.\d+)?)\s*(?:'|ft|feet)?\s*(\d+(?:\.\d+)?)?\s*(?:in|inches)?$/i);
-  if (ftInMatch) {
-    const ft = parseFloat(ftInMatch[1]);
-    const inches = ftInMatch[2] ? parseFloat(ftInMatch[2]) : 0;
-    return ft + inches / 12;
-  }
-  const num = parseFloat(s);
-  return isNaN(num) ? null : num;
-}
-
-function formatFeet(feet) {
-  if (!isFinite(feet)) return '?';
-  const ft = Math.floor(feet);
-  const inches = Math.round((feet - ft) * 12);
-  if (inches === 0) return `${ft}'`;
-  if (inches === 12) return `${ft + 1}'`;
-  return `${ft}'-${inches}"`;
-}
-
-function TakeoffModal({ plan, jobId, user, onClose, t, readOnly = false, sharedFrom = null, storageOverride = null }) {
-  const canvasRef = React.useRef(null);
-  const overlayRef = React.useRef(null);
-  const containerRef = React.useRef(null);
-  const [pdfDoc, setPdfDoc] = React.useState(null);
-  const [pageNum, setPageNum] = React.useState(1);
-  const [numPages, setNumPages] = React.useState(1);
-  const [zoom, setZoom] = React.useState(1);
-  const [baseScale, setBaseScale] = React.useState(1);  // fit-to-width scale
-  const [loadError, setLoadError] = React.useState(null);
-  const [renderReady, setRenderReady] = React.useState(false);
-
-  const [tool, setTool] = React.useState('line');  // 'line' | 'rect' | 'poly' | 'setScale'
-  const [pending, setPending] = React.useState([]);  // in-progress points
-  const [perPageScale, setPerPageScale] = React.useState({});  // { pageNum: pxPerFoot }
-  const [measurements, setMeasurements] = React.useState([]);  // per-page below
-  const [layers, setLayers] = React.useState(DEFAULT_TAKEOFF_LAYERS);
-  const [activeLayerId, setActiveLayerId] = React.useState(DEFAULT_TAKEOFF_LAYERS[0].id);
-  const [hiddenLayerIds, setHiddenLayerIds] = React.useState([]);
-  const [defaultShareOn, setDefaultShareOn] = React.useState(false);
-
-  const storageKey = storageOverride || `takeoff:${user.id}:${jobId}:${plan.name}`;
-
-  // Load saved state
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const saved = await sget(storageKey);
-        if (saved) {
-          if (saved.measurements) setMeasurements(saved.measurements);
-          if (saved.perPageScale) setPerPageScale(saved.perPageScale);
-          if (saved.layers) setLayers(saved.layers);
-          if (saved.hiddenLayerIds) setHiddenLayerIds(saved.hiddenLayerIds);
-        }
-      } catch (e) { /* ignore */ }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Save on any material change (skip in read-only)
-  React.useEffect(() => {
-    if (readOnly || !renderReady) return;
-    sset(storageKey, { measurements, perPageScale, layers, hiddenLayerIds }).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [measurements, perPageScale, layers, hiddenLayerIds, renderReady]);
-
-  // Load PDF once
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (typeof window !== 'undefined' && !window.pdfjsLib) {
-          await new Promise((res, rej) => {
-            const s = document.createElement('script');
-            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            s.onload = res; s.onerror = rej;
-            document.head.appendChild(s);
-          });
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        }
-        if (cancelled) return;
-        if (!plan.name.toLowerCase().endsWith('.pdf') && plan.type !== 'application/pdf') {
-          setLoadError('Takeoff only works on PDF plans.');
-          return;
-        }
-        const dataUrl = plan.dataUrl;
-        if (!dataUrl) { setLoadError('Plan file not loaded. Try re-opening the job.'); return; }
-        const pdf = await window.pdfjsLib.getDocument(dataUrl).promise;
-        if (cancelled) return;
-        setPdfDoc(pdf);
-        setNumPages(pdf.numPages);
-      } catch (e) {
-        console.error('Takeoff PDF load failed:', e);
-        setLoadError('Could not load PDF for takeoff: ' + (e.message || String(e)));
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Render current page whenever page or zoom changes
-  React.useEffect(() => {
-    if (!pdfDoc) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const page = await pdfDoc.getPage(pageNum);
-        const containerWidth = Math.min(880, window.innerWidth - 100);
-        const viewport1x = page.getViewport({ scale: 1 });
-        const fitScale = containerWidth / viewport1x.width;
-        setBaseScale(fitScale);
-        const effectiveScale = fitScale * zoom;
-        const viewport = page.getViewport({ scale: effectiveScale });
-        const canvas = canvasRef.current;
-        const overlay = overlayRef.current;
-        if (!canvas || !overlay || cancelled) return;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        overlay.width = viewport.width;
-        overlay.height = viewport.height;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-        if (!cancelled) setRenderReady(true);
-      } catch (e) { console.warn('page render failed', e); }
-    })();
-    return () => { cancelled = true; };
-  }, [pdfDoc, pageNum, zoom]);
-
-  // Draw overlay whenever anything visual changes
-  React.useEffect(() => {
-    if (!renderReady) return;
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-    const ctx = overlay.getContext('2d');
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    // Draw all measurements on the current page (skip hidden layers)
-    const pageScale = perPageScale[pageNum];
-    measurements
-      .filter(m => m.page === pageNum && !hiddenLayerIds.includes(m.layerId))
-      .forEach(m => {
-        const layer = layers.find(l => l.id === m.layerId) || layers[0];
-        drawMeasurement(ctx, m, layer.color, pageScale, zoom);
-      });
-
-    // Draw pending points (in-progress measurement)
-    if (pending.length > 0) {
-      const pendingColor = tool === 'setScale' ? '#B91C1C' : (layers.find(l => l.id === activeLayerId)?.color || '#DC2626');
-      ctx.strokeStyle = pendingColor;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      // Draw lines connecting pending points
-      ctx.beginPath();
-      pending.forEach((pt, i) => {
-        if (i === 0) ctx.moveTo(pt.x * zoom, pt.y * zoom);
-        else ctx.lineTo(pt.x * zoom, pt.y * zoom);
-      });
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Draw dots at each pending point
-      pending.forEach(pt => {
-        ctx.beginPath();
-        ctx.arc(pt.x * zoom, pt.y * zoom, 5, 0, Math.PI * 2);
-        ctx.fillStyle = pendingColor;
-        ctx.fill();
-      });
-    }
-  }, [measurements, pending, renderReady, pageNum, zoom, layers, hiddenLayerIds, activeLayerId, tool, perPageScale]);
-
-  function drawMeasurement(ctx, m, color, pageScale, zoomFactor) {
-    const z = zoomFactor;
-    ctx.strokeStyle = color; ctx.lineWidth = 2;
-    if (m.type === 'line') {
-      const [a, b] = m.points;
-      ctx.beginPath();
-      ctx.moveTo(a.x * z, a.y * z); ctx.lineTo(b.x * z, b.y * z);
-      ctx.stroke();
-      drawEndpoints(ctx, m.points, color, z);
-      const mid = { x: ((a.x + b.x) / 2) * z, y: ((a.y + b.y) / 2) * z };
-      const lbl = m.label || (pageScale ? formatFeet(Math.hypot(b.x - a.x, b.y - a.y) / pageScale) : `${Math.hypot(b.x - a.x, b.y - a.y).toFixed(0)}px`);
-      drawLabelBox(ctx, mid.x, mid.y, lbl, color);
-    } else if (m.type === 'rect') {
-      const [a, b] = m.points;
-      const x = Math.min(a.x, b.x) * z, y = Math.min(a.y, b.y) * z;
-      const w = Math.abs(b.x - a.x) * z, h = Math.abs(b.y - a.y) * z;
-      ctx.strokeRect(x, y, w, h);
-      ctx.fillStyle = color + '22';  // 13% alpha
-      ctx.fillRect(x, y, w, h);
-      const areaPx = Math.abs(b.x - a.x) * Math.abs(b.y - a.y);
-      const lbl = m.label || (pageScale ? `${(areaPx / (pageScale * pageScale)).toFixed(1)} SF` : `${areaPx.toFixed(0)}px²`);
-      drawLabelBox(ctx, x + w / 2, y + h / 2, lbl, color);
-    } else if (m.type === 'poly') {
-      if (m.points.length < 2) return;
-      ctx.beginPath();
-      m.points.forEach((pt, i) => {
-        if (i === 0) ctx.moveTo(pt.x * z, pt.y * z);
-        else ctx.lineTo(pt.x * z, pt.y * z);
-      });
-      ctx.closePath();
-      ctx.fillStyle = color + '22';
-      ctx.fill();
-      ctx.stroke();
-      drawEndpoints(ctx, m.points, color, z);
-      const areaPx = polygonArea(m.points);
-      const cx = m.points.reduce((s, p) => s + p.x, 0) / m.points.length * z;
-      const cy = m.points.reduce((s, p) => s + p.y, 0) / m.points.length * z;
-      const lbl = m.label || (pageScale ? `${(areaPx / (pageScale * pageScale)).toFixed(1)} SF` : `${areaPx.toFixed(0)}px²`);
-      drawLabelBox(ctx, cx, cy, lbl, color);
-    }
-    // "Shared" indicator
-    if (m.shared) {
-      const anchor = m.points[0];
-      ctx.beginPath();
-      ctx.arc(anchor.x * z, anchor.y * z, 8, 0, Math.PI * 2);
-      ctx.fillStyle = '#D4A017';
-      ctx.fill();
-      ctx.fillStyle = '#140665';
-      ctx.font = 'bold 9px Inter, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('S', anchor.x * z, anchor.y * z);
-    }
-  }
-  function drawEndpoints(ctx, pts, color, z) {
-    pts.forEach(pt => {
-      ctx.beginPath();
-      ctx.arc(pt.x * z, pt.y * z, 4, 0, Math.PI * 2);
-      ctx.fillStyle = color; ctx.fill();
-    });
-  }
-  function drawLabelBox(ctx, x, y, text, color) {
-    ctx.font = 'bold 11px Inter, sans-serif';
-    const w = Math.max(ctx.measureText(text).width + 12, 44);
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.fillRect(x - w / 2, y - 10, w, 20);
-    ctx.strokeStyle = color; ctx.lineWidth = 1;
-    ctx.strokeRect(x - w / 2, y - 10, w, 20);
-    ctx.fillStyle = '#0F172A';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(text, x, y);
-  }
-
-  function onCanvasClick(e) {
-    if (!renderReady || readOnly) return;
-    const rect = overlayRef.current.getBoundingClientRect();
-    // Convert click to unzoomed coordinates
-    const x = (e.clientX - rect.left) / zoom;
-    const y = (e.clientY - rect.top) / zoom;
-    const newPending = [...pending, { x, y }];
-
-    if (tool === 'setScale') {
-      if (newPending.length === 2) {
-        const [a, b] = newPending;
-        const pxDist = Math.hypot(b.x - a.x, b.y - a.y);
-        const answer = prompt(t.scaleSetPrompt);
-        if (answer) {
-          const feet = parseFeetInput(answer);
-          if (feet && feet > 0) {
-            setPerPageScale({ ...perPageScale, [pageNum]: pxDist / feet });
-          } else {
-            alert('Could not read that as a distance. Try "10" or "10ft" or "10\'6\"".');
-          }
-        }
-        setPending([]);
-        setTool('line');
-      } else {
-        setPending(newPending);
-      }
-    } else if (tool === 'line') {
-      if (newPending.length === 2) { commitMeasurement('line', newPending); setPending([]); }
-      else setPending(newPending);
-    } else if (tool === 'rect') {
-      if (newPending.length === 2) { commitMeasurement('rect', newPending); setPending([]); }
-      else setPending(newPending);
-    } else if (tool === 'poly') {
-      setPending(newPending);
-      // Polygon closes on double-click (see onCanvasDoubleClick)
-    }
-  }
-
-  function onCanvasDoubleClick(e) {
-    if (tool !== 'poly' || pending.length < 3) return;
-    e.preventDefault();
-    commitMeasurement('poly', pending);
-    setPending([]);
-  }
-
-  function commitMeasurement(type, points) {
-    setMeasurements(prev => [...prev, {
-      id: newId('m'),
-      type, page: pageNum, points,
-      layerId: activeLayerId,
-      label: '',
-      shared: defaultShareOn,
-      createdAt: new Date().toISOString(),
-    }]);
-  }
-
-  function undoLast() {
-    const onPage = measurements.filter(m => m.page === pageNum);
-    if (onPage.length === 0) return;
-    const last = onPage[onPage.length - 1];
-    setMeasurements(measurements.filter(m => m.id !== last.id));
-  }
-  function clearPage() {
-    if (!confirm(`Clear all measurements on page ${pageNum}?`)) return;
-    setMeasurements(measurements.filter(m => m.page !== pageNum));
-    setPending([]);
-  }
-
-  function exportCSV() {
-    const rows = [['#', 'Page', 'Type', 'Layer', 'Label', 'Length (ft)', 'Area (SF)', 'Shared']];
-    measurements.forEach((m, i) => {
-      const layer = layers.find(l => l.id === m.layerId);
-      const scale = perPageScale[m.page];
-      let lengthFt = '', areaSf = '';
-      if (m.type === 'line') {
-        const [a, b] = m.points;
-        if (scale) lengthFt = (Math.hypot(b.x - a.x, b.y - a.y) / scale).toFixed(2);
-      } else if (m.type === 'rect') {
-        const [a, b] = m.points;
-        if (scale) {
-          lengthFt = (2 * (Math.abs(b.x - a.x) + Math.abs(b.y - a.y)) / scale).toFixed(2);
-          areaSf = (Math.abs(b.x - a.x) * Math.abs(b.y - a.y) / (scale * scale)).toFixed(2);
-        }
-      } else if (m.type === 'poly') {
-        if (scale) {
-          lengthFt = (polygonPerimeter(m.points) / scale).toFixed(2);
-          areaSf = (polygonArea(m.points) / (scale * scale)).toFixed(2);
-        }
-      }
-      rows.push([i + 1, m.page, m.type, layer?.name || '', m.label || '', lengthFt, areaSf, m.shared ? 'yes' : '']);
-    });
-    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = `takeoff-${plan.name.replace(/\.pdf$/i, '')}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 100);
-  }
-
-  function toggleLayerVisibility(layerId) {
-    setHiddenLayerIds(prev => prev.includes(layerId) ? prev.filter(x => x !== layerId) : [...prev, layerId]);
-  }
-  function addLayer() {
-    const name = prompt('New layer name?');
-    if (!name) return;
-    const colors = ['#DC2626', '#2563EB', '#059669', '#7C3AED', '#EA580C', '#DB2777', '#0891B2', '#CA8A04'];
-    const color = colors[layers.length % colors.length];
-    setLayers([...layers, { id: newId('l'), name: name.trim(), color }]);
-  }
-  function updateMeasurement(id, patch) {
-    setMeasurements(measurements.map(m => m.id === id ? { ...m, ...patch } : m));
-  }
-  function deleteMeasurement(id) {
-    setMeasurements(measurements.filter(m => m.id !== id));
-  }
-
-  const pageScale = perPageScale[pageNum];
-  const visibleMeasurements = readOnly
-    ? measurements.filter(m => m.shared)  // only show shared ones in read-only
-    : measurements;
-  const pageMeasurements = visibleMeasurements.filter(m => m.page === pageNum && !hiddenLayerIds.includes(m.layerId));
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.85)',
-      zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-      padding: 12, overflow: 'auto',
-    }} onClick={onClose}>
-      <div style={{
-        background: '#fff', borderRadius: styles.radiusLg,
-        padding: 16, maxWidth: 1200, width: '100%', boxShadow: styles.shadowLg,
-        display: 'flex', flexDirection: 'column', gap: 10,
-      }} onClick={e => e.stopPropagation()}>
-
-        {/* HEADER */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <h2 style={{ fontFamily: styles.fontBody, fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', margin: 0, color: styles.navy }}>
-              📐 {t.takeoff} — {plan.name}
-            </h2>
-            <div style={{ fontSize: 12, color: styles.text2, marginTop: 2 }}>
-              {pageScale
-                ? `Page ${pageNum} scale: 1 ft = ${pageScale.toFixed(1)}px`
-                : `Page ${pageNum}: ${t.scaleNotSet}`}
-            </div>
-          </div>
-          {readOnly && sharedFrom && (
-            <div style={{
-              padding: '6px 12px', background: '#FFFBEB', border: `1px solid ${styles.accent}`,
-              borderRadius: 6, fontSize: 12, color: styles.navy, fontWeight: 600,
-            }}>👁 {t.readOnlyBanner} {sharedFrom}</div>
-          )}
-          <Btn variant="ghost" size="sm" icon={X} onClick={onClose}>{t.closeTakeoff}</Btn>
-        </div>
-
-        {/* TOOLBAR */}
-        {!readOnly && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '8px 10px', background: styles.surface, borderRadius: 8, alignItems: 'center' }}>
-            <Btn size="sm" variant={tool === 'setScale' ? 'primary' : 'ghost'} onClick={() => { setTool('setScale'); setPending([]); }}>
-              {pageScale ? '↻ Scale' : '⚙ Set Scale'}
-            </Btn>
-            <div style={{ width: 1, height: 24, background: styles.border, margin: '0 2px' }} />
-            <Btn size="sm" variant={tool === 'line' ? 'primary' : 'ghost'} onClick={() => { setTool('line'); setPending([]); }}>
-              📏 {t.measureLine}
-            </Btn>
-            <Btn size="sm" variant={tool === 'rect' ? 'primary' : 'ghost'} onClick={() => { setTool('rect'); setPending([]); }}>
-              ▭ {t.measureRect}
-            </Btn>
-            <Btn size="sm" variant={tool === 'poly' ? 'primary' : 'ghost'} onClick={() => { setTool('poly'); setPending([]); }}>
-              ⬡ {t.measurePoly}
-            </Btn>
-            <div style={{ width: 1, height: 24, background: styles.border, margin: '0 2px' }} />
-            {/* Active layer selector */}
-            <select value={activeLayerId} onChange={e => setActiveLayerId(e.target.value)}
-              style={{ ...inputStyle, padding: '6px 10px', fontSize: 12, width: 'auto', fontWeight: 600 }}>
-              {layers.map(l => <option key={l.id} value={l.id}>■ {l.name}</option>)}
-            </select>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: styles.text2, cursor: 'pointer' }}>
-              <input type="checkbox" checked={defaultShareOn} onChange={e => setDefaultShareOn(e.target.checked)} />
-              Share new with GrayCo
-            </label>
-            <div style={{ width: 1, height: 24, background: styles.border, margin: '0 2px' }} />
-            <Btn size="sm" variant="ghost" onClick={undoLast} disabled={measurements.filter(m => m.page === pageNum).length === 0}>{t.undo}</Btn>
-            <Btn size="sm" variant="ghost" onClick={clearPage}>Clear Page</Btn>
-            <Btn size="sm" variant="ghost" onClick={exportCSV} disabled={measurements.length === 0}>⬇ {t.exportCSV}</Btn>
-          </div>
-        )}
-
-        {/* PAGE + ZOOM CONTROLS */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
-          <Btn size="sm" variant="ghost" onClick={() => setPageNum(Math.max(1, pageNum - 1))} disabled={pageNum === 1}>← {t.prevPage}</Btn>
-          <span style={{ padding: '4px 10px', background: styles.surface, borderRadius: 6, fontWeight: 600 }}>
-            {pageNum} {t.pageOf} {numPages}
-          </span>
-          <Btn size="sm" variant="ghost" onClick={() => setPageNum(Math.min(numPages, pageNum + 1))} disabled={pageNum === numPages}>{t.nextPage} →</Btn>
-          <div style={{ width: 1, height: 20, background: styles.border, margin: '0 6px' }} />
-          <Btn size="sm" variant="ghost" onClick={() => setZoom(Math.max(0.4, zoom - 0.2))}>−</Btn>
-          <span style={{ padding: '4px 10px', background: styles.surface, borderRadius: 6, fontWeight: 600, minWidth: 55, textAlign: 'center' }}>
-            {Math.round(zoom * 100)}%
-          </span>
-          <Btn size="sm" variant="ghost" onClick={() => setZoom(Math.min(4, zoom + 0.2))}>+</Btn>
-          <Btn size="sm" variant="ghost" onClick={() => setZoom(1)}>{t.zoomReset}</Btn>
-          {tool === 'poly' && pending.length >= 3 && (
-            <span style={{ marginLeft: 8, fontSize: 11, color: styles.accentDk, fontStyle: 'italic' }}>{t.finishPolygon}</span>
-          )}
-        </div>
-
-        {/* MAIN AREA — canvas + right sidebar */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 10, minHeight: 480 }}>
-          {/* PDF + overlay */}
-          <div ref={containerRef} style={{
-            background: '#F5F3EE', border: `1px solid ${styles.border}`, borderRadius: 8,
-            padding: 10, overflow: 'auto', maxHeight: '70vh',
-          }}>
-            {loadError ? (
-              <div style={{ padding: 40, textAlign: 'center', color: styles.red }}>{loadError}</div>
-            ) : !renderReady ? (
-              <div style={{ padding: 40, textAlign: 'center', color: styles.text2 }}>
-                <Loader2 size={24} className="spin" color={styles.accent} />
-                <div style={{ marginTop: 10, fontSize: 13 }}>Loading page…</div>
-              </div>
-            ) : null}
-            <div style={{ position: 'relative', display: renderReady ? 'inline-block' : 'none' }}>
-              <canvas ref={canvasRef} style={{ display: 'block' }} />
-              <canvas ref={overlayRef}
-                onClick={onCanvasClick}
-                onDoubleClick={onCanvasDoubleClick}
-                style={{
-                  position: 'absolute', top: 0, left: 0,
-                  cursor: readOnly ? 'default' : 'crosshair',
-                }} />
-            </div>
-          </div>
-
-          {/* RIGHT SIDEBAR — layers + measurements list */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 12 }}>
-            {/* Layers panel */}
-            <div style={{ padding: 10, background: styles.surface, borderRadius: 8 }}>
-              <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: '-0.005em', color: styles.text2, marginBottom: 6 }}>{t.layers.toUpperCase()}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {layers.map(l => (
-                  <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-                    <input type="checkbox" checked={!hiddenLayerIds.includes(l.id)} onChange={() => toggleLayerVisibility(l.id)} />
-                    <span style={{ display: 'inline-block', width: 10, height: 10, background: l.color, borderRadius: 2 }} />
-                    <span>{l.name}</span>
-                    <span style={{ marginLeft: 'auto', color: styles.text3, fontSize: 10 }}>
-                      {measurements.filter(m => m.layerId === l.id).length}
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {!readOnly && (
-                <button onClick={addLayer} style={{ marginTop: 6, background: 'transparent', border: 'none', color: styles.accentDk, cursor: 'pointer', fontSize: 11, fontWeight: 600, padding: 0 }}>{t.addLayer}</button>
-              )}
-            </div>
-
-            {/* Measurements list for this page */}
-            <div style={{ padding: 10, background: styles.surface, borderRadius: 8, flex: 1, overflow: 'auto', maxHeight: 380 }}>
-              <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: '-0.005em', color: styles.text2, marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-                <span>PAGE {pageNum} · {pageMeasurements.length}</span>
-                {pageScale && (
-                  <span style={{ color: styles.accent, fontWeight: 700 }}>
-                    LF: {formatFeet(pageMeasurements.reduce((s, m) => {
-                      if (m.type === 'line') { const [a, b] = m.points; return s + Math.hypot(b.x - a.x, b.y - a.y) / pageScale; }
-                      if (m.type === 'rect') { const [a, b] = m.points; return s + 2 * (Math.abs(b.x - a.x) + Math.abs(b.y - a.y)) / pageScale; }
-                      if (m.type === 'poly') { return s + polygonPerimeter(m.points) / pageScale; }
-                      return s;
-                    }, 0))}
-                  </span>
-                )}
-              </div>
-              {pageMeasurements.length === 0 ? (
-                <div style={{ fontSize: 11, color: styles.text3, fontStyle: 'italic', padding: 6 }}>{t.noMeasurements}</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {pageMeasurements.map((m, i) => {
-                    const layer = layers.find(l => l.id === m.layerId) || layers[0];
-                    const scale = perPageScale[m.page];
-                    let summary = '';
-                    if (m.type === 'line' && scale) { const [a, b] = m.points; summary = formatFeet(Math.hypot(b.x - a.x, b.y - a.y) / scale); }
-                    else if (m.type === 'rect' && scale) { const [a, b] = m.points; summary = `${(Math.abs(b.x - a.x) * Math.abs(b.y - a.y) / (scale * scale)).toFixed(1)} SF`; }
-                    else if (m.type === 'poly' && scale) { summary = `${(polygonArea(m.points) / (scale * scale)).toFixed(1)} SF`; }
-                    return (
-                      <div key={m.id} style={{
-                        padding: 6, background: '#fff', borderRadius: 4,
-                        borderLeft: `3px solid ${layer.color}`,
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 4 }}>
-                          <div style={{ fontWeight: 600, fontSize: 11 }}>#{i + 1} {m.type} {summary && `· ${summary}`}</div>
-                          {!readOnly && (
-                            <button onClick={() => deleteMeasurement(m.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: styles.red, padding: 0 }}>
-                              <X size={12} />
-                            </button>
-                          )}
-                        </div>
-                        {!readOnly ? (
-                          <>
-                            <input type="text" placeholder="Label..." value={m.label}
-                              onChange={e => updateMeasurement(m.id, { label: e.target.value })}
-                              style={{ width: '100%', padding: '3px 6px', fontSize: 10, marginTop: 3, border: `1px solid ${styles.border}`, borderRadius: 3 }} />
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: styles.text2, marginTop: 3, cursor: 'pointer' }}>
-                              <input type="checkbox" checked={m.shared} onChange={e => updateMeasurement(m.id, { shared: e.target.checked })} />
-                              {t.shareWithGrayCo}
-                            </label>
-                          </>
-                        ) : m.label && (
-                          <div style={{ fontSize: 10, color: styles.text2, marginTop: 2 }}>{m.label}</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ fontSize: 11, color: styles.text3, lineHeight: 1.5, padding: 6, background: styles.surface, borderRadius: 6 }}>
-          {readOnly
-            ? `Read-only view of shared measurements. To make your own takeoff, open this plan from your account.`
-            : `Measurements save automatically. Toggle "Share with GrayCo" per measurement to let admins see your takeoff on their side.`}
-        </div>
-      </div>
     </div>
   );
 }
