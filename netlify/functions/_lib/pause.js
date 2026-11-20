@@ -178,6 +178,10 @@ async function guardedFetch(raw, url, opts){
   /* patch RESETMAIL (owner 11/13: a sub's "Forgot password" never arrived): a sign-in code or password-reset link the person
      just asked for (tagged custquiet.run('reply', …)) is e-mailed in data-entry mode too — it is not GrayCo reaching out. */
   if (c && c.mail && safetyTag() === 'reply' && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (sign-in / reset the person asked for)'); } catch (e) {} c = null; }
+  /* patch BIDINVITE (owner 11/20: "I need to be able to send links right now to subs to sign up for the portal, with data entry still on"):
+     a bid invite / sign-up link to a SUB or SUPPLIER (tagged custquiet.run('trade', …) — bid-hub invite / signuplink, subportal invite-send)
+     is not a customer send: its e-mail and its text go in data-entry mode. Customer sends stay blocked. */
+  if (c && (c.mail || c.twilio) && safetyTag() === 'trade' && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (sub / supplier invite)'); } catch (e) {} c = null; }
   if (c && c.push && safetyTag() === 'staff') c = null;   /* AWAY: a staff phone push */
   if (c && c.twilio && PASS_TAGS[safetyTag()] && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (tagged ' + safetyTag() + ')'); } catch (e) {} c = null; }
   if (c && await isPaused()) {
@@ -209,6 +213,6 @@ function install(){
   return module.exports;
 }
 /* for code that holds its own fetch: true when this send must be skipped right now */
-async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; if (c && c.mail && safetyTag() === 'reply') return false; return !!(c && await isPaused()); }
+async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; if (c && c.mail && safetyTag() === 'reply') return false; if (c && (c.mail || c.twilio) && safetyTag() === 'trade') return false; return !!(c && await isPaused()); }
 
 module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, PASS_TAGS, _t: { readFlag, addrList, fakeResponse, sendKind, logSend } };

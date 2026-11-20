@@ -146,6 +146,7 @@ const T = {
     acctTypeQ: 'I am signing up as', acctSub: 'Subcontractor (labour)', acctSupplier: 'Supplier / vendor (materials)', supplierL: 'Supplier',
     materialsTap: 'Materials you supply — tap all that fit', myQuotes: 'My Quotes', approvedSuppliers: 'Suppliers', materialList: 'Materials to quote',
     suppliersCanQuote: 'Suppliers can quote (materials)', suppliersHint: 'Approved suppliers see this job, its plans and the material list below, and send a material quote. They never see labour scopes or bids.',
+    /* patch BIDINVITE */ inviteAs: 'Inviting a', inviteSub: 'Subcontractor', inviteSupplier: 'Supplier', inviteMailed: 'Invite e-mailed', inviteNotMailed: 'Invite added, but the e-mail did not go out — copy the link to share.', inviteSend: 'Invite', inviteHint2: 'They get the e-mail "GrayCo invited you to bid" at once, with their sign-in link (or a sign-up link that approves them for this job).', mailedL: 'e-mailed',
     mqTitle: 'Material quote', mqEnter: 'Send a material quote', mqDesc: 'Item', mqQty: 'Qty', mqUnit: 'Unit', mqPrice: 'Unit price', mqAddLine: '+ Add a line',
     mqLead: 'Lead time', mqValid: 'Valid until', mqNotes: 'Notes', mqTax: 'Tax', mqFreight: 'Freight / delivery', mqSubtotal: 'Subtotal', mqTotal: 'Total',
     mqSubmit: 'Send quote', mqUpdate: 'Update quote', mqSent: 'Quote sent to GrayCo.', mqNeedLine: 'Add at least one item with a description.',
@@ -458,6 +459,7 @@ const T = {
     acctTypeQ: 'Me registro como', acctSub: 'Subcontratista (mano de obra)', acctSupplier: 'Proveedor (materiales)', supplierL: 'Proveedor',
     materialsTap: 'Materiales que suministra — toque todos los que apliquen', myQuotes: 'Mis cotizaciones', approvedSuppliers: 'Proveedores', materialList: 'Materiales a cotizar',
     suppliersCanQuote: 'Los proveedores pueden cotizar (materiales)', suppliersHint: 'Los proveedores aprobados ven este trabajo, sus planos y la lista de materiales, y envían una cotización. Nunca ven alcances ni ofertas de mano de obra.',
+    /* patch BIDINVITE */ inviteAs: 'Invitar a un', inviteSub: 'Subcontratista', inviteSupplier: 'Proveedor', inviteMailed: 'Invitación enviada por correo', inviteNotMailed: 'Invitación agregada, pero el correo no salió — copie el enlace.', inviteSend: 'Invitar', inviteHint2: 'Recibe al instante el correo "GrayCo le invitó a ofertar" con su enlace para entrar (o para crear su cuenta, aprobada para este trabajo).', mailedL: 'enviado',
     mqTitle: 'Cotización de materiales', mqEnter: 'Enviar una cotización de materiales', mqDesc: 'Artículo', mqQty: 'Cant.', mqUnit: 'Unidad', mqPrice: 'Precio unitario', mqAddLine: '+ Agregar línea',
     mqLead: 'Tiempo de entrega', mqValid: 'Válida hasta', mqNotes: 'Notas', mqTax: 'Impuesto', mqFreight: 'Flete / entrega', mqSubtotal: 'Subtotal', mqTotal: 'Total',
     mqSubmit: 'Enviar cotización', mqUpdate: 'Actualizar cotización', mqSent: 'Cotización enviada a GrayCo.', mqNeedLine: 'Agregue al menos un artículo con descripción.',
@@ -6485,17 +6487,23 @@ function TeamPage({ t, users, setUsers, showToast }) {
    ============================================================ */
 function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
   const [email, setEmail] = useState('');
+  const [asWho, setAsWho] = useState('sub');   /* patch BIDINVITE: a sub or a supplier */
+  const [busy, setBusy] = useState(false);
   const jobInvites = invites.filter(i => i.jobId === job.id);
 
-  function addOne() {
-    if (!email.trim()) return;
-    const inv = addInvite(email);
-    if (inv) {
+  /* patch BIDINVITE (owner 11/20): Invite → the server makes the invite and e-mails it at once ("GrayCo invited you to bid: <project>") */
+  async function addOne() {
+    const list = email.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
+    if (!list.length) { showToast('Invalid email', 'error'); return; }
+    setBusy(true);
+    try {
+      const r = await api('invite-send', { jobId: job.id, emails: list, as: asWho });
+      const got = r.invites || [];
+      setInvites(prev => { const next = [...prev.filter(i => !got.some(g => g.id === i.id)), ...got]; try { rememberLoaded(['invites'], { invites: next }); } catch (e) {} return next; });
       setEmail('');
-      showToast(t.inviteSent);
-    } else {
-      showToast('Invalid email', 'error');
-    }
+      showToast(r.mailed ? t.inviteMailed + ' (' + r.mailed + ')' : t.inviteNotMailed, r.mailed ? 'success' : 'error');
+    } catch (e) { showToast(e.message || 'Could not send the invite.', 'error'); }
+    setBusy(false);
   }
 
   function copyLink(inv) {
@@ -6522,15 +6530,21 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
         <Mail size={18} /> {t.inviteSubs}
       </h3>
       <div style={{ fontSize: 12, color: styles.text2, marginBottom: 10, lineHeight: 1.5 }}>
-        Enter a sub's email. They'll get a private link that opens the signup page pre-linked to this job.
+        {t.inviteHint2}
+      </div>
+      <div data-invite-as={asWho} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, fontSize: 12, flexWrap: 'wrap' }}>
+        <span style={{ color: styles.text2 }}>{t.inviteAs}</span>
+        {[['sub', '🔨 ' + t.inviteSub], ['supplier', '🧱 ' + t.inviteSupplier]].map(([k, l]) => (
+          <button key={k} type="button" data-invite-pick={k} onClick={() => setAsWho(k)} style={{ border: `1px solid ${asWho === k ? styles.accent : styles.border}`, background: asWho === k ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '4px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>{l}</button>
+        ))}
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        <input style={{ ...inputStyle, flex: 1 }} type="email"
-          placeholder="subcontractor@email.com"
+        <input style={{ ...inputStyle, flex: 1 }} type="email" data-invite-email="1"
+          placeholder={asWho === 'supplier' ? 'sales@supplier.com' : 'subcontractor@email.com'}
           value={email}
           onChange={e => setEmail(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addOne()} />
-        <Btn size="md" icon={Plus} onClick={addOne}>Add</Btn>
+        <Btn size="md" icon={Send} onClick={addOne} disabled={busy} data-invite-send="1">{t.inviteSend}</Btn>
       </div>
 
       {jobInvites.length === 0 ? (
@@ -6545,8 +6559,8 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
               padding: '8px 10px', background: styles.cream, borderRadius: 4,
               fontSize: 12, border: `1px solid ${styles.border}`,
             }}>
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <strong>{inv.email}</strong>
+              <div data-invite-row={inv.email} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <strong>{inv.email}</strong>{inv.as === 'supplier' ? ' · 🧱' : ''}{inv.mailedAt ? <span style={{ color: styles.green }}> · ✉ {t.mailedL}</span> : ''}{inv.usedAt ? ' · ✓' : ''}
               </div>
               <button onClick={() => copyLink(inv)} title="Copy invite link" style={{
                 background: styles.navy, color: '#fff', border: 'none', cursor: 'pointer',
