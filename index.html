@@ -232502,7 +232502,18 @@ function paintDueOffer(){
   old.__h = h; old.__x = x; old.innerHTML = h;
   Array.prototype.forEach.call(old.querySelectorAll('button'), function(b){ b.style.cssText = 'border:1px solid #d97706;background:' + (b.getAttribute('data-dueoffer') === 'move' ? '#d97706;color:#fff' : '#fff;color:#78350f') + ';border-radius:8px;padding:5px 10px;font-weight:700;cursor:pointer;margin-left:4px'; });
 }
-function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } try { paintDueOffer(); } catch (e) { warn(e); } }
+/* patch BPHEAD */ function paintHead(){   /* the job header's button group, next to ✏️ Edit Project */
+  var hb = D.getElementById('gcbp-head'), op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, ed = null, main = D.querySelector('main');
+  if (p && main) { var bs = main.getElementsByTagName('button'); for (var i = 0; i < bs.length && i < 120; i++) if (/^\s*(✏️\s*)?Edit Project\s*$/.test(bs[i].textContent || '')) { ed = bs[i]; break; } }
+  var c = p ? ctxOf({ pid: p.id }) : null;
+  if (!ed || !canPost(c)) { if (hb) hb.remove(); return; }
+  var j = postedFor(c), on = !!(j && !j.deleted), t = on ? '📢 On bid portal ✓ · Manage' : '📢 Put on bid portal';
+  css(); if (!hb) { hb = D.createElement('button'); hb.type = 'button'; hb.id = 'gcbp-head'; hb.className = 'gcbp-btn'; hb.setAttribute('data-gc-keep', '1'); hb.style.alignSelf = 'stretch';
+    hb.addEventListener('click', function(ev){ ev.stopPropagation(); open({ pid: hb.__pid }); }); }
+  if (hb.textContent !== t) { hb.textContent = t; hb.title = on ? 'On the GrayCo bid portal — change it or take it off' : 'Put this job on the GrayCo bid portal for sub pricing'; }
+  hb.__pid = p.id; if (hb.nextSibling !== ed) ed.parentNode.insertBefore(hb, ed);
+}
+function paint(){ try { paintEst(); } catch (e) { warn(e); } try { paintJob(); } catch (e) { warn(e); } try { paintHead(); } catch (e) { warn(e); } try { paintLead(); } catch (e) { warn(e); } try { paintDueOffer(); } catch (e) { warn(e); } }
 var TICK = 0;
 RI.call(W, function(){ if (D.hidden) return; TICK++; if (!JOBS.list && !JOBS.busy && (isAdmin() || isEst() || arr(crm().projects).some(function(p){ return p && mine(p.pm); })) && W._crm) jobs(false); paint(); }, 1500);
 
