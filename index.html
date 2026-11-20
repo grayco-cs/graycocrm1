@@ -20450,7 +20450,7 @@ if(!window.__gcAcClose){ window.__gcAcClose=true;
   document.addEventListener("mousedown",function(e){ var t=e.target; var l=t&&t.closest?t.closest("._ac-list"):null; acHideAll(l||(t&&t._acList)||null); },true);
   setInterval(function(){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ var i=l._acInput; if(!i||!document.contains(i)||!i.offsetParent||(i.closest&&i.closest("[data-gc-noac]"))) l.classList.remove("show"); }); }catch(e){} },400);
 }
-function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac]")); }catch(e){ return false; } }
+function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac],[role=\"dialog\"],[aria-modal=\"true\"],dialog")); }catch(e){ return false; } }   /* patch CUSTLINK: never in a dialog / picker */
 function createAC(input){
   if(input._acInit)return;input._acInit=true;
   if(noAc(input))return;   /* patch PLANREQ-G */
@@ -219591,7 +219591,23 @@ var TYPES = ['Residential Reno', 'Commercial TI', 'Commercial Reno', 'Insurance 
 var STATUSES = ['bidding', 'approved', 'Active', 'on_hold', 'completed', 'lost'];
 function people(){ var u = []; try { u = typeof W._gcActivePeople === 'function' ? arr(W._gcActivePeople()) : []; } catch (e) {} if (!u.length) u = arr(C().users).filter(function(x){ return x.active !== false && !x.departed; }); return u; }
 function pmNames(){ var seen = {}, out = []; people().forEach(function(u){ var n = s(u.name); if (n && !seen[low(n)] && /manager|pm\b|admin|owner|super|estimat/i.test(s(u.role) + ' ' + s(u.payType) + ' ' + s(u.title)) && !(W._gcIsOfficeUser && W._gcIsOfficeUser(u))) { seen[low(n)] = 1; out.push(n); } }); arr(C().projects).forEach(function(p){ var n = s(p.pm); if (n && !(W._gcNotPM && W._gcNotPM(n)) && !seen[low(n)]) { seen[low(n)] = 1; out.push(n); } }); return out.sort(); }
-function customers(){ var l = arr(C().customers); if (!l.length) l = arr(W._graycoCustomers); return l.filter(function(c){ return c.id && !c.deleted && !c._deleted; }).sort(function(a, b){ return low(a.name || a.company) < low(b.name || b.company) ? -1 : 1; }); }
+function customers(){ var seen = {}, l = []; arr(C().customers).concat(arr(W._graycoCustomers)).forEach(function(c){ if (c && c.id && !c.deleted && !c._deleted && !seen[s(c.id)]) { seen[s(c.id)] = 1; l.push(c); } }); return l.sort(function(a, b){ return low(a.name || a.company) < low(b.name || b.company) ? -1 : 1; }); }   /* patch CUSTLINK: both lists */
+/* patch CUSTLINK: the Fix dialog's customer search — case, punctuation and LLC/Inc ignored, every typed word a partial match on any name / contact field */
+function cnorm(v){ return low(v).replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function cbare(v){ return cnorm(v).replace(/\b(llc|pllc|inc|incorporated|co|corp|corporation|company|ltd|the)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function custHay(c){ var g = c.gcInfo && typeof c.gcInfo === 'object' ? c.gcInfo : {}, x = [c.name, c.company, c.contact, c.contactName, c.firstName, c.lastName, c.email, c.phone, c.address, c.city, g.name, g.contact];
+  arr(c.contacts).forEach(function(k){ if (k) x.push(k.name, k.email, k.phone); }); return cnorm(x.filter(function(v){ return typeof v === 'string' || typeof v === 'number'; }).join(' ')); }
+function custMatch(c, q){ var qq = cnorm(q); if (!qq) return true; var h = custHay(c); return qq.split(' ').every(function(w){ return h.indexOf(w) >= 0; }) || h.replace(/ /g, '').indexOf(qq.replace(/ /g, '')) >= 0; }
+function custLabel(c){ var n = s(c.name) || s(c.company), co = s(c.company), ct = s(c.contact || c.contactName); return n + (co && cnorm(co) !== cnorm(n) ? ' (' + co + ')' : '') + (ct && cnorm(ct) !== cnorm(n) ? ' · ' + ct : '') + (c.address ? ' — ' + s(c.address) : ''); }
+/* the job's client, matched to a customer: 2 = the same name (LLC etc. aside), 1 = the client is the start of the name (or the other way) */
+function custSuggest(p){ var cn = cbare(p.client || p.customer || p.clientName); if (cn.length < 3) return [];
+  var out = []; customers().forEach(function(c){ var r = 0; [c.name, c.company].forEach(function(n){ var b = cbare(n); if (!b) return; if (b === cn) r = 2; else if (r < 1 && cn.length >= 4 && ((b + ' ').indexOf(cn + ' ') === 0 || (cn + ' ').indexOf(b + ' ') === 0)) r = 1; }); if (r) out.push({ c: c, r: r }); });
+  out.sort(function(a, b){ return b.r - a.r; }); return out.slice(0, 3); }
+function custOptions(p, q, cur){ var sug = custSuggest(p), ids = {}, h = '<option value="">— choose the customer —</option>', n = 0;
+  sug.forEach(function(x){ if (!custMatch(x.c, q)) return; ids[s(x.c.id)] = 1; n++; h += opt(x.c.id, cur, '★ ' + custLabel(x.c) + ' — the job’s client'); });
+  customers().forEach(function(c){ if (ids[s(c.id)] || !custMatch(c, q)) return; n++; h += opt(c.id, cur, custLabel(c)); });
+  return { html: h, n: n }; }
+function custPreset(p){ if (s(p.customerId)) return s(p.customerId); var sg = custSuggest(p); return sg.length && (sg.length === 1 || sg[0].r > sg[1].r) ? s(sg[0].c.id) : ''; }
 function opt(v, cur, label){ return '<option value="' + esc(v) + '"' + (s(v) === s(cur) ? ' selected' : '') + '>' + esc(label == null ? v : label) + '</option>'; }
 function fixHtml(r, it, p, lead){
   var f = it.fix || {}, v = function(k){ return s(p[k]); }, inp = function(k, type, ph){ return '<input class="gc-df-in" data-k="' + k + '" type="' + (type || 'text') + '" value="' + esc(v(k)) + '" placeholder="' + esc(ph || '') + '">'; };
@@ -219608,7 +219624,7 @@ function fixHtml(r, it, p, lead){
     case 'billing': return inp('billingAddress', 'text', 'Billing address') + '<label class="gc-df-ck"><input type="checkbox" data-k="billingSame"' + (p.billingSame ? ' checked' : '') + '> Same as the job address</label>';
     case 'pref': return '<div class="gc-df-chips">' + ['Call', 'Text', 'E-mail'].map(function(x){ return '<button type="button" class="gc-df-chip' + (low(p.preferredContact) === low(x) ? ' on' : '') + '" data-pick="preferredContact" data-v="' + x + '">' + x + '</button>'; }).join('') + '</div><input type="hidden" class="gc-df-in" data-k="preferredContact" value="' + esc(v('preferredContact')) + '">';
     case 'adjuster': var a = p.adjuster && typeof p.adjuster === 'object' ? p.adjuster : {}; return '<input class="gc-df-in" data-k="adjuster.name" placeholder="Adjuster name" value="' + esc(a.name) + '"><input class="gc-df-in" data-k="adjuster.phone" type="tel" placeholder="Adjuster phone" value="' + esc(a.phone || p.adjusterPhone) + '"><input class="gc-df-in" data-k="adjuster.email" type="email" placeholder="Adjuster e-mail" value="' + esc(a.email || p.adjusterEmail) + '"><div class="gc-df-note">Staff only — never shown to the customer.</div>';
-    case 'customer': return '<input class="gc-df-in" data-cs="1" placeholder="Search customers…"><select class="gc-df-in" data-k="customerId" size="7"><option value="">— choose the customer —</option>' + customers().map(function(c){ return opt(c.id, p.customerId, (s(c.name) || s(c.company)) + (c.address ? ' — ' + s(c.address) : '')); }).join('') + '</select><div class="gc-df-note">Not on the list? Add them in Customers first.</div>';
+    case 'customer': var co0 = custOptions(p, '', custPreset(p)); return '<input class="gc-df-in" data-cs="1" type="search" autocomplete="off" placeholder="Search customers…"><select class="gc-df-in" data-k="customerId" size="7">' + co0.html + '</select><div class="gc-df-note" data-cs-n="1">' + co0.n + ' customer' + (co0.n === 1 ? '' : 's') + '</div><div class="gc-df-note">Not on the list? Add them in Customers first.</div>';   /* patch CUSTLINK */
     default: return inp(f.field || it.key, 'text');
   }
 }
@@ -219618,14 +219634,16 @@ function openFix(pid, key, lead){
   var f = it.fix || {};
   if (f.open) { openJob(pid, f.open); return; }
   var old = D.getElementById('gc-df-fix'); if (old) old.remove();
-  var ov = D.createElement('div'); ov.id = 'gc-df-fix'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1');
+  var ov = D.createElement('div'); ov.id = 'gc-df-fix'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1'); ov.setAttribute('data-gc-noac', '1');   /* patch CUSTLINK */
   ov.innerHTML = '<div class="gc-df-sheet" role="dialog" aria-label="Fix ' + esc(it.label) + '"><div class="gc-df-fh"><b>' + esc(it.label) + '</b><button type="button" class="gc-df-x" data-df="fixx">✕</button></div>' +
     '<div class="gc-df-fs">' + esc((s(p.autoPO) ? s(p.autoPO) + ' · ' : '') + (s(p.name || p.title || p.client) || 'Job')) + '</div>' +
     '<div class="gc-df-fb">' + fixHtml(null, it, p, lead) + '</div>' +
     '<div class="gc-df-fa"><button type="button" class="gc-df-b pri" data-df="fixsave">Save</button>' + (lead ? '<button type="button" class="gc-df-b" data-df="fixlead">Open the lead</button>' : '<button type="button" class="gc-df-b" data-df="fixjob">Open the job</button>') + '</div></div>';
   D.body.appendChild(ov);
   var first = ov.querySelector('.gc-df-in'); if (first) later(function(){ try { first.focus(); } catch (e) {} }, 30);
-  ov.addEventListener('input', function(e){ var t = e.target; if (t && t.getAttribute('data-cs')) { var q = low(t.value), sel = ov.querySelector('select[data-k="customerId"]'); [].forEach.call(sel.options, function(o, i){ if (i) o.hidden = !!q && low(o.textContent).indexOf(q) < 0; }); } });
+  ov.addEventListener('input', function(e){ var t = e.target; if (t && t.getAttribute('data-cs')) { if (t.__q === t.value) return; t.__q = t.value; var sel = ov.querySelector('select[data-k="customerId"]'), nn = ov.querySelector('[data-cs-n]'), cur = sel.value, r = custOptions(p, t.value, cur);   /* patch CUSTLINK: the list rebuilt from every customer */
+    sel.innerHTML = r.html; if (cur && sel.value !== cur) sel.value = ''; if (!sel.value && r.n === 1) sel.selectedIndex = 1;
+    if (nn) nn.textContent = r.n ? r.n + ' customer' + (r.n === 1 ? '' : 's') + (s(t.value) ? ' match “' + s(t.value) + '”' : '') : 'No customer matches “' + s(t.value) + '”.'; } });
   ov.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-df],[data-pick]'); if (e.target === ov) { ov.remove(); return; } if (!b) return;
     if (b.hasAttribute('data-pick')) { ov.querySelector('[data-k="' + b.getAttribute('data-pick') + '"]').value = b.getAttribute('data-v'); [].forEach.call(ov.querySelectorAll('.gc-df-chip'), function(x){ x.classList.toggle('on', x === b); }); return; }
@@ -219643,6 +219661,7 @@ function openFix(pid, key, lead){
           if (k.indexOf('adjuster.') === 0) { var a2 = Object.assign({}, q.adjuster && typeof q.adjuster === 'object' ? q.adjuster : {}); a2[k.slice(9)] = val; q.adjuster = a2; return; }
           if (k === 'retainageNone' || k === 'billingSame') { if (val) q[k] = true; else delete q[k]; return; }
           if (val === '') return;
+          if (k === 'customerId') { var cc = customers().filter(function(c){ return s(c.id) === val; })[0]; if (cc && !s(q.client)) q.client = s(cc.name) || s(cc.company); }   /* patch CUSTLINK */
           if (k === 'contract') { q.contract = parseFloat(val.replace(/[$,\s]/g, '')) || q.contract; return; }
           if (k === 'retainagePct') { q.retainagePct = parseFloat(val) || 0; return; }
           q[k] = val;
