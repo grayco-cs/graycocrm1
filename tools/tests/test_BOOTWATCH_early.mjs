@@ -16,7 +16,7 @@ const at = src.indexOf('<script id="gc-patch-bootwatch">');
 ok(at < src.indexOf('<script id="gc-patch-saves-lsheld">') && at < src.indexOf('<script id="gc-patch-bootsafe">') && at < src.indexOf('COMPANY SIGN-IN'), 'right after LSGUARD: before BOOTSAFE, the sign-in and the app');
 ok(src.includes('<script id="gc-patch-bootwatch">\n' + code + '\n</script>'), 'the page carries tools/bootwatch_early.js (its notes dropped)');
 ok(src.includes('<script type="text/plain" id="gc-bw-late">\n' + LATE + '\n</script>\n<script id="gc-patch-bootwatch">'), 'the late part sits just before it as text/plain (not compiled at open)');
-ok(code.length < 18000, 'the early script is small (' + code.length + ' characters)');
+ok(code.length < 20500, 'the early script is small (UPDSAFE: + the activity watch; ' + code.length + ' characters)');
 { const tmp = path.join(os.tmpdir(), 'bootwatch_idem_' + process.pid + '.html'); fs.writeFileSync(tmp, src);
   const out = execFileSync('python3', [path.join(here, '..', 'patch_BOOTWATCH.py'), tmp]).toString(); ok(/already patched/.test(out) && fs.readFileSync(tmp, 'utf8') === src, 'patch is idempotent'); fs.unlinkSync(tmp); }
 ok(/_gcBootWatch\.auto && window\._gcBootWatch\.auto\(\)\) return;/.test(src) && !/id="gc-update-now"/.test(src) && /_gcBootWatch\.live\(60000\)/.test(src), 'AUTOUPD: the CRM\'s own version look hands off to the update that runs by itself (no "Yes, update" bar), the answer already fetched');

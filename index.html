@@ -837,22 +837,111 @@ try {
       .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
     return checking;
   };
-  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0;
+  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0, pill = null;
+  var CFG = U.cfg;
+  var HOME_V = /^(dashboard|projects|leads|invoices|expenses|estimates|schedule|approvals|subs|payments|files|customers|vendors|todo|allphotos|documents|changeorders|insurance|bidportal|mastercrm|list)$/;
+  var OK_ID = /^(gc-bw-|gc-upd-pill$|gc-boot-cover$|gc-bootsafe$|_gcFieldHomeOv$|_gcJobPick$|_gcJobDash$|_gcReloadAsk$|gc-auth-gate$)/;
+  var seen = function(e){ try { if (!e || !e.isConnected) return null; var r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 ? r : null; } catch (x) { return null; } };
+  var mine = function(e){ for (var k = e, i = 0; k && k.nodeType === 1 && i < 30; k = k.parentNode, i++) if (k.id && OK_ID.test(k.id)) return true; return false; };
+  var nameOf = function(e){ return s(e.id || e.getAttribute('aria-label') || e.className || e.tagName).slice(0, 40); };
+  var sheet = function(){
+    try {
+      var q = D.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],dialog[open]');
+      for (var i = 0; i < q.length && i < 50; i++) if (seen(q[i]) && !mine(q[i])) return 'dialog ' + nameOf(q[i]);
+      var vw = W.innerWidth || 1, vh = W.innerHeight || 1, c = [];
+      [D.body, H].forEach(function(p){ for (var k = p && p.firstElementChild; k; k = k.nextElementSibling) c.push(k); });
+      var rq = D.querySelectorAll('#root [style*="position: fixed"],#root [style*="position:fixed"]');
+      for (var j = 0; j < rq.length && j < 80; j++) c.push(rq[j]);
+      for (var n = 0; n < c.length && n < 400; n++) {
+        var e = c[n]; if (/^(SCRIPT|STYLE|LINK|META|HEAD|BODY|NOSCRIPT|TEMPLATE)$/.test(e.tagName) || e.id === 'root' || mine(e)) continue;
+        var r = seen(e); if (!r) continue;
+        var cs = W.getComputedStyle(e); if (cs.position !== 'fixed' || cs.visibility === 'hidden' || cs.pointerEvents === 'none' || +cs.opacity === 0) continue;
+        var a = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+        if (a > 0.3 * vw * vh) return 'panel ' + nameOf(e);
+      }
+    } catch (x) {}
+    return '';
+  };
+  var SEARCHY = /search|filter|find|lookup/i;
+  var unsaved = function(){
+    try {
+      var q = D.querySelectorAll('input,textarea,select,[contenteditable=""],[contenteditable="true"]');
+      for (var i = 0; i < q.length && i < 800; i++) {
+        var e = q[i], t = s(e.type).toLowerCase(), tg = e.tagName, tch = !!(U.touched && U.touched.has(e));
+        if (/^(hidden|button|submit|reset|image|search)$/.test(t) || !seen(e)) continue;
+        if (SEARCHY.test(s(e.id) + ' ' + s(e.name) + ' ' + s(e.placeholder) + ' ' + s(e.getAttribute && e.getAttribute('aria-label')))) continue;
+        var gate = e.closest && e.closest('#gc-auth-gate'), inForm = !!(e.form || (e.closest && e.closest('form')));
+        if (t === 'file') { if (e.files && e.files.length) return 'a file chosen'; continue; }
+        if (tg === 'SELECT' || t === 'checkbox' || t === 'radio') {
+          if (!inForm || gate) continue;   /* list filters / toggles are not work; a form's own choices are */
+          if (tg === 'SELECT') { for (var o = 0; o < e.options.length; o++) if (e.options[o].selected !== e.options[o].defaultSelected && (tch || e.options[o].defaultSelected)) return 'a choice in ' + nameOf(e); }
+          else if (e.checked !== e.defaultChecked) return 'a box ticked in ' + nameOf(e);
+          continue;
+        }
+        var v = e.isContentEditable && tg !== 'INPUT' && tg !== 'TEXTAREA' ? s(e.textContent) : s(e.value);
+        if (!v.trim()) continue;
+        if (tch || (!gate && !e.isContentEditable && v !== s(e.defaultValue))) return 'text in ' + nameOf(e);
+      }
+    } catch (x) {}
+    return '';
+  };
+  var screenOk = function(){
+    if (gateUp()) return '';
+    var fs = firstScreen();
+    if (!fs) return B.m.paint == null && !U.act ? '' : 'not a main screen';
+    if (/^field (home|job)$/.test(fs)) return '';
+    var m = /^desk (.*)$/.exec(fs); return m && HOME_V.test(m[1]) ? '' : 'not a main screen (' + fs + ')';
+  };
+  var whyBusy = function(){
+    try {
+      var t = Date.now();
+      if (D.visibilityState === 'hidden') return 'hidden';
+      if (U.picker || (U.file && t - U.file < CFG.file)) return 'file picker';
+      for (var k in U.fly) { if (t - U.fly[k] < 300000) return 'saving'; delete U.fly[k]; }
+      if (W._gcSending && W._gcSending().length) return 'uploading';
+      if (authed() && t - (autoT0 || t) < 600000 && W._gcUnsent && W._gcUnsent().some(function(x){ return x && !/held/i.test(s(x.why)) && !/^(401|403|413)$/.test(s(x.status)) && t - (+x.at || 0) < 60000; })) return 'not sent yet';
+      if (U.act && t - U.act < Math.max(CFG.act, CFG.idle)) return 'in use';
+      if (t - Math.max(lastType, lastKey) < 3000) return 'typing';
+      if (t - U.vis < CFG.idle && (U.act || B.m.paint != null) && U.vis > T0 + 1000) return 'just back on screen';
+      var a = D.activeElement;
+      if (a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && s(a.value).trim()) || (a.isContentEditable && s(a.textContent).trim()))) return 'editing';
+      var sh = sheet(); if (sh) return 'open: ' + sh;
+      if (W.__GC_FORM_OPEN__ === true && !gateUp()) return 'a form is open';   /* (the sign-in screen's own focused box is no form) */
+      var un = unsaved(); if (un) return 'unsaved: ' + un;
+      return screenOk();
+    } catch (e) { return 'error'; }
+  };
+  whyImpl = whyBusy;
+  var showPill = function(){
+    try {
+      if (pill && pill.isConnected) return;
+      pill = D.createElement('button'); pill.type = 'button'; pill.id = 'gc-upd-pill'; pill.setAttribute('data-gc-keep', '1'); pill.setAttribute('role', 'status');
+      pill.style.cssText = 'position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:2147483000;background:#fff;color:#0f2440;border:1px solid #cbd5e1;border-radius:999px;padding:8px 14px;' +
+        'font:700 13px -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;box-shadow:0 4px 14px rgba(15,36,64,.18);cursor:pointer;max-width:calc(100vw - 32px)';
+      pill.textContent = 'New version ready — tap to update';
+      pill.addEventListener('click', function(ev){
+        try { ev.stopPropagation(); } catch (e) {}
+        var w = whyBusy();
+        if (/^(open|unsaved|a form|editing|saving|uploading|not sent|file)/.test(w) && !W.confirm('Something is still open or not saved (' + w + ').\n\nUpdate now anyway? The page reloads.')) return;
+        B.pillTap = ms(); dirty = true; try { pill.remove(); } catch (e) {} update();
+      });
+      (D.body || H).appendChild(pill); B.pill = ms(); dirty = true;
+    } catch (e) {}
+  };
   var autoUpdate = function(){
     if (autoT) return;
     if (!autoN) { try { ['keydown', 'input', 'compositionupdate'].forEach(function(t){ D.addEventListener(t, function(){ lastType = Date.now(); }, true); }); } catch (e) {} }
     autoT0 = autoT0 || Date.now();
     var tick = function(){
-      autoT = null; if (++autoN > 2000) return;
-      var busy = '';
-      try {
-        var a = D.activeElement, editing = a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()));
-        var lk = Math.max(lastType, lastKey);
-        if ((editing && Date.now() - (lk || autoT0) < 60000) || Date.now() - lk < 3000) busy = 'typing';
-        if (!busy && W._gcSending && W._gcSending().length && Date.now() - autoT0 < 180000) busy = 'sending';
-      } catch (e) {}
-      if (!busy) { B.autoUpd = ms(); dirty = true; autoToast(); NST.call(W, function(){ if (!update()) { autoT0 = 0; } }, 2000); return; }
-      autoT = NST.call(W, tick, 1500);
+      autoT = null; autoN++;
+      var why = whyBusy(); B.updWait = why;
+      if (!why) {
+        B.autoUpd = ms(); dirty = true; autoToast();
+        NST.call(W, function(){ var w2 = whyBusy(); if (w2) { B.updWait = w2; try { var tt = D.getElementById('gc-bw-updating'); if (tt) tt.remove(); } catch (e) {} autoT = NST.call(W, tick, CFG.tick); return; } if (!update()) { autoT0 = 0; } }, 2000);
+        return;
+      }
+      if (Date.now() - autoT0 > CFG.pill) showPill();
+      autoT = NST.call(W, tick, Date.now() - autoT0 > 600000 ? Math.max(CFG.tick, 5000) : CFG.tick);
     };
     autoT = NST.call(W, tick, 300);
   };
@@ -995,12 +1084,40 @@ try {
     } catch (e) {}
     return '';
   };
-  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, bar = null, lateOn = false;
+  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, whyImpl = null, bar = null, lateOn = false;
   function L(){ if (lateOn) return; lateOn = true; try { var t = D.getElementById('gc-bw-late'); eval(t ? t.textContent : ''); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
   function auto(){ L(); if (autoImpl) autoImpl(); return !!autoImpl; }
   var lastKey = 0; try { ['keydown', 'input'].forEach(function(t){ D.addEventListener(t, function(){ lastKey = Date.now(); }, true); }); } catch (e) {}
+  var U = { act: 0, file: 0, picker: false, vis: Date.now(), fly: {}, n: 0, touched: null, cfg: { act: 120000, idle: 60000, file: 600000, pill: 1800000, tick: 2000 } };
+  try {
+    U.touched = typeof WeakSet === 'function' ? new WeakSet() : null;
+    var isFile = function(el){ return !!el && el.tagName === 'INPUT' && s(el.type).toLowerCase() === 'file'; };
+    ['pointerdown', 'mousedown', 'touchstart', 'keydown', 'input', 'change'].forEach(function(t){ D.addEventListener(t, function(e){
+      if (!e || e.isTrusted === false) return; U.act = Date.now();
+      if ((t === 'input' || t === 'change') && e.target) { try { if (U.touched) U.touched.add(e.target); } catch (x) {} }
+    }, true); });
+    D.addEventListener('click', function(e){ if (e && isFile(e.target)) U.file = Date.now(); }, true);
+    ['cancel', 'change'].forEach(function(t){ D.addEventListener(t, function(e){ if (e && isFile(e.target)) U.picker = false; }, true); });   /* the picker closed (a file chosen, or cancelled) */
+    var IP = W.HTMLInputElement && W.HTMLInputElement.prototype;
+    ['click', 'showPicker'].forEach(function(k){ var f = IP && IP[k]; if (typeof f !== 'function') return; IP[k] = function(){ try { if (isFile(this)) U.file = Date.now(); } catch (e) {} return f.apply(this, arguments); }; });
+    W.addEventListener('blur', function(){ if (Date.now() - U.file < 5000) U.picker = true; });
+    W.addEventListener('focus', function(e){ if (U.picker && !(e && e.isTrusted === false)) { U.picker = false; U.act = Date.now(); } });   /* the CRM sends itself focus events: only a real one is the picker closing */
+    D.addEventListener('visibilitychange', function(){ if (D.visibilityState !== 'hidden') U.vis = Date.now(); });
+    var fly = function(){ var id = ++U.n; U.fly[id] = Date.now(); return function(){ delete U.fly[id]; }; };
+    var wr = function(m){ return !!m && !/^(GET|HEAD|OPTIONS)$/i.test(s(m)); };
+    if (typeof NF === 'function') W.fetch = function(u, o){
+      var m = (o && o.method) || (u && typeof u === 'object' && u.method) || 'GET';
+      if (!wr(m) || /\/bootwatch(\?|$)/.test(s(u && typeof u === 'object' ? u.url : u))) return NF.apply(this, arguments);
+      var dn = fly(); try { var p = NF.apply(this, arguments); Promise.resolve(p).then(dn, dn); return p; } catch (e) { dn(); throw e; }
+    };
+    var XP = W.XMLHttpRequest && W.XMLHttpRequest.prototype, XO = XP && XP.open, XS = XP && XP.send;
+    if (typeof XO === 'function' && typeof XS === 'function') {
+      XP.open = function(m){ try { this.__gcW = wr(m); } catch (e) {} return XO.apply(this, arguments); };
+      XP.send = function(){ if (this.__gcW) { try { var dn = fly(); this.addEventListener('loadend', dn); } catch (e) {} } return XS.apply(this, arguments); };
+    }
+  } catch (e) {}
   function update(){ L(); return updateImpl ? updateImpl() : false; }
   function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };
@@ -1087,8 +1204,9 @@ try {
   if (get(PEND_K)) NST.call(W, function(){ if (!sentN && get(PEND_K)) { prevDue = true; send('prev'); } }, 4000);
 
   W._gcBootWatch = {
-    state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
+    state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, u: { act: U.act, file: U.file, picker: U.picker, fly: Object.keys(U.fly).length }, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
     older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); }, auto: auto, check: function(){ return checkVersion(true); },
+    upd: function(){ L(); return whyImpl ? whyImpl() : '?'; }, updCfg: U.cfg,
     live: function(maxAge){ return LIVE.v && Date.now() - LIVE.at < (maxAge || 60000) ? LIVE.v : ''; },
     send: function(){ dirty = true; return send('manual'); }
   };
@@ -7953,12 +8071,13 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
 
   /* AUTOUPD (owner 11/19): no "Yes, update / Not now" bar — a newer build on the server updates this copy by itself
      (BOOTWATCH: right away when nobody is typing and nothing is on its way; else once the field is left / 60 s after the last
-     key; a 2-second "Updating…" note). Without BOOTWATCH on this device: a reload once nobody is typing. */
+     key; a 2-second "Updating…" note). UPDSAFE (owner 11/20): BOOTWATCH reloads only when nothing can be lost (no sheet /
+     dialog open, nothing typed or uploading, idle on a main screen). Without BOOTWATCH on this device: never by itself (the
+     browser's own refresh updates it). */
   function showUpdateBar(remote){
     if(barShown) return; barShown = true;
     try{ if(window._gcBootWatch && window._gcBootWatch.auto && window._gcBootWatch.auto()) return; }catch(e){}
-    var t0 = Date.now(), go = function(){ if(window.__GC_IS_TYPING__ && Date.now() - t0 < 60000){ setTimeout(go, 1500); return; } window.__GC_USER_WANTS_RELOAD__ = true; location.reload(); };
-    go();
+    try{ console.warn('[GC] A newer version (' + remote + ') is on the server — refresh the page to update.'); }catch(e){}
   }
 
   // When an update is pending, reload on the NEXT navigation click — never while
@@ -7967,6 +8086,12 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   document.addEventListener('click', function(ev){
     if(!window.__GC_UPDATE_PENDING__) return;
     if(window.__GC_IS_TYPING__) return;
+    /* UPDSAFE (owner 11/20): BOOTWATCH decides when an update may reload (nothing open, nothing typed, idle on a main screen) —
+       a tap is never the moment (a tap on a trade chip in the bid-portal sheet counted as "navigation" here). Without it: only a
+       tap in the side menu / a nav bar, with no sheet or dialog open. */
+    if(window._gcBootWatch && window._gcBootWatch.upd) return;
+    if(!(ev.target && ev.target.closest && ev.target.closest('aside,nav'))) return;
+    try{ if(document.querySelector('[role="dialog"],[aria-modal="true"],dialog[open],#gcbp-modal')) return; }catch(e){}
     var t = ev.target;
     // Only treat it as navigation if they clicked a nav/tab control, not a field,
     // and not a button that is mid-edit (Save, Add, etc. keep them on the page).
@@ -232390,16 +232515,61 @@ function css(){
   D.head.appendChild(st);
 }
 var UI = { c: null, job: null, trades: {}, vis: 'private' };
-function close(){ var m = D.getElementById('gcbp-modal'); if (m) m.remove(); }
+/* UPDSAFE (owner 11/20: "it timed away from that screen so I have to redo it" — a reload took the half-filled sheet): the sheet keeps a
+   draft in this tab's session storage (every box, the trades, Private / Public, the files / links ticked) as it is filled; a reload or an
+   accidental close brings it back on the next open of the same estimate / job / lead, with "Restored your unsaved bid-portal draft"
+   (Discard puts the sheet back as drawn). Posting clears it. window._gcSheetDraft(key) → { save(obj), load(maxAgeMs), clear() }: the same
+   keeper for any other sheet (session storage, gc_sheetdraft_<key>, every read / write in try / catch). */
+W._gcSheetDraft = W._gcSheetDraft || function(key){
+  var k = 'gc_sheetdraft_' + s(key).slice(0, 120), st = function(){ try { return W.sessionStorage; } catch (e) { return null; } };
+  return {
+    save: function(o){ try { var x = st(); if (x) x.setItem(k, JSON.stringify({ at: Date.now(), d: o })); return true; } catch (e) { return false; } },
+    load: function(max){ try { var x = st(), v = x && x.getItem(k); if (!v) return null; v = JSON.parse(v); if (!v || !v.d || (max && Date.now() - (+v.at || 0) > max)) return null; return v.d; } catch (e) { return null; } },
+    clear: function(){ try { var x = st(); if (x) x.removeItem(k); } catch (e) {} }
+  };
+};
+var DF = ['gcbp-title', 'gcbp-due', 'gcbp-duet', 'gcbp-addr', 'gcbp-scope', 'gcbp-specs', 'gcbp-link', 'gcbp-trade'];
+function dkey(c){ c = c || UI.c || {}; return 'bidpost_' + (c.estId ? 'e:' + c.estId : c.pid ? 'p:' + c.pid : 'l:' + s(c.leadId)); }
+function snap(){
+  var m = D.getElementById('gcbp-modal'); if (!m || !UI.c || !m.querySelector('#gcbp-title')) return null;
+  var d = { vis: UI.vis, trades: Object.keys(UI.trades).filter(function(t){ return UI.trades[t]; }).sort(), f: {}, files: [] };
+  DF.forEach(function(id){ var e = D.getElementById(id); d.f[id] = e ? String(e.value || '') : ''; });
+  m.querySelectorAll('[data-bp-file]').forEach(function(x){ var f = UI.files[+x.getAttribute('data-bp-file')]; if (f && x.checked && !x.disabled) d.files.push(f.ref || f.link); });
+  return d;
+}
+var dT = 0;
+function keep(){   /* the draft = what differs from the sheet as it was drawn; nothing changed → no draft */
+  try { var d = snap(); if (!d || UI.base == null) return; var dk = W._gcSheetDraft(dkey()); if (JSON.stringify(d) === UI.base) dk.clear(); else dk.save(d); } catch (e) {}
+}
+function keepSoon(){ if (dT) return; dT = later(function(){ dT = 0; keep(); }, 250); }
+try { W.addEventListener('pagehide', keep); W.addEventListener('beforeunload', keep); } catch (e) {}
+function restore(box){
+  var d = W._gcSheetDraft(dkey()).load(24 * 3600e3); if (!d) return false;
+  DF.forEach(function(id){ var e = D.getElementById(id); if (e && d.f && typeof d.f[id] === 'string') e.value = d.f[id]; });
+  UI.vis = d.vis === 'public' ? 'public' : 'private';
+  box.querySelectorAll('input[name="gcbp-vis"]').forEach(function(r){ r.checked = r.value === UI.vis; }); box.querySelectorAll('[data-bp-vis] label').forEach(function(x){ var r = x.querySelector('input'); x.classList.toggle('on', !!(r && r.checked)); });
+  UI.trades = {}; var wrap = box.querySelector('[data-bp-trades]');
+  arr(d.trades).forEach(function(t){ UI.trades[t] = 1; if (wrap && ![].some.call(box.querySelectorAll('[data-bp="trade"]'), function(b){ return b.getAttribute('data-t') === t; })) { var b = D.createElement('button'); b.type = 'button'; b.className = 'chip'; b.setAttribute('data-bp', 'trade'); b.setAttribute('data-t', t); b.textContent = t; wrap.appendChild(b); } });
+  box.querySelectorAll('[data-bp="trade"]').forEach(function(b){ b.classList.toggle('on', !!UI.trades[b.getAttribute('data-t')]); });
+  var fs = {}; arr(d.files).forEach(function(k){ fs[k] = 1; });
+  box.querySelectorAll('[data-bp-file]').forEach(function(x){ var f = UI.files[+x.getAttribute('data-bp-file')]; if (f && !x.disabled) x.checked = !!fs[f.ref || f.link]; });
+  var n = D.createElement('div'); n.setAttribute('data-bp-restored', '1'); n.setAttribute('role', 'status');
+  n.style.cssText = 'margin:8px 0 0;padding:8px 10px;border-radius:8px;background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-weight:600;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+  n.innerHTML = '<span>↩️ Restored your unsaved bid-portal draft</span><button type="button" class="b" data-bp="discard" style="padding:3px 10px;font-size:12px">Discard</button>';
+  var head = box.firstElementChild; box.insertBefore(n, head ? head.nextSibling : box.firstChild);
+  return true;
+}
+function close(){ var m = D.getElementById('gcbp-modal'); if (m) { keep(); m.remove(); } }
 function open(c0){
   var c = ctxOf(c0);
   if (!canPost(c)) { toast('Only an admin, an estimator, or this job\'s PM puts it on the bid portal.', true); return null; }
   css(); close();
-  UI = { c: c, job: null, trades: {}, vis: 'private', files: filesOf(c) };
+  UI = { c: c, c0: c0, job: null, trades: {}, vis: 'private', files: filesOf(c), base: null };
   var m = D.createElement('div'); m.id = 'gcbp-modal'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1');   /* patch PLANREQ-G */
   m.innerHTML = '<div class="box" role="dialog" aria-label="Put on bid portal"><div class="mut">Loading…</div></div>';
   m.addEventListener('click', function(ev){ if (ev.target === m) close(); });
   m.addEventListener('click', onClick);
+  m.addEventListener('input', keepSoon); m.addEventListener('change', keepSoon); m.addEventListener('click', keepSoon);   /* patch UPDSAFE */
   D.body.appendChild(m);
   var disk = (!c.pid || docsList().some(function(d){ return d && s(d.pid) === c.pid; }) || typeof W.idbGet !== 'function') ? Promise.resolve() :
     Promise.resolve(W.idbGet('projectDocs')).then(function(v){ DOCS_DISK = arr(v); UI.files = filesOf(c); }, function(){});
@@ -232446,6 +232616,7 @@ function draw(pj, jl){
     + '<div class="err" data-bp-err></div>'
     + '<div class="bar"><button type="button" class="b pri" data-bp="post">' + (on ? '💾 Save changes' : '📢 Put on bid portal') + '</button>' + (on ? '<button type="button" class="b red" data-bp="unpost">Take off bid portal</button>' : '') + '<button type="button" class="b" data-bp="close">Cancel</button></div>';
   box.querySelectorAll('input[name="gcbp-vis"]').forEach(function(r){ r.addEventListener('change', function(){ UI.vis = r.value; box.querySelectorAll('[data-bp-vis] label').forEach(function(x){ x.classList.toggle('on', x.contains(r) ? r.checked : false); }); }); });
+  try { UI.base = JSON.stringify(snap()); restore(box); } catch (e2) { warn(e2); }   /* patch UPDSAFE */
 }
 function val(id){ var e = D.getElementById(id); return e ? s(e.value) : ''; }
 function post(){
@@ -232464,7 +232635,7 @@ function post(){
   if (UI.vis === 'public' && !body.due) { err.textContent = 'A public job needs a bid due date (or post it 🔒 private).'; return; }
   err.textContent = ''; go.disabled = true; go.textContent = 'Posting…';
   return fn('bid-hub', body).then(function(r){
-    close();
+    close(); W._gcSheetDraft(dkey(c)).clear();   /* patch UPDSAFE: posted — the draft is done */
     toast((r.created ? '📢 On the bid portal — ' : '💾 Bid portal job saved — ') + (r.visibility === 'public' ? '🌐 public' : '🔒 private (invite subs on the 🏗 Bid portal tab)') + (r.files ? ' · ' + r.files + ' file(s) shared' : '') + (arr(r.notCopied).length ? ' · not copied: ' + r.notCopied.map(function(x){ return x.name; }).join(', ') : ''));
     remember(c, r);
     JOBS.at = 0; jobs(true).then(paint);
@@ -232496,6 +232667,7 @@ function onClick(ev){
   var t = ev.target && ev.target.closest ? ev.target.closest('[data-bp]') : null; if (!t) return;
   var a = t.getAttribute('data-bp');
   if (a === 'close') return close();
+  if (a === 'discard') { W._gcSheetDraft(dkey()).clear(); var c1 = UI.c0, m1 = D.getElementById('gcbp-modal'); if (m1) m1.remove(); return open(c1); }   /* patch UPDSAFE */
   if (a === 'trade') { var k = t.getAttribute('data-t'); UI.trades[k] = !UI.trades[k]; t.classList.toggle('on', !!UI.trades[k]); return; }
   if (a === 'addtrade') { var inp = D.getElementById('gcbp-trade'), v = s(inp && inp.value); if (!v) return; UI.trades[v] = 1; var b = D.createElement('button'); b.type = 'button'; b.className = 'chip on'; b.setAttribute('data-bp', 'trade'); b.setAttribute('data-t', v); b.textContent = v; D.querySelector('#gcbp-modal [data-bp-trades]').appendChild(b); inp.value = ''; return; }
   if (a === 'post') return post();
