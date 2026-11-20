@@ -122930,7 +122930,7 @@ window._gcJOfficeTasks = function(){
   }catch(e){}
   tasksRaw().forEach(function(t){
     if(!t || t.done || t.kind!=='qb_home') return;
-    out.push({ id:'manual_'+t.id, manualId:t.id, cat:'QuickBooks import — needs a home', label:t.label, sub:t.note||'', color:'#dc2626', action:function(){ window._gcOpenQbHome(t.id); } });
+    out.push({ id:'manual_'+t.id, manualId:t.id, cat:'QuickBooks import — needs a home', label:decEnt(t.label), sub:decEnt(t.note||''), color:'#dc2626', task:t, action:function(){ window._gcOpenQbHome(t.id); } });
   });
   return out;
 };
@@ -123007,14 +123007,17 @@ function detect(rows){
 var KIND_LABEL={ billlist:'Bill List', transactions:'Transaction List by Date', invoicelist:'Invoice List', salesbycustomer:'Sales by Customer Detail', openinvoices:'Open Invoices / A/R Aging Detail', customers:'Customer Contact List', vendors:'Vendor Contact List', unknown:'(not recognised)' };
 /* patch STMTPDF: "Oct 30, 2026" / "October 30, 2026" dates (some QuickBooks exports) */
 function qbDate(v){ var m=s(v).match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/), M={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12}; if(!m||!M[low(m[1])]) return ''; return m[3]+'-'+('0'+M[low(m[1])]).slice(-2)+'-'+('0'+m[2]).slice(-2); }
+/* INVJOBS 11/20: a QuickBooks export can carry HTML entities ("Q&amp;A Construction LLC") — decoded before any name is matched */
+function decEnt(v){ var t=String(v==null?'':v); for(var i=0;i<3 && /&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/i.test(t);i++) t=t.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi,function(m,e){ e=e.toLowerCase(); return e==='amp'?'&':e==='lt'?'<':e==='gt'?'>':e==='quot'?'"':e==='apos'?"'":e.charAt(1)==='x'?String.fromCharCode(parseInt(e.slice(2),16)):String.fromCharCode(parseInt(e.slice(1),10)); }); return t; }
+window._gcDecEnt = decEnt;
 function parseQb(text){
   var rows=csvRows(text), d=detect(rows);
   if(!d) return { error:'No QuickBooks header row found (looked for Date / Num / Name / Amount …).', recs:[] };
   var m=d.map, recs=[], curName='', curAcct='', sawHead=false;/*QBMULTI*/
   for(var i=d.row+1;i<rows.length;i++){
     var r=rows[i]; if(!r || !r.some(function(x){ return x; })) continue;
-    var g=function(f){ return m[f]!==undefined ? s(r[m[f]]) : ''; };
-    var first=s(r[0]);
+    var g=function(f){ return m[f]!==undefined ? decEnt(s(r[m[f]])) : ''; };
+    var first=decEnt(s(r[0]));
     if(/^total\b/i.test(first) || /^total\b/i.test(g('name')) || /^(tuesday|monday|wednesday|thursday|friday|saturday|sunday)\b/i.test(first) || /^accrual basis|^cash basis/i.test(first)) continue;
     /* Sales by Customer Detail groups rows under a customer heading row */
     if(r.filter(function(x){ return x; }).length===1 && first && m.date!==undefined && !ymd(first)){ if(d.kind==='transactions'){ curAcct=first; sawHead=true; } else curName=first; continue; }   /* patch STMTPDF: Transaction Detail by Account headings are accounts */
@@ -123892,6 +123895,7 @@ function computeJobs(R, opt){
 }
 
 /* 7. TO MATCH / NEEDS REVIEW — one list */
+var QMEMO={};   /* INVJOBS: the job evidence for an import to-do, worked out once per record version */
 function computeMatch(ccTrans){
   var items=[], P=projMap();
   L('invoices').forEach(function(iv){
@@ -123899,7 +123903,16 @@ function computeMatch(ccTrans){
     if(RULES.tomb('invs', iv.id) || RULES.folded('invs', iv.id)) return;
     items.push({ kind:'qb', id:iv.id, title:'QuickBooks invoice to confirm', what:(iv.client||iv.customer||'')+' · #'+(iv.invNum||iv.po||'')+(iv.desc?' · '+iv.desc:''), amount:amtOf(iv), date:RULES.invDate(iv), pid:iv.pid||'' });
   });
-  try{ var td=window._gcJOfficeTasks ? window._gcJOfficeTasks() : []; (Array.isArray(td)?td:[]).forEach(function(x){ if(!x || !/import/i.test(x.cat||'')) return; items.push({ kind:'qbtodo', id:x.manualId||x.id, title:'QuickBooks import to-do', what:(x.label||'')+(x.sub?' · '+x.sub:''), amount:0, date:'', raw:x }); }); }catch(e){}
+  /* INVJOBS 11/20: an import to-do in plain English, with its amount and date; gone when it is done, on a job, archived, or waiting in
+     ⚠ Needs a look (one list) — patch ACCTAUTO core.qbTodo */
+  try{ var td=window._gcJOfficeTasks ? window._gcJOfficeTasks() : [], AF=window._gcAcctFix, QT=AF&&AF.core&&AF.core.qbTodo, qctx=null;
+    if(QT){ var IM={}; L('invs').concat(L('invoices')).forEach(function(r){ if(r&&r.id&&!IM[r.id]) IM[r.id]=r; }); var LKS={}, lk=(AF.state&&AF.state().look)||null; if(lk) (lk.list||[]).forEach(function(z){ if(z&&!(lk.done||{})[z.id]) (z.ids||[]).forEach(function(i){ LKS[i]=1; }); });
+      var VN={}; L('subs').concat(L('vendors')).forEach(function(v){ var k=v&&AF.core.decEnt(v.name).toLowerCase().replace(/&/g,' and ').replace(/\b(llc|inc|co|corp|company|the|ltd)\b/g,' ').replace(/[^a-z0-9]+/g,' ').trim(); if(k) VN[k]=1; });
+      var ILm=window._gcInvLink&&(window._gcInvLink.core||window._gcInvLink), PJ=L('projects'), isDelP=function(id){ try{ return !!(window._gcIsProjectDeleted&&window._gcIsProjectDeleted(id)); }catch(e){ return false; } };
+      qctx={ inv:IM, look:LKS, vendors:VN, tomb:function(id){ return RULES.tomb('invs', id); }, live:function(pid){ return PJ.some(function(p){ return p&&String(p.id)===String(pid)&&!p.deleted&&!isDelP(p.id); }); }, match:ILm&&ILm.match?function(r){ var ck=r.id+'|'+PJ.length; if(!(ck in QMEMO)){ if(Object.keys(QMEMO).length>2000) QMEMO={}; QMEMO[ck]=ILm.match(r, PJ, { isDeleted:isDelP }); } return QMEMO[ck]; }:null }; }
+    (Array.isArray(td)?td:[]).forEach(function(x){ if(!x || !/import/i.test(x.cat||'')) return;
+      if(QT && x.task){ var q=QT(x.task, qctx); if(!q) return; items.push({ kind:'qbtodo', id:x.manualId||x.id, title:'QuickBooks import to-do', what:q.what, amount:q.amount, date:q.date, likely:q.likely, rec:q.recordId, raw:x }); return; }
+      items.push({ kind:'qbtodo', id:x.manualId||x.id, title:'QuickBooks import to-do', what:(QT?AF.core.decEnt(x.label||''):(x.label||''))+(x.sub?' · '+x.sub:''), amount:0, date:'', raw:x }); }); }catch(e){}
   (EXTRA.dups||[]).forEach(function(g,i){ if(!g) return;
     if(g.rows){ var r0=g.rows[0]||{}; items.push({ kind:'dup', id:'dup'+i, title:(g.strong?'Duplicate':'Look-alike')+' ('+g.rows.length+' rows)', what:(g.rule||'')+' · '+(r0.who||'')+(r0.desc?' · '+r0.desc:''), amount:n2(r0.amount), date:day(r0.date) }); return; }
     items.push({ kind:'dup', id:'dup'+i, title:'Possible duplicate ('+(g.count||2)+' copies)', what:(g.what||g.sig||'')+(g.who?' · '+g.who:''), amount:n2(g.keepAmount||g.removes), date:day(g.date) }); });
@@ -124299,6 +124312,7 @@ function drawMatch(m){
 function resolveBtns(x){
   var b=[];
   if(x.kind==='qb'){ b.push('<button class="gck-btn s p" data-act="qbok:'+esc(x.id)+'">Confirm or not real…</button>'); }
+  if(x.kind==='qbtodo' && x.likely && x.rec) b.push('<button class="gck-btn s p" data-act="qbuse:'+esc(x.rec)+':'+esc(x.likely.pid)+'" title="'+esc(x.likely.name)+'">Use this job</button>');
   if(x.kind==='qbtodo') b.push('<button class="gck-btn s" data-act="qbtodo:'+esc(x.id)+'">Open</button>');
   if(x.kind==='dup') b.push('<button class="gck-btn s p" data-act="dups">Review</button>');
   if(x.kind==='cc') b.push('<button class="gck-btn s p" data-act="more:cctrans">Match</button>');
@@ -124396,6 +124410,7 @@ function act(a, el){
     case 'cards': try{ if(window._gcOpenCards) return window._gcOpenCards(); }catch(e){} return;
     case 'payroll': try{ if(window._gcOpenPayroll) return window._gcOpenPayroll(); if(window._gcOpenPayrollTab) return window._gcOpenPayrollTab(); }catch(e){} return;
     case 'qbok': try{ if(window._gcOpenReviewOne) return window._gcOpenReviewOne(v); }catch(e){} return openInvoice(v);
+    case 'qbuse': try{ var pp=v.split(':'); if(window._gcAcctFix && window._gcAcctFix.pick){ if(el) el.disabled=true; return window._gcAcctFix.pick(pp[0], pp[1]).then(function(r){ try{ if(typeof window._toast==='function') window._toast(r&&r.done?'✓ '+r.item.title+' (🧾 Accounting fixes log: ↩ Undo)':'⚠ '+((r&&r.error)||'not moved')); }catch(e){} render(); }); } }catch(e){} return;
     case 'qbtodo': try{ var it=(V.lastModel||model()).match.items.filter(function(x){ return x.kind==='qbtodo' && String(x.id)===v; })[0]; if(it && it.raw && typeof it.raw.action==='function') return it.raw.action(); if(window._gcOpenQbHome) return window._gcOpenQbHome(v); }catch(e){} return;
     case 'remind': return remind(v);
     case 'week': { var w=m.w8.weeks[+v]; return drill('Week of '+fmtDay(w.from)+' – '+fmtDay(w.to), w.items.map(function(x){ return {date:x.date, what:(x.dir==='in'?'IN · ':'OUT · ')+x.what, amount:x.dir==='in'?x.amount:-x.amount, kind:x.kind, id:x.id}; }), 'Net '+money(w.net)); }
@@ -190601,7 +190616,9 @@ function wrapFns(){
 
 /* ── 3. lists: exact same-id repeats are folded (that is never two records) ── */
 var LISTS = ['projects', 'estimates', 'expenses', 'schedule', 'vendors', 'cos', 'punch', 'invs', 'projectDocs', 'customers'];
-async function readList(k){ try { var v = await W.idbGet(k); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+async function readList(k){ try { var v = await (k === REG && W._gcAc ? W._gcAc(k) : W.idbGet(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+/* INVJOBS: a job merge moves the accounting register's lines too (pid), through the register's guarded accessor (like REGFIX) */
+var REG = 'gcAcctRegister';
 /* a person's change: the app's own setter (the screen and its save), the disk at once, the cloud on the next sync.
    (_gcApplySync is the sync's door for INCOMING copies — it is held outside a tab-change sync, so it is not used.) */
 function setterFor(k){
@@ -190612,6 +190629,7 @@ function setterFor(k){
 }
 function writeList(k, list, ids){
   try { if (W._gcxRestored && ids && ids.length) W._gcxRestored(k, ids, true); } catch (e) {}   /* "a person changed these here" */
+  if (k === REG) { try { if (W._gcAcW) W._gcAcW(k, list); else if (W.idbSet) W.idbSet(k, list); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert(k, list); } catch (e) {} try { if (W._gcRefreshSpend) W._gcRefreshSpend(); } catch (e) {} return true; }
   var f = setterFor(k);
   try { if (f) f(list.slice()); } catch (e) { warn(e); }
   try { if (W.idbSet) W.idbSet(k === 'invs' ? 'invs' : k, list); } catch (e) {}
@@ -190642,7 +190660,7 @@ async function collapseRepeats(){
 var NAMES = { projects: 'Jobs', estimates: 'Estimates', expenses: 'Expenses', schedule: 'Schedule items', vendors: 'Subs / vendors', cos: 'Change orders', punch: 'Punch items', invs: 'Invoices', projectDocs: 'Documents', customers: 'Customers' };
 var MONEY = { expenses: 1, invs: 1, cos: 1 };
 var REF = { projects: ['pid', 'jobId', 'projectId'], customers: ['customerId', 'custId', 'clientId'], vendors: ['subId', 'vendorId'], expenses: ['expId'], invs: ['invId'], estimates: ['estimateId', 'estId'] };
-var LSQ = ['gc_expense_approvals', 'gc_sub_approvals', 'gc_invoice_approvals', 'gc_email_queue'];
+var LSQ = ['gc_expense_approvals', 'gc_sub_approvals', 'gc_invoice_approvals', 'gc_email_queue', 'gc_check_queue'];
 function sigs(k, r){
   var pid = s(r.pid || r.jobId || r.projectId);
   switch (k) {
@@ -190711,11 +190729,23 @@ function logPut(l){
   try { if (W._supaUpsertNow) W._supaUpsertNow('gc_dedupe_log', l); else if (W._supaUpsert) W._supaUpsert('gc_dedupe_log', l); } catch (e) {}
   return l;
 }
+/* the job merge map (gc_kv gc_job_merge_map: old job id → kept job id) outlives the 7-day log: the invoice re-check (JOBMERGE) and
+   the accounting fixes (ACCTAUTO) find a merged job's kept job by it, never "its job is not in the CRM" */
+var MMK = 'gc_job_merge_map';
+function mergeMapPut(ids, to, entryId){
+  var m = jparse(lsGet(MMK), {}) || {};
+  try { var c = W._gcOT_kv && W._gcOT_kv.get && W._gcOT_kv.get(MMK); if (isObj(c)) Object.keys(c).forEach(function(x){ if (!m[x]) m[x] = c[x]; }); } catch (e) {}
+  ids.forEach(function(id){ if (to) m[id] = { to: to, at: nowISO(), by: who(), entry: entryId }; else if (m[id] && m[id].entry === entryId) delete m[id]; });
+  lsSet(MMK, JSON.stringify(m));
+  try { if (W._gcOT_kv && W._gcOT_kv.put) W._gcOT_kv.put(MMK, m); else if (W._supaUpsert) W._supaUpsert(MMK, m); } catch (e) {}
+}
 async function repoint(listKey, from, to, rec){
   var fields = REF[listKey]; if (!fields) return;
   var fromSet = {}; from.forEach(function(id){ fromSet[id] = 1; });
-  for (var i = 0; i < LISTS.length; i++) {
-    var k = LISTS[i], list = await readList(k), changed = [];
+  /* a job merge: every invoice / bill / payment / expense AND every register line on the old job goes to the kept one (INVJOBS) */
+  var keys = listKey === 'projects' ? LISTS.concat([REG]) : LISTS;
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i], list = await readList(k), changed = [];
     var out = list.map(function(r){
       if (!isObj(r)) return r; var c = null;
       fields.forEach(function(f){ if (r[f] != null && fromSet[s(r[f])]) { if (!c) c = Object.assign({}, r); rec.push({ key: k, rid: idOf(r), field: f, from: s(r[f]), to: to }); c[f] = to; } });
@@ -190760,6 +190790,7 @@ async function act(mode, listKey, keeperId, dupIds){
   writeList(listKey, next, mode === 'merge' ? [s(keeperId)] : []);
   Object.keys(gone).forEach(function(id){ try { if (W._gcxDel) W._gcxDel(listKey, id); else if (W._gcTombstone) W._gcTombstone(listKey, id); } catch (e) {} });
   if (mode === 'merge') await repoint(listKey, Object.keys(gone), s(keeperId), entry.repoint);
+  if (mode === 'merge' && listKey === 'projects') mergeMapPut(Object.keys(gone), s(keeperId), entry.id);
   logPut(logGet().concat([entry]));
   later(scan, 400);
   return { ok: true, entry: entry.id, removed: removed.length, repointed: entry.repoint.length };
@@ -190793,6 +190824,7 @@ async function undo(entryId){
       writeList(k, L2.map(function(r){ var c = r; ps.forEach(function(p){ if (isObj(c) && idOf(c) === p.rid && s(c[p.field]) === p.to) { c = Object.assign({}, c, { updatedAt: at }); c[p.field] = p.from; } }); return c; }), ps.map(function(p){ return p.rid; }));
     }
   }
+  if (e.list === 'projects' && e.mode === 'merge') mergeMapPut(ids, '', e.id);
   e.undone = at; e.undoneBy = who(); logPut(l);
   later(scan, 400);
   return { ok: true, restored: back.length };
@@ -240373,14 +240405,34 @@ function groups(projects, ctx){
     return { gid: k, jobs: jobs, keep: jobs[0].id, po: poN(jobs[0].p.autoPO || jobs[0].p.po), name: s(jobs[0].p.name), client: s(jobs[0].p.client || jobs[0].p.customer), address: s(jobs[0].p.address), companyCam: Object.keys(ccs) };
   });
 }
-/* ── pure: invoices to re-check ── jobFor(inv) = the new sure check (FINDJOB _gcJobForInvoice) */
+/* ── pure: the job merge map — old job id → the live kept job (INVJOBS 11/20: a merged job's invoices are not "not in the CRM").
+   From: the kept job's mergedFrom (DEDUP) / mergedDupes (this patch), the merge log (gc_dedupe_log, ctx.logs), the kept map
+   (gc_kv gc_job_merge_map, ctx.map) and a QuickBooks import's _mergedFrom when exactly ONE live job lists the gone id. A chain
+   (A → B → C) is followed to the live job; '' when it ends nowhere. ── */
+function mergeMap(projects, ctx){
+  ctx = ctx || {}; var live = {}, to = {}, imp = {};
+  arr(projects).forEach(function(p){ if (!dead(p, ctx)) live[s(p.id)] = p; });
+  function add(o, k){ o = s(o); k = s(k); if (o && k && o !== k && !live[o]) to[o] = k; }
+  Object.keys(ctx.map || {}).forEach(function(o){ var e = ctx.map[o]; add(o, e && typeof e === 'object' ? e.to : e); });
+  arr(ctx.logs).forEach(function(e){ if (e.list === 'projects' && e.mode === 'merge' && !e.undone) arr(e.removed).forEach(function(r){ add(r && typeof r === 'object' ? r.id : r, e.keeper); }); });
+  arr(projects).forEach(function(p){
+    arr(p.mergedFrom).concat(arr(p.mergedDupes)).forEach(function(m){ add(m && typeof m === 'object' ? m.id : m, p.id); });
+    if (live[s(p.id)]) arr(p._mergedFrom).forEach(function(m){ m = s(m); if (m && m !== s(p.id) && !live[m]) (imp[m] = imp[m] || {})[s(p.id)] = 1; });
+  });
+  Object.keys(imp).forEach(function(o){ var ks = Object.keys(imp[o]); if (ks.length === 1 && !to[o]) add(o, ks[0]); });
+  var out = {};
+  Object.keys(to).forEach(function(o){ var k = to[o], n = 0; while (k && !live[k] && to[k] && n++ < 10) k = to[k]; if (live[k]) out[o] = k; });
+  return out;
+}
+/* ── pure: invoices to re-check ── jobFor(inv) = the new sure check (FINDJOB _gcJobForInvoice); ctx.merged = mergeMap(…) */
 function recheck(invs, projects, jobFor, ctx){
-  ctx = ctx || {}; var live = {}, any = {};
+  ctx = ctx || {}; var live = {}, any = {}, mm = ctx.merged || {};
   arr(projects).forEach(function(p){ any[s(p.id)] = p; if (!dead(p, ctx)) live[s(p.id)] = p; });
   var out = [];
   arr(invs).forEach(function(v){
     if (!v || v.deleted || !s(v.pid) || v.autoLinkOk) return;
     var pid = s(v.pid), p = live[pid];
+    if (!p && live[mm[pid]]) { out.push({ inv: v, pid: pid, job: any[pid] || null, why: 'its job was merged into "' + s(live[mm[pid]].name) + '" — move it there', sure: mm[pid], merged: mm[pid] }); return; }
     if (!p) { out.push({ inv: v, pid: pid, job: any[pid] || null, why: any[pid] ? 'its job was deleted' : 'its job is not in the CRM', sure: '' }); return; }
     if (p.overhead === true && !/^(sub|supplier)$/i.test(s(v.type))) { out.push({ inv: v, pid: pid, job: p, why: 'a customer invoice on a GrayCo overhead job', sure: '' }); return; }
     if (!v.autoLinked || s(v.autoLinkWhy) || v.pidManual) return;   /* put there by a person, or by the new check (it says why) */
@@ -240423,7 +240475,7 @@ function pairs(projects, ctx){
     return others.length ? { job: p, id: s(p.id), others: others } : null;
   }).filter(Boolean);
 }
-var API = W._gcJobMerge = { groups: groups, recheck: recheck, keyOf: keyOf, qbIdOf: qbIdOf, overheadCands: overheadCands, pairs: pairs, sameStreet: sameStreet };
+var API = W._gcJobMerge = { groups: groups, recheck: recheck, mergeMap: mergeMap, keyOf: keyOf, qbIdOf: qbIdOf, overheadCands: overheadCands, pairs: pairs, sameStreet: sameStreet };
 if (!W.document || !W.document.createElement) return;
 
 /* ════════ the CRM side ════════ */
@@ -240449,7 +240501,12 @@ function notSameMap(){ var m = {}; try { m = JSON.parse(localStorage.getItem(NS_
 function ctxNow(){ return { invs: invList(), expenses: arr(crm().expenses), docs: arr(W._gcProjectDocs || crm().projectDocs), schedule: arr(crm().schedule), isDeleted: isDel, notSame: notSameMap() }; }
 function jobFor(inv){ try { return typeof W._gcJobForInvoice === 'function' ? W._gcJobForInvoice(inv, projects()) : null; } catch (e) { return null; } }
 function curGroups(){ return groups(projects(), ctxNow()); }
-function curRecheck(){ return recheck(invList(), projects(), jobFor, { isDeleted: isDel }); }
+function lsJ(k, d){ try { var v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } }
+function curMerged(){ return mergeMap(projects(), { isDeleted: isDel, logs: lsJ('gc_dedupe_log', []), map: lsJ('gc_job_merge_map', {}) }); }
+API.merged = curMerged;
+/* an invoice that waits in Accounting → ⚠ Needs a look (ACCTAUTO / INVJOBS, the job guess preselected there) is not listed twice */
+function inLook(){ var m = {}; try { var L = W._gcAcctFix && W._gcAcctFix.state && W._gcAcctFix.state().look; if (L) arr(L.list).forEach(function(x){ if (x && /^(link|jobpick)$/.test(s(x.kind)) && !(L.done || {})[x.id]) arr(x.ids).forEach(function(id){ m[s(id)] = 1; }); }); } catch (e) {} return m; }
+function curRecheck(){ var lk = inLook(); return recheck(invList(), projects(), jobFor, { isDeleted: isDel, merged: curMerged() }).filter(function(r){ return !lk[s(r.inv.id)]; }); }
 function staffNames(){ return arr(crm().users).map(function(u){ return s(u && u.name); }).filter(Boolean); }
 function curOverhead(){ return overheadCands(projects(), { isDeleted: isDel, staff: staffNames() }); }
 function curPairs(){ return pairs(projects(), { isDeleted: isDel, pairOk: notSameMap() }); }
@@ -240569,7 +240626,7 @@ function paint(ov){
     '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">Jobs listed together have the same QuickBooks customer:job, the same PO and the same address — never just a similar name. Merging keeps the job you pick and moves everything onto it (Undo for 7 days in 🧹 Duplicates).</div>' +
     (R.length ? '<h3 style="font-size:14.5px;margin:12px 0 6px">🔎 Invoices to re-check (' + R.length + ')</h3>' + R.map(function(r){ var v = r.inv, isBill = /^(sub|supplier)$/i.test(s(v.type));
       return '<div data-jm-inv="' + esc(v.id) + '" style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:13px"><b>' + (isBill ? 'Bill' : 'Invoice') + (s(v.invNum || v.qbNum) ? ' #' + esc(v.invNum || v.qbNum) : '') + '</b> · ' + esc(isBill ? v.sub || v.vendor : v.client || v.customer) + ' · ' + money(v.amt != null ? v.amt : v.amount) + '<br><span style="color:#475569">' + esc(s(v.desc).replace(/\s+/g, ' ').slice(0, 140)) + '</span><br>' +
-        'On: <b>' + esc(r.job ? s(r.job.name) : r.pid) + '</b>' + (r.job && r.job.address ? ' — ' + esc(s(r.job.address).split(',')[0]) : '') + ' <span style="color:#92400e">(' + esc(r.why) + ')</span>' +
+        'On: <b>' + esc(r.job ? s(r.job.name) : (s(v.project) ? s(v.project) + ' (' + r.pid + ')' : r.pid)) + '</b>' + (r.job && r.job.address ? ' — ' + esc(s(r.job.address).split(',')[0]) : '') + ' <span style="color:#92400e">(' + esc(r.why) + ')</span>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" data-jm="unlink" style="' + BTN + 'border:1px solid #b91c1c;background:#fff;color:#b91c1c">Unlink</button>' +
         '<select data-jm="move" style="padding:5px;border-radius:7px;border:1px solid #cbd5e1;max-width:320px;font-size:12.5px">' + jobOpts(r.sure) + '</select>' + (r.sure ? '<button type="button" data-jm="movesure" data-pid="' + esc(r.sure) + '" style="' + BTN + 'border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8">Move to the suggested job</button>' : '') +
         (r.job ? '<button type="button" data-jm="right" style="' + BTN + 'border:1px solid #16a34a;background:#f0fdf4;color:#15803d">It\'s right</button>' : '') + '</div></div>'; }).join('') : '') +
@@ -249454,9 +249511,216 @@ function plan(lists, opts){
     lookAdd('openbal', 'Invoice #' + billNo(v) + ' — ' + payee(v) + ' (' + money(amtOf(v)) + '): marked paid, but QuickBooks shows ' + money(v.openBalance) + ' open', 'Check in QuickBooks whether it is paid in full.', v.openBalance, [s(v.id)], { key: 'ob:' + s(v.id) });
   });
 
+  /* G. INVJOBS (below): run with the rest on a CRM that never had these fixes */
+  var expenses = arr(lists.expenses);
+  if (!opts.noJobs) {
+    var G = planJobs({ invs: invs, reg: regOut, expenses: expenses, projects: projects, vendors: lists.vendors }, { at: at, isDeleted: opts.isDeleted, merged: opts.merged, invlink: IL });
+    var gl = {}; G.look.forEach(function(x){ gl[x.id] = 1; });
+    items = items.concat(G.items); look = look.filter(function(x){ return !gl[x.id]; }).concat(G.look); foldsOut = foldsOut.concat(G.folds);
+    invs = G.invs; regOut = G.reg; expenses = G.expenses;
+  }
   var tot = { items: items.length, look: look.length, money: {} };
   items.forEach(function(i){ tot.money[i.kind] = r2((tot.money[i.kind] || 0) + num(i.amount)); tot[i.kind] = (tot[i.kind] || 0) + 1; });
-  return { runId: RUN_ID, at: at, items: items, look: look, totals: tot, invs: invs, reg: regOut, folds: foldsOut, projects: projects, customers: customers };
+  return { runId: RUN_ID, at: at, items: items, look: look, totals: tot, invs: invs, reg: regOut, expenses: expenses, folds: foldsOut, projects: projects, customers: customers };
+}
+
+/* ══ G. INVJOBS-1 — the invoices / bills on the 🔎 re-check card whose job "is not in the CRM" or is not right (owner 11/20: "those
+   jobs aren't right"). What the read-only check of the live books (11/20) found:
+     • PRJjfp5ual6t2j "Lakeland Master bathroom remodel" (H990) was DELETED on 11/18 (gc_deleted_projects + a tombstone) — its bill
+       stayed. PRJ0evqm2s6m36 "Renesant- 7.5 ton changeout of unit" (J224) is GONE with no delete record and no merge (a stale copy of
+       the jobs list dropped it before 11/04) — its bill and invoice stayed. No merge record names either id.
+     • the other items were put on a job by the OLD job finder (a name in the text): the evidence below says where they belong.
+   SURE (moved by itself, logged, ↩ Undo): an invoice whose job was MERGED (the merge map) goes to the kept job; the 4 below.
+   GUESS → ⚠ Needs a look with the job preselected (one tap: "✓ Use this job"). Nothing found → Needs a look, no job preselected.
+   A customer invoice on a GrayCo OVERHEAD job leaves it (no job) — overhead is never a customer's job.
+   "demo" on a bill is DEMOLITION (Julio Garfias' "Demo lakeland" days on the schedule, 7/15–7/18), not test data: only a bill /
+   invoice whose whole text is "test" / "dummy" / "do not pay" … is archived as test data (never deleted).
+   Every rule moves the bill's own job-cost rows with it: its expense (subInvId, or the same payee + amount on the old job) and its
+   register lines (srcInvId, or the same payee + amount on the old job). Applied only while the invoice is still on the job it was
+   found on and the job it goes to is in the CRM; a job a person picked (pidManual / "It's right") is never moved. ══ */
+var JOBS_ID = 'INVJOBS-1';
+var JOB_EVIDENCE = {
+  /* sure */
+  INVmw3s43wden8b8: { from: 'PRJmwf9iwz4k4', to: 'PRJmtjlaxag58c28', sure: true, why: '"3161 Hwy 64 Ped. Office" = the Pedatric Office job at 3161 US-64, Oakland; "New Office" is GrayCo overhead' },
+  INVmw3s43wqeh4dz: { from: 'PRJmwfc3yvo84', to: 'PRJ3fa0np9xz2l', sure: true, why: 'Enterprise (EAN Holdings) ADA remodel on Mt Moriah = "EAN- Bathroom remodel Mt Moriah" (its QuickBooks invoice #1106 is the ADA bath, Aug 2026); Lexington Enterprise is at 1700 West Cove, Hernando' },
+  INVmw3s43wmn6r69: { from: 'PRJc3enre7ua19', to: 'PRJmtjlaxag66x30', sure: true, why: 'the address 9135 Carothers Pkwy, Franklin = the Renasant job there; the pressure wash was the Hendersonville branch' },
+  INVmw3s43x6n84de: { from: 'PRJ0sx249j6n8v', to: 'PRJqwpno4m', sure: true, why: '"Cat Country Boardwalk replacement" = A & B\'s Zoo Boardwalk Redecking; ROTC Cordova was made 10/20, after this 10/12 invoice' },
+  /* guesses (preselected in Needs a look) */
+  INVf553lfs611z: { from: 'PRJjfp5ual6t2j', to: 'PRJep9czbdsn5k', alts: ['PRJ3el70ml164'], why: 'its job "Lakeland Master bathroom remodel" (PO H990) was deleted on 11/18. "demo" is the demolition Julio Garfias did there 7/15–7/18 (the schedule). Shawn Eavanson\'s other Lakeland bathroom job is "Custom Bathroom remodel" (4071 Loche Meade, D626) — or restore the deleted job' },
+  INVmw3s43x0g93l1: { from: 'PRJ6hhpavp1vz', to: 'PRJep9czbdsn5k', alts: ['PRJ3el70ml164'], why: '"Demo" on 9/22 — the same day as Altus Electric\'s "DEMO OF BATHROOM" bill on Custom Bathroom remodel (4071 Loche Meade, Lakeland); the Allgyer patio was billed in June' },
+  INVmw3s43wwpox4h: { from: 'PRJmwf9iwz4k4', to: 'PRJmtjlaxaf6sq7', why: 'Veritiv\'s "front office repairs from water damage" = the "Veritiv Office Repair" job (4770 Southpoint Dr) — the CRM has 4 copies of that job' },
+  INVmw3s43xa4esrb: { from: 'PRJsu37lx4', to: 'PRJmtt1rwq72mw25', why: 'the address 2424 Appling Rd = the "Katelyn Thompson" job there (another customer name on it)' },
+  INVmw3s43xc4i875: { from: 'PRJ0sx249j6n8v', to: 'PRJ0sx249j6n8v', alts: ['PRJ3b2y5z3'], why: '214 Lakeview Rd, Somerville, 10/26: ROTC Cordova (Somerville, active since 10/20) fits; ceiling-grid work could also be "Somerville ceilings" (spring 2026)' },
+  INVmw3s43xd44d3o: { from: 'PRJ0sx249j6n8v', to: 'PRJ0sx249j6n8v', alts: ['PRJ3b2y5z3'], why: '214 Lakeview Rd, Somerville, 10/26: ROTC Cordova (Somerville, active since 10/20) fits; ceiling-grid work could also be "Somerville ceilings" (spring 2026)' },
+  /* nothing found — Needs a look with the facts */
+  INV0cn960fkw35: { from: 'PRJ0evqm2s6m36', why: 'its job "Renesant- 7.5 ton changeout of unit" (PO J224, Aug 2026) is gone from the CRM — no delete record, no merge. No other job is that HVAC changeout: re-create the job and pick it, or pick another' },
+  INV1786473973345F: { from: 'PRJ0evqm2s6m36', why: 'its job "Renesant- 7.5 ton changeout of unit" (PO J224, Aug 2026) is gone from the CRM — no delete record, no merge. No other job is that HVAC changeout: re-create the job and pick it, or pick another' }
+};
+var ENT = /&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/i;
+function decEnt(v){ var t = s(v); for (var i = 0; i < 3 && ENT.test(t); i++) t = t.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi, function(m, e){ e = e.toLowerCase(); return e === 'amp' ? '&' : e === 'lt' ? '<' : e === 'gt' ? '>' : e === 'quot' ? '"' : e === 'apos' ? "'" : e.charAt(1) === 'x' ? String.fromCharCode(parseInt(e.slice(2), 16)) : String.fromCharCode(parseInt(e.slice(1), 10)); }); return t; }
+var TEST_TXT = /^\W*(test|testing|test (invoice|bill|entry|record)|dummy|fake|sample|asdf+|x{3,}|do not pay|ignore( this)?)\W*$/i;
+function nowIso(){ return new Date().toISOString(); }
+function word(v){ return low(v).replace(/&amp;/g, '&').replace(/[^a-z0-9 ]/g, ' ').trim().split(/\s+/)[0] || ''; }
+function nkey(v){ return low(v).replace(/&amp;/g, '&').replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|the|ltd)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function placedByPerson(v){ return v.pidManual === true || v.autoLinkOk === true || /invoice re-check|Needs a look/.test(s(v.linkedBy)); }
+function label(v){ return (isBill(v) ? 'Bill' : 'Invoice') + (billNo(v) ? ' #' + billNo(v) : '') + ' — ' + payee(v).replace(/&amp;/g, '&'); }
+/* a working copy of the lists that changes are put on */
+function books(lists, at){
+  var B = { invs: arr(lists.invs).slice(), gcAcctRegister: arr(lists.reg).slice(), expenses: arr(lists.expenses).slice(), at: at, idx: {} };
+  ['invs', 'gcAcctRegister', 'expenses'].forEach(function(k){ var m = B.idx[k] = {}; B[k].forEach(function(r, i){ m[k === 'gcAcctRegister' ? rid(r) : s(r.id)] = i; }); });
+  B.put = function(ch){ if (!ch) return null; var i = B.idx[ch.list][ch.id]; if (i == null) return null; B[ch.list][i] = applyChange(B[ch.list][i], ch, at); return ch; };
+  return B;
+}
+/* the bill's own job-cost rows on the old job: its expense and its register lines */
+function tied(B, v, oldPid){
+  var id = s(v.id), pw = word(payee(v)), amt = c(amtOf(v)), exIds = {}, out = [];
+  function same(r, who){ return !!pw && amt !== 0 && c(lineAmt(r)) === amt && (word(who) === pw || low(r.desc).indexOf(pw) >= 0); }
+  B.expenses.forEach(function(e){ if (!oldPid || s(e.pid) !== oldPid) return; if (s(e.subInvId) === id || same(e, e.vendor || e.from || e.payee)) { exIds[s(e.id)] = 1; out.push(['expenses', e]); } });
+  B.gcAcctRegister.forEach(function(r){ if (!oldPid || s(r.pid) !== oldPid) return; var src = s(r.srcInvId);
+    if (bare(src) === id || src === id || exIds[src.replace(/^EXPENSE_/, '')] || same(r, r.payee || r.vendor)) out.push(['gcAcctRegister', r]); });
+  return out;
+}
+/* move one invoice / bill (to = a job, or null = no job) + its job-cost rows; returns the changes */
+function moveTo(B, v, to, oldP, by, why, manual){
+  var oldPid = s(v.pid), at = B.at, po = s(v.po);
+  if (oldP && po && normNo(po) === normNo(oldP.autoPO || oldP.po)) po = '';   /* the old finder copied the old job's PO */
+  var log = (Array.isArray(v.linkLog) ? v.linkLog : []).concat([{ at: at, by: by, from: oldPid, to: to ? s(to.id) : '', why: why }]);
+  var upd = to ? { pid: s(to.id), po: s(to.autoPO || to.po) || po, project: s(to.name), autoLinked: false, autoLinkWhy: 'moved by ' + by, qbNeedsHome: false, linkedBy: by + ' (' + why.slice(0, 140) + ')', linkLog: log }
+               : { pid: '', po: po, project: '', autoLinked: false, autoLinkWhy: 'unlinked by ' + by, noAutoLink: true, unlinkedFrom: oldPid, linkLog: log };
+  if (manual) upd.pidManual = true;
+  var chs = [B.put(change('invs', v, upd))];
+  tied(B, v, oldPid).forEach(function(t){
+    var f = t[0] === 'expenses' ? { pid: to ? s(to.id) : '', _jobSetBy: by } : { pid: to ? s(to.id) : '', projName: to ? s(to.name) : '', projPO: to ? s(to.autoPO || to.po) : '' };
+    chs.push(B.put(change(t[0], t[1], f)));
+  });
+  return chs.filter(Boolean);
+}
+function jobsCtx(projects, opts){
+  var byId = {}, isDel = opts.isDeleted || function(){ return false; };
+  arr(projects).forEach(function(p){ byId[s(p.id)] = p; });
+  return { byId: byId, live: function(id){ var p = byId[s(id)]; return p && !p.deleted && !p._deleted && !isDel(s(p.id)) ? p : null; } };
+}
+function planJobs(lists, opts){
+  opts = opts || {};
+  var at = opts.at || nowIso(), B = books(lists, at), J = jobsCtx(lists.projects, opts), mm = opts.merged || {}, items = [], look = [], folds = [], foldIds = {};
+  function item(kind, title, why, amount, changes, key, extra){ items.push(Object.assign({ id: kind + ':' + key, kind: kind, title: title, why: why, amount: r2(amount), changes: changes.filter(Boolean), folds: [], rule: JOBS_ID }, extra || {})); }
+  function ref(p){ return p ? { pid: s(p.id), name: s(p.name) + (p.autoPO ? ' (' + s(p.autoPO) + ')' : '') + (p.address ? ' — ' + s(p.address).split(',')[0] : '') } : null; }
+  function lookJob(v, cur, gone, sug, alts, detail, tail){
+    var others = [];
+    if (gone || !sug) arr(lists.projects).forEach(function(p){ if (!J.live(p.id) || p.overhead === true) return;
+      if ((s(v.po) && normNo(p.autoPO || p.po) === normNo(v.po)) || (!isBill(v) && nkey(p.client || p.customer) && nkey(p.client || p.customer) === nkey(v.client))) others.push(p); });
+    var A = []; (alts || []).concat(others).forEach(function(p){ p = typeof p === 'string' ? J.live(p) : p; if (p && (!sug || s(p.id) !== s(sug.id)) && A.every(function(x){ return x.pid !== s(p.id); })) A.push(ref(p)); });
+    look.push({ id: 'look:link:' + s(v.id), kind: 'jobpick', rule: JOBS_ID, title: label(v) + ' (' + money(amtOf(v)) + '): ' + (tail ? tail : gone ? 'its job is not in the CRM' : sug && cur && s(sug.id) === s(cur.id) ? 'on "' + s(cur.name) + '" — probably right' : 'on "' + s(cur && cur.name || 'no job') + '" — not its job'),
+      detail: (sug ? 'Best guess: "' + s(sug.name) + '" — ' : 'No sure job. ') + detail + '. Pick the job (the guess is already picked) and tap ✓ Use this job, or ✓ Done to leave it.',
+      amount: r2(amtOf(v)), ids: [s(v.id)], inv: s(v.id), cur: cur ? ref(cur) : { pid: s(v.pid), name: s(v.project) || s(v.pid) }, sug: ref(sug), alts: A.slice(0, 8) });
+  }
+  B.invs.slice().forEach(function(v0){
+    var v = B.invs[B.idx.invs[s(v0.id)]];
+    if (!v || dead(v) || placedByPerson(v)) return;
+    var id = s(v.id), pid = s(v.pid), cur = pid ? J.live(pid) : null, gone = !!pid && !cur, ev = JOB_EVIDENCE[id];
+    if (ev && ev.from !== pid) ev = null;
+    /* test data → archived (its register lines folded, kept in gc_folded) */
+    if (TEST_TXT.test(s(v.desc)) && (!pid || gone)) {
+      var lines = tied(B, v, pid).filter(function(t){ return t[0] === 'gcAcctRegister' && !foldIds[rid(t[1])]; });
+      var fid = lines.map(function(t){ var r = t[1], f = { id: 'FOLD_gcAcctRegister_' + rid(r), list: 'gcAcctRegister', recordId: rid(r), keptId: '', rule: JOBS_ID + ' test data', reason: label(v) + ' is test data ("' + s(v.desc) + '")', foldedAt: at, updatedAt: at, by: BY, record: JSON.parse(JSON.stringify(r)) }; folds.push(f); foldIds[rid(r)] = 1; return f.id; });
+      item('testdata', label(v) + ' (' + money(amtOf(v)) + ') archived: test data', 'its whole text is "' + s(v.desc) + '" and its job is not in the CRM' + (fid.length ? '; its ' + fid.length + ' register line(s) folded' : ''), amtOf(v),
+        [B.put(change('invs', v, { type: 'archived', _typeWas: s(v.type), _archived: { why: 'test data ("' + s(v.desc) + '")', at: at, by: BY, rule: JOBS_ID } }))], id, { folds: fid });
+      return;
+    }
+    /* its job was merged → the kept job */
+    var kept = gone && mm[pid] ? J.live(mm[pid]) : null;
+    if (kept) { var w0 = 'its job ' + pid + ' was merged into "' + s(kept.name) + '"'; item('relink', label(v) + ' moved to "' + s(kept.name) + '"', w0, amtOf(v), moveTo(B, v, kept, J.byId[pid], BY, w0), id); return; }
+    var to = ev && ev.to ? J.live(ev.to) : null;
+    if (ev && ev.sure && to && s(to.id) !== pid) { item('relink', label(v) + ' moved to "' + s(to.name) + '"', 'it was on "' + s(cur ? cur.name : pid) + '"; ' + ev.why, amtOf(v), moveTo(B, v, to, cur, BY, ev.why), id); return; }
+    /* a customer's invoice on GrayCo overhead → no job; the guess (if any) waits in Needs a look */
+    if (cur && cur.overhead === true && !isBill(v)) {
+      var w1 = '"' + s(cur.name) + '" is GrayCo overhead — never a customer\'s job';
+      item('relink', label(v) + ' taken off "' + s(cur.name) + '" (GrayCo overhead)', w1, amtOf(v), moveTo(B, v, null, cur, BY, w1), id);
+      lookJob(B.invs[B.idx.invs[id]], null, false, to, ev && ev.alts, ev ? ev.why : 'no job has its address or PO', 'taken off GrayCo overhead "' + s(cur.name) + '" — which job is it?');
+      return;
+    }
+    if (ev) { lookJob(v, cur, gone, to, ev.alts, ev.why); return; }
+    if (gone) lookJob(v, null, true, null, [], 'its job ' + pid + (s(v.project) ? ' ("' + s(v.project) + '")' : '') + ' is gone — no merge record, no other job with its PO');
+  });
+  /* QuickBooks names with HTML entities ("Q&amp;A Construction LLC", an export quirk) → decoded; a bill whose decoded name IS a sub /
+     vendor in the CRM is linked to it; one Needs-a-look per name that is no sub / vendor yet ("add it as a sub?") */
+  var NF = ['sub', 'vendor', 'client', 'customer', 'desc', 'project', 'memo'], nameCh = [], vByName = {}, vLinks = {}, addSub = {};
+  arr(lists.vendors).forEach(function(x){ var k = nkey(decEnt(x.name)); if (k && !vByName[k]) vByName[k] = x; });
+  B.invs.slice().forEach(function(v0){
+    var v = B.invs[B.idx.invs[s(v0.id)]]; if (!v || dead(v) || !isQB(v)) return;
+    var upd = {}, had = false;
+    NF.forEach(function(f){ if (typeof v[f] === 'string' && ENT.test(v[f])) { upd[f] = decEnt(v[f]); had = had || f === 'sub' || f === 'vendor'; } });
+    if (Object.keys(upd).length) nameCh.push(B.put(change('invs', v, upd)));
+    v = B.invs[B.idx.invs[s(v.id)]];
+    if (!had || !isBill(v) || s(v.subId) || s(v.vendorId)) return;   /* only what the escaping kept from matching */
+    var nm = s(v.sub || v.vendor), k = nkey(nm), ven = k ? vByName[k] : null;
+    if (ven) { (vLinks[s(ven.id)] = vLinks[s(ven.id)] || { ven: ven, chs: [], amt: 0 }).chs.push(B.put(change('invs', v, { subId: s(ven.id) }))); vLinks[s(ven.id)].amt += num(amtOf(v)); }
+    else if (k) { var a = addSub[k] = addSub[k] || { name: nm, ids: [], amt: 0, nums: [] }; a.ids.push(s(v.id)); a.amt += num(amtOf(v)); if (billNo(v)) a.nums.push('#' + billNo(v)); }
+  });
+  if (nameCh.filter(Boolean).length) item('names', nameCh.filter(Boolean).length + ' QuickBooks name(s) read as written ("&amp;" → "&")', 'the QuickBooks export wrote "&" as "&amp;", so the name was shown that way and matched no sub / vendor', 0, nameCh, 'decode');
+  Object.keys(vLinks).forEach(function(id){ var x = vLinks[id]; item('vendor', x.chs.length + ' QuickBooks bill(s) linked to the sub / vendor "' + s(x.ven.name) + '"', 'the bill names it exactly (once "&amp;" is read as "&")', x.amt, x.chs, id); });
+  Object.keys(addSub).forEach(function(k){ var a = addSub[k];
+    look.push({ id: 'look:addsub:' + k.replace(/\s+/g, '-'), kind: 'addsub', rule: JOBS_ID, title: 'Add "' + a.name + '" as a sub / vendor? (' + a.ids.length + ' QuickBooks bill' + (a.ids.length > 1 ? 's' : '') + ', ' + money(a.amt) + ')', detail: 'No sub or vendor by this name is in the CRM. Its bills (' + a.nums.join(', ') + ') are recorded with the name QuickBooks has. Add it under Subs / Vendors (with its W-9 / COI if it is a sub), then ✓ Done.', amount: r2(a.amt), ids: a.ids }); });
+  /* a QuickBooks record with NO job whose job the evidence is SURE of (patch INVLINK: the address, the PO, the QuickBooks project) */
+  var IL = opts.invlink;
+  if (IL && IL.match) B.invs.slice().forEach(function(v0){
+    var v = B.invs[B.idx.invs[s(v0.id)]]; if (!v || dead(v) || !isQB(v) || s(v.pid) || v.noAutoLink || placedByPerson(v)) return;
+    var m = null; try { m = IL.match(v, lists.projects, { isDeleted: opts.isDeleted, invs: B.invs }); } catch (e) {}
+    if (!m || m.level !== 'sure' || !m.top || !J.live(m.top.pid)) return;
+    var w = (m.top.why || []).join('; ');
+    item('relink', label(v) + ' put on "' + s(m.top.p.name) + '"', 'it had no job; the evidence: ' + w, amtOf(v), moveTo(B, v, J.live(m.top.pid), null, BY, w), s(v.id));
+  });
+  /* register lines / expenses still on a MERGED job (no invoice of theirs moved them) → the kept job */
+  ['gcAcctRegister', 'expenses'].forEach(function(k){
+    var by = {};
+    B[k].forEach(function(r){ var p = s(r.pid); if (p && !J.live(p) && mm[p] && J.live(mm[p]) && !foldIds[rid(r)]) (by[p] = by[p] || []).push(r); });
+    Object.keys(by).forEach(function(p){ var to = J.live(mm[p]);
+      var chs = by[p].map(function(r){ return B.put(change(k, r, k === 'expenses' ? { pid: s(to.id), _jobSetBy: BY } : { pid: s(to.id), projName: s(to.name), projPO: s(to.autoPO || to.po) })); });
+      item('relink', (k === 'expenses' ? 'Costs' : 'Register lines') + ' of merged job ' + p + ' moved to "' + s(to.name) + '" (' + by[p].length + ')', 'the job was merged into "' + s(to.name) + '"; its ' + (k === 'expenses' ? 'costs' : 'register lines') + ' stayed on the old id', by[p].reduce(function(t, r){ return t + num(lineAmt(r)); }, 0), chs, k + ':' + p);
+    });
+  });
+  var reg = B.gcAcctRegister.filter(function(r){ return !foldIds[rid(r)]; });
+  return { runId: JOBS_ID, at: at, items: items, look: look, folds: folds, invs: B.invs, reg: reg, expenses: B.expenses, totals: { items: items.length, look: look.length } };
+}
+/* Accounting → "To match / needs review": a QuickBooks import to-do in plain English (INVJOBS 11/20, owner: "confused on these, don't
+   look right"). null = drop it: done, its record is on a job / archived / deleted, or it waits in ⚠ Needs a look (one list).
+   ctx = { inv: id → record, look: id → 1 (open Needs-a-look record ids), vendors, tomb(id), match(rec) → INVLINK match, live(pid) } */
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shortDay(d){ d = day(d); return d ? MON[+d.slice(5, 7) - 1] + ' ' + (+d.slice(8, 10)) + (d.slice(0, 4) !== String(new Date().getFullYear()) ? ', ' + d.slice(0, 4) : '') : ''; }
+function shortMoney(n){ n = r2(n); return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
+function plainWhy(t){ return decEnt(t).replace(/\s*·\s*best candidate\(s\):.*$/, '').replace(/\s*—\s*history: recorded with the name as QuickBooks has it/, '').replace(/\s*\(QuickBooks has customers, not jobs\)/, '').replace(/;\s*\d+ possible job\(s\) on the to-do/, '').replace(/\b(PRJ|QB_|INV|EXP|SUB|VEN|CUS)[A-Za-z0-9_-]{5,}\b/g, '').replace(/\s{2,}/g, ' ').trim(); }
+function qbTodo(t, ctx){
+  ctx = ctx || {};
+  if (!t || t.done || t.kind !== 'qb_home') return null;
+  var q = t.qb || {}, rid0 = s(t.recordId), rec = rid0 && ctx.inv ? ctx.inv[rid0] : null;
+  if (rec && (dead(rec) || s(rec.pid))) return null;
+  if (rid0 && (ctx.look || {})[rid0]) return null;
+  if (!rec && rid0 && ctx.tomb && ctx.tomb(rid0)) return null;
+  var kind = low(q.kind), bill = kind === 'bill' || (rec && isBill(rec)), inv = /^(invoice|salesreceipt)$/.test(kind) || (rec && !isBill(rec) && /^client/i.test(s(rec.type)));
+  var name = decEnt(q.name || (rec && payee(rec)) || ''), num0 = s(q.num || (rec && billNo(rec)));
+  var amount = r2(q.amount != null && q.amount !== '' ? q.amount : rec ? amtOf(rec) : 0), date = day(q.date || (rec && (rec.date || rec.recvDate)));
+  var head = (bill ? 'Bill' : inv ? 'Invoice' : decEnt(q.qbType || q.kind || 'QuickBooks line')) + (num0 ? ' #' + num0 : '') + (name ? (bill ? ' from ' : inv ? ' for ' : ' — ') + name : '') + (amount ? ', ' + shortMoney(amount) : '') + (date ? ', ' + shortDay(date) : '');
+  var what = head, likely = null;
+  if (rec) {
+    what += ' — no job yet.';
+    var m = null; try { m = ctx.match ? ctx.match(rec) : null; } catch (e) {}
+    if (m && (m.level === 'sure' || m.level === 'likely') && m.top && (!ctx.live || ctx.live(m.top.pid))) { likely = { pid: s(m.top.pid), name: s(m.top.p && m.top.p.name) }; what += ' Likely: ' + likely.name + '.'; }
+    else { var jc = arr(t.candidates).filter(function(c){ return c.job; }).length; if (jc) what += ' ' + jc + ' possible job' + (jc > 1 ? 's' : '') + ' — Open to pick one.'; }
+    if (bill && name && ctx.vendors && !ctx.vendors[nkey(name)] && !s(rec.subId)) what += ' No sub / vendor "' + name + '" in the CRM yet.';
+  } else what += ' — ' + (plainWhy(t.note) || 'open it to decide') + '.';
+  return { what: what.replace(/\.\.$/, '.'), amount: amount, date: date, likely: likely, recordId: rec ? s(rec.id) : '' };
+}
+/* ⚠ Needs a look → "✓ Use this job": a person's pick (pid = the job, the invoice's own job = it's right, '' = no job) */
+function pickJob(lists, invId, pid, opts){
+  opts = opts || {};
+  var at = opts.at || nowIso(), by = s(opts.by) || 'office', B = books(lists, at), J = jobsCtx(lists.projects, opts);
+  var v = B.invs[B.idx.invs[s(invId)]]; if (!v) return { error: 'not found' };
+  var cur = J.byId[s(v.pid)] || null, chs, title;
+  if (pid && s(pid) === s(v.pid)) { chs = [B.put(change('invs', v, { autoLinkOk: true, autoLinkOkBy: by, autoLinkOkAt: at }))]; title = label(v) + ': "' + s(cur && cur.name) + '" is right'; }
+  else if (!pid) { chs = moveTo(B, v, null, cur, by + ' (Needs a look)', 'no job — picked in Needs a look', true); title = label(v) + ': no job'; }
+  else { var to = J.live(pid); if (!to) return { error: 'that job is not in the CRM' }; chs = moveTo(B, v, to, cur, by + ' (Needs a look)', 'picked in Needs a look', true); title = label(v) + ' moved to "' + s(to.name) + '"'; }
+  var it = { id: 'pick:' + s(v.id) + ':' + Date.parse(at).toString(36), kind: 'relink', title: title, why: 'picked by ' + by + ' in ⚠ Needs a look' + (cur ? ' (it was on "' + s(cur.name) + '")' : ''), amount: r2(amtOf(v)), changes: chs.filter(Boolean), folds: [], rule: JOBS_ID };
+  return { item: it, invs: B.invs, reg: B.gcAcctRegister, expenses: B.expenses };
 }
 
 /* Undo one item (or several): a field goes back only if it still has the value the fix gave it (a later edit by a person wins) */
@@ -249464,7 +249728,7 @@ function undo(lists, its, at){
   var want = {}, folds = {}, skipped = [];
   its.forEach(function(it){ (it.changes || []).forEach(function(ch){ (want[ch.list + ':' + ch.id] = want[ch.list + ':' + ch.id] || []).push(ch); }); (it.folds || []).forEach(function(f){ folds[f] = 1; }); });
   var out = {};
-  ['invs', 'gcAcctRegister', 'projects', 'customers'].forEach(function(k){
+  ['invs', 'gcAcctRegister', 'expenses', 'projects', 'customers'].forEach(function(k){
     if (!lists[k]) return;
     out[k] = arr(lists[k]).map(function(r){
       var cs = want[k + ':' + (k === 'gcAcctRegister' ? rid(r) : s(r.id))]; if (!cs) return r;
@@ -249486,7 +249750,7 @@ function undo(lists, its, at){
   return out;
 }
 
-return { RUN_ID: RUN_ID, BY: BY, OWNER_SAYS: OWNER_SAYS, plan: plan, undo: undo, payments: payments, payKey: payKey, normNo: normNo, vkey: vkey, money: money };
+return { RUN_ID: RUN_ID, JOBS_ID: JOBS_ID, JOB_EVIDENCE: JOB_EVIDENCE, BY: BY, OWNER_SAYS: OWNER_SAYS, plan: plan, planJobs: planJobs, pickJob: pickJob, qbTodo: qbTodo, decEnt: decEnt, undo: undo, payments: payments, payKey: payKey, normNo: normNo, vkey: vkey, money: money };
 })();
 
 var D = W.document;
@@ -249525,7 +249789,7 @@ function kvPut(key, value){
 /* the app's own lists (the register through its guarded accessor, like REGFIX) */
 var REG = 'gcAcctRegister', FOLDK = 'gc_folded';
 async function getList(k){ try { var v = await (k === REG && W._gcAc ? W._gcAc(k) : W.idbGet(k)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-var SETTER = { invs: '_setInvoices', projects: '_setProjects', customers: '_setCustomers' };
+var SETTER = { invs: '_setInvoices', projects: '_setProjects', customers: '_setCustomers', expenses: '_setExpenses' };
 async function putList(k, list, why){
   try { if (W._gcManualNow) W._gcManualNow(why); } catch (e) {}
   try { await (k === REG && W._gcAcW ? W._gcAcW(k, list) : W.idbSet(k, list)); } catch (e) {}
@@ -249545,10 +249809,24 @@ async function lists(){
   var tasks = [], keys = []; try { tasks = arr(JSON.parse(lsGet('gc_office_tasks') || '[]')); } catch (e) {}
   tasks.forEach(function(t){ if (t && t.kind === 'qb_history_costs' && Array.isArray(t.qbKeys)) keys = keys.concat(t.qbKeys); });
   var I = invList(); if (!I.length) I = await getList('invs');
-  return { invs: I, reg: await getList(REG), folded: await getList(FOLDK), deletedReg: del, projects: arr(crm().projects), customers: arr(crm().customers), payKeys: keys };
+  var E = arr(crm().expenses); if (!E.length) E = await getList('expenses');
+  var VN = arr(crm().subs).concat(arr(crm().vendors)); if (!VN.length) VN = (await getList('vendors')).concat(await getList('subs'));
+  return { invs: I, reg: await getList(REG), folded: await getList(FOLDK), deletedReg: del, projects: arr(crm().projects), customers: arr(crm().customers), expenses: E, vendors: VN, payKeys: keys };
 }
 function isDel(id){ try { return !!(W._gcIsProjectDeleted && W._gcIsProjectDeleted(id)); } catch (e) { return false; } }
-async function plan(){ var L = await lists(); return CORE.plan(L, { invlink: W._gcInvLink && W._gcInvLink.core || W._gcInvLink, payKeys: L.payKeys, isDeleted: isDel, today: nowIso().slice(0, 10) }); }
+/* the job merge map (patch JOBMERGE): the jobs' own merge marks + the merge log + gc_job_merge_map (cloud and this computer) */
+async function merged(projects){
+  try {
+    var J = W._gcJobMerge; if (!J || !J.mergeMap) return {};
+    var lj = function(k, d){ try { var v = JSON.parse(lsGet(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+    var logs = arr(await kvGet('gc_dedupe_log')).concat(arr(lj('gc_dedupe_log', []))), map = Object.assign({}, lj('gc_job_merge_map', {}), (await kvGet('gc_job_merge_map')) || {});
+    return J.mergeMap(projects, { isDeleted: isDel, logs: logs, map: map });
+  } catch (e) { return {}; }
+}
+async function plan(stage){
+  var L = await lists(), o = { invlink: W._gcInvLink && W._gcInvLink.core || W._gcInvLink, payKeys: L.payKeys, isDeleted: isDel, today: nowIso().slice(0, 10), merged: await merged(L.projects) };
+  return stage === 'jobs' ? CORE.planJobs(L, o) : CORE.plan(L, o);
+}
 
 var LOG = null, LOOK = null, STATE = null;
 async function logLoad(){ var v = await kvGet(LOGK); LOG = Array.isArray(v) ? v : (LOG || []); return LOG; }
@@ -249567,22 +249845,31 @@ async function run(opts){
   try {
     var st = await kvGet(STATEK); if (st === undefined && !opts.force) return { skipped: 'no cloud' };
     st = st && typeof st === 'object' ? st : {}; st.runs = st.runs || {};
-    if (st.runs[CORE.RUN_ID] && !opts.again) { STATE = st; return { skipped: 'done', at: st.runs[CORE.RUN_ID].at }; }
+    /* ACCTAUTO-1 (everything, INVJOBS included) on a CRM that never ran it; else INVJOBS-1 alone (the 11/20 job fixes) */
+    var stage = !st.runs[CORE.RUN_ID] || opts.again === 'all' ? 'all' : !st.runs[CORE.JOBS_ID] || opts.again ? 'jobs' : '';
+    if (!stage) { STATE = st; return { skipped: 'done', at: st.runs[CORE.RUN_ID].at }; }
+    var RID = stage === 'all' ? CORE.RUN_ID : CORE.JOBS_ID;
     if (!opts.force && st.claim && st.claim.device !== DEV && Date.now() - Date.parse(st.claim.at || 0) < 10 * 60000) return { skipped: 'another desk' };
     st.claim = { device: DEV, at: nowIso(), by: meName() }; await kvPut(STATEK, st);
-    if (!opts.force) { await new Promise(function(r){ ST(r, opts.claimWait != null ? opts.claimWait : 4000); }); var st2 = await kvGet(STATEK); if (st2 && st2.claim && st2.claim.device !== DEV) return { skipped: 'another desk' }; if (st2 && st2.runs && st2.runs[CORE.RUN_ID]) return { skipped: 'done' }; }
+    if (!opts.force) { await new Promise(function(r){ ST(r, opts.claimWait != null ? opts.claimWait : 4000); }); var st2 = await kvGet(STATEK); if (st2 && st2.claim && st2.claim.device !== DEV) return { skipped: 'another desk' }; if (st2 && st2.runs && st2.runs[RID]) return { skipped: 'done' }; }
     if (!(await heavyReady())) return { skipped: 'folded list not loaded' };
-    var P = await plan(), at = P.at, who = meName();
+    var P = await plan(stage), at = P.at, who = meName();
     var touched = {}; P.items.forEach(function(it){ it.changes.forEach(function(ch){ touched[ch.list] = 1; }); if (it.folds.length) touched[REG] = touched[FOLDK] = 1; });
     if (touched[FOLDK]) { var nf = {}; P.folds.forEach(function(f){ nf[f.id] = f; }); var F = (await getList(FOLDK)).filter(function(f){ return f && !nf[f.id]; }).concat(P.folds); await putList(FOLDK, F, 'accounting fixes — fold'); await foldRefresh(); }
     if (touched.invs) await putList('invs', P.invs, 'accounting fixes (automatic, once)');
     if (touched[REG]) await putList(REG, P.reg, 'accounting fixes — register');
+    if (touched.expenses) await putList('expenses', P.expenses, 'accounting fixes — job costs');
     if (touched.projects) await putList('projects', P.projects, 'accounting fixes — jobs');
     if (touched.customers) await putList('customers', P.customers, 'accounting fixes — customers');
-    var entry = { id: 'AF' + Date.parse(at).toString(36), runId: CORE.RUN_ID, at: at, by: who + ' (automatic)', device: DEV, totals: P.totals, items: P.items };
+    var entry = { id: 'AF' + Date.parse(at).toString(36), runId: RID, at: at, by: who + ' (automatic)', device: DEV, totals: P.totals, items: P.items };
     var L = await logLoad(); L = L.filter(function(x){ return x.id !== entry.id; }).concat([entry]); LOG = L; await kvPut(LOGK, L);
-    var LK = await lookLoad(); LK.list = P.look; LK.at = at; LOOK = LK; await kvPut(LOOKK, LK);
-    st.runs[CORE.RUN_ID] = { at: at, by: who, device: DEV, logId: entry.id, items: P.items.length, look: P.look.length }; delete st.claim; STATE = st; await kvPut(STATEK, st);
+    /* Needs a look: a later run replaces its own entries (same id) and keeps the rest */
+    var LK = await lookLoad(), nl = {}; P.look.forEach(function(x){ nl[x.id] = 1; });
+    LK.list = stage === 'all' ? P.look : arr(LK.list).filter(function(x){ return !nl[x.id]; }).concat(P.look);
+    P.items.forEach(function(it){ var k = 'look:link:' + s(it.changes[0] && it.changes[0].list === 'invs' ? it.changes[0].id : ''); if (it.rule === CORE.JOBS_ID && !nl[k] && LK.list.some(function(x){ return x.id === k; })) LK.done[k] = { at: at, by: CORE.BY, how: 'fixed: ' + it.title }; });
+    LK.at = at; LOOK = LK; await kvPut(LOOKK, LK);
+    var mark = { at: at, by: who, device: DEV, logId: entry.id, items: P.items.length, look: P.look.length };
+    st.runs[RID] = mark; if (stage === 'all') st.runs[CORE.JOBS_ID] = mark; delete st.claim; STATE = st; await kvPut(STATEK, st);
     try { console.log('%c[GC] 🧾 Accounting fixes: ' + P.items.length + ' fixed by themselves, ' + P.look.length + ' need a look (' + entry.id + ').', 'background:#0f2440;color:#fff;padding:2px 6px'); } catch (e) {}
     paint(true);
     return { done: true, log: entry, look: P.look };
@@ -249592,12 +249879,13 @@ async function undoItems(logId, itemIds){
   var L = await logLoad(), e = L.filter(function(x){ return x.id === logId; })[0]; if (!e) return { undone: 0 };
   var its = e.items.filter(function(it){ return !it.undone && (!itemIds || itemIds.indexOf(it.id) >= 0); }); if (!its.length) return { undone: 0 };
   await heavyReady();
-  var at = nowIso(), base = { invs: invList().length ? invList() : await getList('invs'), gcAcctRegister: await getList(REG), folded: await getList(FOLDK), projects: arr(crm().projects), customers: arr(crm().customers) };
+  var at = nowIso(), base = { invs: invList().length ? invList() : await getList('invs'), gcAcctRegister: await getList(REG), folded: await getList(FOLDK), expenses: arr(crm().expenses).length ? arr(crm().expenses) : await getList('expenses'), projects: arr(crm().projects), customers: arr(crm().customers) };
   var res = CORE.undo(base, its, at), need = {};
   its.forEach(function(it){ it.changes.forEach(function(ch){ need[ch.list] = 1; }); if (it.folds && it.folds.length) need[REG] = need[FOLDK] = 1; });
   if (need[FOLDK]) { await putList(FOLDK, res.folded, 'accounting fixes — undo fold'); await foldRefresh(); }
   if (need.invs) await putList('invs', res.invs, 'accounting fixes — undo');
   if (need[REG]) await putList(REG, res.gcAcctRegister, 'accounting fixes — undo register');
+  if (need.expenses) await putList('expenses', res.expenses, 'accounting fixes — undo job costs');
   if (need.projects) await putList('projects', res.projects, 'accounting fixes — undo');
   if (need.customers) await putList('customers', res.customers, 'accounting fixes — undo');
   its.forEach(function(it){ it.undone = at; it.undoneBy = meName(); if (res.skipped.length) it.undoKept = res.skipped.slice(0, 20); });
@@ -249606,6 +249894,37 @@ async function undoItems(logId, itemIds){
   return { undone: its.length, kept: res.skipped };
 }
 async function lookDone(id, how){ var LK = await lookLoad(); LK.done[id] = { at: nowIso(), by: meName(), how: how || 'done' }; LOOK = LK; await kvPut(LOOKK, LK); paint(true); }
+/* ⚠ Needs a look → ✓ Use this job: the job picked (the guess is preselected) — logged with ↩ Undo like the automatic fixes */
+async function useJob(lookId, pid){
+  var LK = await lookLoad(), x = arr(LK.list).filter(function(l){ return l.id === lookId; })[0]; if (!x) return { error: 'not found' };
+  var r = await pickInv(s(x.inv || (x.ids || [])[0]), pid);
+  if (r.done) await lookDone(lookId, r.item.title);
+  return r;
+}
+/* a person picks the job of one invoice / bill (Needs a look, or "Use this job" on Accounting → To match) — logged, ↩ Undo */
+async function pickInv(invId, pid){
+  if (!allowed()) return { error: 'admins and the office only' };
+  var L = await lists(), who = meName(), at = nowIso();
+  var r = CORE.pickJob({ invs: L.invs, reg: L.reg, expenses: L.expenses, projects: L.projects }, s(invId), s(pid), { at: at, by: who, isDeleted: isDel });
+  if (!r.item) return r;
+  var need = {}; r.item.changes.forEach(function(ch){ need[ch.list] = 1; });
+  if (need.invs) await putList('invs', r.invs, 'Needs a look — job picked');
+  if (need[REG]) await putList(REG, r.reg, 'Needs a look — job picked');
+  if (need.expenses) await putList('expenses', r.expenses, 'Needs a look — job picked');
+  var entry = { id: 'AF' + Date.parse(at).toString(36) + 'p', runId: CORE.JOBS_ID, at: at, by: who + ' (⚠ Needs a look)', device: DEV, totals: { items: 1 }, items: [r.item] };
+  var LG = await logLoad(); LG = LG.concat([entry]); LOG = LG; await kvPut(LOGK, LG);
+  paint(true);
+  return { done: true, item: r.item };
+}
+function jobSel(x){
+  var seen = {}, o = function(pid, name, sel){ if (seen[pid]) return ''; seen[pid] = 1; return '<option value="' + esc(pid) + '"' + (sel ? ' selected' : '') + '>' + esc(name) + '</option>'; };
+  var h = '<select data-af-job style="max-width:280px;padding:5px;border-radius:7px;border:1px solid #cbd5e1;font-size:12.5px">' + (x.sug ? o(x.sug.pid, '★ ' + x.sug.name + (x.cur && x.sug.pid === x.cur.pid ? ' (where it is)' : ''), true) : '<option value="" selected disabled>Pick the job…</option>');
+  arr(x.alts).forEach(function(a){ h += o(a.pid, a.name); });
+  if (x.cur && x.cur.pid && arr(crm().projects).some(function(p){ return s(p.id) === x.cur.pid; })) h += o(x.cur.pid, 'Leave it on ' + x.cur.name);
+  h += o('__none__', '— No job —');
+  arr(crm().projects).filter(function(p){ return p && !p.deleted && !isDel(s(p.id)); }).slice().sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).forEach(function(p){ h += o(s(p.id), s(p.name) + (p.autoPO ? ' (' + s(p.autoPO) + ')' : '') + (p.address ? ' — ' + s(p.address).split(',')[0] : '')); });
+  return h + '</select> <button type="button" class="af-b" data-af="usejob" data-id="' + esc(x.id) + '">✓ Use this job</button> ';
+}
 
 /* ── Accounting → the top card, the log, Needs a look ── */
 var CSS = '.af-card{margin:0 0 12px;padding:12px 14px;border:1px solid #c7d2fe;border-radius:12px;background:#f8faff;font:13px/1.45 Inter,system-ui,sans-serif;color:#0f1d2f;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}' +
@@ -249647,7 +249966,7 @@ function open(tab){
     '<div class="af-tabs"><button type="button" class="af-b' + (UI.tab === 'look' ? '' : ' l') + '" data-af="look">⚠ Needs a look (' + lk.length + ')</button><button type="button" class="af-b' + (UI.tab === 'log' ? '' : ' l') + '" data-af="log">🧾 Accounting fixes log</button></div>';
   if (UI.tab === 'look') {
     h += '<p class="af-dim">What the evidence could not settle on its own. Nothing here was changed. "✓ Done" takes it off this list.</p>';
-    h += lk.length ? '<table><tr><th>What</th><th>Amount</th><th></th></tr>' + lk.map(function(x){ return '<tr data-look="' + esc(x.id) + '"><td><b>' + esc(x.title) + '</b><div class="af-dim">' + esc(x.detail) + '</div></td><td>' + (x.amount ? money(x.amount) : '') + '</td><td style="white-space:nowrap">' + (x.open === 'invlink' ? '<button type="button" class="af-b l" data-af="invlink">🔗 Pick the job</button> ' : '') + '<button type="button" class="af-b" data-af="done" data-id="' + esc(x.id) + '">✓ Done</button></td></tr>'; }).join('') + '</table>' : '<p>Nothing needs a look. ✓</p>';
+    h += lk.length ? '<table><tr><th>What</th><th>Amount</th><th></th></tr>' + lk.map(function(x){ return '<tr data-look="' + esc(x.id) + '"><td><b>' + esc(x.title) + '</b><div class="af-dim">' + esc(x.detail) + '</div></td><td>' + (x.amount ? money(x.amount) : '') + '</td><td style="white-space:nowrap">' + (x.kind === 'jobpick' ? jobSel(x) : x.open === 'invlink' ? '<button type="button" class="af-b l" data-af="invlink">🔗 Pick the job</button> ' : '') + '<button type="button" class="af-b" data-af="done" data-id="' + esc(x.id) + '">✓ Done</button></td></tr>'; }).join('') + '</table>' : '<p>Nothing needs a look. ✓</p>';
   } else {
     h += '<p class="af-dim">Every change the automatic fixes made, what it was and why. Nothing was deleted: copies are archived, extra register lines folded. ↩ Undo puts it back (a field someone has changed since is left as they set it).</p>';
     E.forEach(function(e){
@@ -249667,6 +249986,7 @@ D.addEventListener('click', function(ev){
   if (a === 'close') return close();
   if (a === 'invlink') { close(); try { W._gcInvLink.open('links'); } catch (e) {} return; }
   if (a === 'done') { t.disabled = true; lookDone(t.getAttribute('data-id')).then(function(){ open('look'); }); return; }
+  if (a === 'usejob') { var sel = t.parentElement && t.parentElement.querySelector('[data-af-job]'), v = sel ? s(sel.value) : ''; if (!v) return; t.disabled = true; useJob(t.getAttribute('data-id'), v === '__none__' ? '' : v).then(function(){ open('look'); }, function(){ open('look'); }); return; }
   if (a === 'undo' || a === 'undoall') { t.disabled = true; undoItems(t.getAttribute('data-log'), a === 'undo' ? [t.getAttribute('data-id')] : null).then(function(){ open('log'); }); return; }
 });
 
@@ -249679,7 +249999,7 @@ function tick(){
   try { if (W.navigator && W.navigator.webdriver && !W.__GC_ACCTFIX_TEST__) return; } catch (e) {}
   if (!LOG) { logLoad(); lookLoad(); }
   paint(false);
-  if (STATE && STATE.runs && STATE.runs[CORE.RUN_ID]) return;
+  if (STATE && STATE.runs && STATE.runs[CORE.RUN_ID] && STATE.runs[CORE.JOBS_ID]) return;
   if (lsGet('gc_acctfix_off') === '1' || W.__GC_ACCTFIX_OFF__) return;
   if (!ready() || ++tries < 3) return;
   run().then(function(r){ if (r && r.skipped === 'done') { logLoad().then(function(){ lookLoad().then(function(){ paint(true); }); }); } }, function(e){ try { console.warn('[GC] ACCTAUTO:', e && e.message || e); } catch (_e) {} });
@@ -249687,7 +250007,7 @@ function tick(){
 SI.call(W, tick, 5000); ST.call(W, tick, 1500);
 
 W._gcAcctFix = { core: CORE, plan: plan, run: run, undoItem: function(logId, itemId){ return undoItems(logId, [itemId]); }, undoAll: function(logId){ return undoItems(logId, null); },
-  lookDone: lookDone, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; },
+  lookDone: lookDone, useJob: useJob, pick: pickInv, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; },
   /* patch FAKEJOB: another one-time fix logs here too (its own runId; ↩ Undo works on its 'projects' changes) and adds to ⚠ Needs a look */
   kv: { get: kvGet, put: kvPut }, addRun: async function(entry, look){
     var L = await logLoad(); if (!entry || !entry.id || !entry.runId || L.some(function(x){ return x.id === entry.id; })) return false;
