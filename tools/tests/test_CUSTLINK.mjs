@@ -46,6 +46,17 @@ try {
   ok('Save links the customer to the job and the item clears', after.cid === MID.id && !after.need.includes('customer') && !after.open && after.client === J998.client, after);
   let cloud = null; for (let i = 0; i < 30 && !cloud; i++) { const v = val(cget('projects')); const p = (v || []).find(x => x.id === J998.id); if (p && p.customerId === MID.id) cloud = p; else await sleep(500); }
   ok('and it is saved to the cloud', !!cloud);
+  /* INPUT PERFORMANCE FIX: a search box gets ONE settle event after typing stops (was: an input event every 150 ms, for ever) */
+  await A.ev(() => { const i = document.createElement('input'); i.id = 'cl-srch'; i.placeholder = 'Search leads…'; i.style.cssText = 'position:fixed;top:120px;left:300px;z-index:2147483001'; i.__n = 0; i.addEventListener('input', () => { i.__n++; }); document.body.appendChild(i); });
+  await A.page().click('#cl-srch'); await A.page().keyboard.type('abc', { delay: 40 }); await sleep(1500);
+  const ev1 = await A.ev(() => document.getElementById('cl-srch').__n); await sleep(1500);
+  const ev2 = await A.ev(() => document.getElementById('cl-srch').__n);
+  ok('a search box: 3 keystrokes + 1 settle event, then quiet (no 150 ms loop)', ev1 === 4 && ev2 === 4, { ev1, ev2 });
+  /* the old autocomplete still works outside dialogs, now white */
+  await A.ev(() => { const i = document.createElement('input'); i.id = 'cl-ac'; i.placeholder = 'Client name'; i.style.cssText = 'position:fixed;top:160px;left:300px;width:300px;z-index:2147483001'; document.body.appendChild(i); });
+  await sleep(900); await A.page().click('#cl-ac'); await A.page().keyboard.type('mid south', { delay: 40 }); await sleep(800);
+  const pan = await A.ev(() => { const l = document.querySelector('._ac-list.show'); if (!l) return null; const cs = getComputedStyle(l), it = l.querySelector('._ac-item'); return { bg: cs.backgroundColor, fg: it && getComputedStyle(it).color, cat: getComputedStyle(l.querySelector('._ac-cat')).backgroundColor, text: l.textContent.slice(0, 80) }; });
+  ok('outside a dialog the autocomplete still opens, white with dark text', pan && pan.bg === 'rgb(255, 255, 255)' && pan.fg === 'rgb(31, 41, 55)' && /J998/.test(pan.text), pan);
   const errs = A.errs.filter(e => !/ResizeObserver|Failed to fetch|NetworkError|net::/i.test(e));
   ok('no page errors', errs.length === 0, errs.slice(0, 5));
 } finally { await A.b.close().catch(() => {}); }

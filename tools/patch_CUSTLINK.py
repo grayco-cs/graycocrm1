@@ -9,6 +9,8 @@ in the dialog's list and the navy "📁 Projects" autocomplete popped over it).
     Save links it (customerId; an empty client gets the customer's name) — the checklist item clears.
  2. The old SMART AUTOCOMPLETE dropdown never attaches to a box inside a dialog / picker ([role=dialog], [aria-modal],
     <dialog>, [data-gc-noac]); the Fix dialog is also marked data-gc-noac.
+ 3. INPUT PERFORMANCE FIX: the search boxes' 150 ms settle event no longer re-arms itself for ever (real typing only, new text only).
+ 4. The old autocomplete panel is white (no navy in the staff CRM).
 In-place, idempotent. Usage: python3 tools/patch_CUSTLINK.py [index.html]"""
 import os, sys
 here = os.path.dirname(os.path.abspath(__file__))
@@ -63,4 +65,36 @@ rep("""          if (val === '') return;
           if (k === 'customerId') { var cc = customers().filter(function(c){ return s(c.id) === val; })[0]; if (cc && !s(q.client)) q.client = s(cc.name) || s(cc.company); }   /* patch CUSTLINK */
           if (k === 'contract')""",
     'save customer')
+# 3. INPUT PERFORMANCE FIX: its search-box "settle" event re-armed itself (every synthetic input it sent scheduled another,
+#    so every search / filter box got an input event every 150 ms for ever). Now: one event 150 ms after real typing stops,
+#    only when the text changed since the last one; its own events never re-arm it; one timer per box (was per placeholder).
+rep("""        el.addEventListener("input", function handler(ev) {
+          if (_debounceTimers[el.placeholder]) {
+            clearTimeout(_debounceTimers[el.placeholder]);
+          }
+          _debounceTimers[el.placeholder] = setTimeout(function(){
+            // Force React to see the update
+            var nativeEvent = new Event("input", { bubbles: true });
+            el.dispatchEvent(nativeEvent);
+          }, 150);
+        });""",
+    """        el.addEventListener("input", function handler(ev) {
+          /* patch CUSTLINK: real typing only (this used to re-arm on its own event: an input every 150 ms, for ever), once, and only for new text */
+          if (!ev.isTrusted) return;
+          clearTimeout(el._gcSettleT);
+          el._gcSettleT = setTimeout(function(){
+            if (!document.contains(el) || el.value === el._gcSettled) return;
+            el._gcSettled = el.value;
+            // Force React to see the update
+            var nativeEvent = new Event("input", { bubbles: true });
+            el.dispatchEvent(nativeEvent);
+          }, 150);
+        });""",
+    'input perf settle')
+
+# 4. the old autocomplete panel: white (owner rule: no navy in the staff CRM)
+rep('._ac-list{position:fixed;z-index:2147483000;max-height:220px;overflow-y:auto;background:#152238;border:1px solid #2563eb;border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,0.5);margin-top:2px;display:none;font-family:Inter,-apple-system,sans-serif}._ac-list.show{display:block}._ac-item{padding:7px 10px;cursor:pointer;font-size:12px;color:#e8eef5;border-bottom:1px solid #1e3a5f33;display:flex;align-items:center;gap:8px}._ac-item:hover,._ac-item.sel{background:#2563eb33}._ac-item .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;flex-shrink:0}._ac-item .sub{font-size:10px;color:#6b8ab5;margin-left:auto}._ac-cat{padding:4px 10px;font-size:9px;color:#d4a017;font-weight:700;text-transform:uppercase;background:#0d1b2a;letter-spacing:0.1em;position:sticky;top:0;z-index:1}',
+    '._ac-list{position:fixed;z-index:2147483000;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #d6dbe3;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.14);margin-top:2px;display:none;font-family:Inter,-apple-system,sans-serif}._ac-list.show{display:block}._ac-item{padding:7px 10px;cursor:pointer;font-size:12px;color:#1f2937;border-bottom:1px solid #eef1f5;display:flex;align-items:center;gap:8px}._ac-item:hover,._ac-item.sel{background:#eff6ff}._ac-item .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;flex-shrink:0}._ac-item .sub{font-size:10px;color:#6b7280;margin-left:auto}._ac-cat{padding:4px 10px;font-size:9px;color:#a16207;font-weight:700;text-transform:uppercase;background:#fbf7ec;border-bottom:1px solid #efe6cc;letter-spacing:0.1em;position:sticky;top:0;z-index:1}',
+    'ac panel css')
+rep('colors={project:"#22c55e",sub:"#f59e0b",person:"#8b5cf6"}', 'colors={project:"#15803d",sub:"#b45309",person:"#6d28d9"}', 'ac tag colours')
 open(P, 'w', encoding='utf-8').write(src); print('CUSTLINK applied')

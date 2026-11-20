@@ -20350,10 +20350,12 @@ console.log("[GrayCo Automation] Engine loaded \u2014 voice, PDF scan, Gmail sca
         ).set;
         // Batch search updates at 150ms intervals
         el.addEventListener("input", function handler(ev) {
-          if (_debounceTimers[el.placeholder]) {
-            clearTimeout(_debounceTimers[el.placeholder]);
-          }
-          _debounceTimers[el.placeholder] = setTimeout(function(){
+          /* patch CUSTLINK: real typing only (this used to re-arm on its own event: an input every 150 ms, for ever), once, and only for new text */
+          if (!ev.isTrusted) return;
+          clearTimeout(el._gcSettleT);
+          el._gcSettleT = setTimeout(function(){
+            if (!document.contains(el) || el.value === el._gcSettled) return;
+            el._gcSettled = el.value;
             // Force React to see the update
             var nativeEvent = new Event("input", { bubbles: true });
             el.dispatchEvent(nativeEvent);
@@ -20410,7 +20412,7 @@ console.log("[GrayCo Automation] Engine loaded \u2014 voice, PDF scan, Gmail sca
 // ========== SMART AUTOCOMPLETE DROPDOWNS ==========
 (function(){
 var S=document.createElement("style");
-S.textContent="._ac-wrap{position:relative;display:inline-block;width:100%}._ac-list{position:fixed;z-index:2147483000;max-height:220px;overflow-y:auto;background:#152238;border:1px solid #2563eb;border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,0.5);margin-top:2px;display:none;font-family:Inter,-apple-system,sans-serif}._ac-list.show{display:block}._ac-item{padding:7px 10px;cursor:pointer;font-size:12px;color:#e8eef5;border-bottom:1px solid #1e3a5f33;display:flex;align-items:center;gap:8px}._ac-item:hover,._ac-item.sel{background:#2563eb33}._ac-item .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;flex-shrink:0}._ac-item .sub{font-size:10px;color:#6b8ab5;margin-left:auto}._ac-cat{padding:4px 10px;font-size:9px;color:#d4a017;font-weight:700;text-transform:uppercase;background:#0d1b2a;letter-spacing:0.1em;position:sticky;top:0;z-index:1}";
+S.textContent="._ac-wrap{position:relative;display:inline-block;width:100%}._ac-list{position:fixed;z-index:2147483000;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #d6dbe3;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.14);margin-top:2px;display:none;font-family:Inter,-apple-system,sans-serif}._ac-list.show{display:block}._ac-item{padding:7px 10px;cursor:pointer;font-size:12px;color:#1f2937;border-bottom:1px solid #eef1f5;display:flex;align-items:center;gap:8px}._ac-item:hover,._ac-item.sel{background:#eff6ff}._ac-item .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;flex-shrink:0}._ac-item .sub{font-size:10px;color:#6b7280;margin-left:auto}._ac-cat{padding:4px 10px;font-size:9px;color:#a16207;font-weight:700;text-transform:uppercase;background:#fbf7ec;border-bottom:1px solid #efe6cc;letter-spacing:0.1em;position:sticky;top:0;z-index:1}";
 document.head.appendChild(S);
 
 function getAll(){
@@ -20476,7 +20478,7 @@ function createAC(input){
     filtered=all.filter(function(it){return(it.name||"").toLowerCase().indexOf(ql)>-1||(it.sub||"").toLowerCase().indexOf(ql)>-1||(it.extra||"").toLowerCase().indexOf(ql)>-1||(it.phone||"").toLowerCase().indexOf(ql)>-1||(it.email||"").toLowerCase().indexOf(ql)>-1}).slice(0,20);
     if(!filtered.length){list.classList.remove("show");return}
     var groups={project:[],sub:[],person:[]};filtered.forEach(function(it){(groups[it.type]||[]).push(it)});
-    var html="",labels={project:"\ud83d\udcc1 Projects",sub:"\ud83d\udd28 Subs & Vendors",person:"\ud83d\udc64 Team"},colors={project:"#22c55e",sub:"#f59e0b",person:"#8b5cf6"},idx=0;
+    var html="",labels={project:"\ud83d\udcc1 Projects",sub:"\ud83d\udd28 Subs & Vendors",person:"\ud83d\udc64 Team"},colors={project:"#15803d",sub:"#b45309",person:"#6d28d9"},idx=0;
     ["project","sub","person"].forEach(function(type){if(!groups[type].length)return;html+='<div class="_ac-cat">'+labels[type]+"</div>";groups[type].forEach(function(it){html+='<div class="_ac-item" data-idx="'+idx+'" data-name="'+(it.name||"").replace(/"/g,"&quot;")+'" data-id="'+(it.id||"")+'" data-type="'+it.type+'"><span class="tag" style="background:'+colors[type]+'22;color:'+colors[type]+'">'+(it.extra||it.type)+'</span><span>'+(it.name||"")+'</span>'+(it.sub?'<span class="sub">'+it.sub+"</span>":"")+"</div>";idx++})});
     list.innerHTML=html;place();list.classList.add("show");selIdx=-1;
     list.querySelectorAll("._ac-item").forEach(function(el){el.addEventListener("mousedown",function(ev){ev.preventDefault();pick(el)})});
