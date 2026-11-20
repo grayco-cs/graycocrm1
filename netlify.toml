@@ -188,6 +188,18 @@
 # visitor on with the UTM tags). Only this path; everything else is untouched.
 # The marketing agency portal (patch AGY, docs/AGENCY-PORTAL.md)
 # patch OFFICETV: the 📺 lobby TV page (no sign-in; content from functions/lobby.js with the link code)
+# patch AIBLOCK: robots.txt ("no search, no AI") answers on every host, before the portal / bid-site catch-alls below
+[[redirects]]
+  from = "https://portal.grayco-cs.com/robots.txt"
+  to = "/robots.txt"
+  status = 200
+  force = true
+[[redirects]]
+  from = "https://bids.grayco-cs.com/robots.txt"
+  to = "/robots.txt"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/lobby"
   to = "/lobby.html"

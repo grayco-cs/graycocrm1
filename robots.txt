@@ -1,0 +1,3 @@
+# GrayCo private apps (CRM, customer/sub portal, bid site): nothing here is for search engines or AI.
+User-agent: *
+Disallow: /

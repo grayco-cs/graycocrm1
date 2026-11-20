@@ -5,7 +5,7 @@
   X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
-  X-Robots-Tag: noindex, nofollow
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex, noai, noimageai
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Document-Policy: js-profiling
   Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=(), usb=()
