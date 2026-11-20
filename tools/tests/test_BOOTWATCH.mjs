@@ -4,7 +4,9 @@
 //   1 phone, signed out: the sign-in screen is recorded (sent by a beacon when the page is left; no e-mail)
 //   2 phone, a wrong password: the error text is recorded, the e-mail only as domain + hash, never the password; then the right
 //     password: signed in → the signed-in e-mail is recorded (from the sign-in token)
-//   3 old build (version.txt newer) served by a service worker: it updates by itself (AUTOUPD — no bar), once; 3b typing waits; 3c desk
+//   3 old build (version.txt newer) served by a service worker: it updates by itself (AUTOUPD — no bar), once; UPDSAFE: 3b text left in a
+//     box waits; 3c desk idle on the Dashboard updates; 3d the bid-portal sheet open waits (pill after 30 min, a person's Save goes, the
+//     sheet's draft restored after the reload); 3e a file picker open waits; 3c desk
 //     screen (while a person is using the phone it waits for the tap; 3b: nobody touching it, it updates by itself, once)
 //     screen; the tap removes the old worker (never /crm-push-sw.js) and reloads EXACTLY once; no second banner / reload within
 //     10 min; the CRM's own "Yes, update" bar (signed in, fresh page) goes through the same one update
@@ -153,33 +155,116 @@ if (want(3)) {
   ok(!!sent && rowOf(d).boots.some(x => x.heal >= 0), 'both opens reach the report (the update, and "still old after the update")', rowOf(d) && rowOf(d).boots.map(x => ({ old: x.old, heal: x.heal })));
   await A.close();
 
-  /* 3b · someone is TYPING in a box: the update waits while they type, and runs once the box is left */
+  /* UPDSAFE (owner 11/20: "it timed away from that screen so I have to redo it"): the update never reloads while anything can be
+     lost. The waits are shortened here through _gcBootWatch.updCfg (2 min of no taps / keys → a few seconds). */
+  const FAST = cfg => `(() => { const go = () => { if (window._gcBootWatch && window._gcBootWatch.updCfg) Object.assign(window._gcBootWatch.updCfg, ${JSON.stringify(cfg)}); else setTimeout(go, 50); }; go(); })()`;
+  const RL3 = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl3') || '[]'); a.push({ t: Date.now(), ae: (document.activeElement || {}).id || (document.activeElement || {}).tagName, why: window._gcBootWatch && window._gcBootWatch.upd() }); sessionStorage.setItem('__rl3', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
+  const why = A => A.ev(() => window._gcBootWatch && window._gcBootWatch.upd()).catch(e => 'ev: ' + e);
+
+  /* 3b · someone typed in a box and left text in it: no reload — not while typing, not after the box is left; once the box is empty
+     (saved / cleared) and the phone is idle, it updates */
   {
-    const TYPE = `(() => { addEventListener('DOMContentLoaded', () => { if (sessionStorage.getItem('__typed')) return; const t = document.createElement('textarea'); t.id = 'qa-box'; t.style.cssText = 'position:fixed;top:120px;left:10px;z-index:2147483647;width:200px;height:60px'; document.body.appendChild(t); t.focus(); let n = 0; const iv = setInterval(() => { t.focus(); t.value += 'x'; t.dispatchEvent(new Event('input', { bubbles: true })); if (++n >= 16) { clearInterval(iv); sessionStorage.setItem('__typed', '1'); t.blur(); } }, 500); }); })()`;
-    const RL3 = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl3') || '[]'); a.push({ t: Date.now(), ae: (document.activeElement || {}).id || (document.activeElement || {}).tagName, st: String(new Error().stack).split('\\n').slice(1, 7).join(' | ').slice(0, 700) }); sessionStorage.setItem('__rl3', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
-    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW, TYPE, RL3] }); const pc = C.page();
-    let nc = 0, tReload = 0; const tc = Date.now(); pc.on('domcontentloaded', () => { nc++; if (!tReload) tReload = Date.now() - tc; });
-    const c0 = nc; tReload = 0;
-    await sleep(6000);
+    const TYPE = `(() => { const SI = setInterval.bind(window), CI = clearInterval.bind(window); addEventListener('DOMContentLoaded', () => { if (sessionStorage.getItem('__typed')) return; const t = document.createElement('textarea'); t.id = 'qa-box'; t.setAttribute('data-gc-keep', '1'); t.style.cssText = 'position:fixed;top:120px;left:10px;z-index:2147483647;width:200px;height:60px'; document.body.appendChild(t); t.focus(); let n = 0; const iv = SI(() => { t.focus(); t.value += 'x'; t.dispatchEvent(new Event('input', { bubbles: true })); if (++n >= 16) { CI(iv); sessionStorage.setItem('__typed', '1'); t.blur(); } }, 500); }); })()`;   /* (the page's own timers can be held: the browser's own) */
+    VER = '';   /* the new version comes out once the typing has begun */
+    const C = await computer('phone3b', { build, mobile: true, init: [IPHONE, OLDSW, TYPE, RL3, FAST({ act: 3000, idle: 3000, tick: 500 })] }); const pc = C.page();
+    let nc = 0; pc.on('domcontentloaded', () => { nc++; });
+    const c0 = nc;
+    await sleep(1200); VER = '33.999-2026-12-31-r99z'; await C.ev(() => window._gcBootWatch.check()).catch(() => {});
+    await sleep(5000);
     ok(nc - c0 === 0, '3b: while the box is being typed in, no reload', { navs: nc - c0 });
-    await sleep(12000);
-    ok(nc - c0 === 1, '3b: once the box was left, it updated by itself (one reload)', { navs: nc - c0, atMs: tReload });
-    console.log('    3b reload calls: ' + JSON.stringify(await C.ev(() => JSON.parse(sessionStorage.getItem('__rl3') || '[]')).catch(() => [])).slice(0, 2500));
+    await sleep(14000);
+    const w3b = await why(C);
+    ok(nc - c0 === 0 && /text in|editing|a form is open/.test(w3b), '3b: the box was left WITH text in it: still no reload (it waits: ' + w3b + ')', { navs: nc - c0, w3b });
+    await C.ev(() => { const t = document.getElementById('qa-box'); if (t) t.value = ''; });
+    const tc = Date.now(); while (Date.now() - tc < 20000 && nc - c0 < 1) await sleep(300);
+    ok(nc - c0 === 1, '3b: the box emptied, nothing else open, idle: it updated by itself (one reload)', { navs: nc - c0, why: await why(C) });
+    console.log('    3b reload calls: ' + JSON.stringify(await C.ev(() => JSON.parse(sessionStorage.getItem('__rl3') || '[]')).catch(() => [])).slice(0, 800));
     await C.close();
   }
 
-  /* 3c · signed in on a desk, a fresh page from the network while the server has a newer build: no "Yes, update" bar — it updates by itself, once */
+  /* 3c · signed in on a desk, a fresh page from the network while the server has a newer build: no "Yes, update" bar — it waits
+     until nobody has touched it for a while (shortened here), then updates by itself, once */
   {
-    const RLOG = `(() => { try { const L = window.location, r = L.reload.bind(L); Object.defineProperty(L, 'reload', { configurable: true, value: function(){ try { const a = JSON.parse(sessionStorage.getItem('__rl') || '[]'); a.push(String(new Error().stack).split('\\n').slice(1, 6).join(' | ').slice(0, 600)); sessionStorage.setItem('__rl', JSON.stringify(a)); } catch (e) {} return r(); } }); } catch (e) {} })()`;
     VER = '';   /* the server's build moves on while the desk is signed in and working (the 60-second look / focus / back from the background) */
-    const B = await computer('desk3', { build, init: [RLOG] }); const pb = B.page();
+    const B = await computer('desk3', { build, init: [RL3, FAST({ act: 4000, idle: 4000, tick: 500 })] }); const pb = B.page();
     await signIn(B, ADMIN, 30000); await sleep(3000);
     let nb = 0, sawBar = false; pb.on('domcontentloaded', () => { nb++; });
     VER = '33.999-2026-12-31-r99z'; await B.ev(() => window._gcBootWatch && window._gcBootWatch.check && window._gcBootWatch.check()).catch(() => {});
-    const tb = Date.now(); while (Date.now() - tb < 25000 && nb < 1) { await sleep(300); if (await B.ev(() => !!(document.getElementById('gc-update-bar') || document.getElementById('gc-bw-update'))).catch(() => false)) sawBar = true; }
-    await sleep(8000);
+    const w0 = await why(B);
+    const tb = Date.now(); while (Date.now() - tb < 30000 && nb < 1) { await sleep(300); if (await B.ev(() => !!(document.getElementById('gc-update-bar') || document.getElementById('gc-bw-update'))).catch(() => false)) sawBar = true; }
+    const wEnd = nb ? '' : await why(B);
+    await sleep(6000);
     ok(!sawBar, '3c desk: no "Yes, update / Not now" bar');
-    ok(nb === 1, '3c desk: it updated by itself, one reload', { nb });
+    ok(nb === 1, '3c desk: idle on the Dashboard, it updated by itself, one reload', { nb, w0, wEnd });
+    await B.close();
+  }
+
+  /* 3d · the owner's case: the 📢 Put on bid portal sheet is open, half filled, while a new version comes out. No reload while it is
+     open (idle or not); after 30 min of waiting a small white "New version ready — tap to update" pill (not a popup); his own Save
+     still goes through the stale gate; the sheet keeps a draft. Closed + idle → it updates; the reopened sheet is restored. */
+  {
+    VER = '';
+    const B = await computer('desk3d', { build, init: [RL3, FAST({ act: 3000, idle: 3000, tick: 500 })] }); const pb = B.page();
+    await signIn(B, ADMIN, 30000); await sleep(2500);
+    let nb = 0; pb.on('domcontentloaded', () => { nb++; });
+    await B.ev(() => window._gcBidPost.open({ pid: 'P1' }));
+    ok(!!(await waitFor(B, () => document.querySelector('#gcbp-modal #gcbp-title'), null, 15000)), '3d: the bid-portal sheet is open');
+    const title0 = await B.ev(() => document.getElementById('gcbp-title').value);
+    await pb.fill('#gcbp-title', 'QA Bid Draft Title'); await pb.fill('#gcbp-scope', 'QA scope: repaint 2,500 SF');
+    await pb.click('#gcbp-modal [data-bp="trade"][data-t="Paint"]');
+    VER = '33.999-2026-12-31-r99z'; await B.ev(() => window._gcBootWatch.check());
+    await sleep(14000);
+    const w1 = await why(B);
+    ok(nb === 0 && /^open: /.test(w1), '3d: sheet open + a new version: no reload, even idle (' + w1 + ')', { nb, w1 });
+    ok(!(await B.ev(() => !!document.getElementById('gc-upd-pill'))), '3d: no pill before 30 min of waiting');
+    const draft = await B.ev(() => JSON.parse(sessionStorage.getItem('gc_sheetdraft_bidpost_p:P1') || 'null'));
+    ok(draft && draft.d.f['gcbp-title'] === 'QA Bid Draft Title' && draft.d.trades.includes('Paint'), '3d: the sheet keeps a draft in session storage as it is filled', draft);
+    const gate = await B.ev(async () => { const G = window._gcStaleGate, f = () => 'sent'; const st = G.state(); G._person(); const a = await Promise.resolve(G._gate(f, null, ['projects', []])).catch(e => 'held'); G._person(0); const b = await Promise.resolve(G._gate(f, null, ['projects', []])).catch(e => 'held'); return { st, a, b }; });
+    ok(gate.st === 'stale' && gate.a === 'sent' && gate.b === 'held', '3d: while the update waits, a person\'s own Save goes; a background write from this old copy is held (STALEGATE)', gate);
+    await B.ev(() => Object.assign(window._gcBootWatch.updCfg, { pill: 1000 }));
+    const pill = await waitFor(B, () => { const p = document.getElementById('gc-upd-pill'); return p && p.getClientRects().length ? { t: p.textContent, bg: getComputedStyle(p).backgroundColor, role: p.getAttribute('role') } : null; }, null, 8000);
+    ok(pill && /New version ready — tap to update/.test(pill.t) && pill.bg === 'rgb(255, 255, 255)' && nb === 0 && !!(await B.ev(() => document.getElementById('gcbp-modal'))), '3d: after the wait a small white "New version ready — tap to update" pill; the sheet stays, no reload', { pill, nb });
+    await pb.click('#gcbp-modal [data-bp="close"]');
+    const tb = Date.now(); while (Date.now() - tb < 25000 && nb < 1) await sleep(300);
+    ok(nb === 1, '3d: the sheet closed, idle on the screen behind it: it updated by itself, one reload', { nb, why: await why(B) });
+    await waitFor(B, () => window._gcBidPost && window._crm, null, 30000); await sleep(1500);
+    await B.ev(() => window._gcBidPost.open({ pid: 'P1' }));
+    const rs = await waitFor(B, () => { const n = document.querySelector('#gcbp-modal [data-bp-restored]'), t = document.getElementById('gcbp-title'); return n && t ? { note: n.textContent, title: t.value, scope: document.getElementById('gcbp-scope').value, paint: !!document.querySelector('#gcbp-modal [data-bp="trade"][data-t="Paint"].on') } : null; }, null, 15000);
+    ok(rs && /Restored your unsaved bid-portal draft/.test(rs.note) && rs.title === 'QA Bid Draft Title' && /repaint 2,500 SF/.test(rs.scope) && rs.paint, '3d: after the reload the sheet comes back as he left it, with "Restored your unsaved bid-portal draft"', rs);
+    await pb.click('#gcbp-modal [data-bp="discard"]');
+    const dc = await waitFor(B, () => { const t = document.getElementById('gcbp-title'); return t && !document.querySelector('#gcbp-modal [data-bp-restored]') ? { title: t.value, ss: sessionStorage.getItem('gc_sheetdraft_bidpost_p:P1') } : null; }, null, 15000);
+    ok(dc && dc.title === title0 && !dc.ss, '3d: Discard puts the sheet back as drawn and drops the draft', { dc, title0, now: await B.ev(() => ({ m: !!document.getElementById('gcbp-modal'), t: (document.getElementById('gcbp-title') || {}).value, n: !!document.querySelector('[data-bp-restored]'), ss: sessionStorage.getItem('gc_sheetdraft_bidpost_p:P1'), box: (document.querySelector('#gcbp-modal .box') || {}).textContent })).catch(e => String(e)) });
+    await B.close();
+  }
+
+  /* 3e · a file picker: a file box was clicked (the window then lost focus = the picker is up) → no reload while it may be open */
+  {
+    VER = '';
+    const B = await computer('desk3e', { build, init: [RL3, FAST({ act: 2000, idle: 2000, file: 12000, tick: 500 })] }); const pb = B.page();
+    await signIn(B, ADMIN, 30000); await sleep(2500);
+    let nb = 0; pb.on('domcontentloaded', () => { nb++; });
+    await B.ev(() => { const f = document.createElement('input'); f.type = 'file'; f.id = 'qa-file'; f.setAttribute('data-gc-keep', '1'); f.style.cssText = 'position:fixed;left:300px;top:300px;z-index:2147483647;width:160px;height:30px'; document.body.appendChild(f); });
+    pb.on('filechooser', () => {});
+    VER = '33.999-2026-12-31-r99z'; await B.ev(() => window._gcBootWatch.check());
+    await pb.click('#qa-file').catch(() => {});   /* a real click on a file box (the picker opens) */
+    await sleep(6000);
+    const w0 = await why(B);
+    ok(nb === 0 && w0 === 'file picker', '3e: a file box was clicked (taps long past): no reload (' + w0 + ')', { nb, w0 });
+    /* a picker opened from code (a detached file box), and the window loses focus right after: the picker is up */
+    await B.ev(() => { const f = document.createElement('input'); f.type = 'file'; f.click(); window.dispatchEvent(new Event('blur')); const q = document.getElementById('qa-file'); if (q) q.remove(); });
+    await sleep(16000);
+    const w1 = await why(B);
+    if (w1 !== 'file picker') console.log('    3e: ' + JSON.stringify(await B.ev(() => window._gcBootWatch.state().u).catch(e => String(e))));
+    ok(nb === 0 && w1 === 'file picker', '3e: the window lost focus right after a file box was clicked: no reload while the picker is up, even past the 10-min window (' + w1 + ')', { nb, w1 });
+    await B.ev(() => window.dispatchEvent(new Event('focus')));   /* the CRM sends itself focus events: those do not close it */
+    await sleep(1500);
+    ok(nb === 0 && (await why(B)) === 'file picker', '3e: a focus event sent by the page itself does not count as the picker closing');
+    /* the picker closes with a file chosen (a real change event), the box is then saved / gone */
+    await B.ev(() => { const f = document.createElement('input'); f.type = 'file'; f.id = 'qa-file2'; document.body.appendChild(f); });
+    await pb.setInputFiles('#qa-file2', { name: 'plans.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 qa') });
+    await B.ev(() => document.getElementById('qa-file2').remove());
+    const tb = Date.now(); while (Date.now() - tb < 25000 && nb < 1) await sleep(300);
+    ok(nb === 1, '3e: the picker closed, then idle: it updated, one reload', { nb, why: await why(B) });
     await B.close();
   }
   VER = '';

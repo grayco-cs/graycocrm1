@@ -149,28 +149,129 @@
       .then(function(v){ checking = null; v = s(v).trim().slice(0, 60); if (v) LIVE = { v: v, at: Date.now() }; return v; });
     return checking;
   };
-  /* AUTOUPD (owner 11/19: "automatic update as soon as the CRM updates, and don't have the blue update button … so everyone
-     is on the same version always"): an OLD copy updates by itself — no bar, no button; a 2-second "Updating…" note just
-     before the reload. Right away when nobody is typing and no upload is on its way; while someone types: once the field is
-     left (the draft keeper, gc_draft_*, has saved it) or at the latest 60 s after the last key; an upload on its way: once it
-     lands (at most 3 minutes). The stale gate (REGFIX) holds this copy's shared uploads until then; what is saved here stays
-     in IndexedDB and goes up from the new copy. updateImpl keeps it to one update per 10 minutes (never a loop). */
-  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0;
+  /* AUTOUPD (owner 11/19: "automatic update as soon as the CRM updates … so everyone is on the same version always") —
+     UPDSAFE (owner 11/20: "it timed away from that screen so I have to redo it": the 📢 bid-portal sheet was open while he
+     looked for plans in his file picker, and the update reloaded the page): an OLD copy still updates by itself, no bar, a
+     2-second "Updating…" note — but ONLY when nothing can be lost. It waits while any of these is true:
+       the page is hidden (it goes once it is back on screen AND idle); a file picker is (or may be) open: a file box clicked
+       in the last 10 min, or the window lost focus right after one; a write is on its way (any non-GET fetch / XHR, the
+       CRM's uploads _gcSending, saves not sent yet _gcUnsent); a real tap / key in the last 2 min (or back on screen < 60 s);
+       a sheet / dialog / drawer / modal is open (role=dialog, aria-modal, <dialog open>, any large fixed panel over the page:
+       the bid-portal sheet, the estimate / invoice editors, Fix dialogs, forms …; the form hold __GC_FORM_OPEN__); a box
+       with text in it that was typed in or differs from how it was drawn (search boxes aside); a file chosen; and the screen
+       is not a main list / home (Desk: Dashboard, Jobs, Leads, … lists; Field: home or a job; the sign-in screen; a page
+       still opening that nobody has touched).
+     After 30 min of waiting: a small white "New version ready — tap to update" pill (never a popup, never forced). An old copy
+     may keep running meanwhile: the stale gate (REGFIX) holds only its automatic background writes; a person's own Save
+     still goes. updateImpl keeps it to one update per 10 minutes (never a loop). Console: _gcBootWatch.upd() → why it waits */
+  var autoT = null, lastType = 0, autoN = 0, autoT0 = 0, pill = null;
+  var CFG = U.cfg;
+  var HOME_V = /^(dashboard|projects|leads|invoices|expenses|estimates|schedule|approvals|subs|payments|files|customers|vendors|todo|allphotos|documents|changeorders|insurance|bidportal|mastercrm|list)$/;
+  var OK_ID = /^(gc-bw-|gc-upd-pill$|gc-boot-cover$|gc-bootsafe$|_gcFieldHomeOv$|_gcJobPick$|_gcJobDash$|_gcReloadAsk$|gc-auth-gate$)/;
+  var seen = function(e){ try { if (!e || !e.isConnected) return null; var r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 ? r : null; } catch (x) { return null; } };
+  var mine = function(e){ for (var k = e, i = 0; k && k.nodeType === 1 && i < 30; k = k.parentNode, i++) if (k.id && OK_ID.test(k.id)) return true; return false; };
+  var nameOf = function(e){ return s(e.id || e.getAttribute('aria-label') || e.className || e.tagName).slice(0, 40); };
+  var sheet = function(){
+    try {
+      var q = D.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],dialog[open]');
+      for (var i = 0; i < q.length && i < 50; i++) if (seen(q[i]) && !mine(q[i])) return 'dialog ' + nameOf(q[i]);
+      var vw = W.innerWidth || 1, vh = W.innerHeight || 1, c = [];
+      [D.body, H].forEach(function(p){ for (var k = p && p.firstElementChild; k; k = k.nextElementSibling) c.push(k); });
+      var rq = D.querySelectorAll('#root [style*="position: fixed"],#root [style*="position:fixed"]');
+      for (var j = 0; j < rq.length && j < 80; j++) c.push(rq[j]);
+      for (var n = 0; n < c.length && n < 400; n++) {
+        var e = c[n]; if (/^(SCRIPT|STYLE|LINK|META|HEAD|BODY|NOSCRIPT|TEMPLATE)$/.test(e.tagName) || e.id === 'root' || mine(e)) continue;
+        var r = seen(e); if (!r) continue;
+        var cs = W.getComputedStyle(e); if (cs.position !== 'fixed' || cs.visibility === 'hidden' || cs.pointerEvents === 'none' || +cs.opacity === 0) continue;
+        var a = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+        if (a > 0.3 * vw * vh) return 'panel ' + nameOf(e);
+      }
+    } catch (x) {}
+    return '';
+  };
+  var SEARCHY = /search|filter|find|lookup/i;
+  var unsaved = function(){
+    try {
+      var q = D.querySelectorAll('input,textarea,select,[contenteditable=""],[contenteditable="true"]');
+      for (var i = 0; i < q.length && i < 800; i++) {
+        var e = q[i], t = s(e.type).toLowerCase(), tg = e.tagName, tch = !!(U.touched && U.touched.has(e));
+        if (/^(hidden|button|submit|reset|image|search)$/.test(t) || !seen(e)) continue;
+        if (SEARCHY.test(s(e.id) + ' ' + s(e.name) + ' ' + s(e.placeholder) + ' ' + s(e.getAttribute && e.getAttribute('aria-label')))) continue;
+        var gate = e.closest && e.closest('#gc-auth-gate'), inForm = !!(e.form || (e.closest && e.closest('form')));
+        if (t === 'file') { if (e.files && e.files.length) return 'a file chosen'; continue; }
+        if (tg === 'SELECT' || t === 'checkbox' || t === 'radio') {
+          if (!inForm || gate) continue;   /* list filters / toggles are not work; a form's own choices are */
+          if (tg === 'SELECT') { for (var o = 0; o < e.options.length; o++) if (e.options[o].selected !== e.options[o].defaultSelected && (tch || e.options[o].defaultSelected)) return 'a choice in ' + nameOf(e); }
+          else if (e.checked !== e.defaultChecked) return 'a box ticked in ' + nameOf(e);
+          continue;
+        }
+        var v = e.isContentEditable && tg !== 'INPUT' && tg !== 'TEXTAREA' ? s(e.textContent) : s(e.value);
+        if (!v.trim()) continue;
+        if (tch || (!gate && !e.isContentEditable && v !== s(e.defaultValue))) return 'text in ' + nameOf(e);
+      }
+    } catch (x) {}
+    return '';
+  };
+  var screenOk = function(){
+    if (gateUp()) return '';
+    var fs = firstScreen();
+    if (!fs) return B.m.paint == null && !U.act ? '' : 'not a main screen';
+    if (/^field (home|job)$/.test(fs)) return '';
+    var m = /^desk (.*)$/.exec(fs); return m && HOME_V.test(m[1]) ? '' : 'not a main screen (' + fs + ')';
+  };
+  var whyBusy = function(){
+    try {
+      var t = Date.now();
+      if (D.visibilityState === 'hidden') return 'hidden';
+      if (U.picker || (U.file && t - U.file < CFG.file)) return 'file picker';
+      for (var k in U.fly) { if (t - U.fly[k] < 300000) return 'saving'; delete U.fly[k]; }
+      if (W._gcSending && W._gcSending().length) return 'uploading';
+      /* a save that failed is kept on this computer (IndexedDB) and sent again by the new copy; only one being retried right now, while
+         signed in, waits — for 10 min at most (a write the stale gate held, a refused one, never: that would wait for good) */
+      if (authed() && t - (autoT0 || t) < 600000 && W._gcUnsent && W._gcUnsent().some(function(x){ return x && !/held/i.test(s(x.why)) && !/^(401|403|413)$/.test(s(x.status)) && t - (+x.at || 0) < 60000; })) return 'not sent yet';
+      if (U.act && t - U.act < Math.max(CFG.act, CFG.idle)) return 'in use';
+      if (t - Math.max(lastType, lastKey) < 3000) return 'typing';
+      if (t - U.vis < CFG.idle && (U.act || B.m.paint != null) && U.vis > T0 + 1000) return 'just back on screen';
+      var a = D.activeElement;
+      if (a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && s(a.value).trim()) || (a.isContentEditable && s(a.textContent).trim()))) return 'editing';
+      var sh = sheet(); if (sh) return 'open: ' + sh;
+      if (W.__GC_FORM_OPEN__ === true && !gateUp()) return 'a form is open';   /* (the sign-in screen's own focused box is no form) */
+      var un = unsaved(); if (un) return 'unsaved: ' + un;
+      return screenOk();
+    } catch (e) { return 'error'; }
+  };
+  whyImpl = whyBusy;
+  var showPill = function(){
+    try {
+      if (pill && pill.isConnected) return;
+      pill = D.createElement('button'); pill.type = 'button'; pill.id = 'gc-upd-pill'; pill.setAttribute('data-gc-keep', '1'); pill.setAttribute('role', 'status');
+      pill.style.cssText = 'position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:2147483000;background:#fff;color:#0f2440;border:1px solid #cbd5e1;border-radius:999px;padding:8px 14px;' +
+        'font:700 13px -apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;box-shadow:0 4px 14px rgba(15,36,64,.18);cursor:pointer;max-width:calc(100vw - 32px)';
+      pill.textContent = 'New version ready — tap to update';
+      pill.addEventListener('click', function(ev){
+        try { ev.stopPropagation(); } catch (e) {}
+        var w = whyBusy();
+        if (/^(open|unsaved|a form|editing|saving|uploading|not sent|file)/.test(w) && !W.confirm('Something is still open or not saved (' + w + ').\n\nUpdate now anyway? The page reloads.')) return;
+        B.pillTap = ms(); dirty = true; try { pill.remove(); } catch (e) {} update();
+      });
+      (D.body || H).appendChild(pill); B.pill = ms(); dirty = true;
+    } catch (e) {}
+  };
   var autoUpdate = function(){
     if (autoT) return;
     if (!autoN) { try { ['keydown', 'input', 'compositionupdate'].forEach(function(t){ D.addEventListener(t, function(){ lastType = Date.now(); }, true); }); } catch (e) {} }
     autoT0 = autoT0 || Date.now();
     var tick = function(){
-      autoT = null; if (++autoN > 2000) return;
-      var busy = '';
-      try {
-        var a = D.activeElement, editing = a && a !== D.body && ((/^(INPUT|TEXTAREA)$/.test(a.tagName) && String(a.value || '').trim()) || (a.isContentEditable && String(a.textContent || '').trim()));
-        var lk = Math.max(lastType, lastKey);
-        if ((editing && Date.now() - (lk || autoT0) < 60000) || Date.now() - lk < 3000) busy = 'typing';
-        if (!busy && W._gcSending && W._gcSending().length && Date.now() - autoT0 < 180000) busy = 'sending';
-      } catch (e) {}
-      if (!busy) { B.autoUpd = ms(); dirty = true; autoToast(); NST.call(W, function(){ if (!update()) { autoT0 = 0; } }, 2000); return; }
-      autoT = NST.call(W, tick, 1500);
+      autoT = null; autoN++;
+      var why = whyBusy(); B.updWait = why;
+      if (!why) {
+        B.autoUpd = ms(); dirty = true; autoToast();
+        /* looked at again just before the reload: a tap or a sheet in those 2 seconds stops it */
+        NST.call(W, function(){ var w2 = whyBusy(); if (w2) { B.updWait = w2; try { var tt = D.getElementById('gc-bw-updating'); if (tt) tt.remove(); } catch (e) {} autoT = NST.call(W, tick, CFG.tick); return; } if (!update()) { autoT0 = 0; } }, 2000);
+        return;
+      }
+      if (Date.now() - autoT0 > CFG.pill) showPill();
+      autoT = NST.call(W, tick, Date.now() - autoT0 > 600000 ? Math.max(CFG.tick, 5000) : CFG.tick);
     };
     autoT = NST.call(W, tick, 300);
   };

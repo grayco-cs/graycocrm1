@@ -128,12 +128,44 @@ try {
   };
   /* the rest (the progress screen, the update banner, sending) is compiled only when first needed: a normal open never pays
      for it before its first screen (tools/bootwatch_late.js: the patch puts it just before this script as <script type="text/plain">) */
-  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, bar = null, lateOn = false;
+  var onScreenImpl = null, drawImpl = null, bannerImpl = null, updateImpl = null, sendImpl = null, autoImpl = null, whyImpl = null, bar = null, lateOn = false;
   function L(){ if (lateOn) return; lateOn = true; try { var t = D.getElementById('gc-bw-late'); eval(t ? t.textContent : ''); } catch (e) { try { console.warn('[GC] BOOTWATCH late part:', e && e.message || e); } catch (x) {} } }
   var onScreen = function(){ L(); return onScreenImpl ? onScreenImpl() : '?'; };
   function banner(live){ L(); if (bannerImpl) bannerImpl(live); }
   function auto(){ L(); if (autoImpl) autoImpl(); return !!autoImpl; }
   var lastKey = 0; try { ['keydown', 'input'].forEach(function(t){ D.addEventListener(t, function(){ lastKey = Date.now(); }, true); }); } catch (e) {}
+  /* UPDSAFE (owner 11/20: the bid-portal sheet was lost to an automatic update while he looked for plans in his file picker):
+     what a person is doing, noticed from the page's start, so the update (late part) only reloads when nothing can be lost —
+     the last real tap / key, boxes typed in (touched), a file picker opened (a file box clicked; the window losing focus right
+     after it = the picker is up), writes on their way (any fetch / XHR that is not a GET), the page coming back on screen. */
+  var U = { act: 0, file: 0, picker: false, vis: Date.now(), fly: {}, n: 0, touched: null, cfg: { act: 120000, idle: 60000, file: 600000, pill: 1800000, tick: 2000 } };
+  try {
+    U.touched = typeof WeakSet === 'function' ? new WeakSet() : null;
+    var isFile = function(el){ return !!el && el.tagName === 'INPUT' && s(el.type).toLowerCase() === 'file'; };
+    ['pointerdown', 'mousedown', 'touchstart', 'keydown', 'input', 'change'].forEach(function(t){ D.addEventListener(t, function(e){
+      if (!e || e.isTrusted === false) return; U.act = Date.now();
+      if ((t === 'input' || t === 'change') && e.target) { try { if (U.touched) U.touched.add(e.target); } catch (x) {} }
+    }, true); });
+    D.addEventListener('click', function(e){ if (e && isFile(e.target)) U.file = Date.now(); }, true);
+    ['cancel', 'change'].forEach(function(t){ D.addEventListener(t, function(e){ if (e && isFile(e.target)) U.picker = false; }, true); });   /* the picker closed (a file chosen, or cancelled) */
+    var IP = W.HTMLInputElement && W.HTMLInputElement.prototype;
+    ['click', 'showPicker'].forEach(function(k){ var f = IP && IP[k]; if (typeof f !== 'function') return; IP[k] = function(){ try { if (isFile(this)) U.file = Date.now(); } catch (e) {} return f.apply(this, arguments); }; });
+    W.addEventListener('blur', function(){ if (Date.now() - U.file < 5000) U.picker = true; });
+    W.addEventListener('focus', function(e){ if (U.picker && !(e && e.isTrusted === false)) { U.picker = false; U.act = Date.now(); } });   /* the CRM sends itself focus events: only a real one is the picker closing */
+    D.addEventListener('visibilitychange', function(){ if (D.visibilityState !== 'hidden') U.vis = Date.now(); });
+    var fly = function(){ var id = ++U.n; U.fly[id] = Date.now(); return function(){ delete U.fly[id]; }; };
+    var wr = function(m){ return !!m && !/^(GET|HEAD|OPTIONS)$/i.test(s(m)); };
+    if (typeof NF === 'function') W.fetch = function(u, o){
+      var m = (o && o.method) || (u && typeof u === 'object' && u.method) || 'GET';
+      if (!wr(m) || /\/bootwatch(\?|$)/.test(s(u && typeof u === 'object' ? u.url : u))) return NF.apply(this, arguments);
+      var dn = fly(); try { var p = NF.apply(this, arguments); Promise.resolve(p).then(dn, dn); return p; } catch (e) { dn(); throw e; }
+    };
+    var XP = W.XMLHttpRequest && W.XMLHttpRequest.prototype, XO = XP && XP.open, XS = XP && XP.send;
+    if (typeof XO === 'function' && typeof XS === 'function') {
+      XP.open = function(m){ try { this.__gcW = wr(m); } catch (e) {} return XO.apply(this, arguments); };
+      XP.send = function(){ if (this.__gcW) { try { var dn = fly(); this.addEventListener('loadend', dn); } catch (e) {} } return XS.apply(this, arguments); };
+    }
+  } catch (e) {}
   function update(){ L(); return updateImpl ? updateImpl() : false; }
   function send(why, final){ L(); return sendImpl ? sendImpl(why, final) : false; }
   var stuck = function(k, why){ if (B.stuck.length < 5 && !B.p['stuck_' + k]) { B.stuck.push({ t: ms(), k: k, why: why, on: NAV.onLine !== false }); B.p['stuck_' + k] = 1; problem('stuck'); } };
@@ -241,8 +273,10 @@ try {
   if (get(PEND_K)) NST.call(W, function(){ if (!sentN && get(PEND_K)) { prevDue = true; send('prev'); } }, 4000);
 
   W._gcBootWatch = {
-    state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
+    state: function(){ return { dev: DEV, boot: JSON.parse(JSON.stringify(B)), sent: sentN, live: LIVE.v, u: { act: U.act, file: U.file, picker: U.picker, fly: Object.keys(U.fly).length }, cost: { syncMs: +syncMs.toFixed(3), pollMs: +cost.toFixed(3), polls: polls } }; },
     older: older, update: update, banner: function(){ return !!(bar && bar.isConnected); }, auto: auto, check: function(){ return checkVersion(true); },
+    /* UPDSAFE: why an automatic update would wait right now ('' = it may reload), and its timings (ms; tests shorten them) */
+    upd: function(){ L(); return whyImpl ? whyImpl() : '?'; }, updCfg: U.cfg,
     /* the CRM's own version check uses the answer this open already has (no second request) */
     live: function(maxAge){ return LIVE.v && Date.now() - LIVE.at < (maxAge || 60000) ? LIVE.v : ''; },
     send: function(){ dirty = true; return send('manual'); }
