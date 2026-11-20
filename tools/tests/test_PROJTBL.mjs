@@ -31,10 +31,11 @@ try {
   ok(!!(await open(O)), 'desk: the Projects table is up with 💬 buttons and resize handles');
   await H.sleep(1500);
   let g = await geo(O);
+  const co0 = await O.ev(() => [...document.querySelectorAll('#root table[data-gcx-projects] [data-co-jobmenu]')].filter(x => x.getClientRects().length));
   ok(await O.ev(() => document.querySelectorAll('#root table[data-gcx-projects] .__gcListMsgBtn').length) === 4, 'every row has its 💬, the hyphenated PO C1024-2 too');
   ok(g.bubT >= g.pillB - 1 && Math.abs(g.bubX - g.pillX) < 6, 'the 💬 sits under the PO pill, centred', g);
   ok(g.w['po#'] <= 100 && g.w.project >= 190 && g.w.project === Math.max(...Object.values(g.w)), 'PO# is narrow, PROJECT is the widest column', g.w);
-  ok(g.nameH < 24 && Math.abs(g.coT - g.camT) <= 2, 'a short name is one line; its 🏢 ▾ and 📸 chips share a row', g);
+  ok(g.nameH < 24 && !!g.camT && !(co0 && co0.length), 'a short name is one line; its 📸 is there and no 🏢 ▾ on the row (patch DONEPCT: owner 11/20)', g);
   ok(!g.pinned && g.ls === 0, 'no saved widths yet → nothing pinned');
   const pills = c => c.ev(() => [...document.querySelectorAll('#root table[data-gcx-projects] tbody tr > td:first-child')].map(td => { const sp = td.querySelector('span'), a = sp.getBoundingClientRect(), b = td.getBoundingClientRect();
     return { po: sp.textContent, h: Math.round(a.height), out: Math.round(a.right - b.right), th: td.closest('table').querySelector('th').offsetWidth }; }));
