@@ -13,7 +13,7 @@ var L = {
     bidDue: 'Bid due', bidOpenBid: 'Open & bid', bidsNone: 'No jobs to bid right now — GrayCo invites you when one fits your trade.', toBid: '📝 To bid', jobsNow: '🔨 Jobs I\'m on now', jobsNext: '✅ Awarded / coming up', jobsDone: '✔ Done', poHint: 'Use this PO at Home Depot, Lowe\'s and the supply house so it lands on the right job.',
     money: 'Money', submitted: 'Submitted', approvedM: 'Approved', paidMonth: 'Paid this month', yourJobs: 'Your jobs', noJobs: 'No jobs with GrayCo yet. Your Project Manager adds you to a job, and it shows up here.',
     newScope: 'New scope', unread: 'new message', unreads: 'new messages', starts: 'starts', ends: 'ends', done: 'done',
-    nScope: 'Sub agreement to sign', nCo: 'Change order to sign', nPunch: 'Punch item', nMsg: 'Messages from GrayCo', nCoiExp: 'Insurance certificate has run out — upload a new one', nCoiSoon: 'Insurance certificate runs out in {d} days — upload a new one', nW9: 'GrayCo needs your W-9',
+    nScope: 'Sub agreement to sign', nCo: 'Change order to sign', nPunch: 'Punch item', nMsg: 'Messages from GrayCo', nCoiExp: 'Insurance certificate has run out — upload a new one', nCoiSoon: 'Insurance certificate runs out in {d} days — upload a new one', nW9: 'GrayCo needs your W-9', rejectedP: 'Rejected: {r} — please upload a new one',
     overview: 'Overview', scope: 'Scope', cos: 'Change orders', photos: 'Photos', progress: 'Progress', punch: 'Punch list', invoices: 'Invoices', messages: 'Messages',
     address: 'Address', maps: 'Open in Maps', po: 'PO#', dates: 'Dates', schedule: 'Your days on the schedule', site: 'Site notes', gate: 'Gate code', parking: 'Parking', hours: 'Work hours', dumpster: 'Dumpster', power: 'Power', water: 'Water', notes: 'Notes', none: '—',
     pm: 'Your Project Manager', call: 'Call', text: 'Text', email: 'E-mail', office: 'GrayCo office', customer: 'Customer',
@@ -42,7 +42,7 @@ var L = {
     bidDue: 'Fecha límite', bidOpenBid: 'Abrir y licitar', bidsNone: 'No hay trabajos para licitar ahora — GrayCo le invita cuando uno sea de su oficio.', toBid: '📝 Para licitar', jobsNow: '🔨 Trabajos en curso', jobsNext: '✅ Adjudicados / próximos', jobsDone: '✔ Terminados', poHint: 'Use este PO en Home Depot, Lowe\'s y el proveedor para que se cargue al trabajo correcto.',
     money: 'Dinero', submitted: 'Enviado', approvedM: 'Aprobado', paidMonth: 'Pagado este mes', yourJobs: 'Sus trabajos', noJobs: 'Todavía no tiene trabajos con GrayCo. Su Gerente de Proyecto lo agrega a un trabajo y aparece aquí.',
     newScope: 'Alcance nuevo', unread: 'mensaje nuevo', unreads: 'mensajes nuevos', starts: 'empieza', ends: 'termina', done: 'hecho',
-    nScope: 'Acuerdo de subcontrato para firmar', nCo: 'Orden de cambio para firmar', nPunch: 'Pendiente de la lista final', nMsg: 'Mensajes de GrayCo', nCoiExp: 'El certificado de seguro venció — suba uno nuevo', nCoiSoon: 'El certificado de seguro vence en {d} días — suba uno nuevo', nW9: 'GrayCo necesita su W-9',
+    nScope: 'Acuerdo de subcontrato para firmar', nCo: 'Orden de cambio para firmar', nPunch: 'Pendiente de la lista final', nMsg: 'Mensajes de GrayCo', nCoiExp: 'El certificado de seguro venció — suba uno nuevo', nCoiSoon: 'El certificado de seguro vence en {d} días — suba uno nuevo', nW9: 'GrayCo necesita su W-9', rejectedP: 'Rechazado: {r} — por favor suba uno nuevo',
     overview: 'Resumen', scope: 'Alcance', cos: 'Órdenes de cambio', photos: 'Fotos', progress: 'Avance', punch: 'Lista final', invoices: 'Facturas', messages: 'Mensajes',
     address: 'Dirección', maps: 'Abrir en Mapas', po: 'PO#', dates: 'Fechas', schedule: 'Sus días en el calendario', site: 'Notas del sitio', gate: 'Código del portón', parking: 'Estacionamiento', hours: 'Horario de trabajo', dumpster: 'Contenedor de basura', power: 'Electricidad', water: 'Agua', notes: 'Notas', none: '—',
     pm: 'Su Gerente de Proyecto', call: 'Llamar', text: 'Mensaje de texto', email: 'Correo', office: 'Oficina de GrayCo', customer: 'Cliente',
@@ -313,6 +313,7 @@ function needRow(n){
   else if (n.kind === 'coi-expired') label = t('nCoiExp');
   else if (n.kind === 'coi-expiring') label = t('nCoiSoon', { d: n.days });
   else if (n.kind === 'w9') label = t('nW9');
+  else if (n.kind === 'paper-rejected') label = (n.paper === 'w9' ? t('w9') : t('coi')) + ' — ' + t('rejectedP', { r: n.reason });   /* patch SUBDOCDENY */
   if (n.pid) go = function(){ openJob(n.pid, n.kind === 'scope' ? 'scope' : n.kind === 'co' ? 'cos' : n.kind === 'punch' ? 'punch' : n.kind === 'message' ? 'messages' : 'overview'); };
   else go = function(){ goTab('papers'); };
   return h('button', { type: 'button', class: 'need', on: { click: go } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }), h('span', { text: label }), h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })]);
@@ -877,8 +878,8 @@ function makeInvoiceSheet(pid0){
 
 /* ── PAPERS ── */
 function paperRow(k, label, st, needsExp){
-  var tag = st.sent ? pill(t('sentFile')) : st.onFile ? (st.days != null && st.days < 0 ? pill(t('expired') + ' ' + dt(st.exp), 'due') : st.days != null && st.days <= 30 ? pill(t('expires') + ' ' + dt(st.exp), 'now') : pill(t('onFile') + (st.exp ? ' · ' + t('expires') + ' ' + dt(st.exp) : ''), 'ok')) : pill(t('missing'), 'due');
-  var btn = h('button', { type: 'button', class: 'btn', 'data-paper': k, text: st.onFile ? t('uploadNew') : t('upload'), on: { click: function(){ paperSheet(k, label, needsExp); } } });
+  var tag = st.sent ? pill(t('sentFile')) : st.rejected ? pill(t('rejectedP', { r: st.rejected.reason }), 'due') : st.onFile ? (st.days != null && st.days < 0 ? pill(t('expired') + ' ' + dt(st.exp), 'due') : st.days != null && st.days <= 30 ? pill(t('expires') + ' ' + dt(st.exp), 'now') : pill(t('onFile') + (st.exp ? ' · ' + t('expires') + ' ' + dt(st.exp) : ''), 'ok')) : pill(t('missing'), 'due');
+  var btn = h('button', { type: 'button', class: 'btn', 'data-paper': k, text: st.onFile || st.rejected ? t('uploadNew') : t('upload'), on: { click: function(){ paperSheet(k, label, needsExp); } } });
   return h('div', { class: 'paper' }, [h('div', { class: 'row' }, [h('b', { text: label }), tag]), btn]);
 }
 function paperSheet(k, label, needsExp){

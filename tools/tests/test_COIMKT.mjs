@@ -109,7 +109,7 @@ try {
   const badge = await ad.ev(() => { const b = document.getElementById('_gcApprBadge'); return b ? b.textContent.trim() : null; });
   ok(badge === null || +badge === st.total, 'the Approvals badge shows the set total (' + badge + ')', { badge, total: st.total });
   const deny = await ad.ev(() => [...document.querySelectorAll('[data-apx-act*="coi:subdoc_"]')].map(b => b.textContent.trim()));
-  ok(deny.some(t => /Read & confirm/.test(t)) && !deny.some(t => /Deny/.test(t)), 'each row: 📄 Read & confirm (+ the file), no ✕ Deny', deny);
+  ok(deny.some(t => /Read & confirm/.test(t)) && deny.filter(t => /^✕ Deny$/.test(t)).length === 3, 'each row: 📄 Read & confirm (+ the file) and ✕ Deny (patch SUBDOCDENY, owner 11/20)', deny);
 
   /* confirm the S1 COI from the Approvals tab */
   const keyA = await ad.ev(() => window._gcAPX.rows().find(r => r.src === 'coi' && /Drywall COI/.test(r.title)).key);

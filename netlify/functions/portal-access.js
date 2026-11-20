@@ -339,7 +339,7 @@ async function spSign(paths){
 }
 function spPapersOf(items, signed, claimed){
   claimed = claimed || {};
-  const today = new Date().toISOString().slice(0, 10), newest = function(type){ return arr(items).filter(function(d){ return d && d.type === type; }).sort(function(a, b){ return s(b.uploadedAt).localeCompare(s(a.uploadedAt)); }); };
+  const today = new Date().toISOString().slice(0, 10), newest = function(type){ return arr(items).filter(function(d){ return d && d.type === type && !d.rejected; })   /* patch SUBDOCDENY: a denied paper is not on file */.sort(function(a, b){ return s(b.uploadedAt).localeCompare(s(a.uploadedAt)); }); };
   const cur = function(d){ return !!d && (d.wcExempt === true || !s(d.expirationDate) || s(d.expirationDate).slice(0, 10) >= today); };
   const one = function(d){ return d ? { ok: cur(d), exp: s(d.expirationDate).slice(0, 10), exempt: d.wcExempt === true, name: clip(d.fileName || d.label, 160), url: s(signed[s(d.fileRef)]) } : null; };
   const w9 = newest('w9')[0], gl = newest('insurance_general')[0], wc = newest('insurance_workers_comp')[0];
@@ -376,7 +376,7 @@ async function papersToCrm(userId){
   }
   return out;
 }
-exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign };
+exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign, subPapersOf: function(){ return papersOf.apply(null, arguments); }, rejectedPaper: function(){ return rejectedPaper.apply(null, arguments); } };   /* patch SUBDOCDENY: + the sub portal's Papers (tests) */
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
@@ -1028,11 +1028,24 @@ function scopeChanges(x){
     return { from: Number(prev.version), to: Number(x.version), added: c.added.map(cl), removed: c.removed.map(cl), changed: c.changed.map(cl), other: c.other.map(cl) };
   } catch (e) { return null; }
 }
+/* patch SUBDOCDENY: the newest COI / W-9 GrayCo denied (the CRM marks the file { rejected: { reason, at } }) — until a newer one is sent */
+function rejectedPaper(sub, k, events){
+  const tx = function(f){ return s(f.kind) + ' ' + s(f.cat) + ' ' + s(f.sub) + ' ' + s(f.label); };
+  const isK = function(f){ return k === 'w9' ? /w-?9/i.test(tx(f)) : /\bcoi\b|insurance|\bwc\b/i.test(tx(f)) && !/w-?9/i.test(tx(f)); };
+  const L = arr(sub.files).filter(function(f){ return f && typeof f === 'object' && isK(f); });
+  const r = L.filter(function(f){ return f.rejected && s(f.rejected.at); }).sort(function(a, b){ return s(b.rejected.at).localeCompare(s(a.rejected.at)); })[0];
+  if (!r) return null;
+  const at = s(r.rejected.at), later = function(v){ v = s(v); return !!v && v > (v.length <= 10 ? at.slice(0, 10) : at); };
+  if (L.some(function(f){ return !f.rejected && f !== r && later(f.at || f.uploadedAt || f.date); })) return null;
+  if (arr(events).some(function(e){ return e.kind === 'paper' && (e.data || {}).paper === k && later(e.created_at); })) return null;
+  return { reason: clip(r.rejected.reason, 200), at: at.slice(0, 10) };
+}
 function papersOf(sub, events){
   const exp = ymd(sub.insExp || sub.insuranceExp || sub.coiExpiration);
   const days = exp ? Math.ceil((Date.parse(exp + 'T12:00:00Z') - Date.now()) / 864e5) : null;
   const pend = function(k){ return events.some(function(e){ return e.kind === 'paper' && !e.applied_at && (e.data || {}).paper === k; }); };
-  return { w9: { onFile: sub.w9 === true, sent: pend('w9') }, coi: { onFile: sub.coi === true || !!exp, exp: exp, days: days, sent: pend('coi') },
+  const rj = function(k){ return rejectedPaper(sub, k, events); };   /* patch SUBDOCDENY */
+  return { w9: { onFile: sub.w9 === true, sent: pend('w9'), rejected: rj('w9') }, coi: { onFile: sub.coi === true || !!exp, exp: exp, days: days, sent: pend('coi'), rejected: rj('coi') },
     agreement: { onFile: !!sub.subAgreement, sent: pend('agreement') }, lien: { required: sub.lien === true, sent: pend('lien') } };
 }
 /* BIDLIST: the bid jobs this approved sub can bid on (invited or public, open) + the ones they bid on, newest due first */
@@ -1099,6 +1112,7 @@ async function pHome(ctx){
   punch.forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(x.pid); }) || {}; needs.push({ kind: 'punch', pid: s(p.id), job: s(p.name), title: clip(SS().clean(x.item), 160) }); });   /* patch SUBPORTAL3: SS().clean */
   Object.keys(unread).forEach(function(pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === pid; }) || {}; needs.push({ kind: 'message', pid: pid, job: s(p.name), count: unread[pid] }); });
   if (papers.coi.days != null && papers.coi.days <= 30 && !papers.coi.sent) needs.push({ kind: papers.coi.days < 0 ? 'coi-expired' : 'coi-expiring', days: papers.coi.days, exp: papers.coi.exp });
+  ['coi', 'w9'].forEach(function(k){ const x = papers[k]; if (x.rejected && !x.sent) needs.push({ kind: 'paper-rejected', paper: k, reason: x.rejected.reason }); });   /* patch SUBDOCDENY */
   if (!papers.w9.onFile && !papers.w9.sent && !sub.bidOnly) needs.push({ kind: 'w9' });   /* BIDONLY: their papers are on the bid site (📋 Jobs to bid shows them) */
   return {
     ok: true, kind: 'partner', lang: lang(sub.lang),

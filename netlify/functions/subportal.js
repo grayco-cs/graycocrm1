@@ -183,7 +183,7 @@ async function papersMissing(userId){
   let items = []; try { const r = await getRow('subdocs', userId); items = arr(r && r.data && r.data.items); } catch (e) { items = []; }
   const today = new Date().toISOString().slice(0, 10), bad = [];
   REQUIRED_PAPERS.forEach(function(p){
-    const have = items.filter(function(d){ return d && d.type === p[0]; });
+    const have = items.filter(function(d){ return d && d.type === p[0] && !d.rejected; });   /* patch SUBDOCDENY: a paper GrayCo denied is not on file */
     if (!have.length) bad.push(p[1] + ' is missing');
     else if (!have.some(function(d){ return !s(d.expirationDate) || s(d.expirationDate).slice(0, 10) >= today; })) bad.push(p[1] + ' has expired');
   });

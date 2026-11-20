@@ -159794,7 +159794,7 @@ function subDocQueue(){
   var cands = [];
   subs().forEach(function(sb){ arr(sb.files).forEach(function(f){
     var t = s(f.cat) + ' ' + s(f.name) + ' ' + s(f.kind);   /* patch AUTO11: a COI / W-9 sent in the sub portal (kind coi / w9) is read too */
-    if (f.aiRead || !/^sb:crm-files\/[0-9a-f]{64}\.(pdf|jpe?g|png|webp)$/i.test(s(f.ref)) || SEENDOC[f.ref]) return;
+    if (f.aiRead || f.rejected || !/^sb:crm-files\/[0-9a-f]{64}\.(pdf|jpe?g|png|webp)$/i.test(s(f.ref)) || SEENDOC[f.ref]) return;   /* patch SUBDOCDENY: f.rejected */
     if (!/\bcoi\b|certificate|insurance|acord|\bw-?9\b/i.test(t)) return;
     if (Date.parse(f.at || f.uploadedAt || f.savedAt || 0) && Date.now() - Date.parse(f.at || f.uploadedAt || f.savedAt) > 45 * 864e5) return;   /* recent ones only */
     cands.push({ sub: sb, f: f });
@@ -159806,7 +159806,8 @@ function scanSubDocs(){
   if (!myEmail() || !isOffice()) return;
   var c = subDocQueue() || [];
   fn('sub-doc-read?list=1', null, 'GET').then(function(j){
-    var waiting = arr(j.items).filter(function(w){ return !SEENDOC[w.ref]; });   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
+    var rjx = {}; subs().forEach(function(sb){ arr(sb.files).forEach(function(f){ if (f && f.rejected && f.ref) rjx[f.ref] = 1; }); });   /* patch SUBDOCDENY */
+    var waiting = arr(j.items).filter(function(w){ return !SEENDOC[w.ref] && !rjx[w.ref]; });   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
     SDQ = waiting.concat(c.filter(function(x){ return !waiting.some(function(w){ return w.ref === x.f.ref; }); }).map(function(x){ return { pending: true, ref: x.f.ref, name: x.f.name, subId: x.sub.id, cat: x.f.cat }; }));
     paintPills();
   });
@@ -171538,6 +171539,7 @@ function btns(r, where){
   else h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
   h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'op');   /* patch APXNOTE */
   if (r.approve && r.src !== 'pay' && r.src !== 'mat' && r.src !== 'bp' && r.src !== 'coi' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
+  h += b('coideny', r.coiDeny, 'dn');   /* patch SUBDOCDENY: ✕ Deny on a sub COI / W-9 to confirm */
   /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
   var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
   if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
@@ -235971,6 +235973,7 @@ function items(){
     var sub = s(sb.name || sb.company) || s(f.businessName || f.insuredName || f.legalName) || 'Sub';
     var file = (arr(sb.files).filter(function(z){ return z && z.ref === x.ref; })[0]) || {};
     return { id: idOf(x.ref), ref: s(x.ref), sub: sub, subId: s(x.subId), file: s(x.name) || s(file.name) || 'document', kind: isW9(x) ? 'w9' : 'coi', pending: !!x.pending,
+      readId: /^sd_/.test(s(x.id)) ? s(x.id) : '', fileId: s(file.id),   /* patch SUBDOCDENY */
       at: Date.parse(x.at || file.at || file.uploadedAt || 0) || 0, portal: /sub-?portal|portal/i.test(s(x.source) + ' ' + s(file.source) + ' ' + s(file.by)) };
   });
 }
@@ -236012,8 +236015,71 @@ function rows(sc){
   return items().map(function(it){
     return { key: 'coi:' + it.id, id: it.id, src: 'coi', group: 'coi', kind: 'sub_coi', kindL: 'Sub COI / W-9 to confirm', icon: it.kind === 'w9' ? '🧾' : '🛡', title: title(it),
       pid: '', job: '🔧 ' + it.sub + ' · ' + it.file, pm: '', step: 'admin', waits: 'Admins or the office', since: it.at, clock: '', amount: 0, mine: true, escalated: false, chain: note(it),
-      approve: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, open: null, doc: { l: '📄 The file', f: function(){ viewFile(it.ref); } }, edit: null, drop: 'td:' + it.id };
+      approve: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, open: null, doc: { l: '📄 The file', f: function(){ viewFile(it.ref); } }, edit: null, drop: 'td:' + it.id,
+      coiDeny: { l: '✕ Deny', f: function(){ denySheet(it); } } };   /* patch SUBDOCDENY */
   });
+}
+/* ── patch SUBDOCDENY: ✕ Deny — why, then the file is marked rejected (kept), the item closes, the sub is told (server) ── */
+var DENY_WHY = [['expired', 'Expired'], ['name', 'Wrong company name'], ['addl', 'GrayCo is not listed as additional insured'], ['limits', 'Limits too low'], ['wrong', 'Not a COI / wrong file'], ['other', 'Other']];
+function escH(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function myName(){ try { var e = myEmail(), u = users().filter(function(x){ return x && low(x.email) === e; })[0]; return s(u && u.name) || e; } catch (x) { return ''; } }
+function dtoast(m){ try { var t = D.createElement('div'); t.textContent = m; t.setAttribute('data-gc-keep', '1'); t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#fff;color:#1f2937;border:1px solid #d6dbe3;box-shadow:0 8px 24px rgba(15,23,42,.16);padding:10px 18px;border-radius:10px;z-index:100200;font:600 14px Inter,Arial'; D.body.appendChild(t); later(function(){ t.remove(); }, 3500); } catch (e) {} }
+function denySheet(it){
+  var old = D.getElementById('gc-coi-deny'); if (old) old.remove();
+  var w9 = it.kind === 'w9', why = DENY_WHY.filter(function(r){ return !(w9 && (r[0] === 'addl' || r[0] === 'limits')); }).map(function(r){ return r[0] === 'wrong' && w9 ? ['wrong', 'Not a W-9 / wrong file'] : r; });
+  var ov = D.createElement('div'); ov.id = 'gc-coi-deny'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-noac', '1'); ov.setAttribute('data-gcnav-ignore', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100050;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,Arial,sans-serif';
+  ov.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Deny" style="background:#fff;color:#1f2937;border-radius:12px;max-width:460px;width:100%;padding:16px;box-shadow:0 12px 40px rgba(15,23,42,.25)">'
+    + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:16px;color:#991b1b">✕ Deny — ' + escH((w9 ? 'W-9' : 'COI') + ' from ' + it.sub) + '</b><button type="button" data-dn="x" style="border:0;background:none;font-size:18px;cursor:pointer">✕</button></div>'
+    + '<div style="font-size:12px;color:#6b7280;margin:4px 0 10px">' + escH(it.file) + '</div><div style="font-size:13px;font-weight:600;margin-bottom:6px">Why?</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px">' + why.map(function(r){ return '<button type="button" data-why="' + r[0] + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:999px;background:#fff;cursor:pointer;font:13px Inter,Arial">' + escH(r[1]) + '</button>'; }).join('') + '</div>'
+    + '<input type="text" data-dn-txt maxlength="160" placeholder="More detail (needed for Other)" style="width:100%;box-sizing:border-box;margin-top:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:14px Inter,Arial">'
+    + '<div style="font-size:12px;color:#6b7280;margin-top:8px">The sub sees “Rejected: <i>reason</i> — please upload a new one” in their portal, by e-mail and text. The file is kept on their record; their papers stay “needs ' + (w9 ? 'W-9' : 'COI') + '”.</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" data-dn="go" style="flex:1;padding:10px;border:0;border-radius:8px;background:#dc2626;color:#fff;font:700 14px Inter,Arial;cursor:pointer">✕ Deny</button><button type="button" data-dn="x" style="padding:10px 14px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font:14px Inter,Arial">Cancel</button></div></div>';
+  D.body.appendChild(ov);
+  var pick = '';
+  ov.addEventListener('click', function(e){
+    var t = e.target; if (t === ov) { ov.remove(); return; }
+    var c = t.closest && t.closest('[data-why],[data-dn]'); if (!c) return;
+    if (c.hasAttribute('data-why')) { pick = c.getAttribute('data-why'); [].forEach.call(ov.querySelectorAll('[data-why]'), function(b){ var on = b === c; b.style.background = on ? '#fee2e2' : '#fff'; b.style.borderColor = on ? '#dc2626' : '#d1d5db'; b.style.fontWeight = on ? '700' : '400'; }); if (pick === 'other') try { ov.querySelector('[data-dn-txt]').focus(); } catch (x) {} return; }
+    if (c.getAttribute('data-dn') === 'x') { ov.remove(); return; }
+    var more = s(ov.querySelector('[data-dn-txt]').value), lab = (why.filter(function(r){ return r[0] === pick; })[0] || [])[1];
+    var reason = pick === 'other' ? more : lab ? lab + (more ? ' — ' + more : '') : more;
+    if (!reason) { dtoast(pick === 'other' ? 'Type what is wrong first.' : 'Pick why first.'); return; }
+    ov.remove(); doDeny(it, reason);
+  });
+}
+/* the record: the file marked rejected (kept); what only that unconfirmed file had set is cleared */
+function rejectOn(x, it, rec){
+  var y = Object.assign({}, x), hit = null, cleared = [];
+  y.files = arr(x.files).map(function(f){ if (!f || s(f.ref) !== it.ref || hit) return f; hit = Object.assign({}, f, { rejected: rec }); return hit; });
+  if (!hit) { hit = { id: 'RJ_' + it.id, ref: it.ref, name: it.file, kind: it.kind, cat: it.kind === 'w9' ? 'W-9' : 'COI', at: rec.at, by: rec.by, source: 'denied in Approvals', rejected: rec }; y.files = y.files.concat([hit]); }
+  var exp = s(hit.exp), wc = /wc|workers/i.test(s(hit.sub) + ' ' + s(hit.label)), other = y.files.filter(function(f){ return f && f !== hit && !f.rejected && f.aiRead; });
+  if (!hit.aiRead) {
+    if (it.kind === 'w9') { if (y.w9 === true && !y.w9ReadAt && !s(y.taxId || y.ein) && !other.some(function(f){ return /w-?9/i.test(s(f.kind) + s(f.cat)); })) { y.w9 = false; cleared.push('w9'); } }
+    else if (wc) { if (exp && s(y.wcExp) === exp) { delete y.wcExp; cleared.push('wcExp'); } if (y.wc === true && !s(y.wcExp)) { y.wc = false; cleared.push('wc'); } }
+    else {
+      ['insExp', 'coiExp', 'glExp'].forEach(function(k){ if (exp && s(y[k]) === exp && !y.coiReadAt) { delete y[k]; cleared.push(k); } });
+      if (y.coi === true && !y.coiReadAt && !s(y.insExp) && !other.some(function(f){ return /coi|insurance/i.test(s(f.kind) + s(f.cat)); })) { y.coi = false; cleared.push('coi'); }
+    }
+  }
+  if (cleared.length) hit.rejected = Object.assign({}, rec, { cleared: cleared });
+  return { y: y, file: hit };
+}
+function doDeny(it, reason){
+  var rec = { reason: reason, by: myName(), at: new Date().toISOString() }, file = null;
+  if (typeof W._setSubs !== 'function') { dtoast('The sub list is not ready on this screen — open Subs and try again.'); return false; }
+  W._setSubs(function(list){ return (list || []).map(function(x){ if (!x || String(x.id) !== String(it.subId)) return x; var r = rejectOn(x, it, rec); file = r.file; return r.y; }); });
+  try { var a = A(); if (a && a.dropSubDoc) a.dropSubDoc(it.ref, true); } catch (e) { warn(e); }
+  try { W._gcPushAll && later(W._gcPushAll, 800); } catch (e) {}
+  fresh();
+  var body = { act: 'reject', id: it.readId, ref: it.ref, subId: it.subId, kind: it.kind, reason: reason, fileId: s(file && file.id) || it.fileId, fileName: it.file };
+  W.fetch('/.netlify/functions/sub-doc-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json(); }).then(function(j){
+    var told = j && (j.mailed || j.texted) ? ' — ' + it.sub + ' was told' + (j.mailed && j.texted ? ' by e-mail and text' : j.mailed ? ' by e-mail' : ' by text') : ' — ' + it.sub + ' sees it in their portal';
+    dtoast('✕ Denied' + told + '.');
+  }, function(e){ warn(e); dtoast('✕ Denied here — the sub could not be told yet (no connection).'); });
+  dtoast('✕ Denied — ' + reason);
+  return true;
 }
 var sig = '';
 function fresh(){
@@ -236033,7 +236099,7 @@ function readMarks(lists){
   var m = {};
   lists.forEach(function(l){ arr(l).forEach(function(r){
     if (!r || typeof r !== 'object' || r.id == null) return;
-    arr(r.files).forEach(function(f){ var k = fileKey(f); if (k && f.aiRead) { var id = s(r.id); (m[id] = m[id] || {})[k] = f; } });
+    arr(r.files).forEach(function(f){ var k = fileKey(f); if (k && (f.aiRead || f.rejected)) { var id = s(r.id), o = (m[id] = m[id] || {}); o[k] = Object.assign({}, o[k] || {}, f); } });   /* patch SUBDOCDENY: + rejected */
   }); });
   return m;
 }
@@ -236043,7 +236109,7 @@ function keepRead(out, marks){
   for (var i = 0; i < out.length; i++) {
     var r = out[i]; if (!r || typeof r !== 'object' || r.id == null) continue;
     var mk = marks[s(r.id)]; if (!mk || !Array.isArray(r.files)) continue;
-    var ch = false, files = r.files.map(function(f){ var k = fileKey(f), g = k && mk[k]; if (!g || !f || f.aiRead) return f; ch = true; return Object.assign({}, f, { aiRead: g.aiRead, readBy: g.readBy, readAt: g.readAt }); });
+    var ch = false, files = r.files.map(function(f){ var k = fileKey(f), g = k && mk[k]; if (!g || !f || ((f.aiRead || !g.aiRead) && (f.rejected || !g.rejected))) return f; ch = true; var o = Object.assign({}, f); if (g.aiRead && !f.aiRead) { o.aiRead = g.aiRead; o.readBy = g.readBy; o.readAt = g.readAt; } if (g.rejected && !f.rejected) o.rejected = g.rejected; return o; });   /* patch SUBDOCDENY: + rejected */
     if (ch) { res = res || out.slice(); res[i] = Object.assign({}, r, { files: files }); }
   }
   return res || out;
@@ -236066,7 +236132,7 @@ W._gcCoiKeepRead = function(list, others){ return keepRead(list, readMarks([list
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 wrapSet(); SI.call(W, watch, 2000);
 D.addEventListener('gc:subdocs-changed', function(){ later(watch, 50); });
-W._gcCoiAppr = { items: items, rows: function(){ return rows({ kind: 'admin' }); }, open: open, canSee: canSee };
+W._gcCoiAppr = { items: items, rows: function(){ return rows({ kind: 'admin' }); }, open: open, canSee: canSee, deny: doDeny, denySheet: denySheet, rejectOn: rejectOn };   /* patch SUBDOCDENY */
 try { console.log('[GC] patch COIAPPR: sub COI / W-9 to confirm are in ✅ Approvals (no floating pill) — _gcCoiAppr.items()'); } catch (e) {}
 })(window, document);
 </script>

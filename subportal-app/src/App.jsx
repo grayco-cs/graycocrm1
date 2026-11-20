@@ -327,7 +327,7 @@ const T = {
     companyDocs: 'Company Documents',
     uploadDoc: 'Upload Document', docType: 'Document Type',
     docLabel: 'Label / Description', expirationDate: 'Expiration Date (if any)',
-    docExpired: 'EXPIRED', docExpiringSoon: 'Expires Soon',
+    docExpired: 'EXPIRED', docExpiringSoon: 'Expires Soon', docRejected: 'REJECTED', docRejectedWhy: 'Rejected: {r} — please upload a new one',
     docCurrent: 'Current', docNoExp: 'No Expiration',
     docW9: 'W-9 Form', docInsGL: 'General Liability Insurance',
     docInsWC: 'Workers Comp Insurance', docInsAuto: 'Auto Insurance',
@@ -622,7 +622,7 @@ const T = {
     companyDocs: 'Documentos de la Compañía',
     uploadDoc: 'Subir Documento', docType: 'Tipo de Documento',
     docLabel: 'Etiqueta / Descripción', expirationDate: 'Fecha de Vencimiento (si aplica)',
-    docExpired: 'VENCIDO', docExpiringSoon: 'Vence Pronto',
+    docExpired: 'VENCIDO', docExpiringSoon: 'Vence Pronto', docRejected: 'RECHAZADO', docRejectedWhy: 'Rechazado: {r} — por favor suba uno nuevo',
     docCurrent: 'Vigente', docNoExp: 'Sin Vencimiento',
     docW9: 'Formulario W-9', docInsGL: 'Seguro de Responsabilidad General',
     docInsWC: 'Seguro de Compensación Laboral', docInsAuto: 'Seguro de Auto',
@@ -750,6 +750,7 @@ function docTypeLabel(typeId, t) {
   return map[typeId] || typeId;
 }
 function docStatus(doc) {
+  if (doc.rejected) return { kind: 'rejected', reason: doc.rejected.reason || '' };   // patch SUBDOCDENY: GrayCo denied it (kept; not on file)
   // Returns { label, color, days } — 'expired', 'expiring' (<30d), 'current', 'no_expiration'
   if (!doc.expirationDate) return { kind: 'no_exp' };
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -763,7 +764,7 @@ function hasCurrentRequired(userId, subDocsIndex) {
   // subDocsIndex is a map { userId -> docs[] }
   const docs = subDocsIndex[userId] || [];
   for (const typeId of REQUIRED_DOC_TYPES) {
-    const doc = docs.find(d => d.type === typeId);
+    const doc = docs.find(d => d.type === typeId && !d.rejected);   // patch SUBDOCDENY: a denied paper is not on file
     if (!doc) return { ok: false, missing: typeId };
     const st = docStatus(doc);
     if (st.kind === 'expired') return { ok: false, expired: typeId };
@@ -5646,6 +5647,7 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
               const st = docStatus(doc);
               let badgeColor = styles.text2, badgeLabel = t.docNoExp;
               if (st.kind === 'expired') { badgeColor = styles.red; badgeLabel = t.docExpired; }
+              else if (st.kind === 'rejected') { badgeColor = styles.red; badgeLabel = t.docRejected; }
               else if (st.kind === 'expiring') { badgeColor = '#CA8A04'; badgeLabel = `${t.docExpiringSoon} (${st.days}d)`; }
               else if (st.kind === 'current') { badgeColor = styles.green; badgeLabel = t.docCurrent; }
               return (
@@ -5663,6 +5665,7 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
                     {doc.fileName} • {(doc.fileSize / 1024).toFixed(0)} KB
                     {doc.expirationDate && <> • Expires {new Date(doc.expirationDate).toLocaleDateString()}</>}
                   </div>
+                  {st.kind === 'rejected' && <div style={{ fontSize: 13, color: styles.red, fontWeight: 600, marginBottom: 10 }}>{t.docRejectedWhy.replace('{r}', st.reason)}</div>}
                   <Btn size="sm" icon={Download} onClick={() => downloadDoc(doc)}>View File</Btn>
                 </Card>
               );
@@ -6365,6 +6368,7 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
             const st = docStatus(doc);
             let badgeColor = styles.text2, badgeLabel = t.docNoExp;
             if (st.kind === 'expired') { badgeColor = styles.red; badgeLabel = t.docExpired; }
+            else if (st.kind === 'rejected') { badgeColor = styles.red; badgeLabel = t.docRejected; }
             else if (st.kind === 'expiring') { badgeColor = '#CA8A04'; badgeLabel = `${t.docExpiringSoon} (${st.days}d)`; }
             else if (st.kind === 'current') { badgeColor = styles.green; badgeLabel = t.docCurrent; }
             return (
@@ -6382,6 +6386,7 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
                   {doc.fileName} • {(doc.fileSize / 1024).toFixed(0)} KB
                   {doc.expirationDate && <> • Expires {new Date(doc.expirationDate).toLocaleDateString()}</>}
                 </div>
+                {st.kind === 'rejected' && <div style={{ fontSize: 13, color: styles.red, fontWeight: 600, marginBottom: 10 }}>{t.docRejectedWhy.replace('{r}', st.reason)}</div>}
                 <div style={{ display: 'flex', gap: 6 }}>
                   <Btn size="sm" icon={Download} onClick={() => downloadDoc(doc)}>View</Btn>
                   <Btn size="sm" variant="ghost" icon={Trash2} onClick={() => removeDoc(doc.id)}>{t.delete}</Btn>
