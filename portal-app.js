@@ -950,6 +950,8 @@ function myJobCard(j){
     h('button', { type: 'button', class: 'btn gold', 'data-myjob-inv': j.id, style: 'grid-column:1/-1', text: t('ssInvBtn'), on: { click: function(){ quickInvoiceSheet(j.id); } } })]));
   return h('div', { class: 'myjob', 'data-myjob': j.id }, kids);
 }
+Object.assign(L.en, { wcP: 'Workers’ comp certificate', licP: 'Contractor license' });   /* patch PAPERS1 */
+Object.assign(L.es, { wcP: 'Certificado de compensación al trabajador', licP: 'Licencia de contratista' });
 /* patch MEASURE: 📐 Measure — a PDF / picture plan opens in the bid site's measure tool (scale, LF / SF / EA, notes; saved to them) */
 Object.assign(L.en, { measureBtn: '📐 Measure', measureErr: 'The measure tool could not open. Try again.' });
 Object.assign(L.es, { measureBtn: '📐 Medir', measureErr: 'No se pudo abrir la herramienta de medir. Intente otra vez.' });
@@ -1066,7 +1068,7 @@ function paperSheet(k, label, needsExp){
 function papersTab(){
   var p = HOME.papers || {};
   var langBox = h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn' + (LANG === 'en' ? ' navy' : ''), 'aria-pressed': LANG === 'en' ? 'true' : 'false', disabled: LANG === 'en', text: 'English', on: { click: function(){ setLang('en', true); } } }), h('button', { type: 'button', class: 'btn' + (LANG === 'es' ? ' navy' : ''), 'aria-pressed': LANG === 'es' ? 'true' : 'false', disabled: LANG === 'es', text: 'Español', on: { click: function(){ setLang('es', true); } } })]);
-  return [card(t('papers'), [paperRow('w9', t('w9'), p.w9 || {}), paperRow('coi', t('coi'), p.coi || {}, true), paperRow('agreement', t('agreement'), p.agreement || {}), paperRow('lien', t('lienW'), { onFile: false, sent: (p.lien || {}).sent })]),
+  return [card(t('papers'), [paperRow('w9', t('w9'), p.w9 || {}), paperRow('coi', t('coi'), p.coi || {}, true), paperRow('wc', t('wcP'), p.wc || {}, true), paperRow('license', t('licP'), p.license || {}, true), paperRow('agreement', t('agreement'), p.agreement || {}), paperRow('lien', t('lienW'), { onFile: false, sent: (p.lien || {}).sent })]),
     card(t('language'), [langBox]), scoreCard()];
 }
 
@@ -1991,6 +1993,7 @@ window.GCPartner = {
       if (!saved && r.lang && r.lang !== LANG) setLang(r.lang, false);
       paintHello(); draw();
       var m = /[#&]job=([A-Za-z0-9_.:-]{1,80})/.exec(location.hash || ''); if (m) openJob(m[1], 'overview');
+      try { if (sessionStorage.getItem('gc_go') === 'papers' || /[#&]go=papers/.test(location.hash || '')) { sessionStorage.removeItem('gc_go'); goTab('papers'); } } catch (e) {}   /* patch PAPERS1 */
       setInterval(function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); }, 60000);
       document.addEventListener('visibilitychange', function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); });   /* patch SUBSESS: phone awake again → fresh */
     }, function(e){

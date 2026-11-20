@@ -122,7 +122,7 @@ var ROWS = [
   ['sub_schedule_texts', 'sub', 'A', 0, 0, 'server', 'Sub schedule texts', '6 PM the evening before and about 1 h before each start.'],
   ['sub_firstday_text', 'sub', 'A', 0, 0, 'server', 'Sub first-day text', 'A sub’s first-day text with the portal link.'],
   ['lien_waiver_requests', 'sub', 'A', 0, 0, 'both', 'Lien waiver requests', 'Waiver requests to subs (first needs approval, later ones go by themselves).'],
-  ['coi_requests', 'sub', 'C', 0, 0, 'server', 'COI renewal requests', 'Approval item per sub whose insurance expires in 30 / 7 / 0 days.'],
+  ['coi_requests', 'sub', 'A', 0, 1, 'server', 'Paper expiry reminders to subs (COI / WC / license)', 'The sub gets an e-mail + text with a one-tap upload link 30 / 14 / 7 / 0 days before a dated paper runs out, then weekly after (12 weeks). Each milestone once (logged). Sub send: goes in data-entry mode. Staff see a To-Do per paper.'],   /* patch PAPERS1 (owner 11/20: "we keep up with dates, send reminders etc.") */
   ['w9_requests', 'sub', 'C', 0, 0, 'server', 'W-9 requests', 'W-9 requests put on ✅ Approvals.'],
   /* ── record changes (C) ── */
   ['price_index_monthly', 'rec', 'C', 0, 0, 'server', 'Monthly price update (PPI)', 'On the 3rd, moves every Products price by the national Producer Price Index change.'],

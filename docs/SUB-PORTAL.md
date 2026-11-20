@@ -214,3 +214,14 @@ Both sign-ins and the sub portal have an **English / Español** toggle, remember
 - **Saved on the server** as you go (sp_rows collection `takeoffs`, one row per person + job + plan file, every page inside; `_lib/takeoffs.js`), so it is there on any phone or computer. A sub's takeoff is theirs only (the server checks the job and the plan file are open to them); no price is ever in it.
 - **📐 Attach my takeoff to this bid** (on the bid form when they have one): the server adds the totals of their saved takeoffs on that job to the bid (`takeoff`), shown to GrayCo with the bid.
 - Server: `subportal.js` action `takeoffs` (`get` / `put` / `job` / `open`), `portal-access.js` `p-measure`. Test: `tools/tests/test_MEASURE.mjs`.
+
+## 📄 Papers: the CRM sub record is the one place (patch PAPERS1, owner 11/20)
+
+- **One record.** The CRM sub record (W-9, COI + date, workers' comp + date, license + date, their files) is the truth.
+  - A paper a sub adds in the bid site's **My Documents** is copied into the CRM's files and sent to the CRM like one from portal.grayco-cs.com → **Papers**: the CRM files it on the sub, and it waits in **✅ Approvals → 📄 COI / W-9 to confirm** (sub-doc-read.js).
+  - The bid site's My Documents shows what the CRM has when it is newer (**✓ On file with GrayCo**, read-only, no 🗑), and the "papers before you bid" check counts it (bid site and the portal's Bids tab).
+  - The portal's Papers tab now also has **Workers' comp certificate** and **Contractor license** (with their dates).
+- **Reminders to the sub** (automation `coi_requests`, now "Paper expiry reminders to subs", ON): an e-mail **and** a text with a one-tap link to their portal's Papers, for each dated paper (COI, workers' comp unless exempt, license) at **30, 14 and 7 days** before, **the day** it runs out, then **once a week** after (12 weeks). Each milestone goes once and is logged (gc_coi_req_state). These are sub sends (`trade`): ⏸ data-entry mode lets them go. One reminder covers all of a sub's due papers.
+- **Staff** still see it: one To-Do per sub, paper and date ("🛡 WC expiring: …"), ticked off by itself when a newer date is on file; the uploaded paper in ✅ Approvals.
+- **⚠ Expired** shows on the sub's card (Subs tab → Sub portal, and the Subs table's insurance / WC dates) and on the job's sub list (👷 Subs & portal messages).
+- Test: `tools/tests/test_SUBPAPERS.mjs`.

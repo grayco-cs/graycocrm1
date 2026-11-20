@@ -5174,7 +5174,7 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
                     {doc.label}
                   </div>
                   <div style={{ fontSize: 12, color: styles.text2, marginBottom: 10 }}>
-                    {doc.fileName} • {(doc.fileSize / 1024).toFixed(0)} KB
+                    {doc.fromCrm && <span data-doc-crm="1" style={{ fontWeight: 700, color: styles.green }}>✓ On file with GrayCo • </span>}{doc.fileName}{doc.fileSize ? <> • {(doc.fileSize / 1024).toFixed(0)} KB</> : null}
                     {doc.expirationDate && <> • Expires {new Date(doc.expirationDate).toLocaleDateString()}</>}
                   </div>
                   {st.kind === 'rejected' && <div style={{ fontSize: 13, color: styles.red, fontWeight: 600, marginBottom: 10 }}>{t.docRejectedWhy.replace('{r}', st.reason)}</div>}
@@ -5895,13 +5895,13 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
                   {doc.label}
                 </div>
                 <div style={{ fontSize: 12, color: styles.text2, marginBottom: 10 }}>
-                  {doc.fileName} • {(doc.fileSize / 1024).toFixed(0)} KB
+                  {doc.fromCrm && <span data-doc-crm="1" style={{ fontWeight: 700, color: styles.green }}>✓ On file with GrayCo • </span>}{doc.fileName}{doc.fileSize ? <> • {(doc.fileSize / 1024).toFixed(0)} KB</> : null}
                   {doc.expirationDate && <> • Expires {new Date(doc.expirationDate).toLocaleDateString()}</>}
                 </div>
                 {st.kind === 'rejected' && <div style={{ fontSize: 13, color: styles.red, fontWeight: 600, marginBottom: 10 }}>{t.docRejectedWhy.replace('{r}', st.reason)}</div>}
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn size="sm" icon={Download} onClick={() => downloadDoc(doc)}>View</Btn>
-                  <Btn size="sm" variant="ghost" icon={Trash2} onClick={() => removeDoc(doc.id)}>{t.delete}</Btn>
+                  {doc.dataUrl && <Btn size="sm" icon={Download} onClick={() => downloadDoc(doc)}>View</Btn>}
+                  {!doc.fromCrm && <Btn size="sm" variant="ghost" icon={Trash2} onClick={() => removeDoc(doc.id)}>{t.delete}</Btn>}
                 </div>
               </Card>
             );

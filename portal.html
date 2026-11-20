@@ -310,6 +310,7 @@ S.es.reconnect = 'No podemos comunicarnos con GrayCo ahora. Usted sigue con su s
 
 /* the link code lives after the # — it never reaches a server log or another site */
 try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+try { if (/(?:^#|&)go=papers(?:&|$)/.test(location.hash || '')) sessionStorage.setItem('gc_go', 'papers'); } catch (e) {}   /* patch PAPERS1: a paper reminder's one-tap link opens Papers */
 var PREVIEW = !!token && /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');   /* patch INSP: "Preview as customer" from the CRM */
 try { if (token) localStorage.setItem('gc_portal_t', token); else token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
 try { session = localStorage.getItem('gc_portal_s') || ''; } catch (e) {}
