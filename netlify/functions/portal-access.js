@@ -630,9 +630,29 @@ async function signinStart(body, ip){
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
       await dbPatch('gc_portal_code', 'id=' + eq(rid), { relay: { phone: id.value, code: code, pids: m.pids || [], who: m.name || '' } });
     }
+  } else if (id.kind === 'email') {
+    /* patch SUBRESET (owner 11/20: a sub signed up, was approved, then "password doesn't match" — and "Forgot password?" sent nothing):
+       a sub portal sign-up not yet linked to a CRM sub gets no code (no portal link yet), so its bid-site password is reset instead:
+       the same one-time "choose a new password" e-mail as bids.grayco-cs.com's Forgot password (goes in data-entry mode too). */
+    try { await subResetMail(id.value); } catch (e) { try { console.warn('[portal-access] sub reset', e.message); } catch (x) {} }
   }
   await padTo(t0);
   return SAME;
+}
+async function subResetMail(email){
+  const rows = await fetch(sbUrl() + '/rest/v1/sp_rows?select=data&collection=eq.users&email=eq.' + encodeURIComponent(email) + '&limit=1', { headers: H() }).then(function(x){ return x.ok ? x.json() : []; });
+  const prof = rows[0] && rows[0].data;
+  if (!prof || (prof.role !== 'sub' && prof.role !== 'supplier')) return false;
+  const r = await fetch(sbUrl() + '/auth/v1/admin/generate_link', { method: 'POST', headers: H(), body: JSON.stringify({ type: 'recovery', email: email, redirect_to: 'https://bids.grayco-cs.com/' }) });
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  const link = s(j.action_link || (j.properties && j.properties.action_link));
+  if (!r.ok || !link) return false;
+  const es = prof.lang === 'es';
+  return require('./_lib/custquiet.js').run('reply', function(){ return sendMail(email, es ? 'Cambie su contraseña de GrayCo' : 'Reset your GrayCo password',
+    mailHtml(es ? 'Cambiar la contraseña' : 'Reset your password',
+      es ? 'Toque el botón para elegir una contraseña nueva (sirve una vez). Luego entre en portal.grayco-cs.com con su correo y la contraseña nueva.'
+         : 'Tap the button to choose a new password (the link works once). Then sign in at portal.grayco-cs.com with your e-mail and the new password.',
+      '', { href: link, label: es ? 'Elegir una contraseña nueva' : 'Choose a new password' })); });
 }
 async function padTo(t0, extra){ const w = 700 + (extra || 0) + Math.floor(Math.random() * 120) - (Date.now() - t0); if (w > 0) await sleep(w); }   /* extra: patch PWNOLOCK's short pause after many wrong passwords */
 async function codeCheck(identKey, code, purpose, extraQs){
