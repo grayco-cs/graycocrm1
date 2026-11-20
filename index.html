@@ -157229,6 +157229,8 @@ function css(){
     '.gcja-light .gcja-opt{background:#fff;border-color:#e2e8f0}.gcja-light .gcja-opt.on{background:#f5f3ff;border-color:#a78bfa}' +
     '.gcja-light .gcja-l{color:#0f172a}.gcja-light .gcja-d{color:#475569}' +
     '.gcja-light .gcja-chip.pm{background:#dbeafe;color:#1e40af}.gcja-light .gcja-chip.admin,.gcja-light .gcja-chip.first{background:#fef3c7;color:#92400e}.gcja-light .gcja-chip.auto{background:#dcfce7;color:#166534}' +
+    '.gcja-ov{background:rgba(15,23,42,.35)}.gcja-sheet{background:#fff;border-color:#e2e8f0;color:#0f172a}.gcja-sheet h2{color:#0f172a}.gcja-sheet .gcja-note{color:#475569}.gcja-cancel{border-color:#cbd5e1;color:#334155}' +
+    '.gcja-tabs button{background:#f8fafc;border-color:#cbd5e1;color:#1e293b}' +
     '@media (max-width:520px){.gcja-grid{grid-template-columns:1fr}.gcja-sheet{padding:12px;border-radius:14px 14px 0 0;max-height:94vh}.gcja-ov{align-items:flex-end;padding:0}}';
   (D.head || D.documentElement).appendChild(st);
 }
@@ -157245,7 +157247,7 @@ function sig(st){ return JSON.stringify([st.group, st.vals, st.title, st.sub, AD
 function renderBox(host, st){
   css();
   var g = st.group, v = st.vals;
-  var light = st.mode === 'draft' && lightAt(host);
+  var light = true;   /* patch JAQUIET: no navy in the staff CRM */
   var h = '<div class="gcja-box' + (light ? ' gcja-light' : '') + '" data-gcja-box="1" data-group="' + g + '">' +
     '<div class="gcja-head"><span class="gcja-title">' + esc(st.title || '⚡ Automations for this job') + '</span>' +
     '<span class="gcja-sub">' + esc(st.sub || ('Starts from the ' + GNAME[g] + ' defaults (⚙ Admin → Automation defaults)')) + '</span></div>' +
@@ -157341,7 +157343,7 @@ function stamp(p, ctx){
 }
 function after(p, ctx, hadBox){
   var pid = p.id;
-  if (!hadBox && ASK[ctx] && Date.now() - lastInput < 20000) ST(function(){ open(pid, { fresh: true, job: p }); }, 900);
+  if (!hadBox && ASK[ctx] && Date.now() - lastInput < 20000) ST(function(){ madeNote(pid, p); }, 900);   /* patch JAQUIET */
   if (p.auto.claimFile && groupOf(p) === 'insurance') ST(function(){
     try { var C = W._gcClaims; if (C && C.create && !(C.forProject && C.forProject(pid))) C.create({ projectId: pid, title: s(p.name), insured: s(p.client), address: s(p.address), claimNumber: s(p.claimNumber) }); } catch (e) {}
   }, 2500);
@@ -157459,6 +157461,20 @@ function openDefaults(g0){
   pullAdmin();
   return ov;
 }
+/* patch JAQUIET: a new job's note — never a sheet over the screen */
+function madeNote(pid, p){
+  try {
+    var old = D.getElementById('gcja-made'); if (old) old.remove();
+    var t = D.createElement('div'); t.id = 'gcja-made'; t.setAttribute('role', 'status');
+    t.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;background:#16a34a;color:#fff;padding:9px 10px 9px 16px;border-radius:10px;z-index:2147483200;font:700 13px Inter,Arial,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.18);max-width:calc(100vw - 24px);box-sizing:border-box';
+    var m = D.createElement('span'); m.textContent = 'Job made with its usual automations.'; t.appendChild(m);
+    var b = D.createElement('button'); b.type = 'button'; b.textContent = '⚙ Change';
+    b.style.cssText = 'background:#fff;color:#15803d;border:none;border-radius:8px;padding:7px 12px;font:800 13px Inter,Arial,sans-serif;cursor:pointer;min-height:34px;white-space:nowrap';
+    b.onclick = function(){ t.remove(); open(pid, { fresh: true, job: p }); };
+    t.appendChild(b); D.body.appendChild(t);
+    ST(function(){ if (t.parentNode) t.remove(); }, 12000);
+  } catch (e) {}
+}
 function toast(msg){
   try { var t = D.createElement('div'); t.textContent = msg; t.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:11px 18px;border-radius:9px;z-index:2147483200;font:700 13px Inter,Arial,sans-serif;max-width:90vw;text-align:center';
     D.body.appendChild(t); ST(function(){ t.remove(); }, 3500); } catch (e) {}
@@ -157473,7 +157489,7 @@ function barHtml(p){
     (own ? '' : ' <span style="color:#93a8c4">(' + GNAME[groupOf(p)] + ' defaults)</span>') + '</span><button type="button" data-ja-open="1">Change</button>';
 }
 function makeBar(p, field){
-  var b = D.createElement('div'); b.className = 'gcja-bar' + (field ? '' : ' gcja-light'); b.setAttribute('data-pid', p.id); if (field) b.setAttribute('data-field', '1');
+  var b = D.createElement('div'); b.className = 'gcja-bar gcja-light'; b.setAttribute('data-pid', p.id); if (field) b.setAttribute('data-field', '1');
   b.innerHTML = b.__h = barHtml(p); b.__sig = barSig(p);   /* patch JOBSTILL: __h */
   b.addEventListener('click', function(e){ if (e.target && e.target.getAttribute('data-ja-open')) open(b.getAttribute('data-pid')); });
   return b;
@@ -157528,7 +157544,7 @@ function adminCard(){
   if (have && have.isConnected) return;
   css();
   var c = D.createElement('div'); c.id = 'gc-ja-admin'; c.className = 'gcja-bar'; c.setAttribute('data-gc-ja-admin', '1');
-  if (lightAt(h1.parentNode)) c.className += ' gcja-light';
+  c.className += ' gcja-light';
   c.innerHTML = '<span><b>⚡ Customer features by job type</b> (automation defaults) · what every new job starts with — e-mails, documents, portal, alerts — by job type (Residential, Commercial, Insurance, Program work)</span><button type="button">Open</button>';
   c.querySelector('button').onclick = function(){ openDefaults(); };
   var hub = D.getElementById('gc-adm-hub');   /* patch ADM: with the other admin settings, under the team list */
