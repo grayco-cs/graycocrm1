@@ -42,6 +42,7 @@ const T = {
     accountPending: 'Your account is pending approval. A GrayCo team member will review your request.',
     invalidLogin: 'That e-mail and password do not match. Tap the eye to check the password, or use "Forgot password?" below.',
     pwTip: 'Tap the eye to check it. You will sign in with this password.',
+    sendReset: 'E-mail me a reset link',
     requestSubmitted: 'Request submitted! You will be notified when approved.',
     // Nav
     jobs: 'Open Jobs', myBids: 'My Bids', allBids: 'All Bids',
@@ -364,6 +365,7 @@ const T = {
     accountPending: 'Su cuenta está pendiente de aprobación. Un miembro del equipo de GrayCo revisará su solicitud.',
     invalidLogin: 'El correo y la contraseña no coinciden. Toque el ojo para revisar la contraseña, o use "¿Olvidó su contraseña?" abajo.',
     pwTip: 'Toque el ojo para revisarla. Iniciará sesión con esta contraseña.',
+    sendReset: 'Envíenme un enlace para cambiarla',
     requestSubmitted: '¡Solicitud enviada! Le notificaremos cuando sea aprobada.',
     jobs: 'Trabajos Abiertos', myBids: 'Mis Ofertas', allBids: 'Todas las Ofertas',
     pendingSubs: 'Aprobaciones Pendientes', approvedSubs: 'Subcontratistas Aprobados',
@@ -1805,6 +1807,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [badPw, setBadPw] = useState(false);   /* patch SELFRESET: a wrong password offers "E-mail me a reset link" right there */
 
   async function handleLogin() {
     setError('');
@@ -1812,7 +1815,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
     setBusy(true);
     const result = await authSignIn(form.username.trim(), form.password);
     setBusy(false);
-    if (result.error === 'invalid') { setError(t.invalidLogin); return; }
+    if (result.error === 'invalid') { setError(t.invalidLogin); setBadPw(true); return; }
     if (result.error) { setError(result.message || ('Sign in failed: ' + result.error)); return; }
     onLogin(result.user);
   }
@@ -2037,6 +2040,12 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
             }}>
               <AlertCircle size={16} /> {error}
             </div>
+          )}
+          {mode === 'login' && badPw && form.username.includes('@') && (
+            <button type="button" data-selfreset="1" disabled={busy} onClick={() => { setBadPw(false); handleForgot(); }} style={{
+              width: '100%', padding: '12px 14px', marginBottom: 16, borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: styles.accent, color: '#fff', fontWeight: 800, fontSize: 14, fontFamily: styles.fontBody,
+            }}>📧 {t.sendReset || 'E-mail me a reset link'}</button>
           )}
 
           <Btn size="lg" style={{ width: '100%', justifyContent: 'center' }} disabled={busy}

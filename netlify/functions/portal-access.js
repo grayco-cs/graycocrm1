@@ -630,7 +630,8 @@ async function signinStart(body, ip){
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
       await dbPatch('gc_portal_code', 'id=' + eq(rid), { relay: { phone: id.value, code: code, pids: m.pids || [], who: m.name || '' } });
     }
-  } else if (id.kind === 'email') {
+  }
+  if (id.kind === 'email' && !(m && m.kind === 'customer')) {   /* patch SELFRESET: every sub / supplier account (linked or not) also gets the reset link */
     /* patch SUBRESET (owner 11/20: a sub signed up, was approved, then "password doesn't match" — and "Forgot password?" sent nothing):
        a sub portal sign-up not yet linked to a CRM sub gets no code (no portal link yet), so its bid-site password is reset instead:
        the same one-time "choose a new password" e-mail as bids.grayco-cs.com's Forgot password (goes in data-entry mode too). */

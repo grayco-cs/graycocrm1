@@ -289,7 +289,7 @@ var S = {
     device: 'Confirm this phone', deviceNote: 'The first time this link opens on a new phone or computer, we send a 6-digit code to {to}.', deviceSend: 'Send the code', remember: 'This phone is remembered after that.',
     notActive: 'This link is not active — call GrayCo ' + OFFICE, msgPh: 'Write a message to your GrayCo team', send: 'Send', noMsgs: 'No messages yet. Write to your Project Manager here.', you: 'You', read: 'Read', sentM: 'Sent',
     yourTeam: 'your GrayCo team', loadFail: 'We could not load your job just now. Check your signal and try again, or call GrayCo ' + OFFICE + '.', photosAll: 'Every photo of your job', seeAll: 'See your job photos',
-    allProjects: '‹ All projects', emailL: 'E-mail or mobile number', pwL: 'Password', pwHint: 'New here? Your password is your first name.', forgot: 'Forgot password? E-mail me a code', back2: '‹ Back to sign in',
+    allProjects: '‹ All projects', emailL: 'E-mail or mobile number', pwL: 'Password', pwHint: 'New here? Your password is your first name.', forgot: 'Forgot password? E-mail me a code', sendReset: '📧 E-mail me a reset link', back2: '‹ Back to sign in',
     ownPw: 'Make your own password', ownPwNote: 'You signed in with your first name. You can pick your own password (8 or more characters) — or keep using your first name.', newPw: 'New password', savePw: 'Save password', later: 'Not now', pwSaved: 'Your password is saved.', signupBtn: 'New subcontractor? Create your account' },
   es: { title: 'Portal GrayCo', welcome: 'Bienvenido a su Portal GrayCo', openLink: 'Entre con su correo (o número de celular) y contraseña — o abra el enlace que le enviamos.', who: 'Correo o número de celular', sendCode: 'Enviarme un código',
     codeNote: 'Enviamos un código de 6 dígitos al correo que tenemos de usted (los mensajes de texto llegarán pronto). Sirve por 10 minutos.', codeSent: 'Si eso está en el archivo de GrayCo, le llega un código de 6 dígitos (o, para una cuenta nueva de subcontratista, un enlace para elegir una contraseña nueva). Revise su correo.',
@@ -298,7 +298,7 @@ var S = {
     device: 'Confirme este teléfono', deviceNote: 'La primera vez que este enlace se abre en un teléfono o computadora nueva, enviamos un código de 6 dígitos a {to}.', deviceSend: 'Enviar el código', remember: 'Después, este teléfono queda recordado.',
     notActive: 'Este enlace no está activo — llame a GrayCo ' + OFFICE, msgPh: 'Escriba un mensaje a su equipo de GrayCo', send: 'Enviar', noMsgs: 'Todavía no hay mensajes. Escríbale a su Gerente de Proyecto aquí.', you: 'Usted', read: 'Leído', sentM: 'Enviado',
     yourTeam: 'su equipo de GrayCo', loadFail: 'No pudimos cargar su trabajo. Revise su señal e intente otra vez, o llame a GrayCo ' + OFFICE + '.', photosAll: 'Todas las fotos de su trabajo', seeAll: 'Ver las fotos de su trabajo',
-    allProjects: '‹ Todos los proyectos', emailL: 'Correo o número de celular', pwL: 'Contraseña', pwHint: '¿Primera vez? Su contraseña es su primer nombre.', forgot: '¿Olvidó la contraseña? Envíenme un código', back2: '‹ Volver a entrar',
+    allProjects: '‹ Todos los proyectos', emailL: 'Correo o número de celular', pwL: 'Contraseña', pwHint: '¿Primera vez? Su contraseña es su primer nombre.', forgot: '¿Olvidó la contraseña? Envíenme un código', sendReset: '📧 Envíenme un enlace para cambiarla', back2: '‹ Volver a entrar',
     ownPw: 'Cree su propia contraseña', ownPwNote: 'Entró con su primer nombre. Puede escoger su propia contraseña (8 caracteres o más) — o seguir usando su primer nombre.', newPw: 'Contraseña nueva', savePw: 'Guardar contraseña', later: 'Ahora no', pwSaved: 'Su contraseña quedó guardada.', signupBtn: '¿Subcontratista nuevo? Cree su cuenta' }
 };
 var LANG = 'en';
@@ -410,12 +410,20 @@ function signin(step, who){
       enter.disabled = true;
       post(ACC, { action: 'signin-password', email: em.value.trim(), password: pw.value, app: APPMODE || undefined }).then(function(r){
         enter.disabled = false;
-        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); return; }
+        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); resetOffer(); return; }
         session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
         if (APPMODE && r.data.kind === 'customer') store('gc_portal_app', session);   /* patch PORTALAPP: the app remembers this phone */
         store('gc_portal_starter', r.data.starter ? '1' : '');
         route(r.data.kind);
       }, function(){ enter.disabled = false; err.textContent = tr('loadFail'); });
+    }
+    /* patch SELFRESET (owner 11/20: "let them send their own reset links if password doesn't work"): a wrong password offers the reset at once */
+    function resetOffer(){
+      var w = em.value.trim(); if (!w || $('siReset')) return;
+      var b = h('button', { type: 'button', class: 'btn gold', id: 'siReset', text: tr('sendReset'), on: { click: function(){
+        b.disabled = true; post(ACC, { action: 'signin-start', who: w }).then(function(){ signin('code', w); }, function(){ b.disabled = false; err.textContent = tr('loadFail'); });
+      } } });
+      err.parentNode.insertBefore(b, err.nextSibling);
     }
     enter.addEventListener('click', login);
     pw.addEventListener('keydown', function(e){ if (e.key === 'Enter') login(); });
