@@ -221,6 +221,18 @@ exports.handler = async function(event){
       const w = await core().kvListUpdate(READS, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x || x.status !== 'new') return null; x.status = body.dismiss ? 'dismissed' : 'applied'; x.doneBy = who.email; x.doneAt = new Date().toISOString(); if (body.subId) x.subId = s(body.subId); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && z.status !== 'new'); } }; });
       return J(w.ok ? 200 : 502, { ok: w.ok }, cors);
     }
+    if (body.act === 'reject') {   /* patch SUBDOCDENY: ✕ Deny on a COI / W-9 to confirm (_lib/subdocdeny.js) */
+      const CQ = require('./_lib/custquiet.js'), HUB = function(){ return require('./subportal.js')._hub; }, PA = function(){ return require('./portal-access.js')._core; };
+      const r = await require('./_lib/subdocdeny.js').reject(body, who, {
+        readsUpdate: function(fn){ return core().kvListUpdate(READS, fn); }, hub: HUB(),
+        crmSubs: async function(){ const H = HUB(); return H.crmSubList(await H.crmData()); },
+        sendMail: function(to, subj, html){ return CQ.run('subdoc', function(){ return HUB().sendMail(to, subj, html); }); },
+        sendSms: function(ph, text){ return CQ.run('subdoc', function(){ return require('./missed-call.js')._test.sendSms(ph, text); }); },
+        optout: async function(){ return (await require('./missed-call.js')._test.stateGet()).optout || {}; },
+        portalLink: async function(id){ const l = await PA().subLinkActive(id); return l && l.token ? PA().linkFor(l.token) : PA().portalBase(); },
+        bidsUrl: s(process.env.BIDS_URL) || 'https://bids.grayco-cs.com' });
+      return J(r.ok ? 200 : (r.statusCode || 502), r, cors);
+    }
     const f = await fileOf(body);
     const r = await read({ buf: f.buf, mime: f.mime, name: body.name, subId: body.subId, by: who.name || who.email, kind: s(body.kind), ref: s(body.ref), force: body.force === true, source: s(body.source) });
     return J(r.ok ? 200 : 502, r, cors);

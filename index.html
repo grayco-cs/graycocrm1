@@ -20475,10 +20475,12 @@ console.log("[GrayCo Automation] Engine loaded \u2014 voice, PDF scan, Gmail sca
         ).set;
         // Batch search updates at 150ms intervals
         el.addEventListener("input", function handler(ev) {
-          if (_debounceTimers[el.placeholder]) {
-            clearTimeout(_debounceTimers[el.placeholder]);
-          }
-          _debounceTimers[el.placeholder] = setTimeout(function(){
+          /* patch CUSTLINK: real typing only (this used to re-arm on its own event: an input every 150 ms, for ever), once, and only for new text */
+          if (!ev.isTrusted) return;
+          clearTimeout(el._gcSettleT);
+          el._gcSettleT = setTimeout(function(){
+            if (!document.contains(el) || el.value === el._gcSettled) return;
+            el._gcSettled = el.value;
             // Force React to see the update
             var nativeEvent = new Event("input", { bubbles: true });
             el.dispatchEvent(nativeEvent);
@@ -20535,7 +20537,7 @@ console.log("[GrayCo Automation] Engine loaded \u2014 voice, PDF scan, Gmail sca
 // ========== SMART AUTOCOMPLETE DROPDOWNS ==========
 (function(){
 var S=document.createElement("style");
-S.textContent="._ac-wrap{position:relative;display:inline-block;width:100%}._ac-list{position:fixed;z-index:2147483000;max-height:220px;overflow-y:auto;background:#152238;border:1px solid #2563eb;border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,0.5);margin-top:2px;display:none;font-family:Inter,-apple-system,sans-serif}._ac-list.show{display:block}._ac-item{padding:7px 10px;cursor:pointer;font-size:12px;color:#e8eef5;border-bottom:1px solid #1e3a5f33;display:flex;align-items:center;gap:8px}._ac-item:hover,._ac-item.sel{background:#2563eb33}._ac-item .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;flex-shrink:0}._ac-item .sub{font-size:10px;color:#6b8ab5;margin-left:auto}._ac-cat{padding:4px 10px;font-size:9px;color:#d4a017;font-weight:700;text-transform:uppercase;background:#0d1b2a;letter-spacing:0.1em;position:sticky;top:0;z-index:1}";
+S.textContent="._ac-wrap{position:relative;display:inline-block;width:100%}._ac-list{position:fixed;z-index:2147483000;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #d6dbe3;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,0.14);margin-top:2px;display:none;font-family:Inter,-apple-system,sans-serif}._ac-list.show{display:block}._ac-item{padding:7px 10px;cursor:pointer;font-size:12px;color:#1f2937;border-bottom:1px solid #eef1f5;display:flex;align-items:center;gap:8px}._ac-item:hover,._ac-item.sel{background:#eff6ff}._ac-item .tag{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:600;flex-shrink:0}._ac-item .sub{font-size:10px;color:#6b7280;margin-left:auto}._ac-cat{padding:4px 10px;font-size:9px;color:#a16207;font-weight:700;text-transform:uppercase;background:#fbf7ec;border-bottom:1px solid #efe6cc;letter-spacing:0.1em;position:sticky;top:0;z-index:1}";
 document.head.appendChild(S);
 
 function getAll(){
@@ -20575,7 +20577,7 @@ if(!window.__gcAcClose){ window.__gcAcClose=true;
   document.addEventListener("mousedown",function(e){ var t=e.target; var l=t&&t.closest?t.closest("._ac-list"):null; acHideAll(l||(t&&t._acList)||null); },true);
   setInterval(function(){ try{ document.querySelectorAll("._ac-list.show").forEach(function(l){ var i=l._acInput; if(!i||!document.contains(i)||!i.offsetParent||(i.closest&&i.closest("[data-gc-noac]"))) l.classList.remove("show"); }); }catch(e){} },400);
 }
-function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac]")); }catch(e){ return false; } }
+function noAc(inp){ try{ return !!(inp.closest&&inp.closest("[data-gc-noac],[role=\"dialog\"],[aria-modal=\"true\"],dialog")); }catch(e){ return false; } }   /* patch CUSTLINK: never in a dialog / picker */
 function createAC(input){
   if(input._acInit)return;input._acInit=true;
   if(noAc(input))return;   /* patch PLANREQ-G */
@@ -20601,7 +20603,7 @@ function createAC(input){
     filtered=all.filter(function(it){return(it.name||"").toLowerCase().indexOf(ql)>-1||(it.sub||"").toLowerCase().indexOf(ql)>-1||(it.extra||"").toLowerCase().indexOf(ql)>-1||(it.phone||"").toLowerCase().indexOf(ql)>-1||(it.email||"").toLowerCase().indexOf(ql)>-1}).slice(0,20);
     if(!filtered.length){list.classList.remove("show");return}
     var groups={project:[],sub:[],person:[]};filtered.forEach(function(it){(groups[it.type]||[]).push(it)});
-    var html="",labels={project:"\ud83d\udcc1 Projects",sub:"\ud83d\udd28 Subs & Vendors",person:"\ud83d\udc64 Team"},colors={project:"#22c55e",sub:"#f59e0b",person:"#8b5cf6"},idx=0;
+    var html="",labels={project:"\ud83d\udcc1 Projects",sub:"\ud83d\udd28 Subs & Vendors",person:"\ud83d\udc64 Team"},colors={project:"#15803d",sub:"#b45309",person:"#6d28d9"},idx=0;
     ["project","sub","person"].forEach(function(type){if(!groups[type].length)return;html+='<div class="_ac-cat">'+labels[type]+"</div>";groups[type].forEach(function(it){html+='<div class="_ac-item" data-idx="'+idx+'" data-name="'+(it.name||"").replace(/"/g,"&quot;")+'" data-id="'+(it.id||"")+'" data-type="'+it.type+'"><span class="tag" style="background:'+colors[type]+'22;color:'+colors[type]+'">'+(it.extra||it.type)+'</span><span>'+(it.name||"")+'</span>'+(it.sub?'<span class="sub">'+it.sub+"</span>":"")+"</div>";idx++})});
     list.innerHTML=html;place();list.classList.add("show");selIdx=-1;
     list.querySelectorAll("._ac-item").forEach(function(el){el.addEventListener("mousedown",function(ev){ev.preventDefault();pick(el)})});
@@ -159920,7 +159922,7 @@ function subDocQueue(){
   var cands = [];
   subs().forEach(function(sb){ arr(sb.files).forEach(function(f){
     var t = s(f.cat) + ' ' + s(f.name) + ' ' + s(f.kind);   /* patch AUTO11: a COI / W-9 sent in the sub portal (kind coi / w9) is read too */
-    if (f.aiRead || !/^sb:crm-files\/[0-9a-f]{64}\.(pdf|jpe?g|png|webp)$/i.test(s(f.ref)) || SEENDOC[f.ref]) return;
+    if (f.aiRead || f.rejected || !/^sb:crm-files\/[0-9a-f]{64}\.(pdf|jpe?g|png|webp)$/i.test(s(f.ref)) || SEENDOC[f.ref]) return;   /* patch SUBDOCDENY: f.rejected */
     if (!/\bcoi\b|certificate|insurance|acord|\bw-?9\b/i.test(t)) return;
     if (Date.parse(f.at || f.uploadedAt || f.savedAt || 0) && Date.now() - Date.parse(f.at || f.uploadedAt || f.savedAt) > 45 * 864e5) return;   /* recent ones only */
     cands.push({ sub: sb, f: f });
@@ -159932,7 +159934,8 @@ function scanSubDocs(){
   if (!myEmail() || !isOffice()) return;
   var c = subDocQueue() || [];
   fn('sub-doc-read?list=1', null, 'GET').then(function(j){
-    var waiting = arr(j.items).filter(function(w){ return !SEENDOC[w.ref]; });   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
+    var rjx = {}; subs().forEach(function(sb){ arr(sb.files).forEach(function(f){ if (f && f.rejected && f.ref) rjx[f.ref] = 1; }); });   /* patch SUBDOCDENY */
+    var waiting = arr(j.items).filter(function(w){ return !SEENDOC[w.ref] && !rjx[w.ref]; });   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
     SDQ = waiting.concat(c.filter(function(x){ return !waiting.some(function(w){ return w.ref === x.f.ref; }); }).map(function(x){ return { pending: true, ref: x.f.ref, name: x.f.name, subId: x.sub.id, cat: x.f.cat }; }));
     paintPills();
   });
@@ -171664,6 +171667,7 @@ function btns(r, where){
   else h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
   h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'op');   /* patch APXNOTE */
   if (r.approve && r.src !== 'pay' && r.src !== 'mat' && r.src !== 'bp' && r.src !== 'coi' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
+  h += b('coideny', r.coiDeny, 'dn');   /* patch SUBDOCDENY: ✕ Deny on a sub COI / W-9 to confirm */
   /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
   var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
   if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
@@ -219719,7 +219723,23 @@ var TYPES = ['Residential Reno', 'Commercial TI', 'Commercial Reno', 'Insurance 
 var STATUSES = ['bidding', 'approved', 'Active', 'on_hold', 'completed', 'lost'];
 function people(){ var u = []; try { u = typeof W._gcActivePeople === 'function' ? arr(W._gcActivePeople()) : []; } catch (e) {} if (!u.length) u = arr(C().users).filter(function(x){ return x.active !== false && !x.departed; }); return u; }
 function pmNames(){ var seen = {}, out = []; people().forEach(function(u){ var n = s(u.name); if (n && !seen[low(n)] && /manager|pm\b|admin|owner|super|estimat/i.test(s(u.role) + ' ' + s(u.payType) + ' ' + s(u.title)) && !(W._gcIsOfficeUser && W._gcIsOfficeUser(u))) { seen[low(n)] = 1; out.push(n); } }); arr(C().projects).forEach(function(p){ var n = s(p.pm); if (n && !(W._gcNotPM && W._gcNotPM(n)) && !seen[low(n)]) { seen[low(n)] = 1; out.push(n); } }); return out.sort(); }
-function customers(){ var l = arr(C().customers); if (!l.length) l = arr(W._graycoCustomers); return l.filter(function(c){ return c.id && !c.deleted && !c._deleted; }).sort(function(a, b){ return low(a.name || a.company) < low(b.name || b.company) ? -1 : 1; }); }
+function customers(){ var seen = {}, l = []; arr(C().customers).concat(arr(W._graycoCustomers)).forEach(function(c){ if (c && c.id && !c.deleted && !c._deleted && !seen[s(c.id)]) { seen[s(c.id)] = 1; l.push(c); } }); return l.sort(function(a, b){ return low(a.name || a.company) < low(b.name || b.company) ? -1 : 1; }); }   /* patch CUSTLINK: both lists */
+/* patch CUSTLINK: the Fix dialog's customer search — case, punctuation and LLC/Inc ignored, every typed word a partial match on any name / contact field */
+function cnorm(v){ return low(v).replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function cbare(v){ return cnorm(v).replace(/\b(llc|pllc|inc|incorporated|co|corp|corporation|company|ltd|the)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function custHay(c){ var g = c.gcInfo && typeof c.gcInfo === 'object' ? c.gcInfo : {}, x = [c.name, c.company, c.contact, c.contactName, c.firstName, c.lastName, c.email, c.phone, c.address, c.city, g.name, g.contact];
+  arr(c.contacts).forEach(function(k){ if (k) x.push(k.name, k.email, k.phone); }); return cnorm(x.filter(function(v){ return typeof v === 'string' || typeof v === 'number'; }).join(' ')); }
+function custMatch(c, q){ var qq = cnorm(q); if (!qq) return true; var h = custHay(c); return qq.split(' ').every(function(w){ return h.indexOf(w) >= 0; }) || h.replace(/ /g, '').indexOf(qq.replace(/ /g, '')) >= 0; }
+function custLabel(c){ var n = s(c.name) || s(c.company), co = s(c.company), ct = s(c.contact || c.contactName); return n + (co && cnorm(co) !== cnorm(n) ? ' (' + co + ')' : '') + (ct && cnorm(ct) !== cnorm(n) ? ' · ' + ct : '') + (c.address ? ' — ' + s(c.address) : ''); }
+/* the job's client, matched to a customer: 2 = the same name (LLC etc. aside), 1 = the client is the start of the name (or the other way) */
+function custSuggest(p){ var cn = cbare(p.client || p.customer || p.clientName); if (cn.length < 3) return [];
+  var out = []; customers().forEach(function(c){ var r = 0; [c.name, c.company].forEach(function(n){ var b = cbare(n); if (!b) return; if (b === cn) r = 2; else if (r < 1 && cn.length >= 4 && ((b + ' ').indexOf(cn + ' ') === 0 || (cn + ' ').indexOf(b + ' ') === 0)) r = 1; }); if (r) out.push({ c: c, r: r }); });
+  out.sort(function(a, b){ return b.r - a.r; }); return out.slice(0, 3); }
+function custOptions(p, q, cur){ var sug = custSuggest(p), ids = {}, h = '<option value="">— choose the customer —</option>', n = 0;
+  sug.forEach(function(x){ if (!custMatch(x.c, q)) return; ids[s(x.c.id)] = 1; n++; h += opt(x.c.id, cur, '★ ' + custLabel(x.c) + ' — the job’s client'); });
+  customers().forEach(function(c){ if (ids[s(c.id)] || !custMatch(c, q)) return; n++; h += opt(c.id, cur, custLabel(c)); });
+  return { html: h, n: n }; }
+function custPreset(p){ if (s(p.customerId)) return s(p.customerId); var sg = custSuggest(p); return sg.length && (sg.length === 1 || sg[0].r > sg[1].r) ? s(sg[0].c.id) : ''; }
 function opt(v, cur, label){ return '<option value="' + esc(v) + '"' + (s(v) === s(cur) ? ' selected' : '') + '>' + esc(label == null ? v : label) + '</option>'; }
 function fixHtml(r, it, p, lead){
   var f = it.fix || {}, v = function(k){ return s(p[k]); }, inp = function(k, type, ph){ return '<input class="gc-df-in" data-k="' + k + '" type="' + (type || 'text') + '" value="' + esc(v(k)) + '" placeholder="' + esc(ph || '') + '">'; };
@@ -219736,7 +219756,7 @@ function fixHtml(r, it, p, lead){
     case 'billing': return inp('billingAddress', 'text', 'Billing address') + '<label class="gc-df-ck"><input type="checkbox" data-k="billingSame"' + (p.billingSame ? ' checked' : '') + '> Same as the job address</label>';
     case 'pref': return '<div class="gc-df-chips">' + ['Call', 'Text', 'E-mail'].map(function(x){ return '<button type="button" class="gc-df-chip' + (low(p.preferredContact) === low(x) ? ' on' : '') + '" data-pick="preferredContact" data-v="' + x + '">' + x + '</button>'; }).join('') + '</div><input type="hidden" class="gc-df-in" data-k="preferredContact" value="' + esc(v('preferredContact')) + '">';
     case 'adjuster': var a = p.adjuster && typeof p.adjuster === 'object' ? p.adjuster : {}; return '<input class="gc-df-in" data-k="adjuster.name" placeholder="Adjuster name" value="' + esc(a.name) + '"><input class="gc-df-in" data-k="adjuster.phone" type="tel" placeholder="Adjuster phone" value="' + esc(a.phone || p.adjusterPhone) + '"><input class="gc-df-in" data-k="adjuster.email" type="email" placeholder="Adjuster e-mail" value="' + esc(a.email || p.adjusterEmail) + '"><div class="gc-df-note">Staff only — never shown to the customer.</div>';
-    case 'customer': return '<input class="gc-df-in" data-cs="1" placeholder="Search customers…"><select class="gc-df-in" data-k="customerId" size="7"><option value="">— choose the customer —</option>' + customers().map(function(c){ return opt(c.id, p.customerId, (s(c.name) || s(c.company)) + (c.address ? ' — ' + s(c.address) : '')); }).join('') + '</select><div class="gc-df-note">Not on the list? Add them in Customers first.</div>';
+    case 'customer': var co0 = custOptions(p, '', custPreset(p)); return '<input class="gc-df-in" data-cs="1" type="search" autocomplete="off" placeholder="Search customers…"><select class="gc-df-in" data-k="customerId" size="7">' + co0.html + '</select><div class="gc-df-note" data-cs-n="1">' + co0.n + ' customer' + (co0.n === 1 ? '' : 's') + '</div><div class="gc-df-note">Not on the list? Add them in Customers first.</div>';   /* patch CUSTLINK */
     default: return inp(f.field || it.key, 'text');
   }
 }
@@ -219746,14 +219766,16 @@ function openFix(pid, key, lead){
   var f = it.fix || {};
   if (f.open) { openJob(pid, f.open); return; }
   var old = D.getElementById('gc-df-fix'); if (old) old.remove();
-  var ov = D.createElement('div'); ov.id = 'gc-df-fix'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1');
+  var ov = D.createElement('div'); ov.id = 'gc-df-fix'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gcnav-ignore', '1'); ov.setAttribute('data-gc-noac', '1');   /* patch CUSTLINK */
   ov.innerHTML = '<div class="gc-df-sheet" role="dialog" aria-label="Fix ' + esc(it.label) + '"><div class="gc-df-fh"><b>' + esc(it.label) + '</b><button type="button" class="gc-df-x" data-df="fixx">✕</button></div>' +
     '<div class="gc-df-fs">' + esc((s(p.autoPO) ? s(p.autoPO) + ' · ' : '') + (s(p.name || p.title || p.client) || 'Job')) + '</div>' +
     '<div class="gc-df-fb">' + fixHtml(null, it, p, lead) + '</div>' +
     '<div class="gc-df-fa"><button type="button" class="gc-df-b pri" data-df="fixsave">Save</button>' + (lead ? '<button type="button" class="gc-df-b" data-df="fixlead">Open the lead</button>' : '<button type="button" class="gc-df-b" data-df="fixjob">Open the job</button>') + '</div></div>';
   D.body.appendChild(ov);
   var first = ov.querySelector('.gc-df-in'); if (first) later(function(){ try { first.focus(); } catch (e) {} }, 30);
-  ov.addEventListener('input', function(e){ var t = e.target; if (t && t.getAttribute('data-cs')) { var q = low(t.value), sel = ov.querySelector('select[data-k="customerId"]'); [].forEach.call(sel.options, function(o, i){ if (i) o.hidden = !!q && low(o.textContent).indexOf(q) < 0; }); } });
+  ov.addEventListener('input', function(e){ var t = e.target; if (t && t.getAttribute('data-cs')) { if (t.__q === t.value) return; t.__q = t.value; var sel = ov.querySelector('select[data-k="customerId"]'), nn = ov.querySelector('[data-cs-n]'), cur = sel.value, r = custOptions(p, t.value, cur);   /* patch CUSTLINK: the list rebuilt from every customer */
+    sel.innerHTML = r.html; if (cur && sel.value !== cur) sel.value = ''; if (!sel.value && r.n === 1) sel.selectedIndex = 1;
+    if (nn) nn.textContent = r.n ? r.n + ' customer' + (r.n === 1 ? '' : 's') + (s(t.value) ? ' match “' + s(t.value) + '”' : '') : 'No customer matches “' + s(t.value) + '”.'; } });
   ov.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-df],[data-pick]'); if (e.target === ov) { ov.remove(); return; } if (!b) return;
     if (b.hasAttribute('data-pick')) { ov.querySelector('[data-k="' + b.getAttribute('data-pick') + '"]').value = b.getAttribute('data-v'); [].forEach.call(ov.querySelectorAll('.gc-df-chip'), function(x){ x.classList.toggle('on', x === b); }); return; }
@@ -219771,6 +219793,7 @@ function openFix(pid, key, lead){
           if (k.indexOf('adjuster.') === 0) { var a2 = Object.assign({}, q.adjuster && typeof q.adjuster === 'object' ? q.adjuster : {}); a2[k.slice(9)] = val; q.adjuster = a2; return; }
           if (k === 'retainageNone' || k === 'billingSame') { if (val) q[k] = true; else delete q[k]; return; }
           if (val === '') return;
+          if (k === 'customerId') { var cc = customers().filter(function(c){ return s(c.id) === val; })[0]; if (cc && !s(q.client)) q.client = s(cc.name) || s(cc.company); }   /* patch CUSTLINK */
           if (k === 'contract') { q.contract = parseFloat(val.replace(/[$,\s]/g, '')) || q.contract; return; }
           if (k === 'retainagePct') { q.retainagePct = parseFloat(val) || 0; return; }
           q[k] = val;
@@ -236190,6 +236213,7 @@ function items(){
     var sub = s(sb.name || sb.company) || s(f.businessName || f.insuredName || f.legalName) || 'Sub';
     var file = (arr(sb.files).filter(function(z){ return z && z.ref === x.ref; })[0]) || {};
     return { id: idOf(x.ref), ref: s(x.ref), sub: sub, subId: s(x.subId), file: s(x.name) || s(file.name) || 'document', kind: isW9(x) ? 'w9' : 'coi', pending: !!x.pending,
+      readId: /^sd_/.test(s(x.id)) ? s(x.id) : '', fileId: s(file.id),   /* patch SUBDOCDENY */
       at: Date.parse(x.at || file.at || file.uploadedAt || 0) || 0, portal: /sub-?portal|portal/i.test(s(x.source) + ' ' + s(file.source) + ' ' + s(file.by)) };
   });
 }
@@ -236231,8 +236255,71 @@ function rows(sc){
   return items().map(function(it){
     return { key: 'coi:' + it.id, id: it.id, src: 'coi', group: 'coi', kind: 'sub_coi', kindL: 'Sub COI / W-9 to confirm', icon: it.kind === 'w9' ? '🧾' : '🛡', title: title(it),
       pid: '', job: '🔧 ' + it.sub + ' · ' + it.file, pm: '', step: 'admin', waits: 'Admins or the office', since: it.at, clock: '', amount: 0, mine: true, escalated: false, chain: note(it),
-      approve: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, open: null, doc: { l: '📄 The file', f: function(){ viewFile(it.ref); } }, edit: null, drop: 'td:' + it.id };
+      approve: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, open: null, doc: { l: '📄 The file', f: function(){ viewFile(it.ref); } }, edit: null, drop: 'td:' + it.id,
+      coiDeny: { l: '✕ Deny', f: function(){ denySheet(it); } } };   /* patch SUBDOCDENY */
   });
+}
+/* ── patch SUBDOCDENY: ✕ Deny — why, then the file is marked rejected (kept), the item closes, the sub is told (server) ── */
+var DENY_WHY = [['expired', 'Expired'], ['name', 'Wrong company name'], ['addl', 'GrayCo is not listed as additional insured'], ['limits', 'Limits too low'], ['wrong', 'Not a COI / wrong file'], ['other', 'Other']];
+function escH(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function myName(){ try { var e = myEmail(), u = users().filter(function(x){ return x && low(x.email) === e; })[0]; return s(u && u.name) || e; } catch (x) { return ''; } }
+function dtoast(m){ try { var t = D.createElement('div'); t.textContent = m; t.setAttribute('data-gc-keep', '1'); t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#fff;color:#1f2937;border:1px solid #d6dbe3;box-shadow:0 8px 24px rgba(15,23,42,.16);padding:10px 18px;border-radius:10px;z-index:100200;font:600 14px Inter,Arial'; D.body.appendChild(t); later(function(){ t.remove(); }, 3500); } catch (e) {} }
+function denySheet(it){
+  var old = D.getElementById('gc-coi-deny'); if (old) old.remove();
+  var w9 = it.kind === 'w9', why = DENY_WHY.filter(function(r){ return !(w9 && (r[0] === 'addl' || r[0] === 'limits')); }).map(function(r){ return r[0] === 'wrong' && w9 ? ['wrong', 'Not a W-9 / wrong file'] : r; });
+  var ov = D.createElement('div'); ov.id = 'gc-coi-deny'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-noac', '1'); ov.setAttribute('data-gcnav-ignore', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100050;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,Arial,sans-serif';
+  ov.innerHTML = '<div role="dialog" aria-modal="true" aria-label="Deny" style="background:#fff;color:#1f2937;border-radius:12px;max-width:460px;width:100%;padding:16px;box-shadow:0 12px 40px rgba(15,23,42,.25)">'
+    + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:16px;color:#991b1b">✕ Deny — ' + escH((w9 ? 'W-9' : 'COI') + ' from ' + it.sub) + '</b><button type="button" data-dn="x" style="border:0;background:none;font-size:18px;cursor:pointer">✕</button></div>'
+    + '<div style="font-size:12px;color:#6b7280;margin:4px 0 10px">' + escH(it.file) + '</div><div style="font-size:13px;font-weight:600;margin-bottom:6px">Why?</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:6px">' + why.map(function(r){ return '<button type="button" data-why="' + r[0] + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:999px;background:#fff;cursor:pointer;font:13px Inter,Arial">' + escH(r[1]) + '</button>'; }).join('') + '</div>'
+    + '<input type="text" data-dn-txt maxlength="160" placeholder="More detail (needed for Other)" style="width:100%;box-sizing:border-box;margin-top:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:14px Inter,Arial">'
+    + '<div style="font-size:12px;color:#6b7280;margin-top:8px">The sub sees “Rejected: <i>reason</i> — please upload a new one” in their portal, by e-mail and text. The file is kept on their record; their papers stay “needs ' + (w9 ? 'W-9' : 'COI') + '”.</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px"><button type="button" data-dn="go" style="flex:1;padding:10px;border:0;border-radius:8px;background:#dc2626;color:#fff;font:700 14px Inter,Arial;cursor:pointer">✕ Deny</button><button type="button" data-dn="x" style="padding:10px 14px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font:14px Inter,Arial">Cancel</button></div></div>';
+  D.body.appendChild(ov);
+  var pick = '';
+  ov.addEventListener('click', function(e){
+    var t = e.target; if (t === ov) { ov.remove(); return; }
+    var c = t.closest && t.closest('[data-why],[data-dn]'); if (!c) return;
+    if (c.hasAttribute('data-why')) { pick = c.getAttribute('data-why'); [].forEach.call(ov.querySelectorAll('[data-why]'), function(b){ var on = b === c; b.style.background = on ? '#fee2e2' : '#fff'; b.style.borderColor = on ? '#dc2626' : '#d1d5db'; b.style.fontWeight = on ? '700' : '400'; }); if (pick === 'other') try { ov.querySelector('[data-dn-txt]').focus(); } catch (x) {} return; }
+    if (c.getAttribute('data-dn') === 'x') { ov.remove(); return; }
+    var more = s(ov.querySelector('[data-dn-txt]').value), lab = (why.filter(function(r){ return r[0] === pick; })[0] || [])[1];
+    var reason = pick === 'other' ? more : lab ? lab + (more ? ' — ' + more : '') : more;
+    if (!reason) { dtoast(pick === 'other' ? 'Type what is wrong first.' : 'Pick why first.'); return; }
+    ov.remove(); doDeny(it, reason);
+  });
+}
+/* the record: the file marked rejected (kept); what only that unconfirmed file had set is cleared */
+function rejectOn(x, it, rec){
+  var y = Object.assign({}, x), hit = null, cleared = [];
+  y.files = arr(x.files).map(function(f){ if (!f || s(f.ref) !== it.ref || hit) return f; hit = Object.assign({}, f, { rejected: rec }); return hit; });
+  if (!hit) { hit = { id: 'RJ_' + it.id, ref: it.ref, name: it.file, kind: it.kind, cat: it.kind === 'w9' ? 'W-9' : 'COI', at: rec.at, by: rec.by, source: 'denied in Approvals', rejected: rec }; y.files = y.files.concat([hit]); }
+  var exp = s(hit.exp), wc = /wc|workers/i.test(s(hit.sub) + ' ' + s(hit.label)), other = y.files.filter(function(f){ return f && f !== hit && !f.rejected && f.aiRead; });
+  if (!hit.aiRead) {
+    if (it.kind === 'w9') { if (y.w9 === true && !y.w9ReadAt && !s(y.taxId || y.ein) && !other.some(function(f){ return /w-?9/i.test(s(f.kind) + s(f.cat)); })) { y.w9 = false; cleared.push('w9'); } }
+    else if (wc) { if (exp && s(y.wcExp) === exp) { delete y.wcExp; cleared.push('wcExp'); } if (y.wc === true && !s(y.wcExp)) { y.wc = false; cleared.push('wc'); } }
+    else {
+      ['insExp', 'coiExp', 'glExp'].forEach(function(k){ if (exp && s(y[k]) === exp && !y.coiReadAt) { delete y[k]; cleared.push(k); } });
+      if (y.coi === true && !y.coiReadAt && !s(y.insExp) && !other.some(function(f){ return /coi|insurance/i.test(s(f.kind) + s(f.cat)); })) { y.coi = false; cleared.push('coi'); }
+    }
+  }
+  if (cleared.length) hit.rejected = Object.assign({}, rec, { cleared: cleared });
+  return { y: y, file: hit };
+}
+function doDeny(it, reason){
+  var rec = { reason: reason, by: myName(), at: new Date().toISOString() }, file = null;
+  if (typeof W._setSubs !== 'function') { dtoast('The sub list is not ready on this screen — open Subs and try again.'); return false; }
+  W._setSubs(function(list){ return (list || []).map(function(x){ if (!x || String(x.id) !== String(it.subId)) return x; var r = rejectOn(x, it, rec); file = r.file; return r.y; }); });
+  try { var a = A(); if (a && a.dropSubDoc) a.dropSubDoc(it.ref, true); } catch (e) { warn(e); }
+  try { W._gcPushAll && later(W._gcPushAll, 800); } catch (e) {}
+  fresh();
+  var body = { act: 'reject', id: it.readId, ref: it.ref, subId: it.subId, kind: it.kind, reason: reason, fileId: s(file && file.id) || it.fileId, fileName: it.file };
+  W.fetch('/.netlify/functions/sub-doc-read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json(); }).then(function(j){
+    var told = j && (j.mailed || j.texted) ? ' — ' + it.sub + ' was told' + (j.mailed && j.texted ? ' by e-mail and text' : j.mailed ? ' by e-mail' : ' by text') : ' — ' + it.sub + ' sees it in their portal';
+    dtoast('✕ Denied' + told + '.');
+  }, function(e){ warn(e); dtoast('✕ Denied here — the sub could not be told yet (no connection).'); });
+  dtoast('✕ Denied — ' + reason);
+  return true;
 }
 var sig = '';
 function fresh(){
@@ -236252,7 +236339,7 @@ function readMarks(lists){
   var m = {};
   lists.forEach(function(l){ arr(l).forEach(function(r){
     if (!r || typeof r !== 'object' || r.id == null) return;
-    arr(r.files).forEach(function(f){ var k = fileKey(f); if (k && f.aiRead) { var id = s(r.id); (m[id] = m[id] || {})[k] = f; } });
+    arr(r.files).forEach(function(f){ var k = fileKey(f); if (k && (f.aiRead || f.rejected)) { var id = s(r.id), o = (m[id] = m[id] || {}); o[k] = Object.assign({}, o[k] || {}, f); } });   /* patch SUBDOCDENY: + rejected */
   }); });
   return m;
 }
@@ -236262,7 +236349,7 @@ function keepRead(out, marks){
   for (var i = 0; i < out.length; i++) {
     var r = out[i]; if (!r || typeof r !== 'object' || r.id == null) continue;
     var mk = marks[s(r.id)]; if (!mk || !Array.isArray(r.files)) continue;
-    var ch = false, files = r.files.map(function(f){ var k = fileKey(f), g = k && mk[k]; if (!g || !f || f.aiRead) return f; ch = true; return Object.assign({}, f, { aiRead: g.aiRead, readBy: g.readBy, readAt: g.readAt }); });
+    var ch = false, files = r.files.map(function(f){ var k = fileKey(f), g = k && mk[k]; if (!g || !f || ((f.aiRead || !g.aiRead) && (f.rejected || !g.rejected))) return f; ch = true; var o = Object.assign({}, f); if (g.aiRead && !f.aiRead) { o.aiRead = g.aiRead; o.readBy = g.readBy; o.readAt = g.readAt; } if (g.rejected && !f.rejected) o.rejected = g.rejected; return o; });   /* patch SUBDOCDENY: + rejected */
     if (ch) { res = res || out.slice(); res[i] = Object.assign({}, r, { files: files }); }
   }
   return res || out;
@@ -236285,7 +236372,7 @@ W._gcCoiKeepRead = function(list, others){ return keepRead(list, readMarks([list
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 wrapSet(); SI.call(W, watch, 2000);
 D.addEventListener('gc:subdocs-changed', function(){ later(watch, 50); });
-W._gcCoiAppr = { items: items, rows: function(){ return rows({ kind: 'admin' }); }, open: open, canSee: canSee };
+W._gcCoiAppr = { items: items, rows: function(){ return rows({ kind: 'admin' }); }, open: open, canSee: canSee, deny: doDeny, denySheet: denySheet, rejectOn: rejectOn };   /* patch SUBDOCDENY */
 try { console.log('[GC] patch COIAPPR: sub COI / W-9 to confirm are in ✅ Approvals (no floating pill) — _gcCoiAppr.items()'); } catch (e) {}
 })(window, document);
 </script>
