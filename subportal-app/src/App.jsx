@@ -224,7 +224,7 @@ const T = {
     viewTakeoff: 'View', readOnlyBanner: 'Read-only — viewing takeoffs shared by',
     // In-portal messaging (per-job thread)
     messages: 'Messages',
-    messagesHint: 'Messages here reach the assigned PM, Estimator, and office. They also carry over to the CRM once wired.',
+    messagesHint: 'Messages here go to the job’s PM, estimator and the office by e-mail, and they answer you right here.',
     typeMessage: 'Type a message…',
     sendMessage: 'Send',
     noMessages: 'No messages yet. Ask a question, request a walkthrough, or clarify scope.',
@@ -529,7 +529,7 @@ const T = {
     noSubTakeoffs: 'Ningún sub ha compartido mediciones en este trabajo aún.',
     viewTakeoff: 'Ver', readOnlyBanner: 'Solo lectura — viendo mediciones compartidas por',
     messages: 'Mensajes',
-    messagesHint: 'Los mensajes llegan al PM, Estimador y oficina asignados. También pasarán al CRM cuando esté conectado.',
+    messagesHint: 'Los mensajes llegan por correo al PM, al estimador y a la oficina del trabajo, y le contestan aquí mismo.',
     typeMessage: 'Escriba un mensaje…',
     sendMessage: 'Enviar',
     noMessages: 'Aún no hay mensajes. Pregunte, pida una visita o aclare el alcance.',
@@ -936,7 +936,8 @@ input:focus, textarea:focus, select:focus { outline: 2px solid ${styles.accent};
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 720px) {
   .nav-tabs { flex-wrap: wrap !important; gap: 4px !important; }
-  .nav-tab-label { display: none !important; }
+  .nav-tabs button { flex-direction: column !important; gap: 2px !important; padding: 6px 8px !important; min-width: 60px; }
+  .nav-tab-label { display: block !important; font-size: 11px !important; line-height: 1.2; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* patch SUBSIMPLE: a short word under each icon on a phone */
   .main-pad { padding: 20px 16px !important; }
   header > div { padding-left: 16px !important; padding-right: 16px !important; flex-wrap: wrap; }
 }

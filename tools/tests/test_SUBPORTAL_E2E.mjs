@@ -233,7 +233,7 @@ async function browserFor(kind){
 }
 const text = p => p.evaluate(() => document.body.innerText);
 async function clickTab(p, k){ await p.click('[data-jtab="' + k + '"]'); await sleep(400); }
-async function openJobPage(p, pid){ await p.click('#tabs button[data-tab="jobs"]'); await p.click('[data-job="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(500); }
+async function openJobPage(p, pid){ await p.click('#tabs button[data-tab="home"]'); await p.click('[data-myjob-open="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(500); }
 async function closeSheet(p){ const b = await p.$('.sheet .x'); if (b) await b.click(); const l = await p.$('.lb button[aria-label]'); if (l) await l.click(); await sleep(200); }
 
 async function run(kind, job){
@@ -253,7 +253,7 @@ async function run(kind, job){
 
   const p = await S.page(DB.SESSION);
   await p.goto('https://portal.test/');
-  const home = await p.waitForSelector('[data-job="' + pid + '"]', { timeout: 30000 }).catch(() => null);
+  const home = await p.waitForSelector('[data-myjob-open="' + pid + '"]', { timeout: 30000 }).catch(() => null);
   ok(tag + 'signed in as the sub (link session) → Home lists the job', !!home, S.calls.join(' ') + ' | ' + S.errs.join(' | '));
   if (!home) { await S.b.close(); return S; }
   await sleep(500);
@@ -263,9 +263,9 @@ async function run(kind, job){
   ok(tag + 'Home: only the sub\'s own job (never the other sub\'s job)', t0.indexOf(job.name) >= 0 && t0.indexOf(JOB2.name) < 0);
   const legal = await p.$eval('[data-gc-legal-links]', x => x.innerHTML).catch(() => '');
   ok(tag + 'the sub\'s footer links the Sub Portal terms and privacy notice (not the customer portal\'s)', /sub-terms\.html/.test(legal) && /sub-privacy\.html/.test(legal) && !/portal-terms\.html/.test(legal), legal);
-  await p.click('#tabs button[data-tab="jobs"]'); await sleep(300);
+  await p.click('#tabs button[data-tab="home"]'); await sleep(300);
   await shot(p, N() + '_jobs', 'Jobs tab: the sub\'s jobs');
-  await p.click('[data-job="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(600);
+  await p.click('[data-myjob-open="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(600);
   await shot(p, N() + '_job_overview', 'Job: overview — address + Maps, PO, dates, PM, customer, schedule, site notes' + (kind === 'desktop' ? ' (left) + Scope (right)' : ''));
   p.__full = true; await shot(p, N() + '_job_overview_full', 'Job overview (whole page)'); p.__full = false;
   const t1 = await text(p);

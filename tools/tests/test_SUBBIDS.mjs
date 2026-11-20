@@ -76,6 +76,10 @@ T.sp_rows.push(spRow('questions', 'q_pub', { id: 'q_pub', jobId: 'j_open', userI
 T.sp_rows.push(spRow('questions', 'q_priv', { id: 'q_priv', jobId: 'j_open', userId: 'u_b1', userName: 'Otto Other', userCompany: 'Other Paint Co', body: 'PRIVATE-QUESTION-OF-OTTO', answer: '', visibility: 'private', at: now }, { job_id: 'j_open', user_id: 'u_b1' }));
 T.sp_rows.push(spRow('subdocs', 'u_a1', docsOf([{ id: 'd1', type: 'w9' }, { id: 'd2', type: 'insurance_general', expirationDate: day(200) }, { id: 'd3', type: 'insurance_workers_comp', expirationDate: day(150) }]), { user_id: 'u_a1' }));
 T.sp_rows.push(spRow('subdocs', 'u_b1', docsOf([{ id: 'd4', type: 'w9' }, { id: 'd5', type: 'insurance_general', expirationDate: day(-3) }]), { user_id: 'u_b1' }));
+/* patch SUBSIMPLE: a bid needs a real PDF — each sub's stored bid PDF (an 'upload' event, as p-upload / p-upload-done make) */
+['SA', 'SB', 'SE'].forEach(k => T.gc_sub_event.push({ id: 'EuplPdf' + k, kind: 'upload', sub_id: k, project_id: null, data: { ref: 'sb:crm-files/' + k.toLowerCase().repeat(32).slice(0, 64).replace(/[^0-9a-f]/g, 'c') + '.pdf', name: 'Bid ' + k + '.pdf', type: 'application/pdf', size: 1500 }, created_at: now }));
+/* patch SUBSIMPLE: the bid list is behind "🔨 Jobs open for bids (N)" on Home — tap it */
+async function openBids(p){ await p.waitForSelector('#bidsBtn', { timeout: 30000 }); if ((await p.getAttribute('#bidsBtn', 'aria-expanded')) !== 'true') await p.click('#bidsBtn'); }
 const SESS = {};
 ['A', 'B', 'C', 'D', 'E'].forEach((k, i) => { const tok = String.fromCharCode(65 + i).repeat(43), link = String.fromCharCode(97 + i).repeat(43); SESS[k] = tok;
   T.gc_portal_session.push({ id: sha(tok), kind: 'partner', sub_id: SUBS[k].id, links: [link], expires_at: new Date(Date.now() + 864e5).toISOString(), last_seen_at: now });
@@ -97,6 +101,8 @@ global.fetch = async (url, init) => {
   }
   if (u.pathname === '/auth/v1/admin/users' && m === 'POST') return res(200, { id: 'auth-' + crypto.randomBytes(3).toString('hex') });
   if (u.pathname === '/auth/v1/token' && m === 'POST') { const b = JSON.parse(init.body); return b.password === 'Right-Pass-1' ? res(200, { access_token: 'x' }) : res(400, { error: 'invalid_grant' }); }   /* BIDONLY: the bid-site password */
+  if (u.pathname.startsWith('/storage/v1/object/upload/sign/')) return res(200, { url: '/object/upload/sign/' + u.pathname.split('/upload/sign/')[1] + '?token=up' });   /* patch SUBSIMPLE: the bid PDF upload */
+  if (/^\/storage\/v1\/object\/crm-files\//.test(u.pathname) && m === 'POST') return res(200, {});
   if (u.pathname.startsWith('/storage/v1/object/sign/')) { const b = JSON.parse(init.body); const bucket = u.pathname.split('/').pop(); return res(200, b.paths.map(p => ({ path: p, signedURL: '/object/sign/' + bucket + '/' + p + '?token=signed' }))); }
   const tm = /^\/rest\/v1\/([a-z_]+)$/.exec(u.pathname);
   if (tm && T[tm[1]]) {
@@ -154,11 +160,11 @@ await t('isolation: another sub\'s bid, amount, name or e-mail never reaches thi
   eq((await call('A', 'p-bidjobs')).j.jobs.find(j => j.id === 'j_open').myBid, null, 'B\'s bid on the job is not A\'s');
 });
 await t('p-bid-save: a new bid = the bid site\'s record (same shape), then an update keeps the id / submittedAt; GrayCo is not mailed while PORTAL_MAIL_OFF', async () => {
-  const r = await call('A', 'p-bid-save', { jobId: 'j_open', amount: '18,450.50', notes: 'Includes Level 4 finish. Excludes paint.' }); eq(r.code, 200, r.raw);
+  const r = await call('A', 'p-bid-save', { jobId: 'j_open', amount: '18,450.50', notes: 'Includes Level 4 finish. Excludes paint.', uploadIds: ['EuplPdfSA'] }); eq(r.code, 200, r.raw);
   eq([r.j.created, r.j.bid.amount, r.j.bid.status], [true, 18450.5, 'pending']);
   const rows = bidsOf('j_open', 'u_a1'); eq(rows.length, 1);
   const b = rows[0].data;
-  eq(Object.keys(b).sort(), ['amount', 'docs', 'exclusions', 'id', 'inclusions', 'jobId', 'notes', 'notesOwn', 'scope', 'submittedAt', 'trade', 'updatedAt', 'userCompany', 'userEmail', 'userId', 'userName', 'userPhone'].sort());   /* patch BIDMULTI: + trade / inclusions / exclusions / notesOwn */
+  eq(Object.keys(b).sort(), ['amount', 'docs', 'exclusions', 'id', 'inclusions', 'jobId', 'notes', 'notesOwn', 'scope', 'submittedAt', 'trade', 'updatedAt', 'userCompany', 'userEmail', 'userId', 'userName', 'userPhone', 'read'].sort());   /* patch SUBSIMPLE: + read (GrayCo's reader; here the PDF cannot be opened → status failed) */   /* patch BIDMULTI: + trade / inclusions / exclusions / notesOwn */
   eq(b.trade, 'Drywall', 'BIDMULTI: the job trade that is theirs');
   eq([b.jobId, b.userId, b.userName, b.userCompany, b.userEmail, b.userPhone, b.amount], ['j_open', 'u_a1', 'Sam Sample', 'Sample Drywall LLC', SUBS.A.email, '901-555-0141', 18450.5]);
   yes(/^b_[a-z0-9]+$/.test(b.id), b.id); eq([rows[0].key, rows[0].job_id, rows[0].user_id], ['bids/' + b.id, 'j_open', 'u_a1']);
@@ -192,7 +198,7 @@ await t('papers: missing or expired W-9 / GL / WC refuse the bid and name the pa
   try {
     const r3 = await call('B', 'p-bid-save', { jobId: 'j_inv', amount: 100 }); eq(r3.code, 403, 'B is not invited to the private job');
     T.sp_rows.find(x => x.key === 'jobs/j_dec').data.status = 'open';
-    const r4 = await call('B', 'p-bid-save', { jobId: 'j_dec', amount: 5150 }); eq(r4.code, 200, r4.raw); eq(r4.j.created, true);
+    const r4 = await call('B', 'p-bid-save', { jobId: 'j_dec', amount: 5150, uploadIds: ['EuplPdfSB'] }); eq(r4.code, 200, r4.raw); eq(r4.j.created, true);
     yes(MAIL.length === 1 && /New bid — Sample Office \(decided\) — Other Paint Co/.test(MAIL[0].subject), JSON.stringify(MAIL.map(x => x.subject)));
     yes(MAIL[0].to.includes('office@grayco-cs.com'), JSON.stringify(MAIL[0].to));
     const r5 = await call('B', 'p-bid-save', { jobId: 'j_dec', amount: 5100 }); eq(r5.code, 200); eq(MAIL.length, 1, 'an update is not a new bid');
@@ -208,7 +214,7 @@ await t('an expired paper also blocks: A\'s WC runs out → refused naming WC', 
   const r2 = await call('A', 'p-bid-save', { jobId: 'j_inv', amount: 2500 }); eq(r2.code, 409); yes(/W-9/.test(r2.j.error) && /missing/.test(r2.j.error), r2.j.error);
   row.data = keep;
   eq(bidsOf('j_inv').length, 0);
-  const ok = await call('A', 'p-bid-save', { jobId: 'j_inv', amount: 2500 }); eq(ok.code, 200, ok.raw);
+  const ok = await call('A', 'p-bid-save', { jobId: 'j_inv', amount: 2500, uploadIds: ['EuplPdfSA'] }); eq(ok.code, 200, ok.raw);
 });
 await t('no bid-site profile: linked:false (Join GrayCo bids); p-bid-save refused; p-bids makes the profile → waiting for approval', async () => {
   const r = await call('C', 'p-bidjobs'); eq(r.code, 200); eq([r.j.linked, r.j.approved, r.j.canJoin, r.j.jobs], [false, false, true, []]);
@@ -298,9 +304,9 @@ await t('BIDMULTI p-bid-save: the trade they bid, what is included / not include
   const r = await call('A', 'p-bid-save', { jobId: 'j_open', amount: 17900, trade: 'drywall', inclusions: 'Hang, tape, Level 4', exclusions: 'Paint, patching', notes: 'Can start Monday', uploadIds: ['Eupl0bid01', 'Eupl0bid02'] }); eq(r.code, 200, r.raw);
   const b = bidsOf('j_open', 'u_a1')[0].data;
   eq([b.trade, b.inclusions, b.exclusions, b.scope, b.notesOwn, b.notes], ['Drywall', 'Hang, tape, Level 4', 'Paint, patching', 'Hang, tape, Level 4', 'Can start Monday', 'Can start Monday\nNot included: Paint, patching']);
-  eq(b.docs.map(d => d.name), ['Sample bid.pdf'], 'only their own upload (not another sub\'s)');
+  eq(b.docs.map(d => d.name), ['Bid SA.pdf', 'Sample bid.pdf'], 'only their own uploads (not another sub\'s; the first bid PDF stays)');
   yes(/^sb:crm-files\//.test(b.docs[0].ref));
-  const mb = r.j.bid; eq([mb.trade, mb.inclusions, mb.exclusions, mb.notesOwn, mb.files.map(f => f.name)], ['Drywall', 'Hang, tape, Level 4', 'Paint, patching', 'Can start Monday', ['Sample bid.pdf']]);
+  const mb = r.j.bid; eq([mb.trade, mb.inclusions, mb.exclusions, mb.notesOwn, mb.files.map(f => f.name)], ['Drywall', 'Hang, tape, Level 4', 'Paint, patching', 'Can start Monday', ['Bid SA.pdf', 'Sample bid.pdf']]);
   yes(!/sb:crm-files/.test(r.raw), 'the file ref never goes back to the sub');
   const bad = await call('A', 'p-bid-save', { jobId: 'j_open', amount: 17900, trade: 'Roofing' }); eq(bad.code, 400); yes(/trades GrayCo asked for/.test(bad.j.error), bad.j.error);
 });
@@ -380,7 +386,7 @@ if (chromium) {
     S.page = async (session, lang) => {
       const p = await ctx.newPage(); p.__kind = kind;
       p.on('pageerror', e => S.errs.push(e.message));
-      p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) S.errs.push('console: ' + m.text().slice(0, 200)); });
+      p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|sb\.test\/storage\/v1\/object\/upload\/sign/.test(m.text())) S.errs.push('console: ' + m.text().slice(0, 200)); });
       await p.addInitScript(([s, l]) => { try { if (s) localStorage.setItem('gc_portal_s', s); else localStorage.removeItem('gc_portal_s'); localStorage.setItem('gc_lang', l || 'en'); } catch (e) {} }, [session || '', lang || 'en']);
       return p;
     };
@@ -503,7 +509,7 @@ if (chromium) {
     /* ── 📋 Jobs to bid ── */
     await t(tag + 'Home: the 📋 Jobs to bid card — titles, address, due date / days left, trades, a short scope, 🔗 plan links (new tab), their bid status; never another sub\'s bid', async () => {
       T.sp_rows = T.sp_rows.filter(r => !(r.collection === 'bids' && r.job_id === 'j_new2'));   /* each screen size starts with no bid on it */
-      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('[data-bidjob="j_new2"]', { timeout: 30000 });
       const card = await p.$eval('section.bids', x => x.innerText);
       yes(/📋 Jobs to bid/.test(card) && /Sample Dental Office Build-Out/.test(card) && /2200 Sample Ave/.test(card) && /4 days left/.test(card) && /Drywall, acoustic ceilings/.test(card) && /3,200 sq ft dental office/.test(card), card.slice(0, 500));
@@ -519,7 +525,7 @@ if (chromium) {
       await p.close();
     });
     await t(tag + '❓ Ask a question (patch BIDPOST): the shared answer shows (no names), another bidder\'s private question never; asking saves it to the bid site\'s Q&A', async () => {
-      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('[data-bidopen="j_open"]', { timeout: 30000 }); await p.click('[data-bidopen="j_open"]');
       await p.waitForSelector('[data-bidqa="j_open"]');
       const tx = await p.$eval('[data-bidqa="j_open"]', x => x.innerText);
@@ -538,7 +544,7 @@ if (chromium) {
     });
     await t(tag + '📩 Request plans / more info (patch PLANREQ): a job with no plans → the big button → the form (from their profile) → sent; a job with plans → the small link; their trade\'s scope file', async () => {
       T.sp_rows = T.sp_rows.filter(r => r.collection !== 'planreqs'); PA._core._reset && PA._core._reset();
-      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('[data-bidopen="j_inv"]', { timeout: 30000 }); await p.click('[data-bidopen="j_inv"]');
       await p.waitForSelector('[data-planreq="j_inv"] [data-propen="big"]');
       yes(/📩 Request plans \/ more info/.test(await p.textContent('[data-propen="big"]')) && /No plans posted yet/.test(await p.textContent('[data-planreq="j_inv"]')));
@@ -561,7 +567,7 @@ if (chromium) {
       await p.close();
     });
     await t(tag + 'an awarded bid: 🏆 Awarded with the GrayCo PM (name / phone / e-mail), the next step and what to confirm (patch BIDSCOPE)', async () => {
-      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('[data-bidopen="j_dec"]', { timeout: 30000 }); await p.click('[data-bidopen="j_dec"]');
       await p.waitForSelector('[data-bidaward]');
       const tx = await p.$eval('[data-bidaward]', x => x.innerText);
@@ -570,13 +576,14 @@ if (chromium) {
       await p.close();
     });
     await t(tag + 'the job sheet: full scope / specs / notes, their trade\'s scope, plan links + plan files, the bid form → Submit sends the bid, then Update', async () => {
-      const p = await S.page(SESS.A); await p.goto('https://portal.test/');
+      const p = await S.page(SESS.A); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('[data-bidopen="j_new2"]', { timeout: 30000 }); await p.click('[data-bidopen="j_new2"]');
       await p.waitForSelector('[data-bidsheet="j_new2"]');
       const tx = await p.$eval('.sheet', x => x.innerText);
       yes(/Level 5 finish/.test(tx) && /Pre-bid walk Thursday/.test(tx) && /Scope for your trade — Drywall/.test(tx) && /A6\.1 Reflected ceiling plan\.pdf/.test(tx) && /Papers on file/.test(tx), tx.slice(0, 600));
       const files = await p.$$eval('[data-bidplans] a', a => a.map(x => x.href)); yes(files.some(h => /subportal-files\/staff\/2026-11\/dental-A11\.pdf\?token=signed/.test(h)) && files.some(h => /sample-dental/.test(h)), JSON.stringify(files));
       eq(await p.$eval('#bidSend', b => [b.textContent, b.disabled]), ['Submit bid', false]);
+      await p.setInputFiles('#bidFiles', { name: 'Dental bid.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') });   /* patch SUBSIMPLE: the bid is a PDF */
       await p.fill('#bidAmt', '24850'); await p.fill('#bidNotes', 'Includes Level 5 at reception and all ACT. Excludes framing and paint.');
       await shot(p, '12_bid_sheet_form', 'The job sheet: scope, specs, notes, plans, Your bid form', false);
       if (kind === 'phone') { await shot(p, '12b_bid_sheet_top', 'The job sheet (top)'); await p.$eval('.sheet-body', x => { x.scrollTop = x.scrollHeight; }); await shot(p, '12c_bid_sheet_form', 'The job sheet: the bid form (scrolled)'); }
@@ -592,7 +599,7 @@ if (chromium) {
       await p.close();
     });
     await t(tag + 'papers missing (W-9, GL, WC): the card and the sheet say which, the form is blocked', async () => {
-      const p = await S.page(SESS.E); await p.goto('https://portal.test/');
+      const p = await S.page(SESS.E); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('[data-bidpapers="missing"]', { timeout: 30000 });
       yes(/W-9 — missing/.test(await p.textContent('[data-bidpapers="missing"]')) && /Workers’ comp \(WC\) — missing/.test(await p.textContent('[data-bidpapers="missing"]')));
       await p.click('[data-bidopen="j_new2"]'); await p.waitForSelector('[data-bidsheet="j_new2"]');
@@ -603,7 +610,7 @@ if (chromium) {
       await p.close();
     });
     await t(tag + 'not joined yet: the card offers "Join GrayCo bids" (password ≥ 8) → waiting for approval', async () => {
-      const p = await S.page(kind === 'phone' ? SESS.F : SESS.G); await p.goto('https://portal.test/');
+      const p = await S.page(kind === 'phone' ? SESS.F : SESS.G); await p.goto('https://portal.test/'); await openBids(p);
       await p.waitForSelector('#bidsAccept', { timeout: 30000 });
       await (await p.$('section.bids')).scrollIntoViewIfNeeded();
       await shot(p, '15_home_join_bids', 'Not joined yet: Join GrayCo bids');

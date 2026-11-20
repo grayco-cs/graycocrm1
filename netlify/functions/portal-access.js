@@ -1141,8 +1141,13 @@ async function pHome(ctx){
     office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
     jobs: ctx.jobs.map(function(p){ const r = rowFor(p, sub); const pm = pmOf(data, p);
       return { id: s(p.id), name: s(p.name), address: s(p.address), maps: SW().mapsOf(p.address), po: SW().poOf(p), status: s(r.status) || 'Awarded', start: ymd(r.startDate || p.startDate), end: ymd(r.endDate || p.endDate),
-        pct: num(r.pct), unread: unread[s(p.id)] || 0, newScope: scopes.some(function(x){ return x.status === 'new' && s((ctx.scopes.find(function(y){ return s(y.id) === x.id; }) || {}).project_id) === s(p.id); }), pm: pm }; }),
+        pct: num(r.pct), unread: unread[s(p.id)] || 0,
+        scopes: ctx.scopes.filter(function(x){ return s(x.project_id) === s(p.id); }).map(function(x){ const o = scopeOut(x, {}); return { id: o.id, kind: o.kind, title: o.title, total: o.total, status: o.status }; }),   /* patch SUBSIMPLE: their scope / COs on the job card */
+        newScope: scopes.some(function(x){ return x.status === 'new' && s((ctx.scopes.find(function(y){ return s(y.id) === x.id; }) || {}).project_id) === s(p.id); }), pm: pm }; }),
     needs: needs, week: sched,
+    /* patch SUBSIMPLE: ✍ To sign — every sub agreement / change order GrayCo sent that they have not signed yet */
+    toSign: ctx.scopes.filter(function(x){ const o = scopeOut(x, {}); return o.status !== 'accepted'; }).map(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(x.project_id); }) || {};
+      return { id: s(x.id), kind: x.kind === 'co' ? 'co' : 'scope', pid: s(p.id), job: s(p.name), title: clip(SS().clean(x.title || (x.data || {}).title), 160), total: money(x.total), question: x.status === 'question' }; }).filter(function(x){ return x.pid; }),
     today: SW().today(ctx.jobs, data.schedule, sub, todayCentral()),   /* patch SUBPHOTOS: today's jobs — address, Maps, customer, PO */
     money: { submitted: money(inv.filter(function(x){ return x.state === 'submitted'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
              approved: money(inv.filter(function(x){ return x.state === 'approved'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
@@ -1693,7 +1698,7 @@ async function bidPapers(profileId){
   return out;
 }
 function bidStatus(b){ return b.accepted ? 'accepted' : b.rejected ? 'rejected' : 'pending'; }
-function myBidOut(b){ return b ? { trade: clip(b.trade, 80), inclusions: clip(b.inclusions, 4000), exclusions: clip(b.exclusions, 4000), notesOwn: clip(b.notesOwn != null ? b.notesOwn : b.notes, 4000), files: arr(b.docs).filter(function(f){ return f && f.name; }).map(function(f){ return { name: clip(f.name, 160) }; }).slice(0, 10), lines: arr(b.lines).map(function(l){ return { id: s(l.id), amount: l.amount, note: clip(l.note, 300) }; }), id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b) } : null; }
+function myBidOut(b){ return b ? { trade: clip(b.trade, 80), inclusions: clip(b.inclusions, 4000), exclusions: clip(b.exclusions, 4000), notesOwn: clip(b.notesOwn != null ? b.notesOwn : b.notes, 4000), files: arr(b.docs).filter(function(f){ return f && f.name; }).map(function(f){ return { name: clip(f.name, 160) }; }).slice(0, 10), lines: arr(b.lines).map(function(l){ return { id: s(l.id), amount: l.amount, note: clip(l.note, 300) }; }), id: s(b.id), amount: money(b.amount), notes: clip(b.notes, 4000), submittedAt: s(b.submittedAt), updatedAt: s(b.updatedAt), status: bidStatus(b), award: awardOut(b), hasPdf: bidHasPdf(b.docs) } : null; }
 /* patch BIDSCOPE: an awarded bid — when, the GrayCo PM to call, what GrayCo asks them to confirm (the CRM's award confirm sheet) */
 function awardOut(b){
   if (!b || !b.accepted) return null;
@@ -1789,6 +1794,30 @@ async function pBidRequest(sub, body){   /* patch PLANREQ: the bid site's reques
   const r = await HUB().requestPlans(c.who, { jobId: jobId, needs: needs, note: clip(body.note, 1000), via: 'portal' }, { scope: c.sc });
   return { ok: true, already: !!r.already, request: r.request };
 }
+/* patch SUBSIMPLE (owner 11/20: "make sure they can upload their bids to that job by pdf, those have to be real bids"): a bid
+   needs at least one real PDF (the upload is checked by its first bytes on the server: storeFile / bigUploadDone) that is not empty */
+function bidHasPdf(docs){ return arr(docs).some(function(d){ return d && /pdf/i.test(s(d.type)) && (d.size == null || Number(d.size) > 0) && (s(d.ref) || s(d.fileRef) || s(d.url)); }); }
+function BR(){ return require('./_lib/bidread.js'); }
+async function crmFileBuf(ref){
+  const path = refPath(ref); if (!path) return null;
+  const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { headers: keyHeaders(svcKey()) }).catch(function(){ return null; });
+  if (!r || !r.ok) return null;
+  return Buffer.from(await r.arrayBuffer());
+}
+async function bidReadAfterSave(row, uploadIds, sub){
+  const d = Object.assign({}, row.data || {});
+  const fresh = (await uploadsOf(sub, uploadIds, null)).filter(function(f){ return /pdf/i.test(s(f.type)); });
+  let read = null;
+  if (fresh.length) {
+    const f = fresh[fresh.length - 1], buf = await crmFileBuf(f.ref);
+    read = buf ? await BR().read(buf, d.amount, { name: f.name }) : { status: 'failed', at: new Date().toISOString(), why: 'The PDF could not be opened.' };
+    read.file = clip(f.name, 160); read.ref = s(f.ref);
+  } else if (d.read && d.read.status === 'read') read = Object.assign({}, d.read, BR().compare(d.read.total, d.amount));   /* a new price, the same PDF */
+  if (!read) return null;
+  d.read = read;
+  await HUB().upsertRows([HUB().rowFor('bids', d)], 'portal-read');
+  return Object.assign({}, row, { data: d });
+}
 async function pBidSave(sub, body){
   const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
   const amount = money(body.amount);
@@ -1813,11 +1842,16 @@ async function pBidSave(sub, body){
     if (rec.inclusions) rec.scope = rec.inclusions;
     rec.notes = clip([rec.notesOwn, rec.exclusions ? 'Not included: ' + rec.exclusions : ''].filter(Boolean).join('\n'), 4000);
     const up = await uploadsOf(sub, body.uploadIds, null);
-    if (up.length) rec.docs = arr(rec.docs).concat(up.map(function(f){ return { name: clip(f.name, 160), ref: s(f.ref), type: s(f.type), size: f.size }; })).slice(-10); }
+    if (up.length) rec.docs = arr(rec.docs).concat(up.map(function(f){ return { name: clip(f.name, 160), ref: s(f.ref), type: s(f.type), size: f.size }; })).slice(-10);
+    if (!bidHasPdf(rec.docs)) throw Fail(400, 'Upload your bid as a PDF — GrayCo needs a real bid on paper (your PDF), not just a number.'); }   /* patch SUBSIMPLE */
   if (Array.isArray(body.lines)) rec.lines = body.lines.slice(0, 80).map(function(l){ return { id: clip(l && l.id, 60), amount: l && l.amount, note: clip(l && l.note, 300) }; });   /* patch PLANREQ-E: the bid form */
   await HUB().saveCollection(c.who, 'bids', [rec], [], { scope: sc });
-  const after = await HUB().getRow('bids', rec.id);
+  let after = await HUB().getRow('bids', rec.id);
   if (!after || s(after.user_id) !== me) throw Fail(502, 'The bid could not be saved. Try again.');
+  /* patch SUBSIMPLE (owner 11/20): GrayCo reads the whole bid PDF (total, included / not included, scope items, alternates,
+     clarifications, how long it is good for, schedule) and flags a price that is not the one typed. Kept on the bid for the CRM's
+     📨 Sub bids / 🔍 Scope compare — never shown to another sub. A failed read keeps the bid ("Not read yet — 📄 Read" for staff). */
+  try { after = await bidReadAfterSave(after, body.uploadIds, sub) || after; } catch (e) {}
   return { ok: true, created: !prev, bid: myBidOut(after.data) };
 }
 
@@ -1981,9 +2015,17 @@ async function staffAction(action, body, who){
       const L = MAIL[lang(sub.lang)];
       const co = x.kind === 'co', tag = jobTagOf(data, x.project_id);   /* patch AUTO6: sign it in the portal; the job in the subject */
       const subj = (co ? L.coSignSubj : L.scopeSubj) + clip(x.title, 80) + (tag ? ' — ' + tag : '');
-      mailed = (await sendMail(sub.email, subj, mailHtml(subj, co ? L.coSignBody : L.scopeBody, '', { href: linkFor(link.token), label: L.scopeBtn }))).ok;
+      /* patch SUBSIMPLE: a paper to sign is a SUB send, not a customer send — tagged 'trade' so ⏸ data-entry mode lets it go */
+      mailed = (await require('./_lib/custquiet.js').run('trade', () => sendMail(sub.email, subj, mailHtml(subj, co ? L.coSignBody : L.scopeBody, '', { href: linkFor(link.token), label: L.scopeBtn })))).ok;
     }
-    return { ok: true, status: 'published', mailed: mailed };
+    /* patch SUBSIMPLE (owner 11/20: "all documents that we send them to sign make sure they are notified of them"): a text too */
+    let texted = false;
+    if (textReady() && phone10(sub.phone)) {
+      try { const link2 = await subLinkCreate(sub.id, sub.name, me), es = lang(sub.lang) === 'es', tag2 = jobTagOf(data, x.project_id);
+        const msg = 'GrayCo: ' + (es ? (x.kind === 'co' ? 'orden de cambio para firmar' : 'acuerdo para firmar') : (x.kind === 'co' ? 'change order to sign' : 'sub agreement to sign')) + ' — ' + clip(x.title, 60) + (tag2 ? ' (' + clip(tag2, 40) + ')' : '') + '. ' + (es ? 'Ábralo aquí: ' : 'Open it here: ') + linkFor(link2.token);
+        texted = !!(await require('./_lib/custquiet.js').run('trade', () => sendText(phone10(sub.phone), msg))).ok; } catch (e) {}
+    }
+    return { ok: true, status: 'published', mailed: mailed, texted: texted };
   }
   if (action === 's-scope-void') {
     await dbPatch('gc_sub_scope', 'id=' + eq(body.id), { status: 'void', updated_at: new Date().toISOString() });
@@ -2183,7 +2225,7 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 /* LEGAL2-patch */
 exports._portalpol = { CMN: CMN, questionsFor: questionsFor, custMsgNotify: custMsgNotify };   /* patch PORTALPOL: tests */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
-exports._bids = { myBidOut: myBidOut, awardOut: awardOut };   /* patch BIDSCOPE: tests */
+exports._bids = { myBidOut: myBidOut, awardOut: awardOut, bidHasPdf: bidHasPdf, readAfterSave: function(){ return bidReadAfterSave.apply(null, arguments); } };   /* patch BIDSCOPE: tests */
 exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch };   /* patch SUBSYNC: tests */
 /* patch SUBACCT: Admin → 🔐 Sub portal accounts (netlify/functions/sub-accounts.js) uses the same links, matcher and records */
 exports._acct = { crmData: function(f){ return crmData(f); }, crmSubs: crmSubs, subById: subById, crmSubOf: crmSubOf, bidSubId: bidSubId, linkFor: linkFor,

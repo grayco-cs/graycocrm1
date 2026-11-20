@@ -46,6 +46,8 @@ const SESS = {};
 ['A', 'B', 'C'].forEach((k, i) => { const tok = String.fromCharCode(65 + i).repeat(43), link = String.fromCharCode(97 + i).repeat(43); SESS[k] = tok;
   T.gc_portal_session.push({ id: sha(tok), kind: 'partner', sub_id: SUBS[k].id, links: [link], expires_at: new Date(Date.now() + 864e5).toISOString(), last_seen_at: now });
   T.gc_sub_link.push({ token: link, sub_id: SUBS[k].id, revoked: false }); });
+/* patch SUBSIMPLE: a bid needs a real PDF — each sub's stored bid PDF (an 'upload' event, as p-upload makes) */
+['SA', 'SB', 'SC'].forEach(k => T.gc_sub_event.push({ id: 'EuplPdf' + k, kind: 'upload', sub_id: k, project_id: null, data: { ref: 'sb:crm-files/' + ('c' + k.slice(1).toLowerCase().replace(/[^a-f]/, 'd')).repeat(32) + '.pdf', name: 'Bid ' + k + '.pdf', type: 'application/pdf', size: 1500 }, created_at: now }));
 /* ── the in-memory Supabase ── */
 const MAIL = [], OUT = [];
 const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => typeof body === 'string' ? body : JSON.stringify(body), headers: { get: () => null } });
@@ -100,9 +102,9 @@ await t('1 three subs see the bid job with their own trade\'s words only (A, B: 
     eq(j.tradeScopes.map(x => x.trade), [k === 'C' ? 'Paint' : 'Drywall'], k + ' trade scope'); yes(!(k === 'C' ? /DRYWALL-WORDS/ : /PAINT-WORDS/).test(r.raw), k + ' saw another trade'); clean(k, r.raw); }
 });
 await t('2 A and B bid drywall, C bids paint (amount, included / not included); each sees only their own bid', async () => {
-  eq((await call('A', 'p-bid-save', { jobId: 'j_e2e', amount: 21500, trade: 'Drywall', inclusions: 'Hang, tape, L4', exclusions: 'Paint' })).code, 200);
-  eq((await call('B', 'p-bid-save', { jobId: 'j_e2e', amount: 23900, trade: 'Drywall', inclusions: 'Hang, tape', exclusions: 'Patching' })).code, 200);
-  eq((await call('C', 'p-bid-save', { jobId: 'j_e2e', amount: 9800, trade: 'Paint', inclusions: '2 coats' })).code, 200);
+  eq((await call('A', 'p-bid-save', { jobId: 'j_e2e', uploadIds: ['EuplPdfSA'], amount: 21500, trade: 'Drywall', inclusions: 'Hang, tape, L4', exclusions: 'Paint' })).code, 200);
+  eq((await call('B', 'p-bid-save', { jobId: 'j_e2e', uploadIds: ['EuplPdfSB'], amount: 23900, trade: 'Drywall', inclusions: 'Hang, tape', exclusions: 'Patching' })).code, 200);
+  eq((await call('C', 'p-bid-save', { jobId: 'j_e2e', uploadIds: ['EuplPdfSC'], amount: 9800, trade: 'Paint', inclusions: '2 coats' })).code, 200);
   eq([bidOf('u_a').trade, bidOf('u_b').trade, bidOf('u_c').trade], ['Drywall', 'Drywall', 'Paint']);
   for (const k of ['A', 'B', 'C']) { const r = await call(k, 'p-bidjobs'); clean(k, r.raw); }
 });
