@@ -118010,13 +118010,17 @@ function safeToSave(list){
    own idea of that key — some of them the whole screen list, vendors and all,
    because window._crm.subs has always been the combined list. Writing a
    narrower list back would have the two of us removing each other's rows. */
+function stampOf(r){ return s(r && (r.updatedAt || r.updated_at || r.savedAt)); }   /* patch COICONF */
 async function writeSubsKey(full){
   var have = await read('subs');
   var seen = {};
   have.forEach(function(r){ var k=idOf(r); if(k) seen[k]=1; });
   var add = subsOf(full).filter(function(r){ var k=idOf(r); return k && !seen[k] && !buried(r); });
-  var next = have.filter(function(r){ return !buried(r); }).concat(add);
-  if(next.length === have.length && !add.length) return null;
+  /* patch COICONF: a sub already under `subs` takes this list's newer copy. Only ADDED to, that key kept each sub's first copy
+     for good; a sync of it put that old copy back on the screen (a confirmed COI / W-9 came back, a deny was undone). */
+  var newer = {}, upd = 0; subsOf(full).forEach(function(r){ var k=idOf(r); if(k) newer[k]=r; });
+  var next = have.filter(function(r){ return !buried(r); }).map(function(r){ var n = newer[idOf(r)]; if(n && n !== r && stampOf(n) > stampOf(r)){ upd++; return n; } return r; }).concat(add);
+  if(next.length === have.length && !add.length && !upd) return null;
   try{ await window.idbSet('subs', next); }catch(e){}
   return next;
 }
@@ -118046,6 +118050,13 @@ function applyList(v){
   var next;
   try{ next = (typeof v === 'function') ? v(cur.slice()) : v; }catch(e){ return; }
   if(!Array.isArray(next)) return;
+  /* patch COICONF: a sync never puts an older copy of a sub over the newer one on the screen, and a COI / W-9 marked read or
+     rejected here stays marked (patch COIAPPR's keepRead) */
+  try{
+    var curBy = {}; cur.forEach(function(r){ var k=idOf(r); if(k) curBy[k] = r; });
+    next = next.map(function(r){ var c = curBy[idOf(r)]; return (c && c !== r && stampOf(r) && stampOf(c) > stampOf(r)) ? c : r; });
+    if(typeof window._gcCoiKeepRead === 'function') next = window._gcCoiKeepRead(next, [cur]);
+  }catch(e){}
   var have = {};
   next.forEach(function(r){ have[idOf(r)] = 1; });
   var kept = next.slice();
@@ -160050,7 +160061,7 @@ function applySubRead(rd, sid, form, meta){
   var pend = {}; try { pend = JSON.parse(lsGet(SUBF) || '{}') || {}; } catch (e) {}
   pend[sid] = { at: Date.now(), f: all, file: file }; lsSet(SUBF, JSON.stringify(pend));
   if (rd.taxRef) fn('sub-doc-read', { act: 'link', taxRef: rd.taxRef, subId: sid });
-  fn('sub-doc-read', { act: 'done', id: rd.id, subId: sid });
+  (function done(n){ fn('sub-doc-read', { act: 'done', id: rd.id, subId: sid }).then(function(j){ if ((!j || !j.ok) && n < 3) ST(function(){ done(n + 1); }, 4000 * n); }); })(1);   /* patch COICONF: checked, tried again */
   try { if (file.ref) { SEENDOC[file.ref] = 1; SDQ = SDQ.filter(function(z){ return z.ref !== file.ref; }); paintPills(); } } catch (e) {}   /* SUBDOCREAD: off the list at once */
   try { W._gcPushAll && ST(W._gcPushAll, 800); } catch (e) {}
   log({ what: 'subdoc', kind: rd.kind, sub: sid });
@@ -160093,12 +160104,15 @@ function subDocQueue(){
   return cands;
 }
 var SDQ = [];
+/* patch COICONF: close a server read again (a confirm's close that was lost): once a session per read */
+var CLOSED = {};
+function closeRead(w){ var id = s(w && w.id); if (!/^sd_/.test(id) || CLOSED[id]) return; CLOSED[id] = 1; fn('sub-doc-read', { act: 'done', id: id, subId: s(w.subId) }).then(function(j){ if (!j || !j.ok) delete CLOSED[id]; }); }
 function scanSubDocs(){
   if (!myEmail() || !isOffice()) return;
   var c = subDocQueue() || [];
   fn('sub-doc-read?list=1', null, 'GET').then(function(j){
-    var rjx = {}; subs().forEach(function(sb){ arr(sb.files).forEach(function(f){ if (f && f.rejected && f.ref) rjx[f.ref] = 1; }); });   /* patch SUBDOCDENY */
-    var waiting = arr(j.items).filter(function(w){ return !SEENDOC[w.ref] && !rjx[w.ref]; });   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
+    var rjx = {}, rdx = {}; subs().forEach(function(sb){ arr(sb.files).forEach(function(f){ if (f && f.rejected && f.ref) rjx[f.ref] = 1; if (f && f.aiRead && f.ref) rdx[f.ref] = 1; }); });   /* patch SUBDOCDENY; patch COICONF: + read on the sub */
+    var waiting = arr(j.items).filter(function(w){ if (w && (rdx[w.ref] || rjx[w.ref])) { closeRead(w); return false; } return !SEENDOC[w.ref] && !rjx[w.ref]; });   /* patch COICONF: a confirmed file is confirmed on every computer */   /* patch COIAPPR: a confirmed / dismissed one does not come back from a slow list */
     SDQ = waiting.concat(c.filter(function(x){ return !waiting.some(function(w){ return w.ref === x.f.ref; }); }).map(function(x){ return { pending: true, ref: x.f.ref, name: x.f.name, subId: x.sub.id, cat: x.f.cat }; }));
     paintPills();
   });
@@ -165281,8 +165295,9 @@ W._gcApprShared = { key: K, has: has, mark: mark, take: take, seen: seen, push: 
       if (!box) { box = document.createElement('div'); box.setAttribute('data-gc-appr-other-box', ''); var cl = Array.prototype.filter.call(card.children, function(x){ return x.tagName === 'BUTTON' && /^Close$/.test(x.textContent.trim()); })[0]; card.insertBefore(box, cl || null); }
       box.__sig = sig;
       box.innerHTML = '<div style="color:#f59e0b;font-weight:800;font-size:14px;margin:12px 0 8px;">✅ Other approvals (' + other.length + ')</div>'
-        + other.map(function(x, i){ return '<div data-gc-appr-other="' + esc(x.id) + '" style="background:#0a1628;border:1px solid #1e3a5f;border-radius:12px;padding:12px;margin-bottom:9px;display:flex;gap:10px;align-items:center;"><div style="flex:1;min-width:0"><div style="color:#fff;font-weight:700;font-size:13.5px;">' + esc(x.title) + '</div>' + (x.sub ? '<div style="color:#8fa8c4;font-size:12px;">' + esc(x.sub) + '</div>' : '') + '</div>' + (x.act && x.act.f ? '<button type="button" data-i="' + i + '" style="padding:9px 13px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;">' + esc(x.act.l || 'Open') + '</button>' : '') + '</div>'; }).join('');
+        + other.map(function(x, i){ return '<div data-gc-appr-other="' + esc(x.id) + '" style="background:#0a1628;border:1px solid #1e3a5f;border-radius:12px;padding:12px;margin-bottom:9px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;"><div style="flex:1 1 180px;min-width:0"><div style="color:#fff;font-weight:700;font-size:13.5px;">' + esc(x.title) + '</div>' + (x.sub ? '<div style="color:#8fa8c4;font-size:12px;">' + esc(x.sub) + '</div>' : '') + '</div>' + (x.act && x.act.f ? '<button type="button" data-i="' + i + '" style="padding:9px 13px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;">' + esc(x.act.l || 'Open') + '</button>' : '') + (x.act2 && x.act2.f ? '<button type="button" data-i2="' + i + '" style="padding:9px 13px;border-radius:8px;border:1px solid #dc2626;background:#fff;color:#b91c1c;font-weight:800;font-size:12.5px;cursor:pointer;">' + esc(x.act2.l) + '</button>' : '') + '</div>'; }).join('');   /* patch COICONF: + a second action (✕ Deny) */
       Array.prototype.forEach.call(box.querySelectorAll('button[data-i]'), function(bt){ bt.onclick = function(){ var x = other[+bt.getAttribute('data-i')]; try { ov.remove(); } catch (e) {} try { x.act.f(); } catch (e) {} }; });
+      Array.prototype.forEach.call(box.querySelectorAll('button[data-i2]'), function(bt){ bt.onclick = function(){ var x = other[+bt.getAttribute('data-i2')]; try { x.act2.f(); } catch (e) {} }; });   /* patch COICONF: the panel stays (Deny asks why on top) */
     });
   }
   var NS = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
@@ -236606,7 +236621,7 @@ function setAdd(r){
     var g = r.groups.other = arr(r.groups.other), have = {}; g.forEach(function(x){ have[s(x && x.id)] = 1; });
     var n = 0;
     L.forEach(function(it){ if (have[it.id] || have['td:' + it.id]) return; have[it.id] = 1; n++;
-      g.push({ id: it.id, title: title(it), sub: note(it), coi: true, act: { l: '📄 Read & confirm', f: function(){ open(it.ref); } } }); });
+      g.push({ id: it.id, title: title(it), sub: note(it), coi: true, act: { l: '📄 Read & confirm', f: function(){ open(it.ref); } }, act2: { l: '✕ Deny', f: function(){ denySheet(it); } } }); });   /* patch COICONF: + ✕ Deny (Field) */
     if (n) { r.total = (r.total || 0) + n; r.tip = (s(r.tip) ? s(r.tip) + ' · ' : '') + n + ' sub COI / W-9 to confirm'; }
   } catch (e) { warn(e); }
   return r;
@@ -236660,15 +236675,15 @@ function denySheet(it){
 }
 /* the record: the file marked rejected (kept); what only that unconfirmed file had set is cleared */
 function rejectOn(x, it, rec){
-  var y = Object.assign({}, x), hit = null, cleared = [];
+  var y = Object.assign({}, x, { updatedAt: rec.at }), hit = null, cleared = [];   /* patch COICONF: re-stamped, so the sync merge keeps it */
   y.files = arr(x.files).map(function(f){ if (!f || s(f.ref) !== it.ref || hit) return f; hit = Object.assign({}, f, { rejected: rec }); return hit; });
   if (!hit) { hit = { id: 'RJ_' + it.id, ref: it.ref, name: it.file, kind: it.kind, cat: it.kind === 'w9' ? 'W-9' : 'COI', at: rec.at, by: rec.by, source: 'denied in Approvals', rejected: rec }; y.files = y.files.concat([hit]); }
   var exp = s(hit.exp), wc = /wc|workers/i.test(s(hit.sub) + ' ' + s(hit.label)), other = y.files.filter(function(f){ return f && f !== hit && !f.rejected && f.aiRead; });
   if (!hit.aiRead) {
     if (it.kind === 'w9') { if (y.w9 === true && !y.w9ReadAt && !s(y.taxId || y.ein) && !other.some(function(f){ return /w-?9/i.test(s(f.kind) + s(f.cat)); })) { y.w9 = false; cleared.push('w9'); } }
-    else if (wc) { if (exp && s(y.wcExp) === exp) { delete y.wcExp; cleared.push('wcExp'); } if (y.wc === true && !s(y.wcExp)) { y.wc = false; cleared.push('wc'); } }
+    else if (wc) { if (exp && s(y.wcExp) === exp) { y.wcExp = ''; cleared.push('wcExp'); }   /* patch COICONF: empty, not deleted (a merge filled a deleted field back) */ if (y.wc === true && !s(y.wcExp)) { y.wc = false; cleared.push('wc'); } }
     else {
-      ['insExp', 'coiExp', 'glExp'].forEach(function(k){ if (exp && s(y[k]) === exp && !y.coiReadAt) { delete y[k]; cleared.push(k); } });
+      ['insExp', 'coiExp', 'glExp'].forEach(function(k){ if (exp && s(y[k]) === exp && !y.coiReadAt) { y[k] = ''; cleared.push(k); } });   /* patch COICONF: empty, not deleted */
       if (y.coi === true && !y.coiReadAt && !s(y.insExp) && !other.some(function(f){ return /coi|insurance/i.test(s(f.kind) + s(f.cat)); })) { y.coi = false; cleared.push('coi'); }
     }
   }
@@ -252560,7 +252575,8 @@ try {
     'html.gc-pu-app .gc-pu-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:var(--gc-pu-tabs,0px)!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0!important;border-radius:0!important;background:#f5f7fa!important;background-image:none!important;padding:0 0 calc(24px + env(safe-area-inset-bottom,0px))!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;box-sizing:border-box!important}' +
     /* (display is the panel's own: code that hides a panel with style.display = "none" still does) */
     'html.gc-pu-app .gc-pu-page.gc-pu-flex{flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important}' +
-    'html.gc-pu-app .gc-pu-page > .gc-pu-bar{order:-1;flex:0 0 auto}' +
+    'html.gc-pu-app .gc-pu-page > .gc-pu-bar{order:-1;flex:0 0 auto;z-index:30;-webkit-transform:translateZ(0);transform:translateZ(0)}' +   /* patch COICONF: its own layer above the content (iOS painted the cards over it) */
+    'html.gc-pu-app .gc-pu-page > .gc-pu-card{isolation:isolate}' +
     'html.gc-pu-app .gc-pu-page > .gc-pu-card{max-width:none!important;width:auto!important;max-height:none!important;height:auto!important;overflow:visible!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important;background-image:none!important;padding:14px 16px 20px!important;flex:1 0 auto;color:#0f172a}' +
     'html.gc-pu-app .gc-ra-sheet.gc-pu-sheet .bd{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
     'html.gc-pu-app .gc-fh-sheet.gc-pu-sheet > .in{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))!important}' +
