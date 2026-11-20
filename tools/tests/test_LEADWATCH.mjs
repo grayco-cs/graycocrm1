@@ -10,6 +10,10 @@
 //      To-Do from October, a lead at risk; the desk note says how many are not shown; the admin's "Show them" brings them back.
 //   E. GOOD (or assigned, no BAD) → a job in Projects, status bidding, the lead's PO; BAD → never a job, a job already made is archived as
 //      "bad lead"; leads from before OLDER_BEFORE are left alone; #job=<id> opens the job.
+//   F. patch FAKEJOB (owner 11/20: "how did this job make it in, it's not real"): a drafting sub's website pitch ("following up on the note we
+//      sent … if you have any steel jobs coming up, we'd be glad to help"), auto-assigned to the estimator, never becomes a job (the sweep
+//      or "Create bid job"); the job such a lead made before (J546, client "GrayCo") is archived once, by itself, logged in 🧾 with ↩ Undo;
+//      a job whose customer is only "GrayCo" → ⚠ Needs a look (unchanged); the GOOD lead's job stays.
 //   D. the real snapshot (when the scratchpad has it): the owner's phone Field home shows the card; the admin / office / PM To-Do counts.
 // Usage: node test_LEADWATCH.mjs <dir with index.html>   (GC_HARNESS = the offline harness_N.mjs; GC_SNAP = a snapshot dir)
 import fs from 'fs'; import path from 'path'; import { pathToFileURL } from 'url';
@@ -40,6 +44,8 @@ const PM = byId('u-pm'), ADMIN = byId('u-wesley'), OFFICE = byId('u-office');
 H.onFn('automation-pause', () => ({ paused: false, flag: { on: false } }));
 const NOW = Date.parse('2026-11-20T17:00:00Z');   /* Fri 11/20, 11:00 AM Central */
 const iso = h => new Date(NOW - h * 3600e3).toISOString();
+/* the 11/19 website-form pitch (names / numbers made up) */
+const WILSON = "Hi GrayCo Construction Services team,\nFollowing up on the note we sent through your website last month. If you have any steel jobs coming up, we'd be glad to help with:\n- Structural and misc. steel shop drawings (stairs, railings, platforms)\n- Steel take-offs and estimates\n- PE-stamped calcs for stairs and railings\nShop drawing samples: https://sampledrafting.test/samples.html\nJust reply to drafter@sampledrafting.test or call (901) 555-0110 and we'll send a price and turnaround the same day.\nThanks,\nSample Drafter\nSample Drafting\nProject location: Brooklyn";
 function seed(){
   H.resetCloud();
   H.cset('users', [
@@ -56,10 +62,15 @@ function seed(){
     { id: 'LW_G', name: 'Google lead marked good', contactName: 'Sample Home G', source: 'Google LSA', lsaCheck: 'good', stage: 'New Lead', createdAt: iso(3), pm: 'Demo PM', pmEmail: PM, assignedAt: iso(2), contactedAt: iso(1), companyId: 'construction', autoPO: 'Q123' },
     { id: 'LW_B', name: 'Bad lead with a job', contactName: 'Sample Home H', source: 'Google LSA', lsaCheck: 'bad', lostReason: 'LSA — not a real lead (spam)', stage: 'Lost', createdAt: iso(4), pid: 'PBAD', companyId: 'construction' },
     { id: 'LW_B2', name: 'Bad lead, no job', contactName: 'Sample Home I', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, lsaCheck: 'bad', lostReason: 'Not a real lead (spam)', stage: 'Lost', createdAt: iso(4), pm: 'Demo PM', pmEmail: PM, companyId: 'construction' },
+    { id: 'LW_SUB', name: 'Commercial bid inquiry — Sample Drafting — Brooklyn', contactName: 'Sample Drafter', company: 'Sample Drafting', email: 'drafter@sampledrafting.test', phone: '(901) 555-0110', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, websiteForm: 'Commercial bid inquiry', websiteType: 'commercial', owner: 'GrayCo', grayCoLead: true, leadKind: 'Commercial', type: 'Commercial Reno', stage: 'New Lead', createdAt: iso(3), estimator: 'Demo PM', estimatorEmail: PM, assignedAt: iso(2), companyId: 'construction', said: { company: 'Sample Drafting', message: WILSON } },
+    { id: 'LW_SUBJ', name: 'Commercial bid inquiry — Sample Drafting 2 — Brooklyn', contactName: 'Sample Drafter 2', company: 'Sample Drafting', email: 'drafter2@sampledrafting.test', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, owner: 'GrayCo', leadKind: 'Commercial', type: 'Commercial Reno', stage: 'New Lead', createdAt: iso(3), estimator: 'Demo PM', assignedAt: iso(2), pid: 'PFAKE', lwJob: { pid: 'PFAKE', at: iso(2), why: 'assigned, no BAD' }, companyId: 'construction', said: { company: 'Sample Drafting', message: WILSON } },
+    { id: 'LW_GRAY', name: 'Website lead — roof', source: 'Website (grayco-cs.com)', origin: 'website', websiteLead: true, owner: 'GrayCo', leadKind: 'Residential', stage: 'New Lead', createdAt: iso(3), pm: 'Demo PM', assignedAt: iso(2), pid: 'PLOOK', lwJob: { pid: 'PLOOK', at: iso(2), why: 'assigned, no BAD' }, companyId: 'construction', said: { message: 'Need a new roof on my house, it leaks over the kitchen.' } },
     { id: 'LOLD1', name: 'Old lead', contactName: 'Sample Old', source: 'Phone call', stage: 'New Lead', createdAt: '2026-10-02T15:00:00.000Z', pm: 'Demo PM', pmEmail: PM, assignedAt: '2026-10-02T15:00:00.000Z', companyId: 'construction' }]);
   H.cset('projects', [
     { id: 'POLD', name: 'Older Job', client: 'Sample Customer A', status: 'Active', pm: 'Demo PM', created: '2026-09-08', startDate: '2026-10-01', contract: 9000 },
     { id: 'PBAD', name: 'Bad lead with a job', client: 'Sample Home H', status: 'bidding', leadId: 'LW_B', created: '2026-11-20', contract: 0 },
+    { id: 'PFAKE', name: 'Commercial bid inquiry — Sample Drafting 2 — Brooklyn', client: 'GrayCo', status: 'bidding', leadId: 'LW_SUBJ', autoPO: 'J546', type: 'Commercial Reno', created: '2026-11-20', createdAt: iso(2), contract: 0, notes: 'Bid job from the Lead Inbox (Website (grayco-cs.com)).\n' + 'x' },
+    { id: 'PLOOK', name: 'Website lead — roof', client: 'GrayCo', status: 'bidding', leadId: 'LW_GRAY', autoPO: 'K111', created: '2026-11-20', createdAt: iso(2), contract: 0, notes: 'Bid job from the Lead Inbox (Website (grayco-cs.com)).' },
     { id: 'PNEW', name: 'New Job', client: 'Sample Customer B', status: 'Active', pm: 'Demo PM', created: '2026-11-20', startDate: '2026-11-23', contract: 5000 }]);
   H.cset('invs', [{ id: 'IVOLD', pid: 'POLD', num: 'INV-7', amt: 1200, status: 'sent', type: 'client', date: '2026-09-01', dueDate: '2026-09-15' }]);
   const T = (id, o) => Object.assign({ id, addedAt: '2026-10-20T15:00:00.000Z', updatedAt: '2026-10-20T15:00:00.000Z', done: false }, o);
@@ -122,6 +133,26 @@ try {
   ok(jobs && jobs.b2 && !jobs.b2.pid && jobs.old && !jobs.old.pid, 'a BAD lead never becomes a job; a lead from before 11/19 is left alone (only from now on)', jobs && { b2: jobs.b2.pid, old: jobs.old.pid });
   await sev(A, () => { location.hash = '#job=' + ((window._crm.leads || []).find(l => l.id === 'LW_G') || {}).pid; });
   ok(!!(await H.waitFor(A, () => window.__gcLwJobOpened, null, 20000)), 'the #job=<id> link in the PM\'s texts opens the job');
+
+  console.log('F. FAKEJOB: a sub / sales pitch never becomes a job; the one made already is archived once, with Undo');
+  await sev(A, () => { try { if (window._gcLeadsHub && window._gcLeadsHub.close) window._gcLeadsHub.close(); } catch (e) {} window._setView('projects'); });   /* the lead drawer from B is open: the one-time check waits for it */
+  const fj = await H.waitFor(A, () => { const P = window._crm.projects || [], L = window._crm.leads || [], st = window._gcLeadWatch.fakeState(), f = P.find(p => p.id === 'PFAKE');
+    return st.done && f && /archiv/i.test(f.status) ? { f, look: P.find(p => p.id === 'PLOOK'), sub: L.find(l => l.id === 'LW_SUB'), g: P.find(p => p.id === (L.find(l => l.id === 'LW_G') || {}).pid), last: st.last, nc: window._gcLeadWatch.notCustomer(L.find(l => l.id === 'LW_SUB')) } : null; }, null, 90000);
+  ok(fj && /sub \/ supplier/.test(fj.nc), 'the pitch is a sub / supplier, not a customer', fj && fj.nc);
+  ok(fj && fj.sub && !fj.sub.pid && !(fj.sub.lwJob && fj.sub.lwJob.pid), 'the estimator-assigned pitch (no BAD) never became a job', fj && fj.sub);
+  ok(fj && fj.f.archivedBy && /not a real customer — a sub \/ supplier/.test(fj.f.archivedWhy) && fj.f.statusBeforeArchive === 'bidding', 'the job it made before (J546, client GrayCo) is archived (not deleted), why and the old status kept', fj && fj.f);
+  ok(fj && /^bidding$/i.test(fj.look.status) && fj.last && fj.last.look.some(x => x.id === 'FJ_LOOK_PLOOK' && /GrayCo as its customer/.test(x.title)), 'a job whose customer is only "GrayCo" is left as it is → ⚠ Needs a look', fj && { st: fj.look.status, look: fj.last && fj.last.look });
+  ok(fj && fj.g && /^bidding$/i.test(fj.g.status), 'the GOOD lead\'s job is untouched', fj && fj.g && fj.g.status);
+  await sleep(1500);
+  const LOGR = H.cget('gc_acctfix_log') || [], LOOKR = H.cget('gc_acctfix_look') || {}, ent = LOGR.find(e => e.runId === 'FAKEJOB-1');
+  ok(ent && ent.items.length === 1 && ent.items[0].id === 'FJ_PFAKE' && ent.items[0].changes[0].list === 'projects' && (LOOKR.list || []).some(x => x.id === 'FJ_LOOK_PLOOK'), 'logged in 🧾 Accounting fixes log (FAKEJOB-1) and ⚠ Needs a look', { ent, look: LOOKR });
+  const again = await sev(A, () => window._gcLeadWatch.fakeCleanup({ force: true }));
+  ok(again && again.skipped === 'done', 'it runs once', again);
+  const mk = await sev(A, () => window._gcLeadInbox.createJob('LW_SUB').then(r => ({ ok: true, r }), e => ({ err: String(e && e.message) })));
+  ok(mk && /Not a customer lead/.test(mk.err || ''), '"Create bid job" on the pitch is refused', mk);
+  await sev(A, (id) => window._gcAcctFix.undoItem(id, 'FJ_PFAKE'), ent && ent.id);
+  const un = await H.waitFor(A, () => { const f = (window._crm.projects || []).find(p => p.id === 'PFAKE'); return f && /^bidding$/i.test(f.status) ? f : null; }, null, 20000);
+  ok(!!un, '↩ Undo puts the job back (bidding)', un);
 
   console.log('B2. the PM');
   const P = await H.computer('PM', { build, init: [INIT] }); OPEN.push(P);

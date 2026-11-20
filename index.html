@@ -133745,13 +133745,16 @@ function addPlansToJob(pid, docs, leadId){
 function createJob(id){
   var l = findLead(id); if (!l) return Promise.reject(new Error('Lead not found.'));
   if (isRs(l)) return Promise.reject(new Error('A RoofScout lead becomes a job from RoofScout ("Bring to CRM as a job").'));
+  var _nc = ''; try { _nc = window._gcLeadWatch && window._gcLeadWatch.notCustomer ? s(window._gcLeadWatch.notCustomer(l)) : ''; } catch (_e) {}   /* patch FAKEJOB */
+  if (_nc && !(l.pid && projects().some(function(p){ return p && p.id === l.pid; }))) return Promise.reject(new Error('Not a customer lead — ' + _nc + '. It cannot become a job.'));
   return Promise.resolve(l).then(function(lead){
     if (lead.pid && projects().some(function(p){ return p && p.id === lead.pid; })) return { ok: true, pid: lead.pid, existed: true, lead: lead };
     return bidPoFor(lead).then(function(bpo){ return makeJob(lead, bpo); }, function(){ return makeJob(lead, ''); });
   });
   function makeJob(lead, bpo){
     var kind = kindOf(lead), pid = rid('PRJ');
-    var p = stamp({ id: pid, name: lead.name, client: lead.gc || lead.owner || lead.contactName || lead.name, clientPhone: lead.phone || '', clientEmail: lead.email || '', address: lead.address || '',
+    var _cn = ''; try { _cn = window._gcLeadWatch && window._gcLeadWatch.custName ? s(window._gcLeadWatch.custName(lead)) : ''; } catch (_e) {}   /* patch FAKEJOB: never "GrayCo" (a website lead's lead owner) */
+    var p = stamp({ id: pid, name: lead.name, client: _cn || lead.gc || (/^gray\s*co\b/i.test(s(lead.owner)) ? '' : lead.owner) || lead.contactName || lead.name, clientPhone: lead.phone || '', clientEmail: lead.email || '', address: lead.address || '',
       type: kind === 'Insurance' ? 'Insurance Claim' : kind === 'Residential' ? (lead.type || 'Roofing') : 'Commercial Reno', status: 'bidding', pm: lead.pm || '', estimator: lead.estimator || '', contract: 0, estId: '',   /* patch BIDROLE */
       startDate: '', endDate: '', scope: lead.scope || '', autoPO: bpo || freePo(lead.autoPO || lead.po || lead.poNumber) || autoPO(), subs: [],   /* LEADWATCH: the lead's own PO when it has one */ created: today(), createdAt: nowIso(), isInsurance: kind === 'Insurance',   /* patch BIDPO: the bid job's PO */
       leadId: lead.id, leadSource: srcOf(lead), bidDue: lead.bidDue || '', preBid: lead.preBid || '', bidNumber: lead.bidNumber || '', plansLinks: arr(lead.plansLinks),
@@ -187172,7 +187175,7 @@ function linkFromAlert(){
 }
 
 RI.call(W, function(){ try { linkFromAlert(); strip(); decorateLead(); decorateUnsorted(); } catch (e) {} }, 1500);
-W._gcSalesBlock = { isSales: sgIsSales, why: sgWhy, open: openList, block: block, render: renderBlocked, count: function(){ return COUNT; } };
+W._gcSalesBlock = { isSales: sgIsSales, why: sgWhy, classify: sgClass, botWhy: sgBotWhy, open: openList, block: block, render: renderBlocked, count: function(){ return COUNT; } };
 try { console.log('[GC] 🧹 Sales & spam + 🚫 Blocked (patch SALESBLOCK) — _gcSalesBlock'); } catch (e) {}
 })();
 </script>
@@ -249332,7 +249335,13 @@ function tick(){
 SI.call(W, tick, 5000); ST.call(W, tick, 1500);
 
 W._gcAcctFix = { core: CORE, plan: plan, run: run, undoItem: function(logId, itemId){ return undoItems(logId, [itemId]); }, undoAll: function(logId){ return undoItems(logId, null); },
-  lookDone: lookDone, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; } };
+  lookDone: lookDone, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; },
+  /* patch FAKEJOB: another one-time fix logs here too (its own runId; ↩ Undo works on its 'projects' changes) and adds to ⚠ Needs a look */
+  kv: { get: kvGet, put: kvPut }, addRun: async function(entry, look){
+    var L = await logLoad(); if (!entry || !entry.id || !entry.runId || L.some(function(x){ return x.id === entry.id; })) return false;
+    LOG = L.concat([entry]); await kvPut(LOGK, LOG);
+    if (arr(look).length) { var LK = await lookLoad(), have = {}; LK.list = arr(LK.list); LK.list.forEach(function(x){ have[x.id] = 1; }); LK.list = LK.list.concat(arr(look).filter(function(x){ return x && x.id && !have[x.id]; })); LOOK = LK; await kvPut(LOOKK, LK); }
+    paint(true); return true; } };
 try { console.log('[GC] 🧾 Accounting fixes run once by themselves; Accounting → ⚠ Needs a look (patch ACCTAUTO) — _gcAcctFix.plan()'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
@@ -251328,8 +251337,28 @@ W.addEventListener('hashchange', gqHash); ST.call(W, gqHash, 1500);
    OLDER_BEFORE on (only from now on). One admin computer does it (a claim on the lead first). */
 function chk(l){ var ex = obj(l && l.leadExtra); return low(l && (l.lsaCheck || ex.lsaCheck)); }
 function badLead(l){ return chk(l) === 'bad' || chk(l) === 'pm_bad' || /not a real lead|bad lead/i.test(s(l && l.lostReason)); }
+/* patch FAKEJOB (owner 11/20: "how did this job make it in, it's not real" — a drafting sub's website pitch, auto-assigned to the estimator,
+   became job J546 "assigned, no BAD" with client "GrayCo", the website lead's lead-owner): a sub / supplier, a sales pitch, a bot or a lead the
+   Sales & spam filter took is no customer and never a job (here and in the Lead Inbox's "Create bid job"); an automatic job also needs a
+   customer name that is not GrayCo. An owner's "not spam" (notSpam) lets it through. → '' or why not. */
+var NC_STATE = /^(subs?|sales|spam|bot|blocked)$/i;
+function leadText(l){ var ex = obj(l.leadExtra), c = obj(l.contact), a = [obj(l.said).message, obj(ex.said).message, l.textBody, ex.textBody, l.callerSaid, ex.callerSaid, l.spokenReason, ex.spokenReason, l.scope, l.message, c.message, l.body].map(s).filter(Boolean);
+  return a.filter(function(x, i){ return a.indexOf(x) === i; }).join('\n'); }
+function notCustomer(l){
+  if (!l) return 'no lead';
+  var ex = obj(l.leadExtra), SB = W._gcSalesBlock || {}, c = obj(l.contact), t = leadText(l), r;
+  if (l.notSpam === true || ex.notSpam === true) return '';
+  if ([l.stage, l.status, l.inboxState, l.sgKind, ex.sgKind].some(function(v){ return NC_STATE.test(s(v)); }) || /sales\s*&\s*spam/i.test(s(l.dismissedBy))) return 'taken by the Sales & spam filter';
+  if (!t) return '';
+  try { if (typeof SB.botWhy === 'function' && (r = SB.botWhy({ name: s(c.name || l.contactName), message: t, email: low(c.email || l.email), company: s(l.company || obj(l.said).company) }))) return r; } catch (e) {}
+  try { if (typeof SB.classify === 'function') { r = obj(SB.classify(t, { email: low(c.email || l.email), company: s(l.company || obj(l.said).company || obj(ex.said).company) })); if (r.kind === 'sub') return 'a sub / supplier looking for work: ' + s(r.why); if (r.kind === 'sales' || r.kind === 'bot') return 'a sales pitch: ' + s(r.why); } } catch (e) {}
+  return '';
+}
+/* the customer's name for a job ('' = none): the GC, the owner, the person — never GrayCo itself (a website lead's lead owner) */
+function custName(l){ var ex = obj(l && l.leadExtra), c = obj(l && l.contact); return [l && l.gc, l && l.owner, c.name, l && l.contactName, ex.contactName, l && l.company].map(s).filter(function(x){ return x && !/^gray\s*co\b/i.test(x); })[0] || ''; }
 function goodLead(l){
   if (!l || badLead(l) || l.deleted || l.converted || l.archived || s(l.mergedInto) || tomb(l)) return false;
+  if (notCustomer(l) || !custName(l)) return false;   /* patch FAKEJOB */
   if (/^(lost|dead|declined|dismissed|merged|archived|cancell?ed)$/i.test(s(l.stage) || s(l.status))) return false;
   if (chk(l) === 'good' || chk(l) === 'pm_good') return C.isCustomer(l) || C.isBid(l);
   return C.isCustomer(l) && !!C.assignee(l);
@@ -251361,9 +251390,70 @@ function jobSweep(){
 }
 SI.call(W, jobSweep, 6000);
 
+/* ── patch FAKEJOB: ONCE, BY ITSELF — the jobs a non-customer lead already made are archived (never deleted) ──
+   A job made from a lead (LEADWATCH's sweep or the Lead Inbox's "Create bid job") since OLDER_BEFORE, still bidding with no contract /
+   estimate / start, whose lead is a sub / supplier, a sales pitch, a bot or the Sales & spam filter's → 🗄 Archived ("not a real customer"),
+   logged in 🧾 Accounting fixes log (the ACCTAUTO log, gc_acctfix_log) with ↩ Undo. Not sure (work on it, or the customer is only "GrayCo")
+   → ⚠ Needs a look, nothing changed. One admin desk does it (a claim in gc_kv gc_fakejob_state); never on a stale copy. */
+var FJ_RUN = 'FAKEJOB-1', FJ_KEY = 'gc_fakejob_state', FJ_BY = 'Automatic job check (not a real customer)', FJ = { running: false, done: null, tries: 0, last: null };
+var FJ_NOTE = /^Bid job from the Lead Inbox/;
+function untouched(p){ return /^(bidding|lead|)$/i.test(s(p.status)) && !(+p.contract > 0) && !s(p.estId) && !s(p.startDate); }
+function fakePlan(){
+  var c = cut(), LM = {}, arch = [], look = [];
+  arr(W._crm && W._crm.leads).forEach(function(l){ if (l && l.id) LM[s(l.id)] = l; });
+  arr(W._crm && W._crm.projects).forEach(function(p){
+    if (!p || !s(p.leadId) || p.deleted || /archiv|deleted/i.test(s(p.status))) return;
+    var made = day(p.createdAt) || day(p.created); if (!c || !made || made < c) return;
+    var l = LM[s(p.leadId)], job = 'Job ' + (s(p.autoPO) ? s(p.autoPO) + ' ' : '') + '"' + s(p.name).slice(0, 80) + '"', gray = /^gray\s*co\b/i.test(s(p.client));
+    if (!l) { if (FJ_NOTE.test(s(p.notes)) && gray) look.push({ id: 'FJ_LOOK_' + p.id, title: job + ' has GrayCo as its customer', detail: 'Made from a lead that is no longer in Leads. Check it is a real customer; archive it if not.' }); return; }
+    if (!(s(obj(l.lwJob).pid) === s(p.id) || s(l.pid) === s(p.id) || FJ_NOTE.test(s(p.notes)))) return;
+    var why = notCustomer(l);
+    if (why && untouched(p)) arch.push({ p: p, l: l, why: why });
+    else if (why) look.push({ id: 'FJ_LOOK_' + p.id, title: job + ' came from a lead that looks like no customer', detail: why + ' — the job has work on it, so it was left as it is. Archive it if it is not real.' });
+    else if (gray || !custName(l)) look.push({ id: 'FJ_LOOK_' + p.id, title: job + ' has GrayCo as its customer', detail: 'Made automatically from a lead with no customer name. Check it is a real customer; archive it if not.' });
+  });
+  return { arch: arch, look: look };
+}
+async function fakeCleanup(opts){
+  opts = obj(opts);
+  var AF = W._gcAcctFix;
+  if (FJ.running || !AF || !AF.kv || typeof AF.addRun !== 'function') return { skipped: 'not ready' };
+  if (!opts.force) {
+    if (!admin() || vas() || D.hidden) return { skipped: 'not an admin desk' };
+    try { if (W._gcStaleGate && W._gcStaleGate.holdSweeps()) return { skipped: 'stale copy' }; } catch (e) {}
+    if (W.__GC_IS_TYPING__ || W.__GC_FORM_OPEN__) return { skipped: 'typing' };
+  }
+  if (!W._gcSalesBlock || typeof W._gcSalesBlock.classify !== 'function' || !cut() || !arr(W._crm && W._crm.projects).length || !arr(W._crm && W._crm.leads).length) return { skipped: 'not loaded' };
+  FJ.running = true;
+  try {
+    var st = await AF.kv.get(FJ_KEY); if (st === undefined) return { skipped: 'no cloud' };
+    st = obj(st); st.runs = obj(st.runs);
+    if (st.runs[FJ_RUN]) { FJ.done = st.runs[FJ_RUN]; return { skipped: 'done' }; }
+    if (st.claim && st.claim.by !== myId() && now() - Date.parse(st.claim.at || 0) < 600000) return { skipped: 'another desk' };
+    st.claim = { by: myId(), at: new Date().toISOString() }; await AF.kv.put(FJ_KEY, st);
+    if (!opts.force) { await new Promise(function(r){ ST.call(W, r, 3000); }); var st2 = obj(await AF.kv.get(FJ_KEY)); if (obj(st2.runs)[FJ_RUN] || (st2.claim && st2.claim.by !== myId())) return { skipped: 'another desk' }; }
+    var P = fakePlan(), at = new Date().toISOString(), set = {}, items = [];
+    P.arch.forEach(function(z){
+      var p = z.p, before = { status: s(p.status), archivedWhy: s(p.archivedWhy), archivedAt: s(p.archivedAt), archivedBy: s(p.archivedBy), statusBeforeArchive: s(p.statusBeforeArchive) };
+      var after = { status: 'Archived', archivedWhy: 'not a real customer — ' + z.why.slice(0, 200), archivedAt: at, archivedBy: FJ_BY, statusBeforeArchive: s(p.status) };
+      set[p.id] = after;
+      items.push({ id: 'FJ_' + p.id, title: '🗄 Archived job ' + (s(p.autoPO) ? s(p.autoPO) + ' ' : '') + '"' + s(p.name).slice(0, 80) + '" — not a real customer', why: z.why + '. The lead (' + (s(z.l.contactName) || s(z.l.name)) + ', ' + (s(z.l.source) || 'lead') + ') became a job by itself; it is no customer.', amount: 0,
+        changes: [{ list: 'projects', id: s(p.id), before: before, after: after }], folds: [] });
+    });
+    if (items.length && typeof W._setProjects === 'function') W._setProjects(function(prev){ return arr(prev).map(function(p){ return p && set[p.id] ? Object.assign({}, p, set[p.id], { updatedAt: at }) : p; }); });
+    var entry = { id: 'FJ' + Date.parse(at).toString(36), runId: FJ_RUN, at: at, by: (myName() || 'office') + ' (automatic)', totals: { archivedJobs: items.length, look: P.look.length }, items: items };
+    if (items.length || P.look.length) await AF.addRun(entry, P.look);
+    st.runs[FJ_RUN] = { at: at, by: myId(), logId: entry.id, archived: Object.keys(set), look: P.look.length }; delete st.claim; await AF.kv.put(FJ_KEY, st);
+    FJ.done = st.runs[FJ_RUN]; FJ.last = { archived: Object.keys(set), look: P.look, log: entry };
+    try { console.log('[GC] 🗄 FAKEJOB: ' + items.length + ' job(s) from non-customer leads archived, ' + P.look.length + ' need a look (' + entry.id + ').'); } catch (e) {}
+    return { done: true, archived: Object.keys(set), look: P.look, log: entry };
+  } finally { FJ.running = false; }
+}
+SI.call(W, function(){ if (!FJ.done && ++FJ.tries >= 3) fakeCleanup().catch(function(){}); }, 7000);
+
 SI.call(W, paint, 2000);
 ST.call(W, paint, 800);
-W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
+W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
   state: function(){ return { atRisk: list().map(function(z){ return { id: z.l.id, k: z.r.k, h: z.r.h, kind: C.kindOf(z.l) }; }), hidden: OLD.n, by: OLD.why, cut: cut(), admin: admin(), office: office() }; } };
 try { console.log('[GC] 🚨 leads at risk + To-Do only from now on (patch LEADWATCH) — _gcLeadWatch'); } catch (e) {}
 })(window);

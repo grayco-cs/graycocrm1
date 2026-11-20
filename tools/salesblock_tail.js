@@ -215,6 +215,6 @@ function linkFromAlert(){
 }
 
 RI.call(W, function(){ try { linkFromAlert(); strip(); decorateLead(); decorateUnsorted(); } catch (e) {} }, 1500);
-W._gcSalesBlock = { isSales: sgIsSales, why: sgWhy, open: openList, block: block, render: renderBlocked, count: function(){ return COUNT; } };
+W._gcSalesBlock = { isSales: sgIsSales, why: sgWhy, classify: sgClass, botWhy: sgBotWhy, open: openList, block: block, render: renderBlocked, count: function(){ return COUNT; } };
 try { console.log('[GC] 🧹 Sales & spam + 🚫 Blocked (patch SALESBLOCK) — _gcSalesBlock'); } catch (e) {}
 })();
