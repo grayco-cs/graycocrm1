@@ -923,8 +923,16 @@ async function register(body){
     }).filter(Boolean).slice(0, 5);
     if (dupes.length) return { duplicates: dupes };
   }
-  const inv = body.invite ? await findInvite(body.invite, body.job) : null;
-  const invited = !!(inv && (!inv.data.email || low(inv.data.email) === email));
+  let inv = body.invite ? await findInvite(body.invite, body.job) : null;
+  /* patch BIDINVITE: a sign-up link sent to a phone (no e-mail on the invite: "sms:<cell>") is good for whoever opens it */
+  let invited = !!(inv && (!inv.data.email || low(inv.data.email) === email || /^sms:/.test(low(inv.data.email))));
+  /* patch BIDINVITE (owner 11/20): a sub we INVITED is approved on sign-up — by the invite link, or by an invite to the same e-mail
+     (a bid job's invite or a 📨 sign-up link); a sub who signs up on their own still waits for an admin */
+  if (!invited) {
+    const byMail = (await listRows([eq('collection', 'invites'), eq('email', email)])).filter(function(r){ return !(r.data && r.data.usedAt); })
+      .sort(function(a, b){ return s(b.data && b.data.createdAt).localeCompare(s(a.data && a.data.createdAt)); });
+    if (byMail[0]) { inv = byMail[0]; invited = true; }
+  }
 
   const cr = await fetch(sbUrl() + '/auth/v1/admin/users', { method: 'POST', headers: H(),
     body: JSON.stringify({ email: email, password: pw, email_confirm: true, user_metadata: { name: s(p.name).slice(0, 80), portal: 'sub' } }) });
@@ -949,7 +957,7 @@ async function register(body){
     unionAffiliation: clip(p.unionAffiliation, 20), serviceArea: clip(p.serviceArea), licenseNumbers: clip(p.licenseNumbers, 400),
     einLast4: s(p.einLast4).replace(/\D/g, '').slice(0, 4),
     trades: (Array.isArray(p.trades) ? p.trades : []).map(function(x){ return clip(x, 60); }).filter(Boolean).slice(0, 30),
-    invitedJobId: invited ? inv.job_id : undefined,
+    invitedJobId: invited && inv.job_id !== 'signup' ? inv.job_id : undefined, approvedAuto: invited ? (inv.job_id === 'signup' ? 'signup-link' : 'invited') : undefined,   /* patch BIDINVITE */
     vetPending: invited ? true : undefined,   /* SUBSIGNUP: (owner 11/16) an invited sub sees that job at once, but GrayCo still checks them: a card in ✅ Approvals */
     lang: s(p.lang) === 'es' ? 'es' : 'en',   /* patch SIGNUPPAPERS: their language, and the papers they SAY they have (not papers on file) */
     papersClaimed: (function(c){ c = c && typeof c === 'object' ? c : {}; return { w9: c.w9 === true, gl: c.gl === true, wc: c.wc === true, wcExempt: c.wcExempt === true, at: new Date().toISOString() }; })(p.papersClaimed),
@@ -1941,6 +1949,31 @@ function limited(ip, max){
   return h.n > max;
 }
 
+/* ── patch BIDINVITE (owner 11/20): the bid site's Invite (a sub or a supplier) → the invite row + the e-mail at once ("GrayCo invited
+   you to bid: <project>", a sign-up link with the token, or the sign-in link for an account) — no approval queue, not held by data-entry
+   mode (a sub e-mail, tagged 'trade': _lib/bidinvite.js). ── */
+async function inviteSend(who, body){
+  if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
+  const BI = require('./_lib/bidinvite.js');
+  const jobId = s(body.jobId), jr = okId(jobId) ? await getRow('jobs', jobId) : null;
+  if (!jr || isGone(jr.data)) throw Fail(404, 'No such bid job.');
+  const emails = Array.from(new Set(arr([]).concat(Array.isArray(body.emails) ? body.emails : [body.email]).map(low).filter(okEmail))).slice(0, 100);
+  if (!emails.length) throw Fail(400, 'Enter an e-mail address.');
+  const have = {}; (await listRows([eq('collection', 'invites'), eq('job_id', jobId)])).forEach(function(r){ have[low(r.email)] = r.data; });
+  const accts = await BI.accounts(), at = new Date().toISOString(), rows = [], out = [];
+  let mailed = 0;
+  for (const e of emails) {
+    const acct = accts[e], sup = acct ? acct.role === 'supplier' : s(body.as) === 'supplier';
+    const inv = Object.assign({}, have[e] || BI.newInvite(jobId, e, who.email, 'bidsite'), { as: sup ? 'supplier' : 'sub' });
+    const m = BI.inviteMail(jr.data, BI.link(inv, !!acct, sup), !!(acct && acct.lang === 'es'), sup, !!acct);
+    if (await BI.sendMail(e, m)) { mailed++; inv.mailedAt = at; inv.mailedBy = who.email; }
+    rows.push(rowFor('invites', inv)); out.push(pick(inv, ['id', 'jobId', 'email', 'token', 'createdAt', 'createdBy', 'as', 'mailedAt', 'usedAt', 'usedBy']));
+  }
+  if (isDraft(jr.data)) await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);   /* an invite opens a draft as PRIVATE */
+  await upsertRows(rows, who.email);
+  return { ok: true, invites: out, mailed: mailed };
+}
+
 exports.handler = async function (event) {
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
@@ -1972,6 +2005,7 @@ exports.handler = async function (event) {
       if (limited(ipOf(event), 40)) return J(429, { error: 'Too many tries. Wait a few minutes.' });
       const inv = await findInvite(body.invite, body.job);
       if (!inv) return J(200, { ok: false });
+      if (inv.job_id === 'signup') return J(200, { ok: true, email: /^sms:/.test(s(inv.data.email)) ? '' : s(inv.data.email), jobTitle: 'the GrayCo bid site — every public bid job' });   /* patch BIDINVITE: a 📨 sign-up link */
       const job = await getRow('jobs', inv.job_id);
       return J(200, { ok: true, email: s(inv.data.email), jobTitle: job && !isDraft(job.data) ? s(job.data.title) : '' });
     }
@@ -2030,6 +2064,7 @@ exports.handler = async function (event) {
       if (target.role === 'supplier') return J(200, await supplierWork(target));   /* patch SUPPLIER: their POs + supplier bills */
       return J(200, await myWork(target));
     }
+    if (action === 'invite-send') return J(200, await inviteSend(who, body));   /* patch BIDINVITE: Invite → the e-mail at once */
     if (action === 'po-link') return J(200, await poLink(who, body));   /* patch BIDPO: 🔗 Link to CRM job / Change link */
     if (action === 'po-cands') return J(200, await poCands(who, body));
     if (action === 'crm-vendors') {   /* patch SUPPLIER: the CRM's vendors, for linking a supplier account */

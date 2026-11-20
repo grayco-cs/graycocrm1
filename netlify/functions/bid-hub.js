@@ -383,8 +383,11 @@ async function invite(who, b){
     const isEs = x.t.lang === 'es'; if (isEs) es++;
     const link = SP.PORTAL_ORIGIN + '/?invite=' + x.inv.token + '&job=' + encodeURIComponent(jobId);
     const m = inviteMail(job, link, isEs);
-    try { if (await SP.sendMail(x.t.email, m.subject, m.html)) mailed++; } catch (e) {}
+    m.subject = ((isEs ? 'GrayCo le invitó a ofertar: ' : 'GrayCo invited you to bid: ') + (s(job.title) || 'GrayCo project')).slice(0, 240);   /* patch BIDINVITE: the owner's subject */
+    /* patch BIDINVITE: a sub e-mail, not a customer send — tagged 'trade', so ⏸ data-entry mode lets it go (and it is logged with every send) */
+    try { if (await require('./_lib/bidinvite.js').sendMail(x.t.email, m)) { mailed++; x.inv.mailedAt = nowIso(); } } catch (e) {}
   }
+  try { const st = sent.filter(x => x.inv.mailedAt).map(x => SP.rowFor('invites', x.inv)); if (st.length) await SP.upsertRows(st, who.email); } catch (e) {}
   return { ok: true, invited: rows.length, mailed, spanish: es, to: sent.length, visibility: job.draft ? 'draft' : (job.visibility || 'public') };
 }
 
@@ -995,6 +998,7 @@ exports.handler = async function(event){
     if (b.op === 'invite') r = who.canInvite ? await invite(who, b) : { code: 403, error: 'Only an admin, an estimator or the office invites subs.' };
     else if (b.op === 'visibility') r = await visibility(who, b);
     else if (b.op === 'award') r = await award(who, b);
+    else if (b.op === 'signuplink') r = who.canInvite ? await require('./_lib/bidinvite.js').signupLink(Object.assign({}, b, { by: who.email })) : { code: 403, error: 'Only an admin, an estimator or the office sends sign-up links.' };   /* patch BIDINVITE: 📨 Send sign-up link */
     else if (b.op === 'sweep') r = await sweep(who);
     else if (b.op === 'link') r = await link(who, b);   /* patch BIDEST */
     else if (b.op === 'postjob') r = await postjob(who, b);   /* patch BIDPOST: 📢 Put on bid portal */
