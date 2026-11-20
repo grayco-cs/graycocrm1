@@ -21,6 +21,7 @@ const PROJECTS = [
 const INVS = [
   { id: 'INVmw3s43wden8b8', type: 'sub', source: 'quickbooks', sub: 'Demo Plumbing', invNum: '1250', amt: 2300, pid: 'PRJmwf9iwz4k4', po: 'O046', desc: 'QuickBooks bill #1250 — 3161 Hwy 64 Ped. Office top out (2/3)', status: 'paid', paid: true, date: '2026-04-11', autoLinked: true, importedHistory: true, noSend: true },
   { id: 'INVf553lfs611z', type: 'sub', sub: 'Demo Garfias', client: 'Demo Eavanson', amt: 3000, pid: 'PRJjfp5ual6t2j', po: 'H990', desc: 'demo', status: 'approved', date: '2026-07-10', noSend: true },
+  { id: 'QB_FREE', type: 'sub', source: 'quickbooks', sub: 'Central Demo Roofing', invNum: '237', amt: 1170, pid: '', date: '2026-10-26', recvDate: '2026-10-26', desc: 'QuickBooks bill #237', status: 'paid', paid: true, importedHistory: true, noSend: true },
   { id: 'IV_MERGED', type: 'client', client: 'Kept Demo', invNum: '2001', amt: 900, pid: 'PRJ_GONE1', desc: 'draw', status: 'paid', paid: true, date: '2026-06-01', noSend: true }];
 const EXPS = [{ id: 'EX_GAR', pid: 'PRJjfp5ual6t2j', vendor: 'Demo Garfias', amt: 3000, desc: 'Demo Garfias — demo', date: '2026-07-10', status: 'approved', category: 'Subcontractor' }];
 const USERS = [{ id: 'u-office', name: 'Office Demo', email: 'office@grayco-cs.com', role: 'Office Admin', active: true }, { id: 'u-wesley', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }];
@@ -50,6 +51,12 @@ const LOG = cget('gc_acctfix_log') || [];
 ok(LOG.length === 2 && LOG[0].id === 'AFold' && LOG[1].runId === 'INVJOBS-1', 'the 🧾 log keeps the ACCTAUTO-1 entry and adds the INVJOBS-1 one', LOG.map((e) => e.id + ':' + e.runId));
 const LK = cget('gc_acctfix_look') || {};
 ok(LK.list.some((x) => x.id === 'look:billtotal:Z') && LK.list.some((x) => x.id === 'look:link:INVf553lfs611z' && x.sug && x.sug.pid === 'PRJep9czbdsn5k') && (LK.done || {})['look:link:INVmw3s43wden8b8'], 'Needs a look keeps the earlier entries, adds the guess with its job; the fixed one is ticked off', LK);
+
+/* 1b. Accounting → To match: the import to-dos in plain English, the resolved ones gone */
+const TK = (id, rec, qb, note) => ({ id, kind: 'qb_home', cat: 'QuickBooks import — needs a home', recordId: rec, done: false, label: '📜 History (recorded, not sent) — Bill — x', note: note || 'new bill from Central Roofing — created with NO job', qb, candidates: [] });
+await A.ev((l) => { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); }, [TK('T_FREE', 'QB_FREE', { kind: 'bill', num: '237', name: 'Central Demo Roofing', amount: 1170, date: '2026-10-26' }), TK('T_ON', 'INVmw3s43wden8b8', { kind: 'bill', num: '1250', name: 'Demo Plumbing', amount: 2300, date: '2026-04-11' }), TK('T_LOOK', 'INVf553lfs611z', { kind: 'bill', num: '', name: 'Demo Garfias', amount: 3000, date: '2026-07-10' })]);
+const qt = await A.ev(() => (window._gcAcctModel().match.items || []).filter((x) => x.kind === 'qbtodo').map((x) => ({ what: x.what, amount: x.amount, date: x.date })));
+ok(qt.length === 1 && /^Bill #237 from Central Demo Roofing, \$1,170, Oct 26 — no job yet\./.test(qt[0].what) && qt[0].amount === 1170 && qt[0].date === '2026-10-26', 'To match: one import to-do left, in plain English with its amount and date (the one now on a job and the one in Needs a look are gone)', qt);
 
 /* 2. one tap */
 await A.ev(() => window._setView('taxcenter')); await sleep(6000);

@@ -122786,7 +122786,7 @@ window._gcJOfficeTasks = function(){
   }catch(e){}
   tasksRaw().forEach(function(t){
     if(!t || t.done || t.kind!=='qb_home') return;
-    out.push({ id:'manual_'+t.id, manualId:t.id, cat:'QuickBooks import — needs a home', label:t.label, sub:t.note||'', color:'#dc2626', action:function(){ window._gcOpenQbHome(t.id); } });
+    out.push({ id:'manual_'+t.id, manualId:t.id, cat:'QuickBooks import — needs a home', label:decEnt(t.label), sub:decEnt(t.note||''), color:'#dc2626', task:t, action:function(){ window._gcOpenQbHome(t.id); } });
   });
   return out;
 };
@@ -122863,14 +122863,17 @@ function detect(rows){
 var KIND_LABEL={ billlist:'Bill List', transactions:'Transaction List by Date', invoicelist:'Invoice List', salesbycustomer:'Sales by Customer Detail', openinvoices:'Open Invoices / A/R Aging Detail', customers:'Customer Contact List', vendors:'Vendor Contact List', unknown:'(not recognised)' };
 /* patch STMTPDF: "Oct 30, 2026" / "October 30, 2026" dates (some QuickBooks exports) */
 function qbDate(v){ var m=s(v).match(/^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/), M={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12}; if(!m||!M[low(m[1])]) return ''; return m[3]+'-'+('0'+M[low(m[1])]).slice(-2)+'-'+('0'+m[2]).slice(-2); }
+/* INVJOBS 11/20: a QuickBooks export can carry HTML entities ("Q&amp;A Construction LLC") — decoded before any name is matched */
+function decEnt(v){ var t=String(v==null?'':v); for(var i=0;i<3 && /&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/i.test(t);i++) t=t.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi,function(m,e){ e=e.toLowerCase(); return e==='amp'?'&':e==='lt'?'<':e==='gt'?'>':e==='quot'?'"':e==='apos'?"'":e.charAt(1)==='x'?String.fromCharCode(parseInt(e.slice(2),16)):String.fromCharCode(parseInt(e.slice(1),10)); }); return t; }
+window._gcDecEnt = decEnt;
 function parseQb(text){
   var rows=csvRows(text), d=detect(rows);
   if(!d) return { error:'No QuickBooks header row found (looked for Date / Num / Name / Amount …).', recs:[] };
   var m=d.map, recs=[], curName='', curAcct='', sawHead=false;/*QBMULTI*/
   for(var i=d.row+1;i<rows.length;i++){
     var r=rows[i]; if(!r || !r.some(function(x){ return x; })) continue;
-    var g=function(f){ return m[f]!==undefined ? s(r[m[f]]) : ''; };
-    var first=s(r[0]);
+    var g=function(f){ return m[f]!==undefined ? decEnt(s(r[m[f]])) : ''; };
+    var first=decEnt(s(r[0]));
     if(/^total\b/i.test(first) || /^total\b/i.test(g('name')) || /^(tuesday|monday|wednesday|thursday|friday|saturday|sunday)\b/i.test(first) || /^accrual basis|^cash basis/i.test(first)) continue;
     /* Sales by Customer Detail groups rows under a customer heading row */
     if(r.filter(function(x){ return x; }).length===1 && first && m.date!==undefined && !ymd(first)){ if(d.kind==='transactions'){ curAcct=first; sawHead=true; } else curName=first; continue; }   /* patch STMTPDF: Transaction Detail by Account headings are accounts */
@@ -123748,6 +123751,7 @@ function computeJobs(R, opt){
 }
 
 /* 7. TO MATCH / NEEDS REVIEW — one list */
+var QMEMO={};   /* INVJOBS: the job evidence for an import to-do, worked out once per record version */
 function computeMatch(ccTrans){
   var items=[], P=projMap();
   L('invoices').forEach(function(iv){
@@ -123755,7 +123759,16 @@ function computeMatch(ccTrans){
     if(RULES.tomb('invs', iv.id) || RULES.folded('invs', iv.id)) return;
     items.push({ kind:'qb', id:iv.id, title:'QuickBooks invoice to confirm', what:(iv.client||iv.customer||'')+' · #'+(iv.invNum||iv.po||'')+(iv.desc?' · '+iv.desc:''), amount:amtOf(iv), date:RULES.invDate(iv), pid:iv.pid||'' });
   });
-  try{ var td=window._gcJOfficeTasks ? window._gcJOfficeTasks() : []; (Array.isArray(td)?td:[]).forEach(function(x){ if(!x || !/import/i.test(x.cat||'')) return; items.push({ kind:'qbtodo', id:x.manualId||x.id, title:'QuickBooks import to-do', what:(x.label||'')+(x.sub?' · '+x.sub:''), amount:0, date:'', raw:x }); }); }catch(e){}
+  /* INVJOBS 11/20: an import to-do in plain English, with its amount and date; gone when it is done, on a job, archived, or waiting in
+     ⚠ Needs a look (one list) — patch ACCTAUTO core.qbTodo */
+  try{ var td=window._gcJOfficeTasks ? window._gcJOfficeTasks() : [], AF=window._gcAcctFix, QT=AF&&AF.core&&AF.core.qbTodo, qctx=null;
+    if(QT){ var IM={}; L('invs').concat(L('invoices')).forEach(function(r){ if(r&&r.id&&!IM[r.id]) IM[r.id]=r; }); var LKS={}, lk=(AF.state&&AF.state().look)||null; if(lk) (lk.list||[]).forEach(function(z){ if(z&&!(lk.done||{})[z.id]) (z.ids||[]).forEach(function(i){ LKS[i]=1; }); });
+      var VN={}; L('subs').concat(L('vendors')).forEach(function(v){ var k=v&&AF.core.decEnt(v.name).toLowerCase().replace(/&/g,' and ').replace(/\b(llc|inc|co|corp|company|the|ltd)\b/g,' ').replace(/[^a-z0-9]+/g,' ').trim(); if(k) VN[k]=1; });
+      var ILm=window._gcInvLink&&(window._gcInvLink.core||window._gcInvLink), PJ=L('projects'), isDelP=function(id){ try{ return !!(window._gcIsProjectDeleted&&window._gcIsProjectDeleted(id)); }catch(e){ return false; } };
+      qctx={ inv:IM, look:LKS, vendors:VN, tomb:function(id){ return RULES.tomb('invs', id); }, live:function(pid){ return PJ.some(function(p){ return p&&String(p.id)===String(pid)&&!p.deleted&&!isDelP(p.id); }); }, match:ILm&&ILm.match?function(r){ var ck=r.id+'|'+PJ.length; if(!(ck in QMEMO)){ if(Object.keys(QMEMO).length>2000) QMEMO={}; QMEMO[ck]=ILm.match(r, PJ, { isDeleted:isDelP }); } return QMEMO[ck]; }:null }; }
+    (Array.isArray(td)?td:[]).forEach(function(x){ if(!x || !/import/i.test(x.cat||'')) return;
+      if(QT && x.task){ var q=QT(x.task, qctx); if(!q) return; items.push({ kind:'qbtodo', id:x.manualId||x.id, title:'QuickBooks import to-do', what:q.what, amount:q.amount, date:q.date, likely:q.likely, rec:q.recordId, raw:x }); return; }
+      items.push({ kind:'qbtodo', id:x.manualId||x.id, title:'QuickBooks import to-do', what:(QT?AF.core.decEnt(x.label||''):(x.label||''))+(x.sub?' · '+x.sub:''), amount:0, date:'', raw:x }); }); }catch(e){}
   (EXTRA.dups||[]).forEach(function(g,i){ if(!g) return;
     if(g.rows){ var r0=g.rows[0]||{}; items.push({ kind:'dup', id:'dup'+i, title:(g.strong?'Duplicate':'Look-alike')+' ('+g.rows.length+' rows)', what:(g.rule||'')+' · '+(r0.who||'')+(r0.desc?' · '+r0.desc:''), amount:n2(r0.amount), date:day(r0.date) }); return; }
     items.push({ kind:'dup', id:'dup'+i, title:'Possible duplicate ('+(g.count||2)+' copies)', what:(g.what||g.sig||'')+(g.who?' · '+g.who:''), amount:n2(g.keepAmount||g.removes), date:day(g.date) }); });
@@ -124155,6 +124168,7 @@ function drawMatch(m){
 function resolveBtns(x){
   var b=[];
   if(x.kind==='qb'){ b.push('<button class="gck-btn s p" data-act="qbok:'+esc(x.id)+'">Confirm or not real…</button>'); }
+  if(x.kind==='qbtodo' && x.likely && x.rec) b.push('<button class="gck-btn s p" data-act="qbuse:'+esc(x.rec)+':'+esc(x.likely.pid)+'" title="'+esc(x.likely.name)+'">Use this job</button>');
   if(x.kind==='qbtodo') b.push('<button class="gck-btn s" data-act="qbtodo:'+esc(x.id)+'">Open</button>');
   if(x.kind==='dup') b.push('<button class="gck-btn s p" data-act="dups">Review</button>');
   if(x.kind==='cc') b.push('<button class="gck-btn s p" data-act="more:cctrans">Match</button>');
@@ -124252,6 +124266,7 @@ function act(a, el){
     case 'cards': try{ if(window._gcOpenCards) return window._gcOpenCards(); }catch(e){} return;
     case 'payroll': try{ if(window._gcOpenPayroll) return window._gcOpenPayroll(); if(window._gcOpenPayrollTab) return window._gcOpenPayrollTab(); }catch(e){} return;
     case 'qbok': try{ if(window._gcOpenReviewOne) return window._gcOpenReviewOne(v); }catch(e){} return openInvoice(v);
+    case 'qbuse': try{ var pp=v.split(':'); if(window._gcAcctFix && window._gcAcctFix.pick){ if(el) el.disabled=true; return window._gcAcctFix.pick(pp[0], pp[1]).then(function(r){ try{ if(typeof window._toast==='function') window._toast(r&&r.done?'✓ '+r.item.title+' (🧾 Accounting fixes log: ↩ Undo)':'⚠ '+((r&&r.error)||'not moved')); }catch(e){} render(); }); } }catch(e){} return;
     case 'qbtodo': try{ var it=(V.lastModel||model()).match.items.filter(function(x){ return x.kind==='qbtodo' && String(x.id)===v; })[0]; if(it && it.raw && typeof it.raw.action==='function') return it.raw.action(); if(window._gcOpenQbHome) return window._gcOpenQbHome(v); }catch(e){} return;
     case 'remind': return remind(v);
     case 'week': { var w=m.w8.weeks[+v]; return drill('Week of '+fmtDay(w.from)+' – '+fmtDay(w.to), w.items.map(function(x){ return {date:x.date, what:(x.dir==='in'?'IN · ':'OUT · ')+x.what, amount:x.dir==='in'?x.amount:-x.amount, kind:x.kind, id:x.id}; }), 'Net '+money(w.net)); }
@@ -249144,7 +249159,7 @@ function plan(lists, opts){
   /* G. INVJOBS (below): run with the rest on a CRM that never had these fixes */
   var expenses = arr(lists.expenses);
   if (!opts.noJobs) {
-    var G = planJobs({ invs: invs, reg: regOut, expenses: expenses, projects: projects }, { at: at, isDeleted: opts.isDeleted, merged: opts.merged });
+    var G = planJobs({ invs: invs, reg: regOut, expenses: expenses, projects: projects, vendors: lists.vendors }, { at: at, isDeleted: opts.isDeleted, merged: opts.merged, invlink: IL });
     var gl = {}; G.look.forEach(function(x){ gl[x.id] = 1; });
     items = items.concat(G.items); look = look.filter(function(x){ return !gl[x.id]; }).concat(G.look); foldsOut = foldsOut.concat(G.folds);
     invs = G.invs; regOut = G.reg; expenses = G.expenses;
@@ -249186,6 +249201,8 @@ var JOB_EVIDENCE = {
   INV0cn960fkw35: { from: 'PRJ0evqm2s6m36', why: 'its job "Renesant- 7.5 ton changeout of unit" (PO J224, Aug 2026) is gone from the CRM — no delete record, no merge. No other job is that HVAC changeout: re-create the job and pick it, or pick another' },
   INV1786473973345F: { from: 'PRJ0evqm2s6m36', why: 'its job "Renesant- 7.5 ton changeout of unit" (PO J224, Aug 2026) is gone from the CRM — no delete record, no merge. No other job is that HVAC changeout: re-create the job and pick it, or pick another' }
 };
+var ENT = /&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/i;
+function decEnt(v){ var t = s(v); for (var i = 0; i < 3 && ENT.test(t); i++) t = t.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi, function(m, e){ e = e.toLowerCase(); return e === 'amp' ? '&' : e === 'lt' ? '<' : e === 'gt' ? '>' : e === 'quot' ? '"' : e === 'apos' ? "'" : e.charAt(1) === 'x' ? String.fromCharCode(parseInt(e.slice(2), 16)) : String.fromCharCode(parseInt(e.slice(1), 10)); }); return t; }
 var TEST_TXT = /^\W*(test|testing|test (invoice|bill|entry|record)|dummy|fake|sample|asdf+|x{3,}|do not pay|ignore( this)?)\W*$/i;
 function nowIso(){ return new Date().toISOString(); }
 function word(v){ return low(v).replace(/&amp;/g, '&').replace(/[^a-z0-9 ]/g, ' ').trim().split(/\s+/)[0] || ''; }
@@ -249270,6 +249287,34 @@ function planJobs(lists, opts){
     if (ev) { lookJob(v, cur, gone, to, ev.alts, ev.why); return; }
     if (gone) lookJob(v, null, true, null, [], 'its job ' + pid + (s(v.project) ? ' ("' + s(v.project) + '")' : '') + ' is gone — no merge record, no other job with its PO');
   });
+  /* QuickBooks names with HTML entities ("Q&amp;A Construction LLC", an export quirk) → decoded; a bill whose decoded name IS a sub /
+     vendor in the CRM is linked to it; one Needs-a-look per name that is no sub / vendor yet ("add it as a sub?") */
+  var NF = ['sub', 'vendor', 'client', 'customer', 'desc', 'project', 'memo'], nameCh = [], vByName = {}, vLinks = {}, addSub = {};
+  arr(lists.vendors).forEach(function(x){ var k = nkey(decEnt(x.name)); if (k && !vByName[k]) vByName[k] = x; });
+  B.invs.slice().forEach(function(v0){
+    var v = B.invs[B.idx.invs[s(v0.id)]]; if (!v || dead(v) || !isQB(v)) return;
+    var upd = {}, had = false;
+    NF.forEach(function(f){ if (typeof v[f] === 'string' && ENT.test(v[f])) { upd[f] = decEnt(v[f]); had = had || f === 'sub' || f === 'vendor'; } });
+    if (Object.keys(upd).length) nameCh.push(B.put(change('invs', v, upd)));
+    v = B.invs[B.idx.invs[s(v.id)]];
+    if (!had || !isBill(v) || s(v.subId) || s(v.vendorId)) return;   /* only what the escaping kept from matching */
+    var nm = s(v.sub || v.vendor), k = nkey(nm), ven = k ? vByName[k] : null;
+    if (ven) { (vLinks[s(ven.id)] = vLinks[s(ven.id)] || { ven: ven, chs: [], amt: 0 }).chs.push(B.put(change('invs', v, { subId: s(ven.id) }))); vLinks[s(ven.id)].amt += num(amtOf(v)); }
+    else if (k) { var a = addSub[k] = addSub[k] || { name: nm, ids: [], amt: 0, nums: [] }; a.ids.push(s(v.id)); a.amt += num(amtOf(v)); if (billNo(v)) a.nums.push('#' + billNo(v)); }
+  });
+  if (nameCh.filter(Boolean).length) item('names', nameCh.filter(Boolean).length + ' QuickBooks name(s) read as written ("&amp;" → "&")', 'the QuickBooks export wrote "&" as "&amp;", so the name was shown that way and matched no sub / vendor', 0, nameCh, 'decode');
+  Object.keys(vLinks).forEach(function(id){ var x = vLinks[id]; item('vendor', x.chs.length + ' QuickBooks bill(s) linked to the sub / vendor "' + s(x.ven.name) + '"', 'the bill names it exactly (once "&amp;" is read as "&")', x.amt, x.chs, id); });
+  Object.keys(addSub).forEach(function(k){ var a = addSub[k];
+    look.push({ id: 'look:addsub:' + k.replace(/\s+/g, '-'), kind: 'addsub', rule: JOBS_ID, title: 'Add "' + a.name + '" as a sub / vendor? (' + a.ids.length + ' QuickBooks bill' + (a.ids.length > 1 ? 's' : '') + ', ' + money(a.amt) + ')', detail: 'No sub or vendor by this name is in the CRM. Its bills (' + a.nums.join(', ') + ') are recorded with the name QuickBooks has. Add it under Subs / Vendors (with its W-9 / COI if it is a sub), then ✓ Done.', amount: r2(a.amt), ids: a.ids }); });
+  /* a QuickBooks record with NO job whose job the evidence is SURE of (patch INVLINK: the address, the PO, the QuickBooks project) */
+  var IL = opts.invlink;
+  if (IL && IL.match) B.invs.slice().forEach(function(v0){
+    var v = B.invs[B.idx.invs[s(v0.id)]]; if (!v || dead(v) || !isQB(v) || s(v.pid) || v.noAutoLink || placedByPerson(v)) return;
+    var m = null; try { m = IL.match(v, lists.projects, { isDeleted: opts.isDeleted, invs: B.invs }); } catch (e) {}
+    if (!m || m.level !== 'sure' || !m.top || !J.live(m.top.pid)) return;
+    var w = (m.top.why || []).join('; ');
+    item('relink', label(v) + ' put on "' + s(m.top.p.name) + '"', 'it had no job; the evidence: ' + w, amtOf(v), moveTo(B, v, J.live(m.top.pid), null, BY, w), s(v.id));
+  });
   /* register lines / expenses still on a MERGED job (no invoice of theirs moved them) → the kept job */
   ['gcAcctRegister', 'expenses'].forEach(function(k){
     var by = {};
@@ -249281,6 +249326,34 @@ function planJobs(lists, opts){
   });
   var reg = B.gcAcctRegister.filter(function(r){ return !foldIds[rid(r)]; });
   return { runId: JOBS_ID, at: at, items: items, look: look, folds: folds, invs: B.invs, reg: reg, expenses: B.expenses, totals: { items: items.length, look: look.length } };
+}
+/* Accounting → "To match / needs review": a QuickBooks import to-do in plain English (INVJOBS 11/20, owner: "confused on these, don't
+   look right"). null = drop it: done, its record is on a job / archived / deleted, or it waits in ⚠ Needs a look (one list).
+   ctx = { inv: id → record, look: id → 1 (open Needs-a-look record ids), vendors, tomb(id), match(rec) → INVLINK match, live(pid) } */
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function shortDay(d){ d = day(d); return d ? MON[+d.slice(5, 7) - 1] + ' ' + (+d.slice(8, 10)) + (d.slice(0, 4) !== String(new Date().getFullYear()) ? ', ' + d.slice(0, 4) : '') : ''; }
+function shortMoney(n){ n = r2(n); return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
+function plainWhy(t){ return decEnt(t).replace(/\s*·\s*best candidate\(s\):.*$/, '').replace(/\s*—\s*history: recorded with the name as QuickBooks has it/, '').replace(/\s*\(QuickBooks has customers, not jobs\)/, '').replace(/;\s*\d+ possible job\(s\) on the to-do/, '').replace(/\b(PRJ|QB_|INV|EXP|SUB|VEN|CUS)[A-Za-z0-9_-]{5,}\b/g, '').replace(/\s{2,}/g, ' ').trim(); }
+function qbTodo(t, ctx){
+  ctx = ctx || {};
+  if (!t || t.done || t.kind !== 'qb_home') return null;
+  var q = t.qb || {}, rid0 = s(t.recordId), rec = rid0 && ctx.inv ? ctx.inv[rid0] : null;
+  if (rec && (dead(rec) || s(rec.pid))) return null;
+  if (rid0 && (ctx.look || {})[rid0]) return null;
+  if (!rec && rid0 && ctx.tomb && ctx.tomb(rid0)) return null;
+  var kind = low(q.kind), bill = kind === 'bill' || (rec && isBill(rec)), inv = /^(invoice|salesreceipt)$/.test(kind) || (rec && !isBill(rec) && /^client/i.test(s(rec.type)));
+  var name = decEnt(q.name || (rec && payee(rec)) || ''), num0 = s(q.num || (rec && billNo(rec)));
+  var amount = r2(q.amount != null && q.amount !== '' ? q.amount : rec ? amtOf(rec) : 0), date = day(q.date || (rec && (rec.date || rec.recvDate)));
+  var head = (bill ? 'Bill' : inv ? 'Invoice' : decEnt(q.qbType || q.kind || 'QuickBooks line')) + (num0 ? ' #' + num0 : '') + (name ? (bill ? ' from ' : inv ? ' for ' : ' — ') + name : '') + (amount ? ', ' + shortMoney(amount) : '') + (date ? ', ' + shortDay(date) : '');
+  var what = head, likely = null;
+  if (rec) {
+    what += ' — no job yet.';
+    var m = null; try { m = ctx.match ? ctx.match(rec) : null; } catch (e) {}
+    if (m && (m.level === 'sure' || m.level === 'likely') && m.top && (!ctx.live || ctx.live(m.top.pid))) { likely = { pid: s(m.top.pid), name: s(m.top.p && m.top.p.name) }; what += ' Likely: ' + likely.name + '.'; }
+    else { var jc = arr(t.candidates).filter(function(c){ return c.job; }).length; if (jc) what += ' ' + jc + ' possible job' + (jc > 1 ? 's' : '') + ' — Open to pick one.'; }
+    if (bill && name && ctx.vendors && !ctx.vendors[nkey(name)] && !s(rec.subId)) what += ' No sub / vendor "' + name + '" in the CRM yet.';
+  } else what += ' — ' + (plainWhy(t.note) || 'open it to decide') + '.';
+  return { what: what.replace(/\.\.$/, '.'), amount: amount, date: date, likely: likely, recordId: rec ? s(rec.id) : '' };
 }
 /* ⚠ Needs a look → "✓ Use this job": a person's pick (pid = the job, the invoice's own job = it's right, '' = no job) */
 function pickJob(lists, invId, pid, opts){
@@ -249322,7 +249395,7 @@ function undo(lists, its, at){
   return out;
 }
 
-return { RUN_ID: RUN_ID, JOBS_ID: JOBS_ID, JOB_EVIDENCE: JOB_EVIDENCE, BY: BY, OWNER_SAYS: OWNER_SAYS, plan: plan, planJobs: planJobs, pickJob: pickJob, undo: undo, payments: payments, payKey: payKey, normNo: normNo, vkey: vkey, money: money };
+return { RUN_ID: RUN_ID, JOBS_ID: JOBS_ID, JOB_EVIDENCE: JOB_EVIDENCE, BY: BY, OWNER_SAYS: OWNER_SAYS, plan: plan, planJobs: planJobs, pickJob: pickJob, qbTodo: qbTodo, decEnt: decEnt, undo: undo, payments: payments, payKey: payKey, normNo: normNo, vkey: vkey, money: money };
 })();
 
 var D = W.document;
@@ -249382,7 +249455,8 @@ async function lists(){
   tasks.forEach(function(t){ if (t && t.kind === 'qb_history_costs' && Array.isArray(t.qbKeys)) keys = keys.concat(t.qbKeys); });
   var I = invList(); if (!I.length) I = await getList('invs');
   var E = arr(crm().expenses); if (!E.length) E = await getList('expenses');
-  return { invs: I, reg: await getList(REG), folded: await getList(FOLDK), deletedReg: del, projects: arr(crm().projects), customers: arr(crm().customers), expenses: E, payKeys: keys };
+  var VN = arr(crm().subs).concat(arr(crm().vendors)); if (!VN.length) VN = (await getList('vendors')).concat(await getList('subs'));
+  return { invs: I, reg: await getList(REG), folded: await getList(FOLDK), deletedReg: del, projects: arr(crm().projects), customers: arr(crm().customers), expenses: E, vendors: VN, payKeys: keys };
 }
 function isDel(id){ try { return !!(W._gcIsProjectDeleted && W._gcIsProjectDeleted(id)); } catch (e) { return false; } }
 /* the job merge map (patch JOBMERGE): the jobs' own merge marks + the merge log + gc_job_merge_map (cloud and this computer) */
@@ -249468,8 +249542,15 @@ async function lookDone(id, how){ var LK = await lookLoad(); LK.done[id] = { at:
 /* ⚠ Needs a look → ✓ Use this job: the job picked (the guess is preselected) — logged with ↩ Undo like the automatic fixes */
 async function useJob(lookId, pid){
   var LK = await lookLoad(), x = arr(LK.list).filter(function(l){ return l.id === lookId; })[0]; if (!x) return { error: 'not found' };
+  var r = await pickInv(s(x.inv || (x.ids || [])[0]), pid);
+  if (r.done) await lookDone(lookId, r.item.title);
+  return r;
+}
+/* a person picks the job of one invoice / bill (Needs a look, or "Use this job" on Accounting → To match) — logged, ↩ Undo */
+async function pickInv(invId, pid){
+  if (!allowed()) return { error: 'admins and the office only' };
   var L = await lists(), who = meName(), at = nowIso();
-  var r = CORE.pickJob({ invs: L.invs, reg: L.reg, expenses: L.expenses, projects: L.projects }, s(x.inv || (x.ids || [])[0]), s(pid), { at: at, by: who, isDeleted: isDel });
+  var r = CORE.pickJob({ invs: L.invs, reg: L.reg, expenses: L.expenses, projects: L.projects }, s(invId), s(pid), { at: at, by: who, isDeleted: isDel });
   if (!r.item) return r;
   var need = {}; r.item.changes.forEach(function(ch){ need[ch.list] = 1; });
   if (need.invs) await putList('invs', r.invs, 'Needs a look — job picked');
@@ -249477,7 +249558,7 @@ async function useJob(lookId, pid){
   if (need.expenses) await putList('expenses', r.expenses, 'Needs a look — job picked');
   var entry = { id: 'AF' + Date.parse(at).toString(36) + 'p', runId: CORE.JOBS_ID, at: at, by: who + ' (⚠ Needs a look)', device: DEV, totals: { items: 1 }, items: [r.item] };
   var LG = await logLoad(); LG = LG.concat([entry]); LOG = LG; await kvPut(LOGK, LG);
-  await lookDone(lookId, r.item.title);
+  paint(true);
   return { done: true, item: r.item };
 }
 function jobSel(x){
@@ -249571,7 +249652,7 @@ function tick(){
 SI.call(W, tick, 5000); ST.call(W, tick, 1500);
 
 W._gcAcctFix = { core: CORE, plan: plan, run: run, undoItem: function(logId, itemId){ return undoItems(logId, [itemId]); }, undoAll: function(logId){ return undoItems(logId, null); },
-  lookDone: lookDone, useJob: useJob, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; } };
+  lookDone: lookDone, useJob: useJob, pick: pickInv, open: open, close: close, paint: paint, state: function(){ return { state: STATE, log: LOG, look: LOOK, device: DEV }; } };
 try { console.log('[GC] 🧾 Accounting fixes run once by themselves; Accounting → ⚠ Needs a look (patch ACCTAUTO) — _gcAcctFix.plan()'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>

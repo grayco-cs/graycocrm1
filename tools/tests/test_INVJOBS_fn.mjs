@@ -17,10 +17,10 @@ const FILE = fs.statSync(ARG).isDirectory() ? path.join(ARG, 'index.html') : ARG
 const html = fs.readFileSync(FILE, 'utf8');
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 900) : '')); } };
 const blockAt = (needle) => { const i = html.indexOf(needle); if (i < 0) return ''; const st = html.lastIndexOf('<script', i), en = html.indexOf('</script>', i); return html.slice(html.indexOf('>', st) + 1, en); };
-const JM = blockAt('__GC_PATCH_JOBMERGE__ — INVMATCH 2'), AA = blockAt('__GC_PATCH_ACCTAUTO__'), DD = blockAt("W._gcDedupe = { scan: scan");
+const JM = blockAt('__GC_PATCH_JOBMERGE__ — INVMATCH 2'), AA = blockAt('__GC_PATCH_ACCTAUTO__'), DD = blockAt("W._gcDedupe = { scan: scan"), ILB = blockAt('__GC_PATCH_INVLINK__ — '), JB = blockAt('if(window.__GC_PATCH_J__) return;'), TC = blockAt('/* 7. TO MATCH / NEEDS REVIEW — one list */');
 ok(JM.length > 3000 && AA.length > 10000 && DD.length > 3000, 'index.html has patch JOBMERGE, ACCTAUTO and DEDUP');
 const g = {}; const cx = vm.createContext({ window: g, globalThis: g, console: { log() {} }, JSON, Math, Date, String, Array, Object, RegExp, Promise, parseFloat, isFinite });
-for (const b of [JM, AA]) vm.runInContext(b.replace("(typeof window !== 'undefined' ? window : globalThis)", '(window)'), cx);
+for (const b of [ILB, JM, AA]) vm.runInContext(b.replace("(typeof window !== 'undefined' ? window : globalThis)", '(window)'), cx);
 const JMG = g._gcJobMerge, C = g._gcAcctFix && g._gcAcctFix.core;
 ok(JMG && typeof JMG.mergeMap === 'function' && C && typeof C.planJobs === 'function' && typeof C.pickJob === 'function' && C.JOBS_ID === 'INVJOBS-1', 'mergeMap / planJobs / pickJob are there without a page');
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -36,7 +36,7 @@ const PROJ = [
   P('PRJ3el70ml164', { name: 'Demo Meade Renovation', client: 'Demo Eavenson Construction', autoPO: 'M291' }),
   P('PRJ0sx249j6n8v', { name: 'ROTC Demo', client: 'A & B Demo', autoPO: 'T724', status: 'active', created: '2026-10-20' }),
   P('PRJ3b2y5z3', { name: 'Somerville demo ceilings', client: 'A & B Demo', autoPO: 'H393' }),
-  P('PRJ_RENA', { name: 'Demo Bank — Re-Roof', client: 'Demo Bank', autoPO: 'X971' }),
+  P('PRJ_RENA', { name: 'Demo Bank — Re-Roof', client: 'Demo Bank', autoPO: 'X971', address: '32 E Main St, Bells TN' }),
   P('PRJ_KEPT', { name: 'Kept Demo Job', client: 'Kept Demo', autoPO: 'K100', mergedDupes: [{ id: 'PRJ_GONE2' }] }),
   P('PRJ_KEPT2', { name: 'Second Kept Demo', client: 'Kept Demo', autoPO: 'K200', mergedFrom: ['PRJ_GONE3'] }),
   P('PRJ_QBA', { name: 'QB Demo A', _mergedFrom: ['PRJ_QBGONE', 'PRJ_QBA', 'PRJ_QBTWO'] }),
@@ -131,5 +131,37 @@ ok(/stage === 'jobs' \? CORE\.planJobs/.test(AA) && /st\.runs\[CORE\.JOBS_ID\]/.
 ok(/data-af="usejob"/.test(AA) && /jobSel\(x\)/.test(AA) && /'★ ' \+ x\.sug\.name/.test(AA), 'Needs a look: the job picker with the guess preselected + ✓ Use this job');
 ok(/listKey === 'projects' \? LISTS\.concat\(\[REG\]\)/.test(DD) && /'gc_check_queue'\]/.test(DD) && /mergeMapPut\(Object\.keys\(gone\)/.test(DD) && /mergeMapPut\(ids, ''/.test(DD), 'a job merge moves the register lines and check-queue rows too, and keeps the merge map (Undo takes it out)');
 ok(/merged: curMerged\(\)/.test(JM) && /!lk\[s\(r\.inv\.id\)\]/.test(JM), 'the re-check card resolves merged jobs and leaves out what waits in Needs a look');
+
+/* 5. the QuickBooks import to-dos (owner 11/20: "confused on these, don't look right") */
+ok(C.decEnt('Q&amp;A Construction LLC') === 'Q&A Construction LLC' && C.decEnt('A &amp;amp; B') === 'A & B' && C.decEnt('Door &#38; Co') === 'Door & Co', 'HTML entities in QuickBooks names are read as written (&amp; → &, twice-escaped too)');
+const VEND = [{ id: 'VEN_NCW', name: 'Nashville Demo Window & Door LLC.' }, { id: 'SUB_CR', name: 'Central Demo Roofing' }];
+const QI = [
+  Q('QA1', { type: 'sub', sub: 'Q&amp;A Demo Construction LLC', invNum: '1528', amt: 10000, pid: '', desc: 'QuickBooks bill #1528 — Q&amp;A work', autoLinked: false }),
+  Q('QA2', { type: 'sub', sub: 'Q&amp;A Demo Construction LLC', invNum: '1529', amt: 1500, pid: '', desc: 'grid', autoLinked: false }),
+  Q('NCW', { type: 'sub', sub: 'Nashville Demo Window &amp; Door LLC.', invNum: '1101', amt: 4000, pid: '', desc: 'doors', autoLinked: false }),
+  Q('ADDR', { type: 'sub', sub: 'Central Demo Roofing', invNum: '0237', amt: 1970, pid: '', desc: 'QuickBooks bill #0237 — roof at 32 E Main St Bells', autoLinked: false })];
+const GQ = C.planJobs({ invs: clone(QI), reg: [], expenses: [], projects: PROJ, vendors: VEND }, { at: AT, isDeleted, merged: {}, invlink: g._gcInvLink });
+const qi = (id) => GQ.invs.find((x) => x.id === id) || {};
+ok(qi('QA1').sub === 'Q&A Demo Construction LLC' && qi('NCW').sub === 'Nashville Demo Window & Door LLC.' && GQ.items.some((i) => i.kind === 'names'), 'INVJOBS: the stored names are decoded (logged, Undo)', GQ.items.map((i) => i.title));
+ok(qi('NCW').subId === 'VEN_NCW' && GQ.items.some((i) => i.kind === 'vendor' && /Nashville Demo Window & Door/.test(i.title)), '…and a bill whose decoded name IS a sub / vendor is linked to it', qi('NCW'));
+const as = GQ.look.filter((x) => x.kind === 'addsub');
+ok(as.length === 1 && /Add "Q&A Demo Construction LLC" as a sub/.test(as[0].title) && as[0].ids.length === 2 && !qi('QA1').subId, 'no such sub yet → ONE Needs-a-look "add it as a sub?" for all its bills', as);
+ok(qi('ADDR').pid === 'PRJ_RENA' && GQ.items.some((i) => i.kind === 'relink' && /0237/.test(i.title)), 'a no-job QuickBooks bill whose job the evidence is SURE of (the address) is put on it, logged', [qi('ADDR'), GQ.items.map((i) => i.why)]);
+const TK = (id, rec, o) => Object.assign({ id, kind: 'qb_home', cat: 'QuickBooks import — needs a home', recordId: rec, done: false, label: 'x', note: 'new bill from Central Roofing — created with NO job', candidates: [] }, o);
+const IMAP = {}; GQ.invs.concat(G.invs).forEach((r) => { IMAP[r.id] = r; });
+IMAP.ONJOB = { id: 'ONJOB', type: 'sub', pid: 'PRJ_KEPT', amt: 1 }; IMAP.ARCH = { id: 'ARCH', type: 'archived', amt: 1 }; IMAP.FREE = { id: 'FREE', type: 'sub', sub: 'Central Demo Roofing', subId: 'SUB_CR', amt: 1170, date: '2026-10-26', invNum: '237' };
+IMAP.CL = { id: 'CL', type: 'client', client: 'EAN Demo Holdings', amt: 800, date: '2026-10-27', qbNum: '1139', desc: 'front column repairs @ demo rd' };
+const qctx = { inv: IMAP, look: { QA1: 1 }, vendors: { 'central demo roofing': 1 }, tomb: (id) => id === 'TOMBED', live: () => true, match: (r) => r.id === 'CL' ? { level: 'likely', top: { pid: 'PRJ3fa0np9xz2l', p: { name: 'EAN- Bathroom remodel Mt Moriah' } } } : { level: 'none' } };
+const T1 = C.qbTodo(TK('t1', 'FREE', { qb: { kind: 'bill', num: '237', name: 'Central Demo Roofing', amount: 1170, date: '2026-10-26' } }), qctx);
+ok(T1 && T1.amount === 1170 && T1.date === '2026-10-26' && /^Bill #237 from Central Demo Roofing, \$1,170, Oct 26 — no job yet\.$/.test(T1.what), 'To match: plain English with the amount and date filled ("Bill #237 from …, $1,170, Oct 26 — no job yet.")', T1);
+const T2 = C.qbTodo(TK('t2', 'CL', { qb: { kind: 'invoice', num: '1139', name: 'EAN Demo Holdings', amount: 800, date: '2026-10-27' }, note: 'new invoice for EAN — created with NO job (QuickBooks has customers, not jobs); 15 possible job(s) on the to-do · best candidate(s): Awning [D899] PRJsu37lx4' }), qctx);
+ok(T2 && /Likely: EAN- Bathroom remodel Mt Moriah\./.test(T2.what) && T2.likely && T2.likely.pid === 'PRJ3fa0np9xz2l' && !/PRJ|QB_|candidate/.test(T2.what), '…a likely job is named (the "Use this job" button), no raw ids, no jargon', T2);
+const T3 = C.qbTodo(TK('t3', 'QA2', { qb: { kind: 'bill', num: '1529', name: 'Q&amp;A Demo Construction LLC', amount: 1500, date: '2026-10-26' } }), qctx);
+ok(T3 && /from Q&A Demo Construction LLC/.test(T3.what) && /No sub \/ vendor "Q&A Demo Construction LLC" in the CRM yet/.test(T3.what) && !/&amp;/.test(T3.what), '…the name decoded; "no such sub yet" said plainly', T3);
+ok([TK('a', 'ONJOB'), TK('b', 'ARCH'), TK('c', 'QA1'), TK('d', 'TOMBED'), TK('e', 'FREE', { done: true })].every((t) => C.qbTodo(t, qctx) === null), 'dropped: on a job already, archived, waiting in ⚠ Needs a look, deleted, done — one list, no duplicates');
+const T4 = C.qbTodo(TK('t4', '', { qb: { kind: 'invoice', num: '1094', name: 'Mid-South Demo', amount: 6710.08, date: '2026-05-15' }, note: 'amount conflict: CRM has $8,345.99 for QuickBooks #1094 INVabc123456' }), qctx);
+ok(T4 && /^Invoice #1094 for Mid-South Demo, \$6,710\.08, May 15 — amount conflict: CRM has \$8,345\.99 for QuickBooks #1094\.$/.test(T4.what), 'a to-do with no record: its reason, without ids', T4);
+ok(/decEnt\(s\(r\[m\[f\]\]\)\)/.test(JB) && /label:decEnt\(t\.label\)/.test(JB), 'the QuickBooks import reads names decoded before matching customers / vendors; the to-do text too');
+ok(/AF\.core\.qbTodo/.test(TC) && /data-act="qbuse:/.test(html) && /case 'qbuse'/.test(html) && /pick: pickInv/.test(AA), 'Accounting → To match uses it, with "Use this job" (logged in the 🧾 log, ↩ Undo)');
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
