@@ -523,19 +523,21 @@ function bidSheet(j){
     var trSel = h('select', { class: 'inp', id: 'bidTrade', disabled: blocked }, trs.map(function(x){ return h('option', { value: x, text: x }); }));
     var defT = (b && b.trade) || trs.filter(function(x){ return myT.some(function(m){ return String(m).toLowerCase() === x.toLowerCase(); }); })[0] || trs[0] || ''; if (defT) trSel.value = defT;
     var inc = h('textarea', { class: 'inp', id: 'bidIncl', rows: '3', maxlength: '4000', disabled: blocked }), exc = h('textarea', { class: 'inp', id: 'bidExcl', rows: '3', maxlength: '4000', disabled: blocked });
-    var bfiles = h('input', { class: 'inp', id: 'bidFiles', type: 'file', multiple: 'multiple', accept: 'application/pdf,image/*', disabled: blocked });
+    var bfiles = h('input', { class: 'inp', id: 'bidFiles', type: 'file', multiple: 'multiple', accept: 'application/pdf,.pdf', disabled: blocked });   /* patch SUBSIMPLE: the bid itself, as a PDF */
     if (b) { amt.value = String(b.amount); nt.value = (b.notesOwn != null ? b.notesOwn : b.notes) || ''; inc.value = b.inclusions || ''; exc.value = b.exclusions || ''; }
     var err = h('div', { class: 'err', role: 'alert' });
     var go = h('button', { type: 'button', class: 'btn gold', id: 'bidSend', disabled: blocked, text: b ? t('bidUpdate') : t('bidSubmit') });
     sec.push(h('div', { class: 'bidform', 'aria-disabled': blocked ? 'true' : 'false' }, [blocked ? h('div', { class: 'muted', text: t('papersBlocked') }) : null, field(t('bidAmount'), amt)]
       .concat(lineIn.length ? [h('b', { text: t('dLines') })].concat(lineIn.map(function(l){ return field(l.x.item + (l.x.trade ? ' · ' + l.x.trade : '') + (l.x.unit ? ' (' + l.x.unit + ')' : ''), l.i); })) : [])
-      .concat((trs.length > 1 ? [field(t('bidTrade'), trSel)] : []).concat([field(t('bidIncl'), inc), field(t('bidExcl'), exc), field(t('bidFiles') + (b && (b.files || []).length ? ' — ' + b.files.map(function(f){ return f.name; }).join(', ') : ''), bfiles)]))   /* patch BIDMULTI */
+      .concat((trs.length > 1 ? [field(t('bidTrade'), trSel)] : []).concat([field(t('bidIncl'), inc), field(t('bidExcl'), exc), field(t('ssBidPdf') + (b && (b.files || []).length ? ' — ' + b.files.map(function(f){ return f.name; }).join(', ') : ''), bfiles), h('div', { class: 'muted', 'data-bidpdfhint': '1', text: b && b.hasPdf ? t('ssBidPdfHave') : t('ssBidPdfHint') })]))   /* patch BIDMULTI */
       .concat([field(t('bidNotes'), nt), err, go])));
     go.addEventListener('click', function(){
       err.textContent = '';
       if (!(Number(amt.value) > 0)) { err.textContent = t('amountNeed'); amt.focus(); return; }
+      var picked = [].slice.call(bfiles.files || []).slice(0, 5), pe = bidPdfCheck(picked, b);   /* patch SUBSIMPLE: a real PDF bid */
+      if (pe) { err.textContent = pe; toast(pe, true); return; }
       busy(go, true);
-      [].slice.call(bfiles.files || []).slice(0, 5).reduce(function(p, f){ return p.then(function(ids){ return upload(f, 'bid').then(function(u){ ids.push(u.id); return ids; }); }); }, Promise.resolve([]))   /* patch BIDMULTI */
+      picked.reduce(function(p, f){ return p.then(function(ids){ return bidUpload(f).then(function(u){ ids.push(u.id); return ids; }); }); }, Promise.resolve([]))   /* patch BIDMULTI */
       .then(function(ids){ return api('p-bid-save', { jobId: j.id, amount: amt.value, notes: nt.value, trade: trSel.value || '', inclusions: inc.value, exclusions: exc.value, uploadIds: ids, lines: lineIn.map(function(l){ return { id: l.x.id, amount: l.i.value === '' ? null : l.i.value }; }) }); }).then(function(r){
         sh.close(); toast(r.created ? t('bidSent') : t('bidUpdated'));
         return loadBids(true).then(paintBids);
@@ -583,7 +585,7 @@ function bidsCard(b){
     bidBody = h('div', { class: 'bidlist', 'data-bidlist': '1', style: 'display:flex;flex-direction:column;gap:12px' });
     kids.push(bidBody);
     paintBids();
-    loadBids(false).then(function(){ paintBids(); }, function(e){ if (!BIDS) { BIDS = { err: e.message || t('loadFail') }; BIDS_AT = Date.now() - 50000; } paintBids(); });
+    loadBids(false).then(function(){ paintBids(); bidCountPaint(); }, function(e){ if (!BIDS) { BIDS = { err: e.message || t('loadFail') }; BIDS_AT = Date.now() - 50000; } paintBids(); });
   }
   else if (b.state === 'off') kids.push(h('p', { class: 'muted', text: t('bidsOff') }));
   if (!kids.length) return null;
@@ -597,28 +599,21 @@ function contactCard(title, name, phone, email){
     h('div', { class: 'btns3' }, [h('a', { class: 'btn gold', href: telOf(phone), text: '📞 ' + t('call') }), h('a', { class: 'btn', href: smsOf(phone), text: '💬 ' + t('text') }), email ? h('a', { class: 'btn', href: 'mailto:' + email, text: '✉️ ' + t('email') }) : null])]);
 }
 function home(){
+  /* patch SUBSIMPLE (owner 11/20): top to bottom — ✍ To sign · today · what needs them · MY JOBS (every one, all open, all the
+     info) · one button "🔨 Jobs open for bids (N)" (the list opens only when tapped) · finished jobs · their PM */
+  ssCss();
   var v = HOME, out = [];
-  var needs = v.needs || [];
+  var ts = tsCard(); if (ts) out.push(ts);
   if ((v.today || []).length) out.push(card(t('today'), v.today.map(todayCard), 'today'));   /* patch SUBPHOTOS */
+  var needs = (v.needs || []).filter(function(n){ return !(v.toSign && (n.kind === 'scope' || n.kind === 'co')); });
   var pgN = pgNeedRows();   /* patch POGUARD: 🧾 Add the PO for your receipt */
-  out.push(card(t('needs'), needs.length || pgN.length ? pgN.concat(needs.map(needRow)) : [h('div', { class: 'empty', text: t('nothingNeeded') })], 'needs'));
-  var m = v.money || {};
-  out.push(card(t('money'), [h('div', { class: 'money3' }, [
-    h('div', null, [h('span', { class: 'muted', text: t('submitted') }), h('b', { text: usd(m.submitted) })]),
-    h('div', null, [h('span', { class: 'muted', text: t('approvedM') }), h('b', { text: usd(m.approved) })]),
-    h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') }), h('div', { class: 'muted' }, [h('a', { href: 'mailto:invoices@grayco-cs.com', text: 'invoices@grayco-cs.com' })])]));   /* EMAILMAP-patch */
-  var wk = v.week || [];
-  out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
-  out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
-  if ((v.jobs || []).length || (pgState().receipts || []).length) out.push(pgCard());   /* patch POGUARD: 🧾 Send a receipt / expense + their receipts */
-  /* SUBHOME3: To bid · Jobs I'm on now · Awarded / coming up · Done */
-  var bc = bidsCard(v.bids); if (bc) out.push(bc);
-  var G = jobGroups(v.jobs || []);
-  if (!(v.jobs || []).length) out.push(card(t('yourJobs'), [h('div', { class: 'empty', text: t('noJobs') })]));
-  if (G.now.length) out.push(card(t('jobsNow'), G.now.map(jobRowPo), 'jobs-now'));
-  if (G.next.length) out.push(card(t('jobsNext'), G.next.map(jobRowPo), 'jobs-next'));
-  if (G.done.length) out.push(card(t('jobsDone'), [h('details', null, [h('summary', { text: G.done.length + ' ' + t('jobsDone').replace(/^\W+/, '') })].concat(G.done.map(jobRow)))], 'jobs-done'));
-  var pm = (v.jobs || [])[0] && v.jobs[0].pm;
+  if (needs.length || pgN.length) out.push(card(t('needs'), pgN.concat(needs.map(needRow)), 'needs'));
+  var G = jobGroups(v.jobs || []), cur = G.now.concat(G.next);
+  out.push(h('section', { class: 'card myjobs', 'data-myjobs': '1' }, [h('h2', { text: t('ssMyJobs') + (cur.length ? ' (' + cur.length + ')' : '') })]
+    .concat(cur.length ? cur.map(myJobCard) : [h('div', { class: 'empty', text: t('noJobs') })])));
+  var bb = bidButtonCard(v.bids); if (bb) out.push(bb);
+  if (G.done.length) out.push(card(t('jobsDone'), G.done.map(jobRow), 'jobs-done'));
+  var pm = cur[0] ? cur[0].pm : (v.jobs || [])[0] && v.jobs[0].pm;
   out.push(contactCard(pm && pm.name && pm.name !== 'GrayCo office' ? t('pm') : t('office'), pm ? pm.name : t('office'), pm ? pm.phone : OFFICE, pm ? pm.email : 'office@grayco-cs.com'));
   return out;
 }
@@ -643,11 +638,26 @@ function invRow(x){
     x.state !== 'declined' ? bar : null, h('div', { class: 'muted', text: when }), mkInvExtras(x)]);   /* patch SUBINVMAKE: ✍️ made here · ⬇️ PDF */
 }
 function payTab(){
-  var inv = HOME.invoices || [];
-  return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') }), (HOME.jobs || []).length ? h('button', { type: 'button', class: 'btn gold', id: 'payNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(null); } } }) : null, (HOME.jobs || []).length ? mkButton(null, 'payMakeInv') : null]
-    .concat(inv.length ? inv.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })])), pgCard()];   /* patch POGUARD */
+  /* patch SUBSIMPLE: 💵 How to get paid (plain steps) → 📄 Upload an invoice · ⚡ Quick invoice ($300, this job) · ✍️ Make an invoice → money → their invoices */
+  ssCss();
+  var inv = HOME.invoices || [], has = (HOME.jobs || []).length, m = HOME.money || {};
+  var steps = [t('ssStep1'), t('ssStep2'), t('ssStep3'), t('ssStep4')];
+  return [h('section', { class: 'card ss-how', 'data-payhow': '1' }, [h('h2', { text: t('ssHowPaid') }), h('ol', { class: 'ss-steps' }, steps.map(function(x){ return h('li', { text: x }); })),
+      h('div', { class: 'muted' }, [t('ssOrEmail') + ' ', h('a', { href: 'mailto:invoices@grayco-cs.com', text: 'invoices@grayco-cs.com' })])]),
+    has ? h('section', { class: 'card ss-paybtns', 'data-paybtns': '1' }, [
+      h('button', { type: 'button', class: 'btn gold ss-big', id: 'payNewInv', text: t('ssUpload'), on: { click: function(){ invoiceSheet(null, { needFile: true }); } } }),
+      h('div', { class: 'muted', text: t('ssUploadHint') }),
+      h('button', { type: 'button', class: 'btn navy ss-big', id: 'payQuick', text: t('ssQuick'), on: { click: function(){ quickInvoiceSheet(null); } } }),
+      h('div', { class: 'muted', text: t('ssQuickHint') }),
+      mkButton(null, 'payMakeInv')]) : card(null, [h('div', { class: 'empty', text: t('noJobs') })]),
+    card(t('money'), [h('div', { class: 'money3' }, [
+      h('div', null, [h('span', { class: 'muted', text: t('submitted') }), h('b', { text: usd(m.submitted) })]),
+      h('div', null, [h('span', { class: 'muted', text: t('approvedM') }), h('b', { text: usd(m.approved) })]),
+      h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])])]),
+    card(t('invoices'), inv.length ? inv.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })]), pgCard()];   /* patch POGUARD */
 }
-function invoiceSheet(pid){
+function invoiceSheet(pid, opt){
+  opt = opt || {};
   var jobs = HOME.jobs || [];
   var sel = h('select', { class: 'inp', id: 'invJob' }, jobs.map(function(j){ return h('option', { value: j.id, text: j.name }); }));
   if (pid) sel.value = pid;
@@ -666,9 +676,10 @@ function invoiceSheet(pid){
   var pick = h('button', { type: 'button', class: 'btn', id: 'invPick', text: t('invAttach'), on: { click: function(){ picker('application/pdf,image/*', false, function(fs){ file = fs[0] || null; if (file && file.size > BIG_MAX) { toast(t('tooBig15'), true); file = null; } fname.textContent = file ? file.name + ' (' + Math.max(1, Math.round(file.size / 1024)) + ' KB)' : ''; }); } } });   /* patch SUBPORTAL3 */
   var go = h('button', { type: 'button', class: 'btn gold', id: 'invSend', text: t('send') });
   sel.addEventListener('change', fillScopes);
-  var sh = sheet(t('newInvoice'), [h('div', { class: 'how', text: t('payRule') }), field(t('jobs'), sel), field(t('againstScope'), scopeSel), field(t('amount'), amt), field(t('invNum'), num), field(t('po'), poBox), field(t('invNote'), note), h('div', { class: 'muted', text: t('invAttachHow') }), h('div', { class: 'row inv-attach' }, [pick, fname]), go]);
+  var sh = sheet(opt.needFile ? t('ssUpload') : t('newInvoice'), [h('div', { class: 'how', text: t('payRule') }), field(t('jobs'), sel), field(t('againstScope'), scopeSel), field(t('amount'), amt), field(t('invNum'), num), field(t('po'), poBox), field(t('invNote'), note), h('div', { class: 'muted', text: t('invAttachHow') }), h('div', { class: 'row inv-attach' }, [pick, fname]), go]);
   fillScopes();
   go.addEventListener('click', function(){
+    if (opt.needFile && !file) { toast(t('ssNeedFile'), true); return; }   /* patch SUBSIMPLE: 📄 Upload an invoice = a file */
     busy(go, true);
     (file ? invoiceUpload(file, sel.value) : Promise.resolve(null)).then(function(u){
       return api('p-invoice', { projectId: sel.value, amount: amt.value, invNum: num.value, note: note.value, scopeId: scopeSel.value, uploadId: u ? u.id : undefined });
@@ -873,6 +884,153 @@ function makeInvoiceSheet(pid0){
     try { sh.el.querySelector('.sheet-body').scrollTop = 0; } catch (e) {}
   }
   load();
+  return sh;
+}
+
+/* ── patch SUBSIMPLE (owner 11/20: "this portal should be very simple for them to use — see jobs, see schedule, see bids, see how to
+   invoice"): five big tabs Jobs · Schedule · Bids · Pay · Papers. Jobs = ✍ To sign → MY JOBS (every job they are on, all open, all its
+   info) → one "🔨 Jobs open for bids (N)" button (the list opens only when tapped). Pay = How to get paid → 📄 Upload an invoice ·
+   ⚡ Quick invoice ("$300, this job" → a real sub invoice in the CRM, waiting for approval, + its PDF) · ✍️ Make an invoice.
+   Bids: the bid itself is a PDF (required) AND the typed price (required); GrayCo's reader reads the PDF. ── */
+Object.assign(L.en, { ssSched: 'Schedule', ssBids: 'Bids', ssMyJobs: '🏠 My jobs', ssToSign: '✍ To sign', ssSignCo: 'Change order', ssSignScope: 'Sub agreement', ssSignBtn: 'Review & sign ›', ssSignQ: 'you asked a question',
+  ssPmL: 'Your PM', ssScopeL: 'Your scope', ssSigned: 'Signed ✓', ssNotSigned: 'To sign', ssDocsL: 'Plans & documents', ssDocsNone: 'No plans posted yet — ask your PM.', ssDocsLoading: 'Loading plans…',
+  ssOpenJob: '📂 Everything on this job', ssMsgs: '💬 Messages', ssInvBtn: '💵 Invoice this job', ssBidBtn: '🔨 Jobs open for bids', ssBidHide: 'Hide jobs to bid', ssBidJoin: '🔨 Bid on GrayCo jobs',
+  ssHowPaid: '💵 How to get paid', ssStep1: 'Pick your job.', ssStep2: 'Upload your invoice (PDF or a photo) — or tap ⚡ Quick invoice and just type the amount.', ssStep3: 'Invoices in by Wednesday are paid the following Friday.', ssStep4: 'Watch it here: Submitted → Approved → Scheduled → Paid.',
+  ssOrEmail: 'Or e-mail it to', ssUpload: '📄 Upload an invoice', ssUploadHint: 'Have an invoice already? Send the PDF or a photo of it.', ssQuick: '⚡ Quick invoice', ssQuickHint: 'No invoice? Type the amount (e.g. $300 for this job) — we make the invoice for you.',
+  ssNeedFile: 'Pick your invoice file (PDF or a photo) first.', ssQiTitle: '⚡ Quick invoice', ssQiAmt: 'Amount ($)', ssQiNote: 'What it is for (optional)', ssQiNotePh: 'e.g. Drywall hang — 1st floor', ssQiSend: '📨 Send invoice',
+  ssQiNeed: 'Type the amount — more than $0.', ssQiWork: 'Work on', ssQiDone: 'Invoice sent to GrayCo', ssQiKeep: 'Save this PDF for your records:', ssQiOk: 'Done',
+  ssCurrent: 'Jobs I’m on', ssFinished: 'Finished jobs', ssComing: 'Coming up (next 60 days)', ssJobDates: 'Job dates', ssNoDates: 'No dates yet — your PM sets them.',
+  ssBidPdf: 'Your bid — PDF (required)', ssBidPdfHint: 'Attach your bid as a PDF. We read it and compare it with the price you typed.', ssBidPdfHave: 'Your PDF bid is on file. Attach a new PDF if you change it.',
+  ssBidPdfNeed: 'Attach your bid as a PDF — GrayCo needs a real bid, not just a number.', ssBidPdfOnly: 'Only PDF files — save your bid as a PDF and attach it.', ssBidPdfEmpty: 'That PDF is empty. Attach your real bid.', ssBidsTitle: '🔨 Jobs open for bids' });
+Object.assign(L.es, { ssSched: 'Horario', ssBids: 'Ofertas', ssMyJobs: '🏠 Mis trabajos', ssToSign: '✍ Para firmar', ssSignCo: 'Orden de cambio', ssSignScope: 'Acuerdo de subcontrato', ssSignBtn: 'Revisar y firmar ›', ssSignQ: 'usted hizo una pregunta',
+  ssPmL: 'Su gerente', ssScopeL: 'Su alcance', ssSigned: 'Firmado ✓', ssNotSigned: 'Para firmar', ssDocsL: 'Planos y documentos', ssDocsNone: 'Todavía no hay planos — pregunte a su gerente.', ssDocsLoading: 'Cargando planos…',
+  ssOpenJob: '📂 Todo de este trabajo', ssMsgs: '💬 Mensajes', ssInvBtn: '💵 Facturar este trabajo', ssBidBtn: '🔨 Trabajos para ofertar', ssBidHide: 'Ocultar trabajos para ofertar', ssBidJoin: '🔨 Ofertar en trabajos GrayCo',
+  ssHowPaid: '💵 Cómo cobrar', ssStep1: 'Escoja su trabajo.', ssStep2: 'Suba su factura (PDF o una foto) — o toque ⚡ Factura rápida y solo escriba el monto.', ssStep3: 'Las facturas recibidas hasta el miércoles se pagan el viernes siguiente.', ssStep4: 'Sígala aquí: Enviada → Aprobada → Programada → Pagada.',
+  ssOrEmail: 'O envíela a', ssUpload: '📄 Subir una factura', ssUploadHint: '¿Ya tiene factura? Envíe el PDF o una foto.', ssQuick: '⚡ Factura rápida', ssQuickHint: '¿No tiene factura? Escriba el monto (ej. $300 por este trabajo) — nosotros hacemos la factura.',
+  ssNeedFile: 'Primero escoja el archivo de su factura (PDF o foto).', ssQiTitle: '⚡ Factura rápida', ssQiAmt: 'Monto ($)', ssQiNote: 'Para qué es (opcional)', ssQiNotePh: 'ej. Colgar drywall — 1er piso', ssQiSend: '📨 Enviar factura',
+  ssQiNeed: 'Escriba el monto — más de $0.', ssQiWork: 'Trabajo en', ssQiDone: 'Factura enviada a GrayCo', ssQiKeep: 'Guarde este PDF para sus registros:', ssQiOk: 'Listo',
+  ssCurrent: 'Mis trabajos', ssFinished: 'Trabajos terminados', ssComing: 'Próximos 60 días', ssJobDates: 'Fechas de trabajos', ssNoDates: 'Sin fechas todavía — su gerente las pone.',
+  ssBidPdf: 'Su oferta — PDF (obligatorio)', ssBidPdfHint: 'Adjunte su oferta en PDF. La leemos y la comparamos con el precio que escribió.', ssBidPdfHave: 'Su oferta en PDF está en archivo. Adjunte un PDF nuevo si la cambia.',
+  ssBidPdfNeed: 'Adjunte su oferta en PDF — GrayCo necesita una oferta real, no solo un número.', ssBidPdfOnly: 'Solo archivos PDF — guarde su oferta como PDF y adjúntela.', ssBidPdfEmpty: 'Ese PDF está vacío. Adjunte su oferta real.', ssBidsTitle: '🔨 Trabajos para ofertar' });
+function ssCss(){
+  if (document.getElementById('ss-css')) return;
+  var st = document.createElement('style'); st.id = 'ss-css';
+  st.textContent = '.ss-big{min-height:56px;font-size:17px}.ss-steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px;font-size:15px;line-height:1.4}' +
+    '.myjob{border:1px solid var(--edge,#E2DCCD);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;background:#fff}.myjob h3{margin:0;font-size:17px}' +
+    '.myjob .kv{display:grid;grid-template-columns:96px 1fr;gap:4px 8px;font-size:14px;margin:0}.myjob .kv dt{color:var(--mute,#55626F)}.myjob .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}' +
+    '.myjob .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.myjob .acts .btn{font-size:14px;padding:0 6px}.ss-scope{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:14px}' +
+    '.tosign{border:2px solid var(--gold,#D4A017)}.tosign .need{font-weight:700}.tosign .chev{font-size:14px;white-space:nowrap;color:var(--goldDk,#8A5A00)}.ss-bidbtn{min-height:60px;font-size:18px;width:100%}.ss-doc{display:flex;gap:6px;align-items:center;font-size:14px}.ss-doc a{overflow-wrap:anywhere}' +
+    '#tabs .in button{font-size:13px;padding:0 2px}';
+  document.head.appendChild(st);
+}
+function tsCard(){
+  var L2 = HOME.toSign || []; if (!L2.length) return null;
+  return h('section', { class: 'card tosign', 'data-tosign': String(L2.length) }, [h('h2', { text: t('ssToSign') + ' (' + L2.length + ')' })].concat(L2.map(function(x){
+    return h('button', { type: 'button', class: 'need', 'data-tosign-item': x.id, on: { click: function(){ openJob(x.pid, x.kind === 'co' ? 'cos' : 'scope'); } } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }),
+      h('span', { class: 'grow', text: (x.kind === 'co' ? t('ssSignCo') : t('ssSignScope')) + ': ' + x.title + ' — ' + x.job + (x.question ? ' (' + t('ssSignQ') + ')' : '') }), h('span', { class: 'chev', text: t('ssSignBtn') })]); })));
+}
+var SS_DOCS = {};
+function myJobCard(j){
+  var pm = j.pm || {}, kids = [];
+  kids.push(h('div', { class: 'row' }, [h('h3', { text: j.name }), pill(j.unread ? j.unread + ' ' + t(j.unread === 1 ? 'unread' : 'unreads') : statusWord(j.status), j.unread ? 'due' : 'ok')]));
+  var dts2 = [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ');
+  kids.push(h('dl', { class: 'kv' }, [
+    h('dt', { text: t('address') }), h('dd', null, [j.address || t('none'), j.maps ? h('span', null, [' · ', h('a', { href: j.maps, target: '_blank', rel: 'noopener', text: '📍 ' + t('maps') })]) : null]),
+    h('dt', { text: t('ssPmL') }), h('dd', null, [pm.name || t('office'), ' ', h('a', { href: telOf(pm.phone || OFFICE), 'data-pmcall': j.id, text: '📞 ' + (pm.phone || OFFICE) })]),
+    h('dt', { text: t('dates') }), h('dd', { text: dts2 || t('ssNoDates') }),
+    h('dt', { text: t('po') }), h('dd', null, [j.po ? poRow(j.po) : t('none')]),
+    h('dt', { text: t('progress') }), h('dd', { text: (j.pct || 0) + '% ' + t('done') })]));
+  var sc = j.scopes || [];
+  if (sc.length) kids.push(h('div', { 'data-myjob-scopes': j.id }, [h('b', { text: t('ssScopeL') })].concat(sc.map(function(x){
+    return h('div', { class: 'ss-scope' }, [h('a', { href: '#', text: (x.kind === 'co' ? '➕ ' : '🧾 ') + x.title + (x.total ? ' · ' + usd(x.total) : ''), on: { click: function(e){ e.preventDefault(); openJob(j.id, x.kind === 'co' ? 'cos' : 'scope'); } } }), pill(x.status === 'accepted' ? t('ssSigned') : t('ssNotSigned'), x.status === 'accepted' ? 'ok' : 'now')]); }))));
+  var docs = h('div', { 'data-myjob-docs': j.id }, [h('b', { text: t('ssDocsL') }), h('div', { class: 'muted', text: t('ssDocsLoading') })]);
+  kids.push(docs); ssDocs(j.id, docs);
+  kids.push(h('div', { class: 'acts' }, [h('button', { type: 'button', class: 'btn', 'data-myjob-open': j.id, text: t('ssOpenJob'), on: { click: function(){ openJob(j.id, 'overview'); } } }),
+    h('button', { type: 'button', class: 'btn', text: t('ssMsgs') + (j.unread ? ' (' + j.unread + ')' : ''), on: { click: function(){ openJob(j.id, 'messages'); } } }),
+    h('button', { type: 'button', class: 'btn gold', 'data-myjob-inv': j.id, style: 'grid-column:1/-1', text: t('ssInvBtn'), on: { click: function(){ quickInvoiceSheet(j.id); } } })]));
+  return h('div', { class: 'myjob', 'data-myjob': j.id }, kids);
+}
+function ssDocs(pid, box){
+  function paint(list){ box.innerHTML = ''; box.appendChild(h('b', { text: t('ssDocsL') }));
+    if (!list.length) { box.appendChild(h('div', { class: 'muted', text: t('ssDocsNone') })); return; }
+    list.slice(0, 12).forEach(function(f){ box.appendChild(h('div', { class: 'ss-doc' }, [h('span', { text: /pdf/.test(f.type || '') ? '📄' : /image/.test(f.type || '') ? '🖼️' : '📎' }), f.url && safeUrl(f.url) ? h('a', { href: f.url, target: '_blank', rel: 'noopener', text: f.name }) : h('span', { text: f.name })])); }); }
+  if (SS_DOCS[pid]) return paint(SS_DOCS[pid]);
+  api('p-job', { projectId: pid }).then(function(r){ SS_DOCS[pid] = r.docs || []; paint(SS_DOCS[pid]); }, function(){ paint([]); });
+}
+var SS_BIDOPEN = false;
+function bidOpenCount(){ var J = (BIDS && BIDS.jobs) || []; return J.filter(function(j){ return j.canBid; }).length; }
+function bidCountPaint(){ var b = document.getElementById('bidsBtn'); if (b && HOME && HOME.bids && HOME.bids.state === 'approved') b.textContent = (SS_BIDOPEN ? t('ssBidHide') : t('ssBidBtn')) + (BIDS && BIDS.jobs ? ' (' + bidOpenCount() + ')' : ''); }
+function bidButtonCard(b){
+  if (!b || !b.state || b.state === 'off') return null;
+  var panel = h('div', { id: 'bidsPanel', 'data-bidpanel': '1', hidden: SS_BIDOPEN ? null : true });
+  var btn = h('button', { type: 'button', class: 'btn navy ss-bidbtn', id: 'bidsBtn', 'aria-expanded': SS_BIDOPEN ? 'true' : 'false', text: b.state === 'approved' ? t('ssBidBtn') : t('ssBidJoin'), on: { click: function(){
+    SS_BIDOPEN = !SS_BIDOPEN; btn.setAttribute('aria-expanded', SS_BIDOPEN ? 'true' : 'false');
+    if (SS_BIDOPEN) { panel.innerHTML = ''; var c = bidsCard(b); if (c) panel.appendChild(c); panel.hidden = false; } else { panel.hidden = true; panel.innerHTML = ''; }
+    bidCountPaint(); } } });
+  if (SS_BIDOPEN) { var c0 = bidsCard(b); if (c0) panel.appendChild(c0); }
+  if (b.state === 'approved') loadBids(false).then(bidCountPaint, function(){});
+  setTimeout(bidCountPaint, 0);
+  return h('section', { class: 'card', 'data-bidbtncard': '1' }, [btn, panel]);
+}
+function bidsTab(){ ssCss(); var c = bidsCard(HOME.bids); return [c || card(t('ssBidsTitle'), [h('div', { class: 'empty', text: t('bidsOff') })])]; }
+function schedTab(){
+  ssCss();
+  var wk = HOME.week || [], out = [];
+  out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  var more = h('div', { 'data-sched60': '1' }, [h('div', { class: 'muted', text: t('sending') })]);
+  out.push(card(t('ssComing'), [more]));
+  api('p-avail', {}).then(function(r){ more.innerHTML = ''; var L2 = (r.sched || []).filter(function(x){ return !wk.some(function(w){ return w.id === x.id && w.date === x.date; }); });
+    if (!L2.length) more.appendChild(h('div', { class: 'empty', text: t('noWeek').replace(/this week|esta semana/i, '') || t('none') }));
+    L2.forEach(function(x){ more.appendChild(h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }); }, function(){ more.innerHTML = ''; });
+  var G = jobGroups(HOME.jobs || []), cur = G.now.concat(G.next);
+  out.push(card(t('ssJobDates'), cur.length ? cur.map(function(j){ return h('div', { class: 'line' }, [h('span', { text: j.name }), h('span', { text: [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ') || t('ssNoDates') })]); }) : [h('div', { class: 'empty', text: t('noJobs') })]));
+  out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
+  return out;
+}
+function isPdfFile(f){ return !!f && (/pdf/i.test(f.type || '') || /\.pdf$/i.test(f.name || '')); }
+function bidPdfCheck(files, b){
+  if (files.some(function(f){ return !isPdfFile(f); })) return t('ssBidPdfOnly');
+  if (files.some(function(f){ return !(f.size > 0); })) return t('ssBidPdfEmpty');
+  if (!files.length && !(b && b.hasPdf)) return t('ssBidPdfNeed');
+  return '';
+}
+function bidUpload(f){ return bigUpload(f, 'bid', null).catch(function(e){ if (f.size <= 4.4 * 1024 * 1024) return upload(f, 'bid'); throw e; }); }
+function quickInvoiceSheet(pid){
+  ssCss();
+  var G = jobGroups(HOME.jobs || []), jobs = G.now.concat(G.next).concat(G.done);
+  if (!jobs.length) { toast(t('noJobs'), true); return; }
+  var sel = h('select', { class: 'inp', id: 'qiJob' }, jobs.map(function(j){ return h('option', { value: j.id, text: j.name + (j.po ? ' · ' + t('po') + ' ' + j.po : '') }); }));
+  if (pid) sel.value = pid;
+  var amt = h('input', { class: 'inp', id: 'qiAmt', type: 'text', inputmode: 'decimal', placeholder: '300', autocomplete: 'off' });
+  var note = h('input', { class: 'inp', id: 'qiNote', maxlength: '300', placeholder: t('ssQiNotePh') });
+  var err = h('div', { class: 'err', role: 'alert', id: 'qiErr' }), extra = h('div', { id: 'qiExtra', style: 'display:flex;flex-direction:column;gap:8px' });
+  var go = h('button', { type: 'button', class: 'btn gold ss-big', id: 'qiSend', text: t('ssQiSend') });
+  var body = h('div', { style: 'display:flex;flex-direction:column;gap:12px', 'data-quickinv': '1' }, [h('div', { class: 'how', text: t('payRule') }), field(t('mkJob'), sel), field(t('ssQiAmt'), amt), field(t('ssQiNote'), note), extra, err, go]);
+  var sh = sheet(t('ssQiTitle'), [body]), over = null;
+  sel.addEventListener('change', function(){ over = null; extra.innerHTML = ''; });
+  function payload(op){
+    var a = mkR2(mkNum(amt.value)), j = jobs.filter(function(x){ return x.id === sel.value; })[0] || {}, n = note.value.trim();
+    return { projectId: sel.value, op: op, quick: true, lang: LANG, note: n, okOver: !!(over && over.checked), total: a, lines: [{ desc: mkLetters(n) >= 3 ? n : t('ssQiWork') + ' ' + (j.name || 'job'), qty: 1, price: a }] };
+  }
+  go.addEventListener('click', function(){
+    err.textContent = '';
+    var a = mkNum(amt.value); if (!(a > 0)) { err.textContent = t('ssQiNeed'); try { amt.focus(); } catch (e) {} return; }
+    busy(go, true);
+    api('p-invoice-make', payload('check')).then(function(r){
+      if (r.photos && !r.photos.ok) { busy(go, false); extra.innerHTML = ''; extra.appendChild(h('div', { class: 'mk-warn', id: 'qiPhotos' }, [h('span', { text: r.photos.message || t('photoRule', { have: r.photos.have, need: r.photos.need }) }), h('button', { type: 'button', class: 'btn', text: t('addPhotos'), on: { click: function(){ addPhotos(sel.value); } } })])); return; }
+      if (r.agreement && r.agreement.over && !(over && over.checked)) { busy(go, false); extra.innerHTML = ''; over = h('input', { type: 'checkbox', id: 'qiOver' });
+        extra.appendChild(h('div', { class: 'mk-warn', id: 'qiOverWarn' }, [h('span', { text: t('mkOver', { left: usd(Math.max(0, r.agreement.left)), agreement: usd(r.agreement.agreement) }) }), h('label', { style: 'display:flex;gap:8px;align-items:center;font-weight:700' }, [over, t('mkOverOk')])])); return; }
+      return api('p-invoice-make', payload('send')).then(function(x){
+        body.innerHTML = '';
+        body.appendChild(h('div', { class: 'how', id: 'qiDone', text: '✓ ' + t('ssQiDone') + ' · ' + usd(x.total) + ' · #' + x.number + ' · ' + t('payOn') + ' ' + dt(x.payDate) }));
+        body.appendChild(h('div', { class: 'muted', text: t('ssQiKeep') }));
+        body.appendChild(mkInvExtras({ id: x.id, made: true, file: true }));
+        body.appendChild(h('button', { type: 'button', class: 'btn navy', id: 'qiOk', text: t('ssQiOk'), on: { click: function(){ sh.close(); } } }));
+        reloadHome();
+      });
+    }).catch(function(e){ busy(go, false); err.textContent = e.message; toast(e.message, true); });
+  });
+  setTimeout(function(){ try { amt.focus(); } catch (e) {} }, 50);
   return sh;
 }
 
@@ -1203,13 +1361,14 @@ function viewer(f){
 }
 
 /* ── frame ── */
-function markTabs(){ Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function(b){ b.setAttribute('aria-selected', b.getAttribute('data-tab') === TAB ? 'true' : 'false'); }); }
+function markTabs(){ var k = TAB === 'jobs' ? 'home' : TAB; Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function(b){ b.setAttribute('aria-selected', b.getAttribute('data-tab') === k ? 'true' : 'false'); }); }
 function goTab(k){ TAB = k; JOB = null; draw(); window.scrollTo(0, 0); }
 function draw(){
   if (JOB) return drawJob();
   var main = document.getElementById('main'); main.innerHTML = '';
-  var parts = TAB === 'jobs' ? jobsTab() : TAB === 'pay' ? payTab() : TAB === 'papers' ? papersTab() : home();
-  var wide = window.matchMedia('(min-width: 1000px)').matches;
+  if (TAB === 'jobs') TAB = 'home';   /* patch SUBSIMPLE: Jobs is the first tab (home) */
+  var parts = TAB === 'sched' ? schedTab() : TAB === 'bids' ? bidsTab() : TAB === 'pay' ? payTab() : TAB === 'papers' ? papersTab() : home();
+  var wide = false;   /* patch SUBSIMPLE: one simple column, top to bottom, on every screen */
   if (wide && TAB === 'home') {
     main.appendChild(h('div', { class: 'two' }, [h('aside', { class: 'col-l' }, parts.slice(0, 3)), h('section', { class: 'col-r' }, parts.slice(3))]));
   } else parts.forEach(function(p){ if (p) main.appendChild(p); });
@@ -1231,8 +1390,8 @@ function setLang(l, tell){
 function buildTabs(){
   var nav = document.getElementById('tabs'); if (!nav) return;
   var inner = nav.querySelector('.in'); inner.innerHTML = '';
-  inner.style.gridTemplateColumns = 'repeat(4,minmax(0,1fr))';
-  [['home', t('home')], ['jobs', t('jobs')], ['pay', t('pay')], ['papers', t('papers')]].forEach(function(x){
+  inner.style.gridTemplateColumns = 'repeat(5,minmax(0,1fr))';   /* patch SUBSIMPLE: Jobs · Schedule · Bids · Pay · Papers */
+  [['home', t('jobs')], ['sched', t('ssSched')], ['bids', t('ssBids')], ['pay', t('pay')], ['papers', t('papers')]].forEach(function(x){
     inner.appendChild(h('button', { type: 'button', role: 'tab', 'data-tab': x[0], 'aria-selected': TAB === x[0] ? 'true' : 'false', text: x[1], on: { click: function(){ goTab(x[0]); } } }));
   });
   nav.hidden = false;

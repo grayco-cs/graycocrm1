@@ -175,3 +175,31 @@ Server: `bid-hub.js` (`?manage=`, ops `archive`, `restore`, `plans`, `scope`, `a
 ## English / Español
 
 Both sign-ins and the sub portal have an **English / Español** toggle, remembered on that phone. A sub's choice is saved on their CRM record and their e-mails go out in it.
+
+## The simple sub portal (patch SUBSIMPLE, owner 11/20)
+
+- **Five big tabs:** Jobs · Schedule · Bids · Pay · Papers.
+- **Jobs**, from top to bottom:
+  - **✍ To sign (N)**: every sub agreement or change order GrayCo sent that they have not signed yet.
+  - **My jobs**: every job they are on, each one an open card. A card shows the address with a Maps link, the PM's name and phone, the dates, the PO, their scope or COs (signed or to sign), the plans and documents, and buttons for Everything, Messages and 💵 Invoice this job.
+  - **🔨 Jobs open for bids (N)**: one button. The bid list opens only when they tap it.
+  - Finished jobs, then their PM.
+- **When GrayCo sends something to sign** (✅ Approve & publish), the sub gets an e-mail and a text with their portal link. These are sub sends: they are tagged `trade`, so ⏸ data-entry mode does not hold them.
+- **Pay**:
+  - **How to get paid**: four plain steps.
+  - **📄 Upload an invoice**: a PDF or a photo is required.
+  - **⚡ Quick invoice**: pick the job, type the amount (and a note if they want). This makes a real sub invoice on the ✍️ Make-an-invoice road. It lands in Sub Invoices as *received*, waiting for approval, and comes with a PDF for their records.
+  - **✍️ Make an invoice**: line by line, as before.
+- **Bids**: a bid needs a **PDF** (PDF only, not empty; the server checks it) **and** the typed price.
+  - After it is saved, GrayCo's document reader (`_lib/bidread.js`, the same AI caller as the W-9 / COI reader) reads the whole PDF. It pulls out the total, inclusions, exclusions, scope items, alternates, clarifications, how long the price is good for, and the schedule.
+  - If the PDF total and the typed price are more than $1 apart, the bid shows **⚠ Price on the PDF $X ≠ typed $Y** for GrayCo. The sub is never blocked.
+  - If the read fails, the CRM shows **Not read yet — 📄 Read** (bid-hub `bidread`).
+  - What was read is kept on the bid (`read`) and shown only to staff.
+- **CRM → 📊 All bids** (the scope compare):
+  - The read inclusions and exclusions join each trade's side-by-side table. Similar lines are merged into one row, e.g. "drywall hang & finish" and "hang and finish GWB".
+  - **⚠ N scope gaps** shows on top.
+  - Each gap row has **✓ Reviewed**, **📩 Ask <sub>** and **➕ Add to our estimate**.
+    - 📩 Ask sends an e-mail and a text to that sub only, tagged `trade`, asking them to confirm or send a revised PDF.
+    - ➕ Add to our estimate puts a $0 line in the project's open estimate, the same record the Estimate Builder uses.
+  - **📝 Add to our estimate notes** copies the agreed inclusions and exclusions into that estimate's Inclusions and Exclusions.
+  - Who was asked and which lines were reviewed are kept on the bid job. Subs never see them (`subJobView`).

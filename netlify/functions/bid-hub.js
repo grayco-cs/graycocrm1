@@ -241,6 +241,59 @@ function restorable(j){ if (/^(auto|taken off)$/.test(s(j && j.archivedReason)))
 /* patch BIDEST: a sub bid's file — its name, and the stored ref / link when there is one (the CRM opens it) */
 function fileOut(f){ const o = { name: s(f && (f.name || f.fileName)) || 'file' }; const ref = s(f && (f.ref || f.fileRef)); const url = s(f && (f.url || f.link)); if (/^sb:/.test(ref)) o.ref = ref; if (/^https?:\/\//i.test(url)) o.url = url; return o; }
 
+/* ── patch SUBSIMPLE (owner 11/20): the bid PDF, read (_lib/bidread.js) — staff only; 📄 Read / read again; 📩 ask a sub to include /
+   clarify a scope line (e-mail + text, tagged 'trade' so ⏸ data-entry mode lets it go); ✓ a scope line reviewed ── */
+function BR(){ return require('./_lib/bidread.js'); }
+function readOut(r){ if (!r || typeof r !== 'object') return null; const o = { status: s(r.status), at: s(r.at), why: s(r.why).slice(0, 200), total: r.total == null ? null : Number(r.total), typed: r.typed == null ? null : Number(r.typed), mismatch: !!r.mismatch, file: s(r.file).slice(0, 160), validity: s(r.validity).slice(0, 200), schedule: s(r.schedule).slice(0, 300) };
+  BR().LISTS.forEach(k => { o[k] = arr(r[k]).map(x => s(x).slice(0, 300)).filter(Boolean).slice(0, 40); }); o.flag = BR().flagText(o); return o; }
+async function bidFileBuf(d){
+  const ref = s(d.ref || d.fileRef), m = /^sb:crm-files\/([0-9a-f]{64}\.[a-z0-9]{1,8})$/.exec(ref);
+  const k = s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY), H = /^[\w-]+\.[\w-]+\.[\w-]+$/.test(k) ? { apikey: k, Authorization: 'Bearer ' + k } : { apikey: k };
+  const base = (process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, '');
+  const url = m ? base + '/storage/v1/object/crm-files/' + m[1] : ref && !/^sb:/.test(ref) && !/\.\./.test(ref) ? base + '/storage/v1/object/subportal-files/' + ref.split('/').map(encodeURIComponent).join('/') : '';
+  if (!url) return null;
+  const r = await fetch(url, { headers: H }).catch(() => null);
+  return r && r.ok ? Buffer.from(await r.arrayBuffer()) : null;
+}
+async function bidRead(who, b){
+  if (!who.canInvite && !who.canPublic) return { code: 403, error: 'Only an admin, an estimator or the office reads sub bids.' };
+  const row = await SP.getRow('bids', s(b.id)); if (!row || !row.data) return { code: 404, error: 'No such sub bid.' };
+  const d = Object.assign({}, row.data), pdf = arr(d.docs).filter(x => x && (/pdf/i.test(s(x.type)) || /\.pdf$/i.test(s(x.name || x.fileName)))).pop();
+  if (!pdf) return { code: 409, error: 'This bid has no PDF to read.' };
+  const buf = await bidFileBuf(pdf);
+  d.read = buf ? await BR().read(buf, d.amount, { name: s(pdf.name || pdf.fileName), timeoutMs: 22000 }) : { status: 'failed', at: nowIso(), why: 'The PDF could not be opened.' };
+  d.read.file = s(pdf.name || pdf.fileName).slice(0, 160); d.read.by = who.email;
+  await SP.upsertRows([SP.rowFor('bids', d)], who.email);
+  return { ok: true, read: readOut(d.read) };
+}
+async function scopeAsk(who, b){
+  if (!who.canInvite && !who.canPublic) return { code: 403, error: 'Only an admin, an estimator or the office asks subs about their bids.' };
+  const job = await jobRow(b.jobId).catch(() => null); if (!job) return { code: 404, error: 'No such bid job.' };
+  const bid = (await subBids(s(job.id))).find(x => x.id === s(b.id) && x.source === s(b.source)); if (!bid) return { code: 404, error: 'No such sub bid.' };
+  const item = s(b.item).slice(0, 200); if (!item) return { code: 400, error: 'Which scope line?' };
+  const es = bid.lang === 'es', title = s(job.title).slice(0, 80);
+  const text = s(b.text).slice(0, 1500) || (es ? 'GrayCo: en su oferta para ' + title + ' no vemos "' + item + '"' + (b.kind === 'exc' ? ' (la excluye)' : '') + '. ¿Lo incluye? Confirme o mande su oferta revisada (PDF) en bids.grayco-cs.com. Gracias.'
+    : 'GrayCo: on your bid for ' + title + ' we do not see "' + item + '"' + (b.kind === 'exc' ? ' (your bid excludes it)' : '') + '. Is it included? Please confirm or send your revised bid (PDF) at bids.grayco-cs.com. Thank you.');
+  const out = { ok: true, mail: false, text: false, message: text };
+  if (SP.okEmail(low(bid.email))) out.mail = await sendOne(low(bid.email), { subject: (es ? 'Pregunta sobre su oferta — ' : 'Question on your bid — ') + title, html: SP.mailHtml(es ? 'Pregunta sobre su oferta' : 'Question on your bid', [text], { href: 'https://bids.grayco-cs.com/', label: es ? 'Abrir mi oferta' : 'Open my bid' }) });
+  const ph = s(bid.phone).replace(/\D/g, '').slice(-10);
+  if (ph.length === 10 && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM) {
+    try { const r = await require('./_lib/bidmail.js').trade(() => fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(process.env.TWILIO_ACCOUNT_SID) + '/Messages.json', { method: 'POST',
+      headers: { Authorization: 'Basic ' + Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ To: '+1' + ph, From: process.env.TWILIO_FROM, Body: text.slice(0, 600) }).toString() })); out.text = !!(r && r.ok); } catch (e) {}
+  }
+  job.scopeAsks = arr(job.scopeAsks).concat([{ at: nowIso(), by: who.email, bid: s(bid.id), source: s(bid.source), company: s(bid.company || bid.sub).slice(0, 120), trade: s(b.trade || bid.trade).slice(0, 80), item: item, mail: !!out.mail, text: !!out.text }]).slice(-300);
+  logTo(job, who, '📩 Asked ' + (bid.company || bid.sub || 'a sub') + ' about "' + item + '"'); await saveJob(job, who);
+  return out;
+}
+async function scopeReview(who, b){
+  const job = await jobRow(b.jobId).catch(() => null); if (!job) return { code: 404, error: 'No such bid job.' };
+  const k = (s(b.trade).toLowerCase() + '|' + s(b.key)).slice(0, 200); if (!s(b.key)) return { code: 400, error: 'Which scope line?' };
+  const R = Object.assign({}, job.scopeReview || {}); if (b.on === false) delete R[k]; else R[k] = { at: nowIso(), by: who.email };
+  job.scopeReview = R; await saveJob(job, who);
+  return { ok: true, scopeReview: R };
+}
+
 /* ── ONE list of a job's sub bids, from bids@, the bid portal and the sub portal ── */
 async function subBids(jobId){
   const [rows, us, raw] = await Promise.all([SP.listRows([SP.eq('collection', 'bids'), SP.eq('job_id', jobId)]).catch(() => []), users(), crmSubsRaw()]);
@@ -252,7 +305,8 @@ async function subBids(jobId){
     return { source: viaPortal ? 'subportal' : 'portal', id: s(b.id), sub: s(b.userName || u.name), company: s(b.userCompany || u.company), email: low(b.userEmail || u.email),
       trade: s(b.trade) || tradeOf(u, crmByEmail, b.userEmail || u.email), amount: b.amount == null || b.amount === '' ? null : Number(b.amount),
       files: arr(b.docs).map(fileOut), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 3000),
-      notes: s(b.notes).slice(0, 3000), awardMailedAt: s(b.awardMailedAt), lang: langOf(u, crmByEmail[low(b.userEmail || u.email)]) };   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
+      notes: s(b.notes).slice(0, 3000), awardMailedAt: s(b.awardMailedAt), lang: langOf(u, crmByEmail[low(b.userEmail || u.email)]),
+      phone: s(b.userPhone || u.phone), read: readOut(b.read), hasPdf: arr(b.docs).some(d => d && (/pdf/i.test(s(d.type)) || /\.pdf$/i.test(s(d.name || d.fileName)))) };   /* patch SUBSIMPLE: what GrayCo's reader got from the bid PDF (staff only) */   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
   });
   arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).filter(x => x && x.jobId === jobId).forEach(x => {
     const sub = x.sub || {};
@@ -989,7 +1043,8 @@ exports.handler = async function(event){
       if (q.jobs) return J(200, { ok: true, jobs: await jobsList(), me: { email: who.email, admin: who.admin, estimator: who.estimator, office: who.office, canInvite: who.canInvite, canPublic: who.canPublic } }, C);
       if (q.subbids || q.lead) {
         const jobId = s(q.subbids) || L.portalApi().jobIdFor({ id: s(q.lead) });
-        return J(200, { ok: true, jobId, bids: await subBids(jobId), sent: await sentScope(jobId) }, C);   /* patch BIDSCOPE: + the scope GrayCo sent */
+        const jr = await jobRow(jobId).catch(() => null);
+        return J(200, { ok: true, jobId, bids: await subBids(jobId), sent: await sentScope(jobId), scopeReview: (jr && jr.scopeReview) || {}, scopeAsks: arr(jr && jr.scopeAsks).slice(-100) }, C);   /* patch BIDSCOPE: + the scope GrayCo sent · patch SUBSIMPLE: + reviewed lines, asks */
       }
       if (q.posted) { const r = await postedView(who, s(q.posted)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch BIDPOST */
       if (q.manage) { if (!who.canInvite && !(await posterRole(who, {}, await jobRow(s(q.manage)))))  return J(403, { error: 'Only an admin, an estimator or the office manages a bid job.' }, C); const r = await manageView(s(q.manage)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch SYS2 */
@@ -1006,6 +1061,9 @@ exports.handler = async function(event){
     if (b.op === 'invite') r = who.canInvite ? await invite(who, b) : { code: 403, error: 'Only an admin, an estimator or the office invites subs.' };
     else if (b.op === 'visibility') r = await visibility(who, b);
     else if (b.op === 'award') r = await award(who, b);
+    else if (b.op === 'bidread') r = await bidRead(who, b);   /* patch SUBSIMPLE */
+    else if (b.op === 'scopeask') r = await scopeAsk(who, b);
+    else if (b.op === 'scopereview') r = await scopeReview(who, b);
     else if (b.op === 'matreq') { try { r = await SP.matReqDecide({ email: who.email, name: who.name, admin: !!who.admin }, b); } catch (e) { r = { code: e.status || 500, error: e.message }; } }   /* patch BIDSITE3 F: approve → the PO draft / decline with a note */
     else if (b.op === 'signuplink') r = who.canInvite ? await require('./_lib/bidinvite.js').signupLink(Object.assign({}, b, { by: who.email })) : { code: 403, error: 'Only an admin, an estimator or the office sends sign-up links.' };   /* patch BIDINVITE: 📨 Send sign-up link */
     else if (b.op === 'sweep') r = await sweep(who);
@@ -1033,7 +1091,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
+exports._test = { bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

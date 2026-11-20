@@ -231185,11 +231185,36 @@ function parseText(text, field){
   });
   return out;
 }
+/* patch SUBSIMPLE (owner 11/20: "review everyone's inclusions and exclusions … if someone has something in scope and someone else
+   doesn't then raise a flag"): the bid PDF's read lists join the compare; similar lines are one row ("drywall hang & finish" ≈
+   "hang and finish GWB"); ⚠ N scope gaps on top; per gap 📩 Ask the sub · ✓ Reviewed · ➕ Add to our estimate; 📝 Add to our estimate notes */
+var SYN = { gwb: 'drywall', gypsum: 'drywall', sheetrock: 'drywall', wallboard: 'drywall', sheetrok: 'drywall', mud: 'finish', tape: 'finish', taping: 'finish', finishing: 'finish', hanging: 'hang', hung: 'hang',
+  install: 'install', installation: 'install', installed: 'install', ceilings: 'ceiling', walls: 'wall', painting: 'paint', primer: 'prime', priming: 'prime', cleanup: 'clean', cleaning: 'clean', haul: 'debris', hauling: 'debris', trash: 'debris', dumpster: 'debris',
+  permits: 'permit', permitting: 'permit', lvp: 'vinyl', flooring: 'floor', floors: 'floor', receptacles: 'outlet', outlets: 'outlet', fixtures: 'fixture', insulate: 'insulation', batt: 'insulation', batts: 'insulation' };
+function fuzzyWords(t){ var o = {}; low(bare(t)).replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).forEach(function(w){ if (!w || STOP[w] || w.length < 3 || /^\d+$/.test(w)) return; w = SYN[w] || w.replace(/(ies)$/, 'y').replace(/([^s])s$/, '$1'); o[SYN[w] || w] = 1; }); return o; }
+function fuzzySame(a, b){ var A = fuzzyWords(a), B = fuzzyWords(b), ka = Object.keys(A), kb = Object.keys(B); if (!ka.length || !kb.length) return false; var both = ka.filter(function(w){ return B[w]; }).length; return both >= 2 && both / Math.min(ka.length, kb.length) >= 0.66; }
+function readItems(rd){
+  var out = [];
+  arr(rd.inclusions).concat(arr(rd.scopeItems)).forEach(function(x){ var ck = canonKeys(x); out.push({ kind: 'inc', text: short(bare(x), 200), keys: ck.length ? ck : [normKey(x)], pdf: true }); });
+  arr(rd.exclusions).forEach(function(x){ var ck = canonKeys(x); out.push({ kind: 'exc', text: short(bare(x), 200), keys: ck.length ? ck : [normKey(x)], pdf: true }); });
+  arr(rd.alternates).concat(arr(rd.clarifications)).concat(rd.validity ? ['Price good for: ' + rd.validity] : []).concat(rd.schedule ? ['Schedule: ' + rd.schedule] : []).forEach(function(x){ out.push({ kind: 'note', text: short(x, 200), keys: [normKey(x)], pdf: true }); });
+  return out;
+}
+function gapCount(bids){ var n = 0; group(bids).forEach(function(g){ n += matrix(g.bids, ourScope(g.trade)).filter(function(r){ return r.hot && !reviewed(g.trade, r.key); }).length; }); return n; }
+function reviewed(trade, key){ return !!(UI.review && UI.review[(low(trade) + '|' + s(key)).slice(0, 200)]); }
+function readCell(b){
+  var r = b.read, k = keyOf(b);
+  if (r && r.status === 'read') return '<div class="mut" data-be-read="read">📄 PDF read' + (r.total != null ? ' · ' + money(r.total) : '') + '</div>' + (r.mismatch ? '<div data-be-mismatch style="color:#9a3412;font-weight:700">' + esc(r.flag || ('⚠ Price on the PDF ' + money(r.total) + ' ≠ typed ' + money(r.typed))) + '</div>' : '')
+    + (r.validity ? '<div class="mut">⏳ ' + esc(r.validity) + '</div>' : '') + (r.schedule ? '<div class="mut">📅 ' + esc(r.schedule) + '</div>' : '') + (arr(r.alternates).length ? '<div class="mut">🔀 ' + esc(arr(r.alternates).slice(0, 3).join(' · ')) + '</div>' : '');
+  if (b.hasPdf || (r && r.status)) return '<div class="mut" data-be-read="none">' + (r && r.status === 'failed' ? '⚠ ' + esc(short(r.why, 80)) + ' · ' : '') + 'Not read yet — <button type="button" class="b" data-be="read" data-k="' + esc(k) + '">📄 Read</button></div>';
+  return '';
+}
 var PCACHE = {};
 function scopeOf(b){
-  var src = s(b && b.source), sig = keyOf(b) + '|' + s(b.scope).length + '|' + s(b.notes).length + '|' + s(b.scope).slice(0, 40);
+  var src = s(b && b.source), rd = b && b.read && b.read.status === 'read' ? b.read : null, sig = keyOf(b) + '|' + s(b.scope).length + '|' + s(b.notes).length + '|' + s(b.scope).slice(0, 40) + '|' + (rd ? rd.at : '');
   if (PCACHE[sig]) return PCACHE[sig];
   var items = src === 'email' ? parseText(b.scope, 'free') : src === 'subportal' ? parseText(b.scope, 'scope').concat(parseText(b.notes, 'free')) : parseText(b.scope, 'scope').concat(parseText(b.notes, 'exc'));
+  if (rd) items = items.concat(readItems(rd));   /* patch SUBSIMPLE: what GrayCo's reader got from the bid PDF */
   var r = { items: items, inc: items.filter(function(x){ return x.kind === 'inc'; }), exc: items.filter(function(x){ return x.kind === 'exc'; }), notes: items.filter(function(x){ return x.kind === 'note'; }) };
   PCACHE[sig] = r; return r;
 }
@@ -231223,7 +231248,8 @@ function names(l){ var n = l.map(coName); return n.length <= 2 ? n.join(' & ') :
 function matrix(bids, ours){
   var rows = {}, order = [];
   bids.forEach(function(b){ var k = keyOf(b); scopeOf(b).items.forEach(function(it){ if (it.kind === 'note') return; it.keys.forEach(function(key){
-    var r = rows[key]; if (!r) { r = rows[key] = { key: key, label: SKL[key] || it.text, canon: !!SKL[key], cells: {} }; order.push(r); }
+    var r = rows[key]; if (!r && !SKL[key]) { r = order.filter(function(x){ return !x.canon && fuzzySame(x.label, it.text); })[0] || null; if (r) rows[key] = r; }   /* patch SUBSIMPLE: similar lines are one row */
+    if (!r) { r = rows[key] = { key: key, label: SKL[key] || it.text, canon: !!SKL[key], cells: {} }; order.push(r); }
     var c = r.cells[k]; if (!c) r.cells[k] = { kind: it.kind, text: it.text }; else if (c.kind !== it.kind && it.kind === 'exc') r.cells[k] = { kind: 'exc', text: it.text };
   }); }); });
   if (ours) Object.keys(ours.keys).forEach(function(k){ if (!rows[k]) { rows[k] = { key: k, label: SKL[k], canon: true, cells: {} }; order.push(rows[k]); } });   /* in our scope, no bid mentions it */
@@ -231411,7 +231437,7 @@ function open(jobId, lead){
 function load(){
   var q = UI.lead && !UI.jobId ? 'lead=' + encodeURIComponent(UI.lead) : 'subbids=' + encodeURIComponent(UI.jobId);
   if (UI.lead && UI.jobId) q = 'lead=' + encodeURIComponent(UI.lead);
-  return fn('bid-hub?' + q).then(function(r){ UI.sent = (r && r.sent) || null; OURC = {}; if (r && r.jobId) { UI.jobId = s(r.jobId); if (UI.lead && !STUB[UI.jobId]) STUB[UI.jobId] = { id: UI.jobId, title: 'Bid job', leadId: UI.lead }; } UI.bids = arr(r && r.bids); UI.err = ''; if (!UI.pick) draw(); return UI.bids; },
+  return fn('bid-hub?' + q).then(function(r){ UI.sent = (r && r.sent) || null; OURC = {}; if (r && r.jobId) { UI.jobId = s(r.jobId); if (UI.lead && !STUB[UI.jobId]) STUB[UI.jobId] = { id: UI.jobId, title: 'Bid job', leadId: UI.lead }; } UI.bids = arr(r && r.bids); UI.review = (r && r.scopeReview) || {}; UI.asks = arr(r && r.scopeAsks); UI.err = ''; if (!UI.pick) draw(); return UI.bids; },
     function(e){ UI.err = s(e && e.message) || 'Could not load the bids.'; if (!UI.pick) draw(); return null; });
 }
 function bidByKey(key){ return arr(UI.bids).filter(function(b){ return keyOf(b) === key; })[0] || null; }
@@ -231434,7 +231460,8 @@ function draw(){
   if (UI.err && !UI.bids) h += '<div class="mut" style="color:#b91c1c">' + esc(UI.err) + '</div>';
   else if (!UI.bids) h += '<div class="mut">Loading the bids…</div>';
   else if (!UI.bids.length) h += '<div class="mut">No bids yet — they come in by ✉️ bids@, the 🏗 bid portal and the 🔨 sub portal.</div>';
-  else group(UI.bids).forEach(function(g){
+  else { var gc0 = gapCount(UI.bids); h += '<div class="bepj' + (gc0 ? ' warn' : '') + '" data-be-gaps="' + gc0 + '">' + (gc0 ? '⚠ <b>' + gc0 + ' scope gap' + (gc0 === 1 ? '' : 's') + '</b> — a line one bid includes and another excludes or does not mention. Review each one below (📩 ask the sub, ✓ reviewed, ➕ add to our estimate).' : '✓ No open scope gaps between the bids.') + '</div>'; }
+  if (UI.bids && UI.bids.length) group(UI.bids).forEach(function(g){
     h += '<div class="betr" data-be-trade="' + esc(g.trade) + '"><b>' + esc(g.trade) + '</b><span class="mut">' + g.bids.length + ' bid' + (g.bids.length === 1 ? '' : 's') + (g.low != null ? ' · low ' + money(g.low) : '') + (g.awarded ? ' · 🏆 awarded' : '') + '</span></div>'
       + '<div class="bewrap"><table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:20%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:12%"></colgroup><thead><tr><th>Sub</th><th>Amount</th><th>Scope / notes</th><th>Files</th><th>Came in</th><th>Status</th><th>Estimate</th><th></th></tr></thead><tbody>' + g.bids.map(function(b){
         var k = keyOf(b), ie = inEst(k), src = SRC[b.source] || SRC.portal, busy = UI.busy === k;
@@ -231442,7 +231469,7 @@ function draw(){
           + (ie ? '<button type="button" class="b" data-be="remove" data-k="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>➖ Take off estimate</button>' : '<button type="button" class="b" data-be="add" data-k="' + esc(k) + '"' + (busy ? ' disabled' : '') + '>➕ Add to estimate</button>');
         return '<tr data-be-bid="' + esc(k) + '" data-amount="' + (b.amount == null ? '' : esc(b.amount)) + '"' + (b.isLow ? ' class="low"' : '') + '>'
           + '<td><b>' + esc(b.company || b.sub || b.email || 'Sub') + '</b>' + (b.sub && b.company ? '<div class="mut">' + esc(b.sub) + '</div>' : '') + (b.email ? '<div class="mut">' + esc(b.email) + '</div>' : '') + '</td>'
-          + '<td class="num">' + money(b.amount) + (b.isLow ? '<span class="lowtag" data-be-low>⬇ Lowest</span>' : '') + '</td>'
+          + '<td class="num">' + money(b.amount) + (b.isLow ? '<span class="lowtag" data-be-low>⬇ Lowest</span>' : '') + readCell(b) + '</td>'
           + (function(){ var P = scopeOf(b), raw = [s(b.scope), s(b.notes)].filter(Boolean).join(' · '); return '<td class="sc" title="' + esc(raw) + '"><div class="scn" data-be-scn="' + P.inc.length + '/' + P.exc.length + '"><span class="i">✅ ' + P.inc.length + ' included</span> · <span class="x">⛔ ' + P.exc.length + ' excluded</span></div>' + (function(){ var hs = scopeHits(b, b.trade); return hs.length ? '<div class="red" data-be-red="' + esc(hs.map(function(h){ return h.label; }).join('|')) + '">🚩 Excludes part of our scope: ' + esc(hs.map(function(h){ return h.label; }).join(', ')) + '</div>' : ''; })() + (raw ? esc(short(raw, 140)) : '<span class="mut">—</span>') + '</td>'; })()
           + '<td>' + (arr(b.files).length ? arr(b.files).map(function(f){ return (f.ref || f.url) ? '<button type="button" class="fl" data-be="file" data-ref="' + esc(f.ref || '') + '" data-url="' + esc(f.url || '') + '" data-name="' + esc(f.name) + '">📄 ' + esc(f.name) + '</button>' : '<span>📄 ' + esc(f.name) + '</span>'; }).join('') : '<span class="mut">—</span>') + '</td>'
           + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + '</td>'
@@ -231459,11 +231486,45 @@ function scopeTable(g){
   g.bids.forEach(function(b){ scopeOf(b).notes.forEach(function(n){ notes.push('<div>📝 <b>' + esc(coName(b)) + ':</b> ' + esc(n.text) + '</div>'); }); });
   if (!m.length && !notes.length) return '';
   return '<details class="besc" data-be-scope="' + esc(g.trade) + '" open><summary>📋 Scope — what each bid includes / excludes' + (hot ? ' · <span style="color:#9a3412">⚠ ' + hot + ' difference' + (hot === 1 ? '' : 's') + '</span>' : '') + '</summary>'
-    + (m.length ? '<div class="bewrap"><table><thead><tr><th>Item</th>' + (ours ? '<th>Our scope</th>' : '') + g.bids.map(function(b){ return '<th>' + esc(coName(b)) + '<div class="mut">' + money(b.amount) + '</div></th>'; }).join('') + '<th>Difference</th></tr></thead><tbody>'
+    + '<div class="acts" style="margin:6px 0"><button type="button" class="b" data-be="estnotes" data-trade="' + esc(g.trade) + '">📝 Add to our estimate notes</button></div>'
+    + (m.length ? '<div class="bewrap"><table><thead><tr><th>Item</th>' + (ours ? '<th>Our scope</th>' : '') + g.bids.map(function(b){ return '<th>' + esc(coName(b)) + '<div class="mut">' + money(b.amount) + '</div></th>'; }).join('') + '<th>Difference</th><th>Review</th></tr></thead><tbody>'
       + m.map(function(r){ return '<tr data-be-item="' + esc(r.key) + '"' + (r.red ? ' class="hot red"' : r.hot ? ' class="hot"' : '') + '><td>' + esc(r.label) + '</td>' + (ours ? '<td class="c" data-be-ours="' + (r.ours ? 1 : 0) + '" title="' + esc(r.ours ? 'Our scope: ' + r.ours : 'not in the scope we sent') + '">' + (r.ours ? '📄' : '<span class="mut">—</span>') + '</td>' : '') + g.bids.map(function(b){ var c = r.cells[keyOf(b)];
           return '<td class="c" data-be-cell="' + (c ? c.kind : '') + '" title="' + esc(c ? c.text : 'not mentioned') + '">' + (c ? (c.kind === 'exc' ? '⛔' : '✅') : '<span class="mut">—</span>') + '</td>'; }).join('')
-        + '<td class="fl2" data-be-flag>' + esc(r.flag) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '')
+        + '<td class="fl2" data-be-flag>' + esc(r.flag) + '</td><td data-be-gapacts>' + gapActs(g, r) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '')
     + (notes.length ? '<div class="bnotes">' + notes.join('') + '</div>' : '') + '</details>';
+}
+function gapActs(g, r){
+  if (!r.hot) return '';
+  var rv = reviewed(g.trade, r.key), who = r.exc.concat(r.silent);
+  return '<label class="mut" style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-be="rev" data-trade="' + esc(g.trade) + '" data-key="' + esc(r.key) + '"' + (rv ? ' checked' : '') + '> Reviewed</label>'
+    + who.map(function(b){ var asked = arr(UI.asks).some(function(x){ return x && x.bid === s(b.id) && x.item === r.label; }); return '<button type="button" class="b" data-be="ask" data-k="' + esc(keyOf(b)) + '" data-item="' + esc(r.label) + '" data-kind="' + (r.cells[keyOf(b)] ? 'exc' : 'silent') + '" data-trade="' + esc(g.trade) + '">📩 Ask ' + esc(short(coName(b), 18)) + (asked ? ' ✓' : '') + '</button>'; }).join('')
+    + '<button type="button" class="b" data-be="gapline" data-trade="' + esc(g.trade) + '" data-item="' + esc(r.label) + '">➕ Add to our estimate</button>';
+}
+/* the project's open estimate (made when there is none) — for the notes / a gap line */
+function estFor(pid){ var p = proj(pid); if (!p) return null; var co = coOfJob(p), l = estsOfJob(pid).filter(function(e){ return e && (!coValid(e.companyId) || e.companyId === co); }).filter(isOpen); var e = l[0]; return e ? (storedEst(e.id) || e) : null; }
+function estNotes(trade, pid){
+  var g = group(UI.bids).filter(function(x){ return x.trade === trade; })[0]; if (!g) return null;
+  var m = matrix(g.bids, ourScope(trade)), aw = g.bids.filter(function(b){ return b.awarded; })[0];
+  var inc = [], exc = [];
+  m.forEach(function(r){ if (aw) { var c = r.cells[keyOf(aw)]; if (c && c.kind === 'inc') inc.push(r.label); else if (c && c.kind === 'exc') exc.push(r.label); return; }
+    if (r.inc.length && !r.exc.length) inc.push(r.label); else if (r.exc.length && !r.inc.length) exc.push(r.label); });
+  var p = proj(pid), e = estFor(pid), rec = e ? clone(e) : newEstimate(p, null); if (!e) rec.lines = [];
+  rec.scope = Object.assign({ text: '', inc: '', exc: '', notes: '' }, rec.scope || {});
+  var add = function(cur, list){ var have = low(cur); var nl = list.filter(function(x){ return have.indexOf(low(x)) < 0; }).map(function(x){ return '• ' + trade + ': ' + x; }); return { text: (s(cur) ? s(cur) + '\n' : '') + nl.join('\n'), n: nl.length }; };
+  var a = add(rec.scope.inc, inc), b2 = add(rec.scope.exc, exc);
+  rec.scope.inc = a.text.trim(); rec.scope.exc = b2.text.trim();
+  write(rec);
+  return { estId: rec.id, estName: rec.name, inc: a.n, exc: b2.n };
+}
+function gapLine(trade, item, pid){
+  var e = estFor(pid), p = proj(pid), key = 'gap:' + low(trade) + ':' + normKey(item);
+  var line = { id: 'gap_' + gid('gap', trade + '|' + item), desc: (s(trade) || 'Scope') + ' — ' + short(item, 160), cost: 0, qty: 1, cat: catFor(trade), type: 'sub', mult: 'type', unit: 'lump sum', scopeGap: { trade: s(trade), item: short(item, 200), key: key, addedAt: nowIso(), addedBy: myName(), from: 'scope compare' } };
+  if (!e) { var rec0 = write(newEstimate(p, line)); return { estId: rec0.id, estName: rec0.name, created: true }; }
+  if (linesOf(e).some(function(l){ return l && l.scopeGap && l.scopeGap.key === key; })) return { estId: e.id, estName: e.name, same: true };
+  var doIt = function(L){ if (!L.some(function(l){ return l && l.scopeGap && l.scopeGap.key === key; })) L.push(clone(line)); };
+  if (liveApply(e.id, doIt)) return { estId: e.id, estName: e.name, live: true };
+  var rec = clone(e); rec.lines = clone(linesOf(e)); doIt(rec.lines); write(rec);
+  return { estId: rec.id, estName: rec.name };
 }
 /* 🏆 the confirm sheet: what this sub excludes, the gaps, a note, the e-mails */
 function confirmSheet(key, pid){
@@ -231570,6 +231631,15 @@ function onClick(ev){
   if (a === 'award') return doAward(k, true);
   if (a === 'unaward') return doAward(k, false);
   if (a === 'add') return doAdd(k);
+  if (a === 'read') { var rb = bidByKey(k); if (!rb) return; t.disabled = true; t.textContent = 'Reading…';   /* patch SUBSIMPLE */
+    return fn('bid-hub', { op: 'bidread', jobId: UI.jobId, source: rb.source, id: rb.id }).then(function(r){ toast(r.read && r.read.status === 'read' ? '📄 Read' + (r.read.mismatch ? ' — ' + r.read.flag : '') : '⚠ ' + s(r.read && r.read.why)); return load(); }, function(e){ toast(e.message, true); return load(); }); }
+  if (a === 'ask') { var ab = bidByKey(k); if (!ab) return; var item = t.getAttribute('data-item');
+    return fn('bid-hub', { op: 'scopeask', jobId: UI.jobId, source: ab.source, id: ab.id, item: item, kind: t.getAttribute('data-kind'), trade: t.getAttribute('data-trade') })
+      .then(function(r){ toast('📩 Asked ' + coName(ab) + ' — ' + [r.mail ? 'e-mail' : '', r.text ? 'text' : ''].filter(Boolean).join(' + ') || '📩 Saved (no e-mail / phone on the bid)'); return load(); }, function(e){ toast(e.message, true); }); }
+  if (a === 'rev') { var on = !!t.checked; return fn('bid-hub', { op: 'scopereview', jobId: UI.jobId, trade: t.getAttribute('data-trade'), key: t.getAttribute('data-key'), on: on }).then(function(r){ UI.review = r.scopeReview || {}; draw(); }, function(e){ toast(e.message, true); }); }
+  if (a === 'estnotes' || a === 'gapline') { var tr = t.getAttribute('data-trade'), it = t.getAttribute('data-item');
+    return withProject(function(pid){ UI.pick = null; var r = a === 'estnotes' ? estNotes(tr, pid) : gapLine(tr, it, pid);
+      toast(!r ? 'Nothing to add' : a === 'estnotes' ? '📝 ' + r.inc + ' inclusion' + (r.inc === 1 ? '' : 's') + ' + ' + r.exc + ' exclusion' + (r.exc === 1 ? '' : 's') + ' added to “' + s(r.estName) + '”' : r.same ? 'Already in “' + s(r.estName) + '”' : '➕ Added to “' + s(r.estName) + '” — type its price there'); draw(); }, function(){ UI.pick = null; draw(); }); }
   if (a === 'remove') { var tk = takeLine(k); toast(tk.length ? '➖ Taken off “' + s(tk[0].estName) + '”' : 'Not in an estimate.'); return draw(); }
   if (a === 'file') { var ref = t.getAttribute('data-ref'), url = t.getAttribute('data-url'), nm = t.getAttribute('data-name'); try { if (ref && W._gcDownloadRef) return W._gcDownloadRef(ref, nm); if (url) return W.open(url, '_blank', 'noopener'); } catch (e) { warn(e); } return; }
   if (a === 'pick') return picker(function(pid){ link(UI.jobId, pid).then(function(){ draw(); }); UI.pick = null; draw(); toast('📁 Linked — awarded bids go into ' + projLabel(proj(pid)) + '’s estimate'); }, function(){ UI.pick = null; draw(); });

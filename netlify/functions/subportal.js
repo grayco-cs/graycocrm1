@@ -83,7 +83,7 @@ function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedA
    published addenda without GrayCo's sending details, never the CRM's posting log */
 function subJobView(j, trades){
   const v = Object.assign({}, j);
-  delete v.log; delete v.archivedFrom;
+  delete v.log; delete v.archivedFrom; delete v.scopeAsks; delete v.scopeReview;   /* patch SUBSIMPLE: staff only (who was asked about what) */
   delete v._po; delete v.poHistory; delete v.poNoMatch; delete v.poNoMatchBy; delete v.poNoMatchAt; delete v.crmProjectAuto; delete v.crmProjectAt; delete v.crmProjectBy; delete v.poAssignedAt;   /* patch BIDPO: staff only */
   delete v.internalNotes; delete v.crmFileRefs; delete v.ourDue; delete v.ourDueTime;   /* patch PLANREQ-F: subs see only the sub due date */ if (!v.showOwnerGc) delete v.ownerGc;   /* patch PLANREQ-E: internal notes never; the owner / GC only when GrayCo ticks "show it" */
   if (v.siteWalk && typeof v.siteWalk === 'object') v.siteWalk = pick(v.siteWalk, ['date', 'time', 'location', 'mandatory']);   /* never the RSVP list */
@@ -822,6 +822,7 @@ async function saveCollection(who, key, upsert, del, ctx){
         ['trade', 'inclusions', 'exclusions', 'notesOwn'].forEach(function(k){ if (x[k] !== undefined) b[k] = s(x[k]).slice(0, k === 'trade' ? 80 : 4000); });   /* patch BIDMULTI: the sub portal's bid form (the bid site's own page leaves them as they are) */
         if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
+        if (prev && prev.read && JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs))) delete b.read;   /* patch SUBSIMPLE: a new PDF → GrayCo reads it again ("Not read yet") */
         if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
         rows.push(rowFor('bids', b));
       }
