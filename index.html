@@ -93741,7 +93741,24 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   }
   window._gcApplyJobYearFilter = applyFilter;
 
-  function bar(){
+  function bar(){ /* patch YEARBAR */ allNote(); var yb=document.getElementById('_gcYearBar'); if(yb) yb.remove();
+    try{ if(currentFilter()){ localStorage.removeItem('gc_job_year_filter'); applyFilter(); } }catch(e){} }
+  function allNote(){   /* the All card: how many of its jobs are on none of the other four cards */
+    try{
+      var v=''; try{ v=localStorage.getItem('grayco_view')||''; }catch(e){}
+      var note=document.getElementById('gc-allnote'); if(v!=='projects'){ if(note) note.remove(); return; }
+      var g=null, ds=document.querySelectorAll('main div[style*="grid-template-columns"]');
+      for(var i=0;i<ds.length && !g;i++){ var k=ds[i].children; if(k.length===5 && /All\s*$/.test(k[4].textContent.replace(/[\d,]+\s*/, '').replace(/incl\..*$/, '').trim())) g=ds[i]; }
+      if(!g){ if(note) note.remove(); return; }
+      var num=function(el){ var m=/^\D*?([\d,]+)/.exec(el.textContent||''); return m ? +m[1].replace(/,/g,'') : 0; };
+      var c=g.children, n=num(c[4])-num(c[0])-num(c[1])-num(c[2])-num(c[3]);
+      if(n<=0){ if(note) note.remove(); return; }
+      var t='incl. '+n+' QuickBooks / other';
+      if(!note || note.parentNode!==c[4]){ if(note) note.remove(); note=document.createElement('div'); note.id='gc-allnote'; note.style.cssText='font-size:10px;font-weight:600;color:#64748b;margin-top:2px'; note.title='QuickBooks-import rows still at "Active" and jobs with another status are in All only'; c[4].appendChild(note); }
+      if(note.textContent!==t) note.textContent=t;
+    }catch(e){}
+  }
+  function oldBar(){
     try{
       var v=''; try{ v=localStorage.getItem('grayco_view')||''; }catch(e){}
       var host=document.getElementById('_gcYearBar');
@@ -93770,7 +93787,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
         b.onclick=function(){
           try{ localStorage.setItem('gc_job_year_filter', b.getAttribute('data-y')||''); }catch(e){}
           var old=document.getElementById('_gcYearBar'); if(old) old.remove();
-          bar(); applyFilter();
+          oldBar(); applyFilter();
         };
       });
       applyFilter();
@@ -93790,7 +93807,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     bar();
   }, 16000);
   window._gcYearBarPaint = bar;   /* patch JOBTOP */
-  setInterval(bar, 4000);
+  setInterval(bar, 1500);
   setInterval(applyFilter, 6000);
 
   console.log('[GC] Job year dating ready — _gcDateAllJobs() / year filter on the Projects tab.');
