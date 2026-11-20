@@ -40,7 +40,8 @@ const T = {
     confirm: 'Confirm', back: 'Back', view: 'View', close: 'Close',
     needAccount: "Don't have an account?", haveAccount: 'Already have an account?',
     accountPending: 'Your account is pending approval. A GrayCo team member will review your request.',
-    invalidLogin: 'Invalid username or password.',
+    invalidLogin: 'That e-mail and password do not match. Tap the eye to check the password, or use "Forgot password?" below.',
+    pwTip: 'Tap the eye to check it. You will sign in with this password.',
     requestSubmitted: 'Request submitted! You will be notified when approved.',
     // Nav
     jobs: 'Open Jobs', myBids: 'My Bids', allBids: 'All Bids',
@@ -361,7 +362,8 @@ const T = {
     confirm: 'Confirmar', back: 'Atrás', view: 'Ver', close: 'Cerrar',
     needAccount: '¿No tiene cuenta?', haveAccount: '¿Ya tiene cuenta?',
     accountPending: 'Su cuenta está pendiente de aprobación. Un miembro del equipo de GrayCo revisará su solicitud.',
-    invalidLogin: 'Usuario o contraseña inválidos.',
+    invalidLogin: 'El correo y la contraseña no coinciden. Toque el ojo para revisar la contraseña, o use "¿Olvidó su contraseña?" abajo.',
+    pwTip: 'Toque el ojo para revisarla. Iniciará sesión con esta contraseña.',
     requestSubmitted: '¡Solicitud enviada! Le notificaremos cuando sea aprobada.',
     jobs: 'Trabajos Abiertos', myBids: 'Mis Ofertas', allBids: 'Todas las Ofertas',
     pendingSubs: 'Aprobaciones Pendientes', approvedSubs: 'Subcontratistas Aprobados',
@@ -1965,7 +1967,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
               </Field>
               <Field label={t.password} required>
                 <div style={{ position: 'relative' }}>
-                  <input style={{ ...inputStyle, paddingRight: 40 }} type={showPw ? 'text' : 'password'}
+                  <input style={{ ...inputStyle, paddingRight: 40 }} type={showPw ? 'text' : 'password'} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                     value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()} />
                   <button onClick={() => setShowPw(!showPw)} style={{
@@ -2009,7 +2011,17 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
                 <input style={inputStyle} data-su="area" value={form.serviceArea} placeholder="Shelby, DeSoto, Fayette…" onChange={e => setForm({ ...form, serviceArea: e.target.value })} />
               </Field>
               <Field label={t.password + ' *'}>
-                <input style={inputStyle} type="password" data-su="pw" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+                {/* patch SUPW (owner 11/20: a sub signed up, then "password doesn't match") — show/hide + no phone strong-password swap */}
+                <div style={{ position: 'relative' }}>
+                  <input style={{ ...inputStyle, paddingRight: 40 }} type={showPw ? 'text' : 'password'} data-su="pw" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                    value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+                  <button type="button" data-su="pweye" aria-label="Show password" onClick={() => setShowPw(!showPw)} style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'transparent', border: 'none', cursor: 'pointer', padding: 6,
+                    color: styles.text2,
+                  }}>{showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                </div>
+                <div style={{ fontSize: 12, color: styles.text2, marginTop: 4 }}>{t.pwTip || 'Tap the eye to check it. You will sign in with this password.'}</div>
               </Field>
 
               {/* patch SIGNUPPAPERS: the papers, optional — for faster approval */}
