@@ -230651,6 +230651,71 @@ W._gcSubAcct = { open: open, render: render, load: load, api: api, openSheet: op
 try { console.log('[GC] patch SUBACCT: Admin → 🔐 Sub portal accounts — _gcSubAcct.state()'); } catch (e) {}
 })(window, document);
 </script>
+<script id="gc-patch-bidinvite">
+/* __GC_PATCH_BIDINVITE__ — 📨 SEND SIGN-UP LINK (owner 11/20: "I need to be able to send links right now to subs to sign up for the portal,
+   with data entry still on"; tools/patch_BIDINVITE.py). For a sub who is not on a bid job yet: Admin → Admin settings → 🔐 Sub portal
+   accounts (and Subs → Sub portal) → "📨 Send sign-up link": name, e-mail and / or cell, Sub or Supplier, English / Spanish → bid-hub
+   op signuplink: an e-mail and / or a text from the GrayCo number with a sign-up link (approved on sign-up). A sub / supplier send, not a
+   customer send — it goes in ⏸ data-entry mode (customer sends stay blocked). Every send is logged; the link is shown to copy too.
+   Admins, estimators and the office (the server checks: bid-hub canInvite). Console: _gcSignupLink.open({ name, email, phone }) */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_BIDINVITE__) return; W.__GC_PATCH_BIDINVITE__ = true;
+var SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function toast(t, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(t, bad); } catch (e) {} }
+function close(){ var m = D.getElementById('gc-sul'); if (m) m.remove(); }
+function open(pre){
+  pre = pre || {}; close();
+  var m = D.createElement('div'); m.id = 'gc-sul'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('data-gc-noac', '1');
+  m.style.cssText = 'position:fixed;inset:0;z-index:100320;background:rgba(15,10,40,.45);display:flex;align-items:flex-start;justify-content:center;padding:6vh 12px;overflow:auto';
+  var IN = 'width:100%;box-sizing:border-box;border:1px solid #d6d1e6;border-radius:8px;padding:9px 10px;font:15px system-ui;margin-top:3px';
+  m.innerHTML = '<div role="dialog" aria-label="Send sign-up link" style="background:#fff;border-radius:14px;max-width:520px;width:100%;padding:18px;font:14px/1.5 system-ui;color:#1b1640;box-sizing:border-box">'
+    + '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:17px">📨 Send sign-up link</b><button type="button" data-sul="x" aria-label="Close" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>'
+    + '<div style="color:#64748b;font-size:13px">A link to make their GrayCo bid site account (bids.grayco-cs.com) — approved when they sign up. It goes now, also in ⏸ data-entry mode (a sub send, not a customer send).</div>'
+    + '<label style="display:block;font-weight:700;margin-top:10px">Name / company<input data-sul-f="name" style="' + IN + '" value="' + esc(pre.name) + '"></label>'
+    + '<label style="display:block;font-weight:700;margin-top:8px">E-mail<input data-sul-f="email" type="email" style="' + IN + '" value="' + esc(pre.email) + '"></label>'
+    + '<label style="display:block;font-weight:700;margin-top:8px">Cell (for a text)<input data-sul-f="phone" type="tel" inputmode="tel" style="' + IN + '" value="' + esc(pre.phone) + '"></label>'
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px"><label><input type="checkbox" data-sul-via="email" checked> ✉ E-mail it</label><label><input type="checkbox" data-sul-via="sms"' + (pre.phone ? ' checked' : '') + '> 💬 Text it (GrayCo number)</label></div>'
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px"><label><input type="radio" name="gc-sul-as" value="sub" checked> 🔨 Sub</label><label><input type="radio" name="gc-sul-as" value="supplier"> 🧱 Supplier</label><label style="margin-left:auto"><input type="checkbox" data-sul-es> Español</label></div>'
+    + '<div data-sul-msg style="min-height:1.2em;margin-top:8px;font-weight:600"></div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px"><button type="button" data-sul="send" style="background:#241968;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:800;cursor:pointer">📨 Send</button><button type="button" data-sul="x" style="border:1px solid #d6d1e6;background:#fff;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer">Close</button></div></div>';
+  m.addEventListener('click', function(ev){ var t = ev.target.closest && ev.target.closest('[data-sul]'); if (ev.target === m || (t && t.getAttribute('data-sul') === 'x')) return close(); if (t && t.getAttribute('data-sul') === 'send') send(m, t); });
+  D.body.appendChild(m);
+  return m;
+}
+function send(m, btn){
+  var g = function(k){ var e = m.querySelector('[data-sul-f="' + k + '"]'); return e ? s(e.value) : ''; }, msg = m.querySelector('[data-sul-msg]');
+  var via = []; m.querySelectorAll('[data-sul-via]').forEach(function(x){ if (x.checked) via.push(x.getAttribute('data-sul-via')); });
+  var as = (m.querySelector('input[name="gc-sul-as"]:checked') || {}).value || 'sub';
+  var body = { op: 'signuplink', name: g('name'), email: g('email'), phone: g('phone'), via: via, as: as, lang: (m.querySelector('[data-sul-es]') || {}).checked ? 'es' : 'en' };
+  btn.disabled = true; msg.style.color = '#1b1640'; msg.textContent = '⏳ Sending…';
+  return W.fetch('/.netlify/functions/bid-hub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json().catch(function(){ return {}; }); }).then(function(j){
+    btn.disabled = false;
+    if (!j || !j.ok) { msg.style.color = '#b91c1c'; msg.textContent = (j && j.error) || 'Not sent — try again.'; return j; }
+    if (j.already) { msg.style.color = '#b45309'; msg.textContent = j.note; return j; }
+    var got = [j.mailed ? '✉ e-mailed' : '', j.texted ? '💬 texted' : ''].filter(Boolean).join(' + '), why = [j.mailWhy, j.textWhy].filter(Boolean).join(' · ');
+    msg.style.color = got ? '#15803d' : '#b91c1c';
+    msg.innerHTML = (got ? '✓ Sign-up link ' + got : 'Not sent') + (why ? ' — ' + esc(why) : '') + '<div style="font-weight:400;font-size:12px;margin-top:4px;word-break:break-all">Link: <a href="' + esc(j.link) + '" target="_blank" rel="noopener" data-sul-link>' + esc(j.link) + '</a></div>';
+    if (got) toast('📨 Sign-up link ' + got);
+    return j;
+  }, function(){ btn.disabled = false; msg.style.color = '#b91c1c'; msg.textContent = 'No connection — try again.'; });
+}
+/* the buttons: Admin → 🔐 Sub portal accounts (its search bar) and Subs → Sub portal */
+function place(){
+  try {
+    var bar = D.querySelector('#gc-sa .bar');
+    if (bar && !bar.querySelector('[data-sul-open]')) { var b = D.createElement('button'); b.type = 'button'; b.className = 'g'; b.setAttribute('data-sul-open', 'subacct'); b.textContent = '📨 Send sign-up link'; b.onclick = function(e){ e.preventDefault(); open({}); }; bar.appendChild(b); }
+    var ph = D.querySelector('.gcsub-ph');
+    if (ph && !ph.querySelector('[data-sul-open]')) { var c = D.createElement('button'); c.type = 'button'; c.className = 'gcsub-btn'; c.setAttribute('data-sul-open', 'subs'); c.textContent = '📨 Send sign-up link'; c.style.marginLeft = '8px'; c.onclick = function(e){ e.preventDefault(); open({}); }; ph.appendChild(c); }
+  } catch (e) {}
+}
+SI.call(W, function(){ if (!D.hidden) place(); }, 1200);
+W._gcSignupLink = { open: open, close: close };
+try { console.log('[GC] patch BIDINVITE: 📨 Send sign-up link — _gcSignupLink.open()'); } catch (e) {}
+})(window, document);
+</script>
 
 <script id="gc-patch-bidest">
 /* BIDEST (owner 11/12: "the admin page should have a spot where all bids for a job are at, and the selected bid then goes into

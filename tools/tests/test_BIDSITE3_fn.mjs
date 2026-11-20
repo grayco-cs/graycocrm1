@@ -190,7 +190,7 @@ ok('F13 another sub never sees someone else\'s requests', r.b.requests.length ==
 /* ═══ the code ═══ */
 const fs = require('fs');
 const P = fs.readFileSync(path.join(FN, '_lib/pause.js'), 'utf8');
-ok('X1 data-entry mode: only an e-mail tagged "trade" passes (never a text)', /c && c\.mail && safetyTag\(\) === 'trade'/.test(P) && !/c\.twilio && safetyTag\(\) === 'trade'/.test(P));
+ok('X1 data-entry mode: a send tagged "trade" (a sub / supplier invite or bid e-mail; the BIDINVITE sign-up text) passes', /\(c\.mail \|\| c\.twilio\) && safetyTag\(\) === 'trade'/.test(P));
 const fails = R.filter(x => !x).length;
 console.log(fails ? 'FAILED ' + fails + ' of ' + R.length : 'ALL ' + R.length + ' PASS');
 process.exit(fails ? 1 : 0);

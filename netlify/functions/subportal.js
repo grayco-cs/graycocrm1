@@ -963,7 +963,7 @@ async function register(body){
     if (dupes.length) return { duplicates: dupes };
   }
   let inv = body.invite ? await findInvite(body.invite, body.job) : null;
-  let invited = !!(inv && (!inv.data.email || low(inv.data.email) === email));
+  let invited = !!(inv && (!inv.data.email || low(inv.data.email) === email || /^sms:/.test(low(inv.data.email))));   /* patch BIDINVITE: a texted sign-up link ("sms:<cell>") */
   /* patch BIDSITE3 (owner 11/20) A: a sub we INVITED is approved on sign-up — by the invite link, or by an invite to the same e-mail
      (the newest open invite); a self sign-up still waits for an admin; a SUPPLIER sign-up is approved at once */
   if (!invited) {
@@ -987,7 +987,7 @@ async function register(body){
     id: 'u_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'),
     authUserId: s(authUser.id || (authUser.user && authUser.user.id)),
     username: email, email: email, role: p.acctType === 'supplier' ? 'supplier' : 'sub', approved: invited || supplierAcct,   /* patch SUPPLIER: a supplier account · patch BIDSITE3: approved at once */
-    approvedAuto: supplierAcct ? 'supplier' : invited ? 'invited' : undefined,
+    approvedAuto: supplierAcct ? 'supplier' : invited ? (inv.job_id === 'signup' ? 'signup-link' : 'invited') : undefined,   /* patch BIDINVITE: + a 📨 sign-up link */
     name: clip(p.name, 80), phone: clip(p.phone, 40), contactTitle: clip(p.contactTitle, 80),
     company: clip(p.company, 120), dbaName: clip(p.dbaName, 120),
     businessAddress: clip(p.businessAddress), businessCity: clip(p.businessCity, 80),
@@ -997,7 +997,7 @@ async function register(body){
     unionAffiliation: clip(p.unionAffiliation, 20), serviceArea: clip(p.serviceArea), licenseNumbers: clip(p.licenseNumbers, 400),
     einLast4: s(p.einLast4).replace(/\D/g, '').slice(0, 4),
     trades: (Array.isArray(p.trades) ? p.trades : []).map(function(x){ return clip(x, 60); }).filter(Boolean).slice(0, 30),
-    invitedJobId: invited ? inv.job_id : undefined,
+    invitedJobId: invited && inv.job_id !== 'signup' ? inv.job_id : undefined,   /* patch BIDINVITE: a sign-up link has no job */
     vetPending: invited && !supplierAcct ? true : undefined,   /* SUBSIGNUP: (owner 11/16) an invited sub sees that job at once, but GrayCo still checks them: a card in ✅ Approvals */
     lang: s(p.lang) === 'es' ? 'es' : 'en',   /* patch SIGNUPPAPERS: their language, and the papers they SAY they have (not papers on file) */
     papersClaimed: (function(c){ c = c && typeof c === 'object' ? c : {}; return { w9: c.w9 === true, gl: c.gl === true, wc: c.wc === true, wcExempt: c.wcExempt === true, at: new Date().toISOString() }; })(p.papersClaimed),
@@ -2157,6 +2157,7 @@ exports.handler = async function (event) {
       if (limited(ipOf(event), 40)) return J(429, { error: 'Too many tries. Wait a few minutes.' });
       const inv = await findInvite(body.invite, body.job);
       if (!inv) return J(200, { ok: false });
+      if (inv.job_id === 'signup') return J(200, { ok: true, email: /^sms:/.test(s(inv.data.email)) ? '' : s(inv.data.email), jobTitle: 'the GrayCo bid site — every public bid job' });   /* patch BIDINVITE: a 📨 sign-up link */
       const job = await getRow('jobs', inv.job_id);
       return J(200, { ok: true, email: s(inv.data.email), jobTitle: job && !isDraft(job.data) ? s(job.data.title) : '' });
     }

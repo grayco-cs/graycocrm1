@@ -385,9 +385,11 @@ async function invite(who, b){
     const isEs = x.t.lang === 'es'; if (isEs) es++;
     const link = SP.PORTAL_ORIGIN + '/?invite=' + x.inv.token + '&job=' + encodeURIComponent(jobId);
     const m = inviteMail(job, link, isEs);
-    m.subject = ((isEs ? 'GrayCo le invitó a ofertar: ' : 'GrayCo invited you to bid: ') + (s(job.title) || 'GrayCo project')).slice(0, 240);   /* patch BIDSITE3: the owner's subject */
-    try { if (await BM.trade(() => SP.sendMail(x.t.email, m.subject, m.html))) mailed++; } catch (e) {}   /* a sub e-mail, not a customer send: goes in data-entry mode too */
+    m.subject = ((isEs ? 'GrayCo le invitó a ofertar: ' : 'GrayCo invited you to bid: ') + (s(job.title) || 'GrayCo project')).slice(0, 240);   /* patch BIDINVITE: the owner's subject */
+    /* patch BIDINVITE: a sub e-mail, not a customer send — tagged 'trade', so ⏸ data-entry mode lets it go (and it is logged with every send) */
+    try { if (await require('./_lib/bidinvite.js').sendMail(x.t.email, m)) { mailed++; x.inv.mailedAt = nowIso(); } } catch (e) {}
   }
+  try { const st = sent.filter(x => x.inv.mailedAt).map(x => SP.rowFor('invites', x.inv)); if (st.length) await SP.upsertRows(st, who.email); } catch (e) {}
   return { ok: true, invited: rows.length, mailed, spanish: es, to: sent.length, visibility: job.draft ? 'draft' : (job.visibility || 'public'), mailOff: !sw.invite };
 }
 
@@ -1005,6 +1007,7 @@ exports.handler = async function(event){
     else if (b.op === 'visibility') r = await visibility(who, b);
     else if (b.op === 'award') r = await award(who, b);
     else if (b.op === 'matreq') { try { r = await SP.matReqDecide({ email: who.email, name: who.name, admin: !!who.admin }, b); } catch (e) { r = { code: e.status || 500, error: e.message }; } }   /* patch BIDSITE3 F: approve → the PO draft / decline with a note */
+    else if (b.op === 'signuplink') r = who.canInvite ? await require('./_lib/bidinvite.js').signupLink(Object.assign({}, b, { by: who.email })) : { code: 403, error: 'Only an admin, an estimator or the office sends sign-up links.' };   /* patch BIDINVITE: 📨 Send sign-up link */
     else if (b.op === 'sweep') r = await sweep(who);
     else if (b.op === 'link') r = await link(who, b);   /* patch BIDEST */
     else if (b.op === 'postjob') r = await postjob(who, b);   /* patch BIDPOST: 📢 Put on bid portal */
