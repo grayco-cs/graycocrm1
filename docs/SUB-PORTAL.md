@@ -225,3 +225,10 @@ Both sign-ins and the sub portal have an **English / Español** toggle, remember
 - **Staff** still see it: one To-Do per sub, paper and date ("🛡 WC expiring: …"), ticked off by itself when a newer date is on file; the uploaded paper in ✅ Approvals.
 - **⚠ Expired** shows on the sub's card (Subs tab → Sub portal, and the Subs table's insurance / WC dates) and on the job's sub list (👷 Subs & portal messages).
 - Test: `tools/tests/test_SUBPAPERS.mjs`.
+
+## 💬 Bid-site Messages ↔ the CRM job's messages (patch SUBMSG, owner 11/20)
+
+- A sub's message on bids.grayco-cs.com, on a bid job linked to a CRM job (🔗 the bid job's CRM job / PO link, `crmProjectId`), also goes into that CRM job's thread with that sub (the same thread as portal.grayco-cs.com and the job's 👷 Subs & portal messages; the job's 💬 Messages get it tagged with the sub). The e-mail to the PM / estimator goes as before.
+- GrayCo's replies in that CRM thread show on the bid site in the sub's Messages for that bid job (as GrayCo). Opening them there marks them read in the CRM.
+- Only the sub's own thread, only on jobs they may see. A bid job with no CRM job keeps its messages on the bid site.
+- Server: `subportal.js` (`toCrmThread`, `crmReplies`, `crmMarkRead`). Test: `tools/tests/test_SUBMSG.mjs`.

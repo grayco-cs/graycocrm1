@@ -626,7 +626,8 @@ async function loadKey(who, key, ctx){
     if (key === 'bids') return bidsWithResults(sc);
     if (key === 'messages') {
       if (!who.approved) return [];
-      return (await listRows([eq('collection', 'messages'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
+      const own = (await listRows([eq('collection', 'messages'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
+      return own.concat(await crmReplies(who, sc).catch(function(){ return []; }));   /* patch SUBMSG: GrayCo's replies in the CRM job's messages */
     }
     if (key === 'invites') return sc.invites.map(function(r){ return pick(r.data, ['id', 'jobId', 'email', 'usedAt', 'usedBy']); });
     if (key === 'questions') {
@@ -879,7 +880,10 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (old && old.user_id === me && !old.data.accepted) dropKeys.push('bids/' + id);
       });
     } else if (key === 'messages') {
+      const crmRead = upsert.filter(function(x){ return /^crm_M/.test(s(x.id)) && Array.isArray(x.readBy) && x.readBy.indexOf(me) > -1; }).map(function(x){ return s(x.id).slice(4); });
+      if (crmRead.length) await crmMarkRead(who, crmRead).catch(function(){});   /* patch SUBMSG: a CRM reply they opened → read in the CRM */
       for (const x of upsert) {
+        if (/^crm_/.test(s(x.id))) continue;
         const old = existing[x.id];
         if (old) {
           if (old.user_id !== me) continue;
@@ -896,7 +900,7 @@ async function saveCollection(who, key, upsert, del, ctx){
           recipientSubId: null, body: s(x.body).slice(0, 5000), at: new Date().toISOString(), readBy: [me],
           graycoRecipients: arr(x.graycoRecipients).slice(0, 5).map(function(g){ return pick(g, ['id', 'name', 'role']); }) };
         if (Array.isArray(x.attachments)) m.attachments = arr(x.attachments).slice(0, 10);
-        notes.push({ kind: 'message-from-sub', msg: m, job: sc.jobs[jobId].data });
+        notes.push({ kind: 'message-from-sub', msg: m, job: sc.jobs[jobId].data, prof: p });
         rows.push(rowFor('messages', m));
       }
     } else if (key === 'questions') {
@@ -1664,6 +1668,7 @@ async function notify(n){
   }
   if (n.kind === 'message-from-sub' && n.job) {
     const m = n.msg;
+    try { await toCrmThread(n.prof, n.job, m); } catch (e) { console.warn('[subportal] crm message', e.message); }   /* patch SUBMSG */
     return sendMail(await staffEmailsFor(n.job), 'Message from ' + m.senderCompany + ' — ' + s(n.job.title),
       mailHtml('New message on ' + s(n.job.title), ['<b>' + esc(m.senderCompany) + '</b> (' + esc(m.senderName) + ') wrote:', esc(m.body.slice(0, 1500)).replace(/\n/g, '<br>')],
         { href: portalLink(), label: 'Reply in the portal' }));
@@ -2228,6 +2233,37 @@ async function takeoffsAct(who, body){
   throw Fail(400, 'Unknown takeoff step.');
 }
 
+/* patch SUBMSG (owner 11/20): the bid site's Messages and the CRM job's messages are one conversation.
+   A sub's message on a bid job that is linked to a CRM job (crmProjectId, 🔗 PO link) goes into that CRM job's sub thread
+   (gc_portal_msg, party s:<CRM sub id>; the job's 💬 Messages via _lib/subthread.js) — the same thread as portal.grayco-cs.com.
+   GrayCo's replies there come back to the bid site as messages to that sub (id crm_<id>, read-only; opening them marks them read).
+   Only the sub's own thread on jobs they may see; never another sub's. */
+function PAX(){ return require('./portal-access.js'); }
+async function crmSubFor(prof){ try { const A = PAX()._acct; return A.crmSubOf(await A.crmData(), prof) || null; } catch (e) { return null; } }
+async function toCrmThread(prof, job, m){
+  const pid = s(job && job.crmProjectId); if (!pid || !prof) return false;
+  const sub = await crmSubFor(prof); if (!sub) return false;
+  const files = arr(m.attachments).length ? '\n📎 ' + arr(m.attachments).length + ' file(s) on bids.grayco-cs.com' : '';
+  await PAX()._core.msgInsert(pid, 's:' + s(sub.id), 'them', s(prof.name || prof.company).slice(0, 80), s(m.body).slice(0, 3900) + files, []);
+  return true;
+}
+async function crmReplies(who, sc){
+  const map = {}; Object.keys(sc.jobs).forEach(function(id){ const j = sc.jobs[id].data || {}; if (s(j.crmProjectId)) map[s(j.crmProjectId)] = id; });
+  const pids = Object.keys(map); if (!pids.length) return [];
+  const sub = await crmSubFor(who.profile); if (!sub) return [];
+  const r = await fetch(sbUrl() + '/rest/v1/gc_portal_msg?select=id,project_id,side,author,text,created_at,read_at&party=eq.' + encodeURIComponent('s:' + s(sub.id)) +
+    '&side=eq.gc&project_id=in.(' + pids.map(function(x){ return '"' + x.replace(/"/g, '') + '"'; }).join(',') + ')&order=created_at.asc&limit=500', { headers: H() });
+  if (!r.ok) return [];
+  const me = sc.me;
+  return (await r.json()).map(function(m){ return { id: 'crm_' + s(m.id), jobId: map[s(m.project_id)], senderId: 'gc', senderName: s(m.author) || 'GrayCo', senderCompany: 'GrayCo', senderRole: 'admin',
+    recipientSubId: me, body: s(m.text), at: m.created_at, readBy: m.read_at ? [me] : [], fromCrm: true }; });
+}
+async function crmMarkRead(who, ids){
+  const sub = await crmSubFor(who.profile); if (!sub) return;
+  ids = ids.filter(function(x){ return /^M[A-Za-z0-9_-]{3,60}$/.test(x); }).slice(0, 100); if (!ids.length) return;
+  await fetch(sbUrl() + '/rest/v1/gc_portal_msg?party=eq.' + encodeURIComponent('s:' + s(sub.id)) + '&side=eq.gc&read_at=is.null&id=in.(' + ids.map(function(x){ return '"' + x + '"'; }).join(',') + ')',
+    { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ read_at: new Date().toISOString() }) });
+}
 exports.handler = async function (event) {
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
