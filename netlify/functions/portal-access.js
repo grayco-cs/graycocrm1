@@ -357,12 +357,13 @@ async function withPapers(list){
   return list.map(function(x){ return Object.assign({}, x, { papers: spPapersOf(by[x.id] || [], signed, x.claimed) }); });
 }
 /* on approval: each paper is copied into the CRM's own files (crm-files) — the CRM's Subs record gets them (patch BIDSUBS files them) */
-async function papersToCrm(userId){
+async function papersToCrm(userId, onlyIds){
   const rows = await dbGet('sp_rows', 'select=id,data&collection=eq.subdocs&id=eq.' + encodeURIComponent(userId));
   const items = arr(rows[0] && rows[0].data && rows[0].data.items), out = [];
   const KIND = { w9: 'w9', insurance_general: 'coi', insurance_workers_comp: 'wc', license: 'license' };
   for (const d of items.slice(0, 20)) {
     if (!d || !KIND[d.type] || !/^(u|staff)\//.test(s(d.fileRef))) continue;
+    if (onlyIds && onlyIds.indexOf(s(d.id)) < 0) continue;   /* patch PAPERS1: only the papers just added on the bid site */
     try {
       const g = await fetch(sbUrl() + '/storage/v1/object/' + SP_BUCKET + '/' + s(d.fileRef).split('/').map(encodeURIComponent).join('/'), { headers: keyHeaders(svcKey()) });
       if (!g.ok) continue;
@@ -376,7 +377,24 @@ async function papersToCrm(userId){
   }
   return out;
 }
-exports._papers = { papersOf: spPapersOf, withPapers, papersToCrm, spSign, subPapersOf: function(){ return papersOf.apply(null, arguments); }, rejectedPaper: function(){ return rejectedPaper.apply(null, arguments); } };   /* patch SUBDOCDENY: + the sub portal's Papers (tests) */
+/* patch PAPERS1 (owner 11/20: "papers from portal for insurance etc go directly into crm too"): a paper a sub adds in the bid site's My Documents
+   lands on their CRM sub record the same way as one sent from portal.grayco-cs.com → Papers: copied into the CRM's files and sent as a 'paper'
+   event (W-9 / COI / workers' comp / license with its expiry) — the CRM files it on the sub and it waits in ✅ Approvals → COI / W-9 to confirm. */
+async function bidPapersToCrm(profile, ids){
+  ids = (Array.isArray(ids) ? ids : []).map(s).filter(Boolean);
+  if (!profile || profile.role !== 'sub' || !ids.length) return { sent: 0 };
+  const data = await crmData(true), sub = crmSubOf(data, profile);
+  if (!sub) return { sent: 0, why: 'no CRM sub' };
+  const files = await papersToCrm(s(profile.id), ids);
+  let n = 0;
+  for (const f of files) {
+    await addEvent('paper', sub, null, { paper: f.kind, exp: f.exp, exempt: f.exempt || undefined, files: [{ ref: f.ref, name: f.name, type: f.type }], from: 'bids',
+      lic: f.kind === 'license' ? { state: f.licState, type: f.licType, number: f.licNumber } : undefined });
+    n++;
+  }
+  return { sent: n, subId: s(sub.id) };
+}
+exports._papers = { bidPapersToCrm: function(){ return bidPapersToCrm.apply(null, arguments); }, papersOf: spPapersOf, withPapers, papersToCrm, spSign, subPapersOf: function(){ return papersOf.apply(null, arguments); }, rejectedPaper: function(){ return rejectedPaper.apply(null, arguments); } };   /* patch SUBDOCDENY: + the sub portal's Papers (tests) */
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
@@ -1061,13 +1079,15 @@ function rejectedPaper(sub, k, events){
   if (arr(events).some(function(e){ return e.kind === 'paper' && (e.data || {}).paper === k && later(e.created_at); })) return null;
   return { reason: clip(r.rejected.reason, 200), at: at.slice(0, 10) };
 }
+function dated(on, e, sent, exempt){ const x = ymd(e); return { onFile: !!on || !!x, exp: x, days: x ? Math.ceil((Date.parse(x + 'T12:00:00Z') - Date.now()) / 864e5) : null, sent: sent, exempt: !!exempt }; }
 function papersOf(sub, events){
   const exp = ymd(sub.insExp || sub.insuranceExp || sub.coiExpiration);
   const days = exp ? Math.ceil((Date.parse(exp + 'T12:00:00Z') - Date.now()) / 864e5) : null;
   const pend = function(k){ return events.some(function(e){ return e.kind === 'paper' && !e.applied_at && (e.data || {}).paper === k; }); };
   const rj = function(k){ return rejectedPaper(sub, k, events); };   /* patch SUBDOCDENY */
   return { w9: { onFile: sub.w9 === true, sent: pend('w9'), rejected: rj('w9') }, coi: { onFile: sub.coi === true || !!exp, exp: exp, days: days, sent: pend('coi'), rejected: rj('coi') },
-    agreement: { onFile: !!sub.subAgreement, sent: pend('agreement') }, lien: { required: sub.lien === true, sent: pend('lien') } };
+    agreement: { onFile: !!sub.subAgreement, sent: pend('agreement') }, lien: { required: sub.lien === true, sent: pend('lien') },
+    wc: dated(sub.wc === true || sub.wcExempt === true, sub.wcExp, pend('wc'), sub.wcExempt === true), license: dated(!!s(sub.license), sub.licenseExp, pend('license')) };   /* patch PAPERS1 */
 }
 /* BIDLIST: the bid jobs this approved sub can bid on (invited or public, open) + the ones they bid on, newest due first */
 async function bidJobsFor(p, sub){
@@ -1411,6 +1431,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-avail' || action === 'p-avail-set') return pAvail(ctx, body, action);   /* patch X10: my schedule + the days I can't work */
   if (action === 'p-codes') return pCodes(ctx, body.projectId);   /* patch X10: the job's access codes — only on my scheduled days, every look logged */   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
   if (action === 'p-job') return pJob(ctx, body.projectId);
+  if (action === 'p-measure') return pMeasure(ctx, body);   /* patch MEASURE */
   if (action === 'p-insp-req') return pInspReq(ctx, body);   /* patch INSPECT2: 📋 Request an inspection → the job's PM (superintendent on commercial) To-Do */
   if (action === 'p-upload') {
     if (body.projectId) jobOf(ctx, body.projectId);
@@ -1492,11 +1513,11 @@ async function partnerAction(action, body, ctx){
   }
   if (action === 'p-paper') {
     const k = low(body.paper);
-    if (['w9', 'coi', 'agreement', 'lien'].indexOf(k) < 0) throw Fail(400, 'Bad request');
+    if (['w9', 'coi', 'agreement', 'lien', 'wc', 'license'].indexOf(k) < 0) throw Fail(400, 'Bad request');   /* patch PAPERS1: + workers' comp, license */
     const files = await uploadsOf(sub, [body.uploadId], null);
     if (!files.length) throw Fail(400, 'Add the file first.');
     const exp = ymd(body.exp);
-    if (k === 'coi' && !exp) throw Fail(400, 'Enter the date the insurance runs out.');
+    if ((k === 'coi' || k === 'wc') && !exp) throw Fail(400, 'Enter the date the insurance runs out.');
     let pid = null; if (body.projectId) pid = s(jobOf(ctx, body.projectId).id);
     await addEvent('paper', sub, pid, { paper: k, exp: exp, files: files });
     return { ok: true };
@@ -1584,13 +1605,27 @@ async function allPhotos(ctx, p){
 }
 const SUBDOC_OK = /plan|drawing|blue.?print|\bspec|survey|elevation|layout|architect|engineer|structural|submittal|cut.?sheet|install(ation)? (guide|instructions)/i;
 const SUBDOC_NO = /proposal|estimate|contract|invoice|insurance|\bclaim|carrier|adjust|\bcost|budget|pric|\bbid|quote|agreement|w-?9|\bcoi\b|payment|check|receipt|lien|statement|change.?order|xactimate|scope of loss|\btax|payroll|commission|profit|margin|\$/i;
-async function subDocs(data, p){
-  const pick = arr(data.projectDocs).filter(function(d){
+function subDocPick(data, p){
+  return arr(data.projectDocs).filter(function(d){
     if (s(d.pid || d.projectId) !== s(p.id) || d.deleted === true || d.hideFromSubs === true || d.hideSubs === true || !refPath(d.ref)) return false;
     if (d.shareSubs === true) return true;
     const t = s(d.cat) + ' | ' + s(d.name) + ' | ' + s(d.kind);
     return SUBDOC_OK.test(t) && !SUBDOC_NO.test(t);
   }).slice(0, 60);
+}
+/* patch MEASURE: 📐 Measure on a plan in the job's Plans & documents → the bid site's measure tool for that one file (a signed 12-hour
+   ticket: this sub, this job, this file; their takeoff is saved to them on the server) */
+async function pMeasure(ctx, body){
+  const p = jobOf(ctx, body.projectId);
+  const d = subDocPick(ctx.data, p).find(function(x){ return clip(SS().clean(x.name) || 'File', 120) === s(body.name); });
+  if (!d) throw Fail(404, 'That plan is not shared with you.');
+  const type = s(d.type) || (/\.pdf$/i.test(s(d.ref)) ? 'application/pdf' : '');
+  if (!/pdf|image/.test(type + ' ' + s(d.ref))) throw Fail(415, 'Only a PDF or a picture can be measured.');
+  const tk = require('./_lib/takeoffs.js').mint({ sub: ctx.sub.id, pid: p.id, ref: refPath(d.ref), name: clip(SS().clean(d.name) || 'File', 120), type: type, job: clip(SS().clean(p.name), 120) });
+  return { ok: true, url: bidsBase() + '/#measure=' + tk };
+}
+async function subDocs(data, p){
+  const pick = subDocPick(data, p);
   const signed = await signRefs(pick.map(function(d){ return d.ref; }));
   return pick.map(function(d){ const u = signed[s(d.ref)]; return u ? { name: clip(SS().clean(d.name) || 'File', 120), cat: clip(d.cat, 40), type: s(d.type) || (/\.pdf$/i.test(s(d.ref)) ? 'application/pdf' : ''), url: u, at: ymd(d.uploadedAt || d.uploaded || d.savedAt) } : null; }).filter(Boolean);
 }
@@ -1682,9 +1717,11 @@ async function bidProfileOf(sub){
   return all.map(function(x){ return x.data || {}; }).find(function(u){ return u.role === 'sub' && s(u.crmSubId) && s(u.crmSubId) === s(sub.id); }) || null;
 }
 function bidWho(p){ return { email: low(p.email), uid: s(p.authUserId), staff: null, profile: p, isAdmin: false, isSub: true, approved: p.approved === true && p.bidsRevoked !== true }; }
-async function bidPapers(profileId){
+async function bidPapers(profileId, profile){
   const rows = await dbGet('sp_rows', 'select=id,data&key=' + eq('subdocs/' + profileId));
-  const items = arr(rows[0] && rows[0].data && rows[0].data.items), today = new Date().toISOString().slice(0, 10);
+  let items = arr(rows[0] && rows[0].data && rows[0].data.items);
+  if (profile) try { items = HUB().mergeCrm(items, await HUB().crmPapersOf(profile)); } catch (e) {}   /* patch PAPERS1: the CRM sub record counts */
+  const today = new Date().toISOString().slice(0, 10);
   const out = { ok: true, missing: [], expired: [], have: [] };
   BID_PAPERS.forEach(function(k){
     const docs = items.filter(function(d){ return s(d.type) === k[0]; });
@@ -1719,7 +1756,7 @@ async function bidCtx(sub){
 async function pBidJobs(sub){
   const c = await bidCtx(sub);
   if (!c.linked) return { ok: true, linked: false, approved: false, canJoin: okEmail(sub.email), url: bidsBase(), docs: { ok: false, missing: BID_PAPERS.map(function(k){ return k[0]; }), expired: [] }, jobs: [] };
-  const docs = await bidPapers(c.profile.id);
+  const docs = await bidPapers(c.profile.id, c.profile);
   if (!c.approved) return { ok: true, linked: true, approved: false, url: bidsBase(), docs: docs, jobs: [] };
   const sc = c.sc, mine = {}, invited = new Set(sc.invites.map(function(r){ return s(r.job_id); }));
   sc.myBids.forEach(function(r){ if (s(r.user_id) === s(c.profile.id)) mine[s(r.job_id)] = r.data || {}; });
@@ -1829,7 +1866,7 @@ async function pBidSave(sub, body){
   const prevRow = sc.myBids.find(function(r){ return s(r.job_id) === jobId && s(r.user_id) === me; }) || null, prev = prevRow ? prevRow.data || {} : null;
   if (prev && (prev.accepted || prev.rejected)) throw Fail(409, 'This bid has already been decided by GrayCo and can no longer be changed.');
   if (!sc.biddable[jobId]) throw Fail(403, 'This job is not open for bids.');
-  const docs = await bidPapers(me);
+  const docs = await bidPapers(me, c.profile);
   if (!docs.ok) throw papersFail(docs);
   const rec = prev ? { id: s(prev.id), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: s(prev.scope), docs: arr(prev.docs), submittedAt: prev.submittedAt }
                    : { id: 'b_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex'), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: '', docs: [] };

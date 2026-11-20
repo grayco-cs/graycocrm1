@@ -186,8 +186,50 @@ function eq(col, v){ return col + '=eq.' + encodeURIComponent(v); }
 function inList(col, vals){ return col + '=in.(' + vals.map(function(v){ return '"' + String(v).replace(/"/g, '') + '"'; }).join(',') + ')'; }
 /* the papers a sub must have on file to bid: W-9, general liability, workers' comp — on file and not expired → '' or the reason */
 const REQUIRED_PAPERS = [['w9', 'W-9'], ['insurance_general', 'general liability insurance certificate'], ['insurance_workers_comp', "workers' comp insurance certificate"]];
-async function papersMissing(userId){
+/* patch PAPERS1 (owner 11/20: "papers from portal for insurance etc go directly into crm too"): the CRM sub record is the single source of truth.
+   The bid site's My Documents shows (and the bid check counts) each W-9 / GL / WC / license the CRM has on file when it is newer than the
+   bid site's own copy — sent from portal.grayco-cs.com, dropped in by the office, or one from here already filed. Read-only here ("On file
+   with GrayCo"); never saved back into subdocs. */
+const CRM_PAPER = [['w9', 'w9', 'w9', ''], ['insurance_general', 'coi', 'coi', 'insExp'], ['insurance_workers_comp', 'wc', 'wc', 'wcExp'], ['license', 'license', 'license', 'licenseExp']];
+async function crmPapersOf(profile){
+  let sub = null;
+  try { const PA = require('./portal-access.js')._acct; sub = PA.crmSubOf(await PA.crmData(), profile); } catch (e) { return []; }
+  if (!sub) return [];
+  const out = [], files = arr(sub.files).filter(function(f){ return f && typeof f === 'object' && !f.rejected && /^sb:crm-files\/[0-9a-f]{64}\.[a-z0-9]{1,5}$/.test(s(f.ref)); });
+  CRM_PAPER.forEach(function(k){
+    const exp = k[3] ? s(sub[k[3]] || (k[3] === 'insExp' ? sub.coiExp || sub.insuranceExp : '')).slice(0, 10) : '';
+    const on = k[1] === 'license' ? !!s(sub.license) || !!exp : k[1] === 'wc' ? sub.wc === true || sub.wcExempt === true || !!exp : sub[k[1]] === true || !!exp;
+    if (!on) return;
+    const f = files.filter(function(x){ return s(x.kind) === k[2]; }).sort(function(a, b){ return s(b.exp || b.date).localeCompare(s(a.exp || a.date)); })[0];
+    out.push({ id: 'crm_' + k[1], type: k[0], label: 'On file with GrayCo', fileName: f ? clip(f.name, 160) : 'On file with GrayCo', fileType: f ? s(f.type) : '', crmRef: f ? s(f.ref).replace(/^sb:crm-files\//, '') : '',
+      expirationDate: exp || null, wcExempt: k[1] === 'wc' && sub.wcExempt === true ? true : undefined, uploadedAt: f ? s(f.date || f.at) : '', fromCrm: true });
+  });
+  return out;
+}
+function clip(v, n){ return s(v).slice(0, n); }
+function mergeCrm(items, crm){
+  const add = crm.filter(function(c){
+    const mine = items.filter(function(d){ return d && d.type === c.type && !d.rejected; });
+    if (!mine.length) return true;
+    if (!c.expirationDate) return false;
+    return !mine.some(function(d){ return !s(d.expirationDate) || s(d.expirationDate).slice(0, 10) >= c.expirationDate; });
+  });
+  return add.concat(items);
+}
+async function withCrmPapers(profile, items){
+  const crm = await crmPapersOf(profile).catch(function(){ return []; });
+  const list = mergeCrm(items, crm), refs = list.filter(function(d){ return d.fromCrm && d.crmRef; }).map(function(d){ return d.crmRef; });
+  if (refs.length) {
+    try { const r = await fetch(sbUrl() + '/storage/v1/object/sign/crm-files', { method: 'POST', headers: H(), body: JSON.stringify({ expiresIn: SIGN_SECS, paths: refs }) });
+      const m = {}; (r.ok ? await r.json() : []).forEach(function(x){ if (x && x.path && x.signedURL && !x.error) m[x.path] = sbUrl() + '/storage/v1' + x.signedURL; });
+      list.forEach(function(d){ if (d.fromCrm && m[d.crmRef]) d.dataUrl = m[d.crmRef]; delete d.crmRef; }); } catch (e) {}
+  }
+  list.forEach(function(d){ if (d.fromCrm) delete d.crmRef; });
+  return list;
+}
+async function papersMissing(userId, profile){
   let items = []; try { const r = await getRow('subdocs', userId); items = arr(r && r.data && r.data.items); } catch (e) { items = []; }
+  if (profile) items = mergeCrm(items, await crmPapersOf(profile).catch(function(){ return []; }));   /* patch PAPERS1 */
   const today = new Date().toISOString().slice(0, 10), bad = [];
   REQUIRED_PAPERS.forEach(function(p){
     const have = items.filter(function(d){ return d && d.type === p[0] && !d.rejected; });   /* patch SUBDOCDENY: a paper GrayCo denied is not on file */
@@ -584,7 +626,8 @@ async function loadKey(who, key, ctx){
     if (key === 'bids') return bidsWithResults(sc);
     if (key === 'messages') {
       if (!who.approved) return [];
-      return (await listRows([eq('collection', 'messages'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
+      const own = (await listRows([eq('collection', 'messages'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
+      return own.concat(await crmReplies(who, sc).catch(function(){ return []; }));   /* patch SUBMSG: GrayCo's replies in the CRM job's messages */
     }
     if (key === 'invites') return sc.invites.map(function(r){ return pick(r.data, ['id', 'jobId', 'email', 'usedAt', 'usedBy']); });
     if (key === 'questions') {
@@ -613,7 +656,9 @@ async function loadKey(who, key, ctx){
     }
     if (!who.isAdmin && parts[1] !== who.profile.id) throw Fail(403, 'Not your documents.');
     const r = await getRow('subdocs', parts[1]);
-    return r ? arr(r.data.items) : [];
+    const items = r ? arr(r.data.items) : [];
+    if (who.isAdmin || !who.profile || who.isSupplier) return items;
+    return withCrmPapers(who.profile, items);   /* patch PAPERS1: the CRM sub record is the truth — a newer paper on file there shows (and counts) here */
   }
   if (head === 'takeoff' && parts.length >= 4) {
     if (!who.isAdmin && parts[1] !== who.profile.id) throw Fail(403, 'Not your takeoff.');
@@ -805,7 +850,7 @@ async function saveCollection(who, key, upsert, del, ctx){
       del.forEach(function(id){ const old = existing[id]; if (who.isSupplier && old && old.user_id === me && s(old.data.status || 'submitted') === 'submitted') dropKeys.push('mquotes/' + id); });
     } else if (key === 'bids') {
       /* PAPERS (owner 11/11: "have to have valid credentials in the portal before a bid is accepted"): the server checks too, not only the page */
-      if (upsert.length) { const miss = await papersMissing(me); if (miss) throw Fail(403, miss); }
+      if (upsert.length) { const miss = await papersMissing(me, p); if (miss) throw Fail(403, miss); }
       for (const x of upsert) {
         const old = existing[x.id];
         if (old && old.user_id !== me) continue;
@@ -820,7 +865,11 @@ async function saveCollection(who, key, upsert, del, ctx){
           docs: arr(x.docs), submittedAt: x.submittedAt || new Date().toISOString(), updatedAt: new Date().toISOString()
         });
         ['trade', 'inclusions', 'exclusions', 'notesOwn'].forEach(function(k){ if (x[k] !== undefined) b[k] = s(x[k]).slice(0, k === 'trade' ? 80 : 4000); });   /* patch BIDMULTI: the sub portal's bid form (the bid site's own page leaves them as they are) */
-        if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
+        if (Array.isArray(x.lines)) b.lines = bidLines(x.lines, sc.jobs[jobId] && sc.jobs[jobId].data);
+        if (x.attachTakeoff === true) {   /* patch MEASURE: 📐 Attach my takeoff — the totals of their own saved takeoffs on this job (made here, never typed in) */
+          const tr = (await listRows([eq('collection', 'takeoffs'), eq('user_id', me), eq('job_id', jobId)])).map(function(r){ return r.data || {}; });
+          const tt = TK().totals(tr).slice(0, 80); if (tt.length) { b.takeoff = tt; b.takeoffAt = new Date().toISOString(); }
+        } else if (x.attachTakeoff === false) { delete b.takeoff; delete b.takeoffAt; }   /* patch PLANREQ-E: the bid form's line items, filled in by the sub */
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (prev && prev.read && JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs))) delete b.read;   /* patch SUBSIMPLE: a new PDF → GrayCo reads it again ("Not read yet") */
         if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
@@ -831,7 +880,10 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (old && old.user_id === me && !old.data.accepted) dropKeys.push('bids/' + id);
       });
     } else if (key === 'messages') {
+      const crmRead = upsert.filter(function(x){ return /^crm_M/.test(s(x.id)) && Array.isArray(x.readBy) && x.readBy.indexOf(me) > -1; }).map(function(x){ return s(x.id).slice(4); });
+      if (crmRead.length) await crmMarkRead(who, crmRead).catch(function(){});   /* patch SUBMSG: a CRM reply they opened → read in the CRM */
       for (const x of upsert) {
+        if (/^crm_/.test(s(x.id))) continue;
         const old = existing[x.id];
         if (old) {
           if (old.user_id !== me) continue;
@@ -848,7 +900,7 @@ async function saveCollection(who, key, upsert, del, ctx){
           recipientSubId: null, body: s(x.body).slice(0, 5000), at: new Date().toISOString(), readBy: [me],
           graycoRecipients: arr(x.graycoRecipients).slice(0, 5).map(function(g){ return pick(g, ['id', 'name', 'role']); }) };
         if (Array.isArray(x.attachments)) m.attachments = arr(x.attachments).slice(0, 10);
-        notes.push({ kind: 'message-from-sub', msg: m, job: sc.jobs[jobId].data });
+        notes.push({ kind: 'message-from-sub', msg: m, job: sc.jobs[jobId].data, prof: p });
         rows.push(rowFor('messages', m));
       }
     } else if (key === 'questions') {
@@ -913,8 +965,14 @@ async function saveKeyed(who, key, value, ctx){
   } else if (head === 'subdocs' && parts.length === 2 && okId(parts[1])) {
     if (!who.isAdmin) { needSub(who, false); if (parts[1] !== who.profile.id) throw Fail(403, 'Not your documents.'); }
     const old = await getRow('subdocs', parts[1]);
+    value = arr(value).filter(function(d){ return d && !d.fromCrm; });   /* patch PAPERS1: what the CRM has on file is shown, never saved back here */
     if (!who.isAdmin) checkRefs({ items: arr(value) }, old && old.data, who.profile.id);
     row = { collection: 'subdocs', id: parts[1], user_id: parts[1], data: { items: arr(value) } };
+    if (!who.isAdmin) {   /* patch PAPERS1: a new paper → the CRM sub record (the same road as the sub portal's Papers → ✅ Approvals Read & confirm) */
+      const had = new Set(arr(old && old.data && old.data.items).map(function(d){ return s(d && d.id); }));
+      const added = value.filter(function(d){ return d && d.fileRef && !had.has(s(d.id)) && /^(w9|insurance_general|insurance_workers_comp|license)$/.test(s(d.type)); }).map(function(d){ return s(d.id); });
+      if (added.length) { const prof = who.profile; ctx.afterSave = function(){ return require('./portal-access.js')._papers.bidPapersToCrm(prof, added); }; }
+    }
   } else if (head === 'takeoff' && parts.length >= 4 && okId(parts[1]) && okId(parts[2])) {
     if (!who.isAdmin) { needSub(who, true); if (parts[1] !== who.profile.id) throw Fail(403, 'Not your takeoff.'); }
     row = { collection: 'takeoff', id: parts.slice(1).join(':').slice(0, 360), user_id: parts[1], job_id: parts[2], data: { value: value } };
@@ -1610,6 +1668,7 @@ async function notify(n){
   }
   if (n.kind === 'message-from-sub' && n.job) {
     const m = n.msg;
+    try { await toCrmThread(n.prof, n.job, m); } catch (e) { console.warn('[subportal] crm message', e.message); }   /* patch SUBMSG */
     return sendMail(await staffEmailsFor(n.job), 'Message from ' + m.senderCompany + ' — ' + s(n.job.title),
       mailHtml('New message on ' + s(n.job.title), ['<b>' + esc(m.senderCompany) + '</b> (' + esc(m.senderName) + ') wrote:', esc(m.body.slice(0, 1500)).replace(/\n/g, '<br>')],
         { href: portalLink(), label: 'Reply in the portal' }));
@@ -2127,6 +2186,84 @@ async function mrToPo(d, job){
   return made || { id: '', why: 'already on a PO' };
 }
 
+/* patch MEASURE: the plan measure tool's saved takeoffs (_lib/takeoffs.js) — per person + job + plan file, every page inside.
+   A sub: their own only, on a job they may see and a plan file they may open. GrayCo staff: owner 'gc' (saved to the job).
+   A measure ticket (portal.grayco-cs.com → a CRM job's plan): that sub + that CRM job + that one file, nothing else. */
+function TK(){ return require('./_lib/takeoffs.js'); }
+async function takeoffsAct(who, body){
+  const op = s(body.op), T = TK();
+  let owner, job, file, tk = null;
+  if (body.mt) {
+    tk = T.read(body.mt); if (!tk) throw Fail(403, 'This measure link has expired. Open the plan again from your portal.');
+    owner = 'crm.' + tk.s; job = 'crm.' + tk.p; file = { name: tk.n, type: tk.t };
+  } else {
+    needSub(who, true);
+    if (who.isSupplier) throw Fail(403, 'Subcontractors only.');
+    const jobId = s(body.jobId); if (!okId(jobId)) throw Fail(400, 'Pick a job.');
+    owner = who.isAdmin ? 'gc' : who.profile.id; job = jobId;
+    if (!who.isAdmin) { const sc = await subScope(who); if (!sc.jobs[jobId]) throw Fail(403, 'That job is not open to you.'); body._job = sc.jobs[jobId].data; }
+    if (op !== 'job') {
+      file = { name: s(body.file && body.file.name).slice(0, 200), type: s(body.file && body.file.type).slice(0, 60) };
+      if (!file.name) throw Fail(400, 'Pick a plan file.');
+      if (!who.isAdmin) { const r0 = await getRow('plans', jobId); const ok = r0 && subPlans(r0.data.items, body._job).some(function(f){ return s(f.name) === file.name; });
+        if (!ok) throw Fail(403, 'That plan file is not open to you.'); }
+    }
+  }
+  if (op === 'open') {
+    if (!tk) throw Fail(400, 'Bad request');
+    let url = '';
+    try { const r = await fetch(sbUrl() + '/storage/v1/object/sign/crm-files', { method: 'POST', headers: H(), body: JSON.stringify({ expiresIn: SIGN_SECS, paths: [tk.r] }) });
+      const l = r.ok ? await r.json() : []; const x = Array.isArray(l) ? l[0] : null; if (x && x.signedURL && !x.error) url = sbUrl() + '/storage/v1' + x.signedURL; } catch (e) {}
+    if (!url) throw Fail(404, 'The plan file could not be opened. Try again from your portal.');
+    return { ok: true, file: { name: file.name, type: file.type, url: url }, job: s(tk.j) };
+  }
+  if (op === 'job') {
+    const rows = (await listRows([eq('collection', 'takeoffs'), eq('user_id', owner), eq('job_id', job)])).map(function(r){ return r.data || {}; });
+    return { ok: true, plans: rows.map(function(d){ return { file: d.file, totals: T.totals([d]), updatedAt: d.updatedAt }; }), totals: T.totals(rows) };
+  }
+  const id = T.rowId(owner, job, T.fileKey(file.name));
+  if (op === 'get') { const r = await getRow('takeoffs', id); return { ok: true, doc: r ? r.data : null }; }
+  if (op === 'put') {
+    const d = T.clean(body.doc, file);
+    d.updatedAt = new Date().toISOString(); d.by = tk ? 'portal' : who.email;
+    if (JSON.stringify(d).length > MAX_ROW) throw Fail(413, 'This takeoff is too big to save. Split it over another plan file.');
+    await upsertRows([{ collection: 'takeoffs', id: id, user_id: owner, job_id: job, data: d }], tk ? 'portal:' + tk.s : who.email);
+    return { ok: true, saved: d.items.length, updatedAt: d.updatedAt, totals: T.totals([d]) };
+  }
+  throw Fail(400, 'Unknown takeoff step.');
+}
+
+/* patch SUBMSG (owner 11/20): the bid site's Messages and the CRM job's messages are one conversation.
+   A sub's message on a bid job that is linked to a CRM job (crmProjectId, 🔗 PO link) goes into that CRM job's sub thread
+   (gc_portal_msg, party s:<CRM sub id>; the job's 💬 Messages via _lib/subthread.js) — the same thread as portal.grayco-cs.com.
+   GrayCo's replies there come back to the bid site as messages to that sub (id crm_<id>, read-only; opening them marks them read).
+   Only the sub's own thread on jobs they may see; never another sub's. */
+function PAX(){ return require('./portal-access.js'); }
+async function crmSubFor(prof){ try { const A = PAX()._acct; return A.crmSubOf(await A.crmData(), prof) || null; } catch (e) { return null; } }
+async function toCrmThread(prof, job, m){
+  const pid = s(job && job.crmProjectId); if (!pid || !prof) return false;
+  const sub = await crmSubFor(prof); if (!sub) return false;
+  const files = arr(m.attachments).length ? '\n📎 ' + arr(m.attachments).length + ' file(s) on bids.grayco-cs.com' : '';
+  await PAX()._core.msgInsert(pid, 's:' + s(sub.id), 'them', s(prof.name || prof.company).slice(0, 80), s(m.body).slice(0, 3900) + files, []);
+  return true;
+}
+async function crmReplies(who, sc){
+  const map = {}; Object.keys(sc.jobs).forEach(function(id){ const j = sc.jobs[id].data || {}; if (s(j.crmProjectId)) map[s(j.crmProjectId)] = id; });
+  const pids = Object.keys(map); if (!pids.length) return [];
+  const sub = await crmSubFor(who.profile); if (!sub) return [];
+  const r = await fetch(sbUrl() + '/rest/v1/gc_portal_msg?select=id,project_id,side,author,text,created_at,read_at&party=eq.' + encodeURIComponent('s:' + s(sub.id)) +
+    '&side=eq.gc&project_id=in.(' + pids.map(function(x){ return '"' + x.replace(/"/g, '') + '"'; }).join(',') + ')&order=created_at.asc&limit=500', { headers: H() });
+  if (!r.ok) return [];
+  const me = sc.me;
+  return (await r.json()).map(function(m){ return { id: 'crm_' + s(m.id), jobId: map[s(m.project_id)], senderId: 'gc', senderName: s(m.author) || 'GrayCo', senderCompany: 'GrayCo', senderRole: 'admin',
+    recipientSubId: me, body: s(m.text), at: m.created_at, readBy: m.read_at ? [me] : [], fromCrm: true }; });
+}
+async function crmMarkRead(who, ids){
+  const sub = await crmSubFor(who.profile); if (!sub) return;
+  ids = ids.filter(function(x){ return /^M[A-Za-z0-9_-]{3,60}$/.test(x); }).slice(0, 100); if (!ids.length) return;
+  await fetch(sbUrl() + '/rest/v1/gc_portal_msg?party=eq.' + encodeURIComponent('s:' + s(sub.id)) + '&side=eq.gc&read_at=is.null&id=in.(' + ids.map(function(x){ return '"' + x + '"'; }).join(',') + ')',
+    { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ read_at: new Date().toISOString() }) });
+}
 exports.handler = async function (event) {
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
@@ -2163,6 +2300,10 @@ exports.handler = async function (event) {
       return J(200, { ok: true, email: s(inv.data.email), jobTitle: job && !isDraft(job.data) ? s(job.data.title) : '' });
     }
 
+    if (action === 'takeoffs' && body.mt) {   /* patch MEASURE: a measure ticket from portal.grayco-cs.com (no bid-site sign-in) */
+      if (limited(ipOf(event), 120)) return J(429, { error: 'Too many tries. Wait a minute.' });
+      return J(200, await takeoffsAct(null, body));
+    }
     const who = await whoAmI(event);
     const ctx = {};
     if (action === 'me') {
@@ -2217,6 +2358,7 @@ exports.handler = async function (event) {
       if (target.role === 'supplier') return J(200, await supplierWork(target));   /* patch SUPPLIER: their POs + supplier bills */
       return J(200, await myWork(target));
     }
+    if (action === 'takeoffs') return J(200, await takeoffsAct(who, body));   /* patch MEASURE */
     if (action === 'invite-send') return J(200, await inviteSend(who, body));   /* patch BIDSITE3 B: Invite → the e-mail at once */
     if (action === 'bidmail-cfg') return J(200, await bidmailCfg(who, body));   /* patch BIDSITE3 C: Admin → 📧 Bid site e-mails */
     if (action === 'matreq') return J(200, await matReq(who, body, ctx));       /* patch BIDSITE3 F: "Request more materials" */
@@ -2243,7 +2385,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

@@ -203,3 +203,32 @@ Both sign-ins and the sub portal have an **English / Español** toggle, remember
     - ➕ Add to our estimate puts a $0 line in the project's open estimate, the same record the Estimate Builder uses.
   - **📝 Add to our estimate notes** copies the agreed inclusions and exclusions into that estimate's Inclusions and Exclusions.
   - Who was asked and which lines were reviewed are kept on the bid job. Subs never see them (`subJobView`).
+
+## 📐 Measure — the plan measure tool (patch MEASURE, owner 11/20)
+
+- **Where:** bids.grayco-cs.com → a job → Plans → **📐 Measure** (PDF or picture plans), and portal.grayco-cs.com → a job → **Plans & documents** → **📐 Measure** (opens the same tool on bids.grayco-cs.com for that one CRM plan, no bid-site sign-in: a signed 12-hour link for that sub, that job, that file). GrayCo staff get it on bid jobs too (the 🔨 Sub Portal tab); a staff takeoff is saved to the job.
+- **Phone first:** pinch or drag to zoom and move, + / − / Fit buttons, every page of a PDF (‹ 1/12 ›).
+- **Scale per page:** 1/8"=1', 3/16"=1', 1/4"=1', 3/8"=1', 1/2"=1', 1"=10', 1"=20', 1"=30', 1"=50' (PDFs printed to scale), or tap both ends of a known length and type it (12'6" or 12.5). "Use on every page" is on by default.
+- **Tools:** 📏 Line (LF; a wall height gives wall SF) · ▭ Rect and ⬡ Area (SF and perimeter LF; a depth in inches gives CY) · ⊕ Count (EA) · 📝 Note (a pin with text). Every measurement has a **name** (it groups the totals) and a **note**.
+- **☰ List:** totals by name and unit, every measurement (tap to open, 🗑 to delete), **⬇ Export CSV**.
+- **Saved on the server** as you go (sp_rows collection `takeoffs`, one row per person + job + plan file, every page inside; `_lib/takeoffs.js`), so it is there on any phone or computer. A sub's takeoff is theirs only (the server checks the job and the plan file are open to them); no price is ever in it.
+- **📐 Attach my takeoff to this bid** (on the bid form when they have one): the server adds the totals of their saved takeoffs on that job to the bid (`takeoff`), shown to GrayCo with the bid.
+- Server: `subportal.js` action `takeoffs` (`get` / `put` / `job` / `open`), `portal-access.js` `p-measure`. Test: `tools/tests/test_MEASURE.mjs`.
+
+## 📄 Papers: the CRM sub record is the one place (patch PAPERS1, owner 11/20)
+
+- **One record.** The CRM sub record (W-9, COI + date, workers' comp + date, license + date, their files) is the truth.
+  - A paper a sub adds in the bid site's **My Documents** is copied into the CRM's files and sent to the CRM like one from portal.grayco-cs.com → **Papers**: the CRM files it on the sub, and it waits in **✅ Approvals → 📄 COI / W-9 to confirm** (sub-doc-read.js).
+  - The bid site's My Documents shows what the CRM has when it is newer (**✓ On file with GrayCo**, read-only, no 🗑), and the "papers before you bid" check counts it (bid site and the portal's Bids tab).
+  - The portal's Papers tab now also has **Workers' comp certificate** and **Contractor license** (with their dates).
+- **Reminders to the sub** (automation `coi_requests`, now "Paper expiry reminders to subs", ON): an e-mail **and** a text with a one-tap link to their portal's Papers, for each dated paper (COI, workers' comp unless exempt, license) at **30, 14 and 7 days** before, **the day** it runs out, then **once a week** after (12 weeks). Each milestone goes once and is logged (gc_coi_req_state). These are sub sends (`trade`): ⏸ data-entry mode lets them go. One reminder covers all of a sub's due papers.
+- **Staff** still see it: one To-Do per sub, paper and date ("🛡 WC expiring: …"), ticked off by itself when a newer date is on file; the uploaded paper in ✅ Approvals.
+- **⚠ Expired** shows on the sub's card (Subs tab → Sub portal, and the Subs table's insurance / WC dates) and on the job's sub list (👷 Subs & portal messages).
+- Test: `tools/tests/test_SUBPAPERS.mjs`.
+
+## 💬 Bid-site Messages ↔ the CRM job's messages (patch SUBMSG, owner 11/20)
+
+- A sub's message on bids.grayco-cs.com, on a bid job linked to a CRM job (🔗 the bid job's CRM job / PO link, `crmProjectId`), also goes into that CRM job's thread with that sub (the same thread as portal.grayco-cs.com and the job's 👷 Subs & portal messages; the job's 💬 Messages get it tagged with the sub). The e-mail to the PM / estimator goes as before.
+- GrayCo's replies in that CRM thread show on the bid site in the sub's Messages for that bid job (as GrayCo). Opening them there marks them read in the CRM.
+- Only the sub's own thread, only on jobs they may see. A bid job with no CRM job keeps its messages on the bid site.
+- Server: `subportal.js` (`toCrmThread`, `crmReplies`, `crmMarkRead`). Test: `tools/tests/test_SUBMSG.mjs`.

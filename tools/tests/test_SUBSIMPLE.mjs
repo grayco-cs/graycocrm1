@@ -184,6 +184,21 @@ const invEvents = () => T.gc_sub_event.filter(e => e.kind === 'invoice');
 { const app = fs.readFileSync(path.join(BUILD, 'subportal-app/src/App.jsx'), 'utf8'), built = fs.readdirSync(path.join(BUILD, 'subportal/assets')).filter(f => /\.js$/.test(f)).map(f => fs.readFileSync(path.join(BUILD, 'subportal/assets', f), 'utf8')).join('\n');
   ok('A12 bid site: a short word under each tab icon on a phone (not icons only); "once wired" is gone (EN / ES) — in the source and the built site',
     /\.nav-tab-label \{ display: block !important/.test(app) && !/once wired|cuando esté conectado/.test(app) && /nav-tab-label\{display:block!important|nav-tab-label \{ display: block !important/.test(built) && !/once wired/.test(built)); }
+/* patch MEASURE: 📐 Measure on a plan in the job's Plans & documents → a signed ticket for the bid site's measure tool (this sub, this job, this file) */
+{
+  const H64 = 'a'.repeat(64);
+  KV.projectDocs = [{ id: 'D1', pid: JOB.id, name: 'Kitchen Plans.pdf', cat: 'Plans', ref: 'sb:crm-files/' + H64 + '.pdf', type: 'application/pdf' },
+    { id: 'D2', pid: JOB.id, name: 'Invoice 12.pdf', cat: 'Invoices', ref: 'sb:crm-files/' + 'b'.repeat(64) + '.pdf', type: 'application/pdf' }];
+  try { PA._core._reset(); } catch (e) {}
+  const m = await sub('p-measure', { projectId: JOB.id, name: 'Kitchen Plans.pdf' });
+  const tk = (/#measure=(.+)$/.exec((m.d && m.d.url) || '') || [])[1] || '';
+  const rd = require(path.join(BUILD, 'netlify/functions/_lib/takeoffs.js')).read(tk) || {};
+  const no = await sub('p-measure', { projectId: JOB.id, name: 'Invoice 12.pdf' });
+  const other = await sub('p-measure', { projectId: 'PNOTMINE', name: 'Kitchen Plans.pdf' });
+  ok('M1 📐 Measure (portal): a plan shared with subs → a bids.grayco-cs.com/#measure= link whose ticket names this sub, this job and that file; an invoice (never shown to subs) → 404; another job → 404',
+    m.st === 200 && /^https:\/\/bids\.grayco-cs\.com\/#measure=/.test(m.d.url) && rd.s === SUB.id && rd.p === JOB.id && rd.r === H64 + '.pdf' && rd.n === 'Kitchen Plans.pdf' && no.st === 404 && other.st === 404, [m, rd, no.st, other.st]);
+  delete KV.projectDocs; try { PA._core._reset(); } catch (e) {}
+}
 /* ─── B. the sub portal (phone) ─── */
 const { chromium } = require(PWDIR);
 const browser = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });

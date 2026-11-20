@@ -9,6 +9,8 @@
       e-mails for the old one (each e-mail is keyed by the expiration date). The shared Office To-Do gets ONE item per
       sub and date: "🛡 COI expiring: <sub>"; it ticks itself off when a newer COI is on file. An expired COI is
       already flagged by the sub pay check (patch AUTO6). Nothing here ever goes to a customer.
+      Patch PAPERS1 (owner 11/20): replaced — the SUB is reminded directly (e-mail + text, one-tap Papers link) for COI / WC / license
+      at 30 / 14 / 7 / 0 days and weekly after; tagged 'trade' (goes in data-entry mode); see coiDue / coiRun below.
    2. WARRANTY-ENDING CHECK-UPS. A finished job's workmanship warranty (portal.js warrantyOf: 5 years on all roofing
       and insurance work, 1 year on everything else) ends in 60 days or less → the customer is offered a FREE
       check-up before it ends, from news@ with the unsubscribe footer. Each daily run puts at most ONE approval item
@@ -103,74 +105,118 @@ async function todoDone(test, why){
 function coiExpOf(v){ return ymd(v.coiExp || v.insExp || v.insuranceExp || v.coiExpiration); }
 function isSub(v){ return !!(v && (v.isSub === true || /^sub/i.test(s(v.cat)) || /subcontract/i.test(s(v.cat) + ' ' + s(v.type)))); }
 function subName(v){ return s(v.company || v.name || v.contact) || 'your company'; }
-/* the subs due an e-mail today: [{ subId, name, email, lang, exp, days, stage }] — one per sub (the latest stage) */
+/* patch PAPERS1 (owner 11/20: "papers from portal for insurance etc go directly into crm too and we keep up with dates, send reminders etc."):
+   the SUB is reminded directly — an e-mail and a text with a one-tap link to their portal's Papers — for each dated paper on their CRM record:
+   insurance (COI: insExp / coiExp), workers' comp (wcExp, not when exempt) and license (licenseExp). Milestones: 30, 14 and 7 days before,
+   the day it runs out, then once a week after it ran out (12 weeks at most). Each milestone goes ONCE (gc_coi_req_state.done, keyed by
+   sub | paper | date | milestone) and is logged there. These are sub sends (custquiet tag 'trade'): ⏸ data-entry mode lets them go.
+   Staff still see each one: ONE To-Do per sub, paper and date ("🛡 COI expiring: …"), ticked off by itself when a newer date is on file;
+   the uploaded paper waits in ✅ Approvals → COI / W-9 to confirm (sub-doc-read.js). */
+const PAPERS = [
+  { k: 'coi', exp: function(v){ return coiExpOf(v); }, en: 'insurance certificate (COI)', es: 'certificado de seguro (COI)', tag: 'COI' },
+  { k: 'wc', exp: function(v){ return v.wcExempt === true ? '' : ymd(v.wcExp || v.wcExpiration); }, en: 'workers’ comp certificate', es: 'certificado de compensación al trabajador', tag: 'WC' },
+  { k: 'license', exp: function(v){ return ymd(v.licenseExp || v.licExpiration); }, en: 'contractor license', es: 'licencia de contratista', tag: 'License' }
+];
+function stageOf(days){
+  if (days > 30) return null;
+  if (days >= 15) return 'd30';
+  if (days >= 8) return 'd14';
+  if (days >= 1) return 'd7';
+  if (days >= -6) return 'd0';
+  const w = Math.floor(-days / 7); return w <= 12 ? 'w' + w : null;
+}
+/* the subs due a reminder today: [{ subId, name, email, phone, lang, items: [{ paper, label, exp, days, stage, key }] }] */
 function coiDue(data, state, t){
   state = obj(state); const done = obj(state.done), out = [];
   arr(data.vendors).forEach(function(v){
     if (!isSub(v) || v.deleted === true || v.archived === true || v.active === false || v.inactive === true) return;
-    const exp = coiExpOf(v); if (!exp) return;
-    const email = low(v.email); if (!okEmail(email)) return;
-    const days = daysUntil(exp, t);
-    const st = COI_STAGES.filter(function(x){ return days <= x.max && days >= x.min; })[0];
-    if (!st) return;
-    if (days < -45) return;   /* long expired — the office already knows (pay check, Admin) */
-    const key = s(v.id) + '|' + exp + '|' + st.k;
-    if (done[key]) return;
-    out.push({ subId: s(v.id), name: subName(v), email: email, lang: v.lang === 'es' ? 'es' : 'en', exp: exp, days: days, stage: st.k, key: key });
+    const email = low(v.email), phone = s(v.phone || v.cell || v.mobile).replace(/\D/g, '').slice(-10);
+    if (!okEmail(email) && phone.length !== 10) return;
+    const es = v.lang === 'es', items = [];
+    PAPERS.forEach(function(P){
+      const exp = P.exp(v); if (!exp) return;
+      const days = daysUntil(exp, t), st = stageOf(days); if (!st) return;
+      const key = s(v.id) + '|' + (P.k === 'coi' ? '' : P.k + '|') + exp + '|' + st;   /* a COI key is the same as before this patch: no second e-mail for a milestone already sent */
+      if (done[key]) return;
+      items.push({ paper: P.k, label: es ? P.es : P.en, tag: P.tag, exp: exp, days: days, stage: st, key: key });
+    });
+    if (items.length) out.push({ subId: s(v.id), name: subName(v), email: okEmail(email) ? email : '', phone: phone.length === 10 ? phone : '', lang: es ? 'es' : 'en', items: items,
+      exp: items[0].exp, days: items[0].days, stage: items[0].stage, key: items[0].key });
   });
   return out;
 }
+function when(x, es){ return x.days < 0 ? (es ? 'se venció el ' : 'ran out on ') + niceDay(x.exp) : x.days === 0 ? (es ? 'se vence hoy' : 'runs out today') : (es ? 'se vence el ' : 'runs out on ') + niceDay(x.exp) + (es ? ' (en ' + x.days + ' días)' : ' (in ' + x.days + ' day' + (x.days === 1 ? '' : 's') + ')'); }
 const COI_TXT = {
-  en: { subj: function(x){ return x.days < 0 ? 'Your insurance certificate ran out — please send the new one' : x.days === 0 ? 'Your insurance certificate runs out today — please send the new one' : 'Your insurance certificate runs out in ' + x.days + ' day' + (x.days === 1 ? '' : 's') + ' — please send the new one'; },
-    head: 'Please send your new insurance certificate',
-    body: function(x){ return 'Hi ' + (x.name || 'there') + ', our records show your certificate of insurance (COI) ' + (x.days < 0 ? 'ran out on ' : 'runs out on ') + niceDay(x.exp) + '. To keep working with GrayCo and getting paid on time, please upload the renewed certificate in your GrayCo Portal: Papers → Insurance, with the new expiration date. Your agent can also e-mail it to us.'; },
-    btn: 'Upload my new COI', foot: 'Questions? Call GrayCo at 901-585-0944.' },
-  es: { subj: function(x){ return x.days < 0 ? 'Su certificado de seguro se venció — envíe el nuevo por favor' : x.days === 0 ? 'Su certificado de seguro se vence hoy — envíe el nuevo por favor' : 'Su certificado de seguro se vence en ' + x.days + ' día' + (x.days === 1 ? '' : 's') + ' — envíe el nuevo por favor'; },
-    head: 'Por favor envíe su nuevo certificado de seguro',
-    body: function(x){ return 'Hola ' + (x.name || '') + ', nuestros registros muestran que su certificado de seguro (COI) ' + (x.days < 0 ? 'se venció el ' : 'se vence el ') + niceDay(x.exp) + '. Para seguir trabajando con GrayCo y recibir sus pagos a tiempo, suba el certificado renovado en su Portal GrayCo: Papeles → Seguro, con la nueva fecha de vencimiento. Su agente también nos lo puede enviar por correo.'; },
-    btn: 'Subir mi nuevo COI', foot: '¿Preguntas? Llame a GrayCo al 901-585-0944.' }
+  en: { subj: function(x){ const i = x.items[0], late = x.items.some(function(y){ return y.days < 0; }); return (late ? 'Your ' + i.label + ' ran out' : 'Your ' + i.label + ' ' + (i.days === 0 ? 'runs out today' : 'runs out in ' + i.days + ' day' + (i.days === 1 ? '' : 's'))) + (x.items.length > 1 ? ' (+' + (x.items.length - 1) + ' more)' : '') + ' — please send the new one'; },
+    head: 'Please send your renewed papers',
+    body: function(x){ return 'Hi ' + (x.name || 'there') + ', our records show: ' + x.items.map(function(i){ return 'your ' + i.label + ' ' + when(i, false); }).join('; ') + '. To keep working with GrayCo and getting paid on time, tap the button and upload the new one with its new date (Papers). It goes straight to your GrayCo file.'; },
+    btn: 'Upload it now', foot: 'Questions? Call GrayCo at 901-585-0944.',
+    text: function(x, link){ return 'GrayCo: your ' + x.items.map(function(i){ return i.tag + ' ' + (i.days < 0 ? 'ran out ' + i.exp : i.days === 0 ? 'runs out today' : 'runs out ' + i.exp); }).join(', ') + '. Upload the new one here: ' + link + ' Questions? 901-585-0944'; } },
+  es: { subj: function(x){ const i = x.items[0], late = x.items.some(function(y){ return y.days < 0; }); return (late ? 'Su ' + i.label + ' se venció' : 'Su ' + i.label + ' ' + (i.days === 0 ? 'se vence hoy' : 'se vence en ' + i.days + ' día' + (i.days === 1 ? '' : 's'))) + (x.items.length > 1 ? ' (+' + (x.items.length - 1) + ' más)' : '') + ' — envíe el nuevo por favor'; },
+    head: 'Por favor envíe sus papeles renovados',
+    body: function(x){ return 'Hola ' + (x.name || '') + ', nuestros registros muestran: ' + x.items.map(function(i){ return 'su ' + i.label + ' ' + when(i, true); }).join('; ') + '. Para seguir trabajando con GrayCo y recibir sus pagos a tiempo, toque el botón y suba el nuevo con su nueva fecha (Papeles). Llega directo a su archivo en GrayCo.'; },
+    btn: 'Subirlo ahora', foot: '¿Preguntas? Llame a GrayCo al 901-585-0944.',
+    text: function(x, link){ return 'GrayCo: su ' + x.items.map(function(i){ return i.tag + ' ' + (i.days < 0 ? 'se venció ' + i.exp : i.days === 0 ? 'se vence hoy' : 'se vence ' + i.exp); }).join(', ') + '. Suba el nuevo aquí: ' + link + ' ¿Preguntas? 901-585-0944'; } }
 };
-function coiMail(x){
-  const T = COI_TXT[x.lang] || COI_TXT.en, link = portalBase() + '/';
+function coiMail(x, link){
+  const T = COI_TXT[x.lang] || COI_TXT.en; link = link || portalBase() + '/';
+  if (!x.items) x = Object.assign({}, x, { items: [{ paper: 'coi', label: x.lang === 'es' ? PAPERS[0].es : PAPERS[0].en, tag: 'COI', exp: x.exp, days: x.days }] });
   const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center;font-size:18px;font-weight:bold">' + esc(T.head) + '</div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px;line-height:1.5">' + esc(T.body(x)) + '</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">' + esc(T.btn) + '</a></p>' +
     '<p style="font-size:13px;color:#55626F">' + esc(T.foot) + '</p></div></div>';
-  return { subject: T.subj(x), html: html };
+  return { subject: T.subj(x), html: html, text: T.text(x, link) };
 }
-/* a COI already uploaded in the sub portal that the CRM has not filed yet → do not ask again */
+/* a paper already uploaded in the sub portal that the CRM has not filed yet → do not ask again */
 async function pendingCoi(subIds){
   if (!subIds.length) return {};
   try {
     const r = await L().sb('gc_sub_event?select=sub_id,data,applied_at&kind=eq.paper&applied_at=is.null&sub_id=in.(' + subIds.map(function(x){ return '"' + String(x).replace(/"/g, '') + '"'; }).join(',') + ')');
     if (!r.ok) return {};
-    const out = {}; (await r.json() || []).forEach(function(e){ if (e && e.data && e.data.paper === 'coi') out[s(e.sub_id)] = 1; });
+    const out = {}; (await r.json() || []).forEach(function(e){ if (e && e.data && e.data.paper) out[s(e.sub_id) + '|' + s(e.data.paper)] = 1; });
     return out;
   } catch (e) { return {}; }
 }
+function trade(fn){ try { return require('./custquiet.js').run('trade', fn); } catch (e) { return fn(); } }
+let DEPS = null; function setDeps(d){ DEPS = d; }   /* tests: { link(subId, name) → url, mail(to, subj, html), text(ph, body) } */
+async function oneTapLink(x){
+  if (DEPS && DEPS.link) return DEPS.link(x.subId, x.name);
+  try { const A = require('../portal-access.js')._acct; const l = await A.subLinkCreate(x.subId, x.name, 'paper reminders'); return A.linkFor(l.token) + '&go=papers'; } catch (e) { return portalBase() + '/'; }
+}
 async function coiRun(t){
   if (env('COI_REQUESTS_OFF') === '1') return { off: true };
-  try { if (await require('./pause.js').isPaused()) return { dataEntryMode: true }; } catch (e) { return { dataEntryMode: true }; }   /* patch OFFFEAT: fail closed */
   const C = core();
   const data = await C.kvRead(['vendors', 'users']);
   const st = obj(await get(K.COI, {}));
-  /* to-dos for a sub whose COI on file is newer than the one the to-do was about → ticked off */
-  const cur = {}; arr(data.vendors).forEach(function(v){ if (isSub(v)) cur[s(v.id)] = coiExpOf(v); });
-  const closed = await todoDone(function(id, x){ const m = /^COI_REQ_(.+)_(\d{4}-\d{2}-\d{2})$/.exec(id); return !!(m && cur[m[1]] && cur[m[1]] > m[2] && daysUntil(cur[m[1]], t) > 30); }, 'A newer certificate is on file.');
+  /* to-dos for a sub whose paper on file is newer than the one the to-do was about → ticked off */
+  const cur = {}; arr(data.vendors).forEach(function(v){ if (isSub(v)) PAPERS.forEach(function(P){ cur[s(v.id) + '|' + P.k] = P.exp(v); }); });
+  const closed = await todoDone(function(id){ const m = /^(COI|WC|LIC)_REQ_(.+)_(\d{4}-\d{2}-\d{2})$/.exec(id); if (!m) return false; const c = cur[m[2] + '|' + (m[1] === 'COI' ? 'coi' : m[1] === 'WC' ? 'wc' : 'license')]; return !!(c && c > m[3] && daysUntil(c, t) > 30); }, 'A newer paper is on file.');
   const due = coiDue(data, st, t);
   const pend = await pendingCoi(due.map(function(x){ return x.subId; }));
-  const out = { due: due.length, queued: 0, sent: 0, failed: 0, waitingFiling: 0, todos: 0, closed: closed };
+  const out = { due: due.length, sent: 0, mailed: 0, texted: 0, failed: 0, waitingFiling: 0, todos: 0, closed: closed };
   const doneKeys = {};
-  for (const x of due) {
-    if (pend[x.subId]) { out.waitingFiling++; continue; }
-    /* patch OFFFEAT: the request waits on ✅ Approvals (the office approves); one open request per sub */
-    const q = await require('./offfeat.js').queueSubDoc({ subId: x.subId, name: x.name, email: x.email, lang: x.lang, need: ['coi'], exp: x.exp, days: x.days, stage: x.stage, auto: true, by: 'CRM (COI running out)' });
-    if (q.ok) { out.queued++; doneKeys[x.key] = { at: nowIso(), to: x.email, queued: q.id || '', already: !!q.already }; } else { out.failed++; continue; }
-    const label = '🛡 COI ' + (x.days < 0 ? 'expired' : 'expiring') + ': ' + x.name + ' — ' + x.exp;
-    if (await todoAdd({ id: 'COI_REQ_' + x.subId + '_' + x.exp, kind: 'coi_request', label: label, prio: x.days <= 7 ? 'high' : 'normal',
-      note: 'A request to ' + x.name + ' (' + x.email + ') for the renewed certificate waits on ✅ Approvals — approve it to send (' + (x.days < 0 ? 'expired ' + niceDay(x.exp) : 'runs out ' + niceDay(x.exp)) + '). They upload it in the sub portal; confirm the read COI in the CRM (📄 COI / W-9 to confirm). This ticks itself off once a newer COI is on file.' })) out.todos++;
+  for (const x0 of due) {
+    const items = x0.items.filter(function(i){ return !pend[x0.subId + '|' + i.paper]; });
+    out.waitingFiling += x0.items.length - items.length;
+    if (!items.length) continue;
+    const x = Object.assign({}, x0, { items: items });
+    const link = await oneTapLink(x), m = coiMail(x, link);
+    let mailed = false, texted = false;
+    if (x.email) { const r = await trade(function(){ return DEPS && DEPS.mail ? DEPS.mail(x.email, m.subject, m.html) : resend({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', to: [x.email], reply_to: replyTo(), subject: m.subject, html: m.html }); }); mailed = !!(r && r.ok); }
+    if (x.phone) { try { const r = await trade(function(){ return DEPS && DEPS.text ? DEPS.text(x.phone, m.text) : require('./smsalert.js').sendC(x.phone, m.text, 'trade', { who: x.name, kind: 'paper-reminder' }); }); texted = !!(r && r.ok); } catch (e) {} }
+    if (!mailed && !texted) { out.failed++; continue; }
+    out.sent++; if (mailed) out.mailed++; if (texted) out.texted++;
+    const at = nowIso();
+    items.forEach(function(i){ doneKeys[i.key] = { at: at, paper: i.paper, exp: i.exp, stage: i.stage, to: x.email, phone: x.phone ? '…' + x.phone.slice(-4) : '', mailed: mailed, texted: texted }; });
+    for (const i of items) {
+      const pre = i.paper === 'coi' ? 'COI' : i.paper === 'wc' ? 'WC' : 'LIC';
+      const label = '🛡 ' + i.tag + ' ' + (i.days < 0 ? 'expired' : 'expiring') + ': ' + x.name + ' — ' + i.exp;
+      if (await todoAdd({ id: pre + '_REQ_' + x.subId + '_' + i.exp, kind: 'coi_request', label: label, prio: i.days <= 7 ? 'high' : 'normal',
+        note: x.name + ' was reminded (' + [mailed ? 'e-mail' : '', texted ? 'text' : ''].filter(Boolean).join(' + ') + ') to upload the renewed ' + i.label + ' (' + (i.days < 0 ? 'expired ' + niceDay(i.exp) : 'runs out ' + niceDay(i.exp)) + '). They upload it in the portal; confirm it in ✅ Approvals (📄 COI / W-9 to confirm). This ticks itself off when a newer date is on file.',
+        subId: x.subId, link: crmBase() + '/#vendors' })) out.todos++;
+    }
   }
   if (Object.keys(doneKeys).length) await cas(K.COI, function(v){ const y = obj(v); y.done = Object.assign(obj(y.done), doneKeys); const cut = new Date(Date.now() - 400 * 864e5).toISOString(); Object.keys(y.done).forEach(function(k){ if (s(y.done[k].at) < cut) delete y.done[k]; }); y.last = nowIso(); return y; });
   return out;
@@ -428,7 +474,7 @@ async function onApproved(item){
   return { ok: false, error: 'Unknown item.' };
 }
 
-module.exports = { K, NEED_KINDS, COI_STAGES, WARR_DAYS, TOKEN_RE, setCore, coiDue, coiMail, coiRun, coiExpOf, warrDue, warrMessage, fillWarr, warrRun, warrSend, warrOffer, warrAccept, warrStats,
+module.exports = { PAPERS, stageOf, setDeps, K, NEED_KINDS, COI_STAGES, WARR_DAYS, TOKEN_RE, setCore, coiDue, coiMail, coiRun, coiExpOf, warrDue, warrMessage, fillWarr, warrRun, warrSend, warrOffer, warrAccept, warrStats,
   needsAll, needsFor, needsRequest, needsUpdate, needsAnswer, codeToVault, needsNotifyPm, needsMail, needsRun, needsApproved, needOut, onApproved, daysUntil, todayCentral };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
