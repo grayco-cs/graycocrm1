@@ -1711,6 +1711,15 @@ exports.handler = async function(event){
       moneyMailboxes: require('./_lib/money-box.js').moneyBoxes(), invoicesFromEveryMailbox: require('./_lib/money-box.js').invoiceAll(),
       invoiceMailboxes: require('./_lib/invmail.js').boxes(), invoiceCopyTo: require('./_lib/invmail.js').copyAddrs(), gmailReading: require('./_lib/gmail.js').configured() }, C);   /* patch INVMAIL (yes / no only) */
 
+  /* patch BIDSITE3 I: "✓ Done" from a bid requirement reminder text — a signed link (the item key + HMAC), stops that item's reminders */
+  if (event.httpMethod === 'GET' && qs.bidremind_done) {
+    const BR = require('./_lib/bidremind.js'), key = BR.checkToken(qs.bidremind_done);
+    const page = (t, ok) => ({ statusCode: ok ? 200 : 400, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, body: '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>GrayCo</title><body style="font:17px Arial,sans-serif;padding:24px;color:#0f172a"><h2>' + (ok ? '✓ Done' : 'Link not valid') + '</h2><p>' + t + '</p></body>' });
+    if (!key) return page('This link is not valid (or was changed). Tick the box on the bid card in the CRM instead.', false);
+    try { await BR.markDone(key, 'text link'); } catch (e) { return page('Could not save — try again in a minute.', false); }
+    return page('No more reminders for this item. (The bid\'s other reminders keep going.)', true);
+  }
+
   /* patch MONEY: the e-mailed invoices / receipts list (gc_kv "gc_mail_money" is admin-only in Supabase — docs/email-all.sql —
      so the OFFICE's CRM reads it here): GET → { list, done } · POST { op: 'done', id, val } marks one booked / set aside.
      Admins and the office only (gc_staff admin, a role starting with "office", or the CRM's users list says Office). */

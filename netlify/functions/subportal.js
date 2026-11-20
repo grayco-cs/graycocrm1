@@ -103,8 +103,15 @@ function subJobView(j, trades){
   if (Array.isArray(v.addenda)) v.addenda = v.addenda.map(function(a){ return Array.isArray(a.files) ? Object.assign({}, a, { files: V.list(a.files, 'addendum') }) : a; });
   if (v.notes) v.notes = V.notesFor(v.notes, hidLinks.concat(s(j.sourceLink) && !arr(v.plansLinks).some(function(l){ return s(l.url) === s(j.sourceLink); }) ? [{ url: j.sourceLink }] : []));
   delete v.sourceLink; delete v.leadInbox; delete v._estAuto;
+  /* patch BIDSITE3 (owner 11/20: "never show GrayCo pricing to subs/suppliers"): no GrayCo price / cost / margin field on a job ever leaves */
+  GC_PRICE_FIELDS.forEach(function(k){ delete v[k]; }); delete v.resultMailed; delete v.dueReminderAt;
+  if (v.materialList) v.materialList = noPrices(v.materialList);
   return v;
 }
+/* patch BIDSITE3: GrayCo's own pricing fields (an estimate's value, a budget, our bid …) — never on what a sub / supplier gets */
+const GC_PRICE_FIELDS = ['estValue', 'estimatedValue', 'estimateValue', 'estimateTotal', 'budget', 'projectValue', 'contractValue', 'contractAmount', 'contract', 'ourBid', 'ourPrice', 'gcPrice', 'gcBid', 'gcBidAmount', 'totalCharge', 'totalCost', 'margin', 'markup', 'gp', 'sellPrice', 'ourTotal', 'bidTotal'];
+/* a dollar amount typed into a list a sub / supplier sees ("4 RTUs @ $9,000") is taken out */
+function noPrices(t){ return s(t).replace(/(@\s*)?\$\s?\d[\d,]*(\.\d+)?(\s*(ea|each|\/\s*\w+))?/gi, '').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/gm, '').slice(0, 20000); }
 function SV(){ return require('./_lib/subvis.js'); }
 /* patch BIDVIS: a job's plan files a sub may open — the admin's toggle is kept on the job's plan list (job.plans, by name) */
 function subPlans(items, job){
@@ -229,6 +236,7 @@ function rowFor(collection, rec){
   else if (collection === 'questions') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
   else if (collection === 'acks' || collection === 'mquotes') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }   /* patch SUPPLIER: + mquotes */
   else if (collection === 'planreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.email); }   /* patch PLANREQ */
+  else if (collection === 'matreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.userEmail); }   /* patch BIDSITE3: a sub's "Request more materials" */
   return r;
 }
 function threadOf(m){ return s(m.senderRole === 'sub' ? m.senderId : m.recipientSubId); }
@@ -414,14 +422,14 @@ async function supplierScope(who){
 function supplierJobView(j){
   const v = subJobView(j, []);
   delete v.tradeScopes; delete v.bidForm; delete v.bidLines; delete v.bidResultsSharing;
-  v.materialList = s(j.materialList).slice(0, 20000);
+  v.materialList = noPrices(j.materialList);   /* patch BIDSITE3: never a price */
   return v;
 }
 const MQ_STATUS = ['submitted', 'accepted', 'declined'];
 function mqLines(v){
   return arr(v).slice(0, 200).map(function(l, i){
     const qty = num(l.qty), price = num(l.unitPrice);
-    return { id: s(l.id).slice(0, 40) || 'l' + (i + 1), desc: s(l.desc).slice(0, 300), qty: qty, unit: s(l.unit).slice(0, 20), unitPrice: money(price), total: money(qty * price) };
+    return { id: s(l.id).slice(0, 40) || 'l' + (i + 1), desc: s(l.desc).slice(0, 300), spec: s(l.spec).slice(0, 300), qty: qty, unit: s(l.unit).slice(0, 20), unitPrice: money(price), total: money(qty * price) };   /* patch BIDSITE3: + spec (model / size / brand) */
   }).filter(function(l){ return l.desc; });
 }
 async function supplierWork(profile){
@@ -515,6 +523,23 @@ async function estFill(list, ctx){
   });
 }
 
+/* ── patch BIDSITE3 (owner 11/20) E: "Subs can see supplier quotes' materials/specs/quantities (no supplier pricing, no our pricing) once
+   we win the job, or during bidding if an admin per-job toggle 'Show supplier materials to subs while bidding' is on." ──
+   v.supplierMaterials = [{ lines: [{ desc, spec, qty, unit }], leadTime }] — the accepted quotes when there are any, else every quote not
+   declined; no supplier name, no price, no total. */
+function materialsShown(j){ return !!j && (low(j.status) === 'won' || j.showSupplierMaterials === true); }
+async function withSupplierMaterials(list){
+  const ids = list.filter(materialsShown).map(function(j){ return j.id; });
+  if (!ids.length) return list;
+  const rows = await listRows([eq('collection', 'mquotes'), inList('job_id', ids)]);
+  return list.map(function(j){
+    if (!materialsShown(j)) return j;
+    const qs = rows.filter(function(r){ return r.job_id === j.id; }).map(function(r){ return r.data || {}; }).filter(function(q){ return q.status !== 'declined'; });
+    const acc = qs.filter(function(q){ return q.status === 'accepted'; }), use = acc.length ? acc : qs;
+    const out = use.map(function(q){ return { lines: arr(q.lines).map(function(l){ return { desc: s(l.desc), spec: s(l.spec), qty: num(l.qty), unit: s(l.unit) }; }).filter(function(l){ return l.desc; }), leadTime: s(q.leadTime) }; }).filter(function(q){ return q.lines.length; });
+    return out.length ? Object.assign({}, j, { supplierMaterials: out }) : j;
+  });
+}
 async function loadKey(who, key, ctx){
   const parts = key.split(':');
   const head = parts[0];
@@ -550,11 +575,11 @@ async function loadKey(who, key, ctx){
     if (key === 'bids' && sc.supplier) return [];
     if (key === 'jobs') { const tr = who.profile && Array.isArray(who.profile.trades) ? who.profile.trades : [];   /* patch SYS2 */
       const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });   /* patch BIDPO: the CRM's PO (never a new one from a sub's load) */
-      return (await estFill(ps.jobs, ctx)).map(function(j){   /* patch BIDEST: the Senior Estimator next to the PM */
+      return withSupplierMaterials((await estFill(ps.jobs, ctx)).map(function(j){   /* patch BIDEST: the Senior Estimator next to the PM · patch BIDSITE3: + supplier materials */
         const v = subJobView(j, tr);
         if (ps.data && !(v.siteWalk && v.siteWalk.date)) { try { const w = BPO().crmSiteWalk(j, ps.data); if (w) v.siteWalk = { date: w.date, time: w.time, location: w.location, mandatory: w.mandatory }; } catch (e) {} }   /* the CRM's site walk when the bid site has none */
         return v;
-      }); }
+      })); }
     if (key === 'acks') return (await listRows([eq('collection', 'acks'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
     if (key === 'bids') return bidsWithResults(sc);
     if (key === 'messages') {
@@ -692,13 +717,22 @@ async function saveCollection(who, key, upsert, del, ctx){
           const st = MQ_STATUS.indexOf(s(rec0.status)) > -1 ? s(rec0.status) : old.status;
           const rec = Object.assign({}, old, { status: st, gcNote: s(rec0.gcNote).slice(0, 2000) });
           if (st !== old.status) { rec.decidedAt = new Date().toISOString(); rec.decidedBy = who.email; }
+          if (st === 'accepted' && old.status !== 'accepted' && !old.acceptMailedAt && okEmail(low(old.userEmail))) { rec.acceptMailedAt = new Date().toISOString(); notes.push({ kind: 'accepted-mail', email: low(old.userEmail), jobId: s(old.jobId), quote: true }); }   /* patch BIDSITE3 C */
           rows.push(rowFor('mquotes', rec));
         }
       } else upsert.forEach(function(rec){
         if (key === 'jobs') {   /* patch LD2: a draft stays a draft until "Publish to bid portal" */
           const old = existing[rec.id] && existing[rec.id].data;
           const publish = rec._publish === true; delete rec._publish;
-          if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });
+          if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt', 'resultMailed', 'dueReminderAt'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });   /* + patch BIDSITE3: the e-mail stamps */
+          if (rec.showSupplierMaterials !== undefined) rec.showSupplierMaterials = rec.showSupplierMaterials === true;
+          /* patch BIDSITE3 C: marked WON / LOST → the result e-mails (each once per job; their switches decide) */
+          if (old && !isDraft(old) && low(rec.status) !== low(old.status) && /^(won|lost)$/i.test(s(rec.status))) {
+            const kind = low(rec.status), rm = Object.assign({}, rec.resultMailed || {});
+            if (!rm[kind]) { rm[kind] = new Date().toISOString(); rec.resultMailed = rm; notes.push({ kind: 'job-result', result: kind, job: rec }); }
+          }
+          /* patch BIDSITE3 C: an addendum published on the bid site → "Addendum #n posted" (when switched on) */
+          if (old && !isDraft(old)) arr(rec.addenda).forEach(function(a){ if (a && a.publishedAt && !arr(old.addenda).some(function(o){ return o && o.publishedAt && Number(o.num) === Number(a.num); })) notes.push({ kind: 'addendum-mail', job: rec, add: a }); });
           /* patch BIDPO: nobody types a PO on the bid site — it and the CRM link are the server's (🔗 Link to CRM job is its own action) */
           if (rec._estAuto === true) rec.estimatorId = old ? s(old.estimatorId) : '';   /* patch BIDEST: the shown default is not saved as a pick */
           delete rec._estAuto;
@@ -727,6 +761,11 @@ async function saveCollection(who, key, upsert, del, ctx){
             notes.push({ kind: 'due-changed', jobId: rec.id, from: s(old.bidDueDate).slice(0, 10) ? s(old.bidDueDate).slice(0, 10) + (s(old.bidDueTime) ? ' ' + s(old.bidDueTime) : '') : 'no due date', who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
         }
         if (key === 'messages' && !existing[rec.id] && rec.senderRole !== 'sub' && rec.recipientSubId) notes.push({ kind: 'message-to-sub', msg: rec });
+        if (key === 'bids') {   /* patch BIDSITE3 C: an admin accepts a sub's bid on the bid site → "Your bid was accepted" (once; the CRM's 🏆 Award stamps the same) */
+          const old = existing[rec.id] && existing[rec.id].data;
+          if (old && old.awardMailedAt && !rec.awardMailedAt) rec.awardMailedAt = old.awardMailedAt;
+          if (rec.accepted === true && !(old && old.accepted === true) && !rec.awardMailedAt && okEmail(low(rec.userEmail || (old && old.userEmail)))) { rec.awardMailedAt = new Date().toISOString(); notes.push({ kind: 'accepted-mail', email: low(rec.userEmail || old.userEmail), jobId: s(rec.jobId || (old && old.jobId)), quote: false }); }
+        }
         rows.push(rowFor(key, rec));
       });
       dropKeys = del.filter(function(id){ return existing[id]; }).map(function(id){ return key + '/' + id; });
@@ -924,15 +963,15 @@ async function register(body){
     if (dupes.length) return { duplicates: dupes };
   }
   let inv = body.invite ? await findInvite(body.invite, body.job) : null;
-  /* patch BIDINVITE: a sign-up link sent to a phone (no e-mail on the invite: "sms:<cell>") is good for whoever opens it */
-  let invited = !!(inv && (!inv.data.email || low(inv.data.email) === email || /^sms:/.test(low(inv.data.email))));
-  /* patch BIDINVITE (owner 11/20): a sub we INVITED is approved on sign-up — by the invite link, or by an invite to the same e-mail
-     (a bid job's invite or a 📨 sign-up link); a sub who signs up on their own still waits for an admin */
+  let invited = !!(inv && (!inv.data.email || low(inv.data.email) === email || /^sms:/.test(low(inv.data.email))));   /* patch BIDINVITE: a texted sign-up link ("sms:<cell>") */
+  /* patch BIDSITE3 (owner 11/20) A: a sub we INVITED is approved on sign-up — by the invite link, or by an invite to the same e-mail
+     (the newest open invite); a self sign-up still waits for an admin; a SUPPLIER sign-up is approved at once */
   if (!invited) {
-    const byMail = (await listRows([eq('collection', 'invites'), eq('email', email)])).filter(function(r){ return !(r.data && r.data.usedAt); })
+    const byMail = (await listRows([eq('collection', 'invites'), eq('email', email)])).filter(function(r){ const j = r.data || {}; return !j.usedAt; })
       .sort(function(a, b){ return s(b.data && b.data.createdAt).localeCompare(s(a.data && a.data.createdAt)); });
     if (byMail[0]) { inv = byMail[0]; invited = true; }
   }
+  const supplierAcct = p.acctType === 'supplier';
 
   const cr = await fetch(sbUrl() + '/auth/v1/admin/users', { method: 'POST', headers: H(),
     body: JSON.stringify({ email: email, password: pw, email_confirm: true, user_metadata: { name: s(p.name).slice(0, 80), portal: 'sub' } }) });
@@ -947,7 +986,8 @@ async function register(body){
   const profile = {
     id: 'u_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'),
     authUserId: s(authUser.id || (authUser.user && authUser.user.id)),
-    username: email, email: email, role: p.acctType === 'supplier' ? 'supplier' : 'sub', approved: invited,   /* patch SUPPLIER: a supplier account (approved by GrayCo the same way) */
+    username: email, email: email, role: p.acctType === 'supplier' ? 'supplier' : 'sub', approved: invited || supplierAcct,   /* patch SUPPLIER: a supplier account · patch BIDSITE3: approved at once */
+    approvedAuto: supplierAcct ? 'supplier' : invited ? (inv.job_id === 'signup' ? 'signup-link' : 'invited') : undefined,   /* patch BIDINVITE: + a 📨 sign-up link */
     name: clip(p.name, 80), phone: clip(p.phone, 40), contactTitle: clip(p.contactTitle, 80),
     company: clip(p.company, 120), dbaName: clip(p.dbaName, 120),
     businessAddress: clip(p.businessAddress), businessCity: clip(p.businessCity, 80),
@@ -957,8 +997,8 @@ async function register(body){
     unionAffiliation: clip(p.unionAffiliation, 20), serviceArea: clip(p.serviceArea), licenseNumbers: clip(p.licenseNumbers, 400),
     einLast4: s(p.einLast4).replace(/\D/g, '').slice(0, 4),
     trades: (Array.isArray(p.trades) ? p.trades : []).map(function(x){ return clip(x, 60); }).filter(Boolean).slice(0, 30),
-    invitedJobId: invited && inv.job_id !== 'signup' ? inv.job_id : undefined, approvedAuto: invited ? (inv.job_id === 'signup' ? 'signup-link' : 'invited') : undefined,   /* patch BIDINVITE */
-    vetPending: invited ? true : undefined,   /* SUBSIGNUP: (owner 11/16) an invited sub sees that job at once, but GrayCo still checks them: a card in ✅ Approvals */
+    invitedJobId: invited && inv.job_id !== 'signup' ? inv.job_id : undefined,   /* patch BIDINVITE: a sign-up link has no job */
+    vetPending: invited && !supplierAcct ? true : undefined,   /* SUBSIGNUP: (owner 11/16) an invited sub sees that job at once, but GrayCo still checks them: a card in ✅ Approvals */
     lang: s(p.lang) === 'es' ? 'es' : 'en',   /* patch SIGNUPPAPERS: their language, and the papers they SAY they have (not papers on file) */
     papersClaimed: (function(c){ c = c && typeof c === 'object' ? c : {}; return { w9: c.w9 === true, gl: c.gl === true, wc: c.wc === true, wcExempt: c.wcExempt === true, at: new Date().toISOString() }; })(p.papersClaimed),
     createdAt: new Date().toISOString()
@@ -967,7 +1007,7 @@ async function register(body){
   catch (e) { if (profile.authUserId) await deleteAuthUser(profile.authUserId); throw e; }
   if (invited) await upsertRows([rowFor('invites', Object.assign({}, inv.data, { usedAt: new Date().toISOString(), usedBy: profile.id }))], email);
   try { await notify({ kind: 'registered', user: profile }); } catch (e) { console.warn('[subportal] mail', e.message); }
-  return { ok: true, approved: invited, paperToken: paperToken(profile.id) };   /* patch SIGNUPPAPERS: upload the papers right after signing up */
+  return { ok: true, approved: profile.approved, paperToken: paperToken(profile.id) };   /* patch SIGNUPPAPERS: upload the papers right after signing up */
 }
 /* ── patch SIGNUPPAPERS (owner 11/12: "for expedited approval to our bid portal see if they can enter COI and workman's comp and
    licenses when they sign up") ─ the sub portal's sign-up (portal-app.js) has no bid-site sign-in yet, so register hands back a
@@ -1501,6 +1541,9 @@ async function sweepPlanRequests(){
 
 function notifyApproved(n){ return notify(Object.assign({}, n, { kind: '__approved_inner' })); }   /* patch SIGNUPNOTE */
 async function notify(n){
+  if (n.kind === 'job-result') return require('./_lib/bidmail.js').result(n.job, n.result);   /* patch BIDSITE3 */
+  if (n.kind === 'addendum-mail') return require('./_lib/bidmail.js').addendum(n.job, n.add);
+  if (n.kind === 'accepted-mail') { const r = await getRow('jobs', n.jobId); return require('./_lib/bidmail.js').accepted(r ? r.data : { id: n.jobId, title: '' }, n.email, n.quote); }
   if (n.kind === 'plans-added') return notifyPlanRequests(n.jobId);   /* patch PLANREQ */
   if (n.kind === 'crm-sitewalk') return crmSiteWalkPush(n.jobId, n.by);
   if (n.kind === 'details-changed') {   /* patch BIDPO: ✎ Edit Job Details changed the site walk / questions deadline → the same update as 📂 Manage → Details */
@@ -1522,13 +1565,13 @@ async function notify(n){
     const u = n.user;
     const owners = String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail);
     /* patch SIGNUPNOTE (owner 11/13: "make sure we get the approval notification"): a phone notice to the owners too, and the e-mail opens ✅ Approvals in the CRM */
-    try { await pushTo(owners, u.role === 'supplier' ? '🧱 New supplier waiting for approval' : u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
-    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.role === 'supplier' ? '🧱 Approve new supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
+    try { await pushTo(owners, u.role === 'supplier' ? '🧱 New supplier signed up (approved automatically)' : u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
+    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.role === 'supplier' ? '🧱 New supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
       mailHtml(u.role === 'supplier' ? 'New supplier sign-up' : 'New subcontractor sign-up', [
         '<b>' + esc(u.company) + '</b>' + (u.dbaName ? ' (DBA ' + esc(u.dbaName) + ')' : ''),
         esc(u.name) + ' · ' + esc(u.email) + (u.phone ? ' · ' + esc(u.phone) : ''),
         u.trades && u.trades.length ? 'Trades: ' + esc(u.trades.join(', ')) : '',
-        u.role === 'supplier' ? 'A <b>supplier</b> (materials) account. Approve or deny it on the bid site: <b>Pending</b> (sign in at bids.grayco-cs.com), then link it to the CRM vendor under <b>Suppliers</b>.' : u.approved ? 'They came from a job invite, so they already see that job. Please check them: <b>✅ Approvals → 🏗 Bid portal</b> (✅ Approve, or ✕ Deny to take their access away).' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
+        u.role === 'supplier' ? 'A <b>supplier</b> (materials) account — approved automatically (supplier sign-ups need no approval). Link it to the CRM vendor under <b>Suppliers</b> on the bid site (bids.grayco-cs.com).' : u.approved ? 'They came from a job invite, so they already see that job. Please check them: <b>✅ Approvals → 🏗 Bid portal</b> (✅ Approve, or ✕ Deny to take their access away).' : 'They are signed in and waiting for your approval — they see no jobs until you approve them. In the CRM: <b>✅ Approvals → 🏗 Bid portal</b> (⚡ Approve, or 📋 Review first).'
       ].filter(Boolean), u.role === 'supplier' ? { href: portalLink(), label: 'Open the bid site' } : { href: crmUrl(), label: 'Open ✅ Approvals' }));
   }
   if (n.kind === 'approved') {
@@ -1949,29 +1992,138 @@ function limited(ip, max){
   return h.n > max;
 }
 
-/* ── patch BIDINVITE (owner 11/20): the bid site's Invite (a sub or a supplier) → the invite row + the e-mail at once ("GrayCo invited
-   you to bid: <project>", a sign-up link with the token, or the sign-in link for an account) — no approval queue, not held by data-entry
-   mode (a sub e-mail, tagged 'trade': _lib/bidinvite.js). ── */
+/* ═══ patch BIDSITE3 (owner 11/20) ═══════════════════════════════════════════════════════════════════════════════════
+   B. 📧 Invite (a sub or a supplier) on a bid job → the invite e-mail goes out AT ONCE (no approval queue): "GrayCo invited you to bid:
+      <project>" with their sign-in link (an account already) or their sign-up link (the invite token: approved on sign-up, linked to
+      the job; ?as=supplier opens the supplier sign-up). Its switch: Admin → 📧 Bid site e-mails → Invite e-mail (on). */
 async function inviteSend(who, body){
   if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
-  const BI = require('./_lib/bidinvite.js');
   const jobId = s(body.jobId), jr = okId(jobId) ? await getRow('jobs', jobId) : null;
   if (!jr || isGone(jr.data)) throw Fail(404, 'No such bid job.');
   const emails = Array.from(new Set(arr([]).concat(Array.isArray(body.emails) ? body.emails : [body.email]).map(low).filter(okEmail))).slice(0, 100);
   if (!emails.length) throw Fail(400, 'Enter an e-mail address.');
+  const asSup = s(body.as) === 'supplier';
+  const BM = require('./_lib/bidmail.js'), sw = await BM.cfg();
   const have = {}; (await listRows([eq('collection', 'invites'), eq('job_id', jobId)])).forEach(function(r){ have[low(r.email)] = r.data; });
-  const accts = await BI.accounts(), at = new Date().toISOString(), rows = [], out = [];
+  const accts = {}; (await listRows([eq('collection', 'users')])).forEach(function(r){ const d = r.data || {}; if (d.role === 'sub' || d.role === 'supplier') accts[low(r.email)] = d; });
+  const at = new Date().toISOString(), rows = [], out = [];
   let mailed = 0;
   for (const e of emails) {
-    const acct = accts[e], sup = acct ? acct.role === 'supplier' : s(body.as) === 'supplier';
-    const inv = Object.assign({}, have[e] || BI.newInvite(jobId, e, who.email, 'bidsite'), { as: sup ? 'supplier' : 'sub' });
-    const m = BI.inviteMail(jr.data, BI.link(inv, !!acct, sup), !!(acct && acct.lang === 'es'), sup, !!acct);
-    if (await BI.sendMail(e, m)) { mailed++; inv.mailedAt = at; inv.mailedBy = who.email; }
+    const acct = accts[e], sup = acct ? acct.role === 'supplier' : asSup;
+    const inv = Object.assign({}, have[e] || { id: 'i_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: jobId, email: e, token: crypto.randomBytes(16).toString('hex'), createdAt: at, createdBy: who.email, via: 'bidsite' }, { as: sup ? 'supplier' : 'sub' });
+    if (sw.invite) {
+      const link = acct ? PORTAL_ORIGIN + '/' : PORTAL_ORIGIN + '/?invite=' + inv.token + '&job=' + encodeURIComponent(jobId) + (sup ? '&as=supplier' : '');
+      const m = BM.inviteMail(jr.data, link, !!(acct && acct.lang === 'es'), sup, !!acct);
+      let ok = false; try { ok = !!(await BM.trade(function(){ return sendMail(e, m.subject, m.html); })); } catch (x) { ok = false; }
+      if (ok) { mailed++; inv.mailedAt = at; inv.mailedBy = who.email; }
+    }
     rows.push(rowFor('invites', inv)); out.push(pick(inv, ['id', 'jobId', 'email', 'token', 'createdAt', 'createdBy', 'as', 'mailedAt', 'usedAt', 'usedBy']));
   }
-  if (isDraft(jr.data)) await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);   /* an invite opens a draft as PRIVATE */
+  if (isDraft(jr.data)) {   /* an invite opens a draft as PRIVATE (the CRM's invite does the same): only invited accounts see it */
+    await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);
+  }
   await upsertRows(rows, who.email);
-  return { ok: true, invites: out, mailed: mailed };
+  return { ok: true, invites: out, mailed: mailed, mailOff: !sw.invite };
+}
+/* C. Admin → 📧 Bid site e-mails: the switches */
+async function bidmailCfg(who, body){
+  if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
+  const BM = require('./_lib/bidmail.js');
+  if (s(body.op) === 'set') return { ok: true, switches: await BM.save(body.switches, who.email), list: BM.LIST };
+  return { ok: true, switches: await BM.cfg(), list: BM.LIST };
+}
+/* F. "Request more materials" (a sub on a job they bid on / may bid on, or an awarded job): item, quantity, reason → an approval card for
+   the job's PM in the CRM (✅ Approvals, bid-hub ?matreqs). Approve → a line on the job's supplier PO draft (gc_supplier_pos, never sent
+   by itself); Decline with a note → the sub sees the answer here. Never a price; no customer contact. */
+const MR_MAX_OPEN = 30;
+function mrView(d){ return pick(d, ['id', 'jobId', 'item', 'qty', 'unit', 'reason', 'status', 'answer', 'at', 'decidedAt', 'poNo']); }
+async function matReq(who, body, ctx){
+  const op = s(body.op) || 'list';
+  if (who.isAdmin) {
+    const f = [eq('collection', 'matreqs')]; if (okId(s(body.jobId))) f.push(eq('job_id', s(body.jobId)));
+    return { ok: true, requests: (await listRows(f)).map(function(r){ return r.data; }).sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); }) };
+  }
+  needSub(who, true);
+  if (who.isSupplier) throw Fail(403, 'Material requests are for subcontractors.');
+  const me = who.profile.id;
+  if (op === 'list') return { ok: true, requests: (await listRows([eq('collection', 'matreqs'), eq('user_id', me)])).map(function(r){ return mrView(r.data || {}); }).sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); }) };
+  if (op !== 'add') throw Fail(400, 'Unknown request.');
+  const sc = ctx.scope || (ctx.scope = await subScope(who));
+  const jobId = s(body.jobId), jr = sc.jobs[jobId];
+  if (!jr) throw Fail(403, 'This job is not open to you.');
+  const item = s(body.item).slice(0, 200), qty = num(body.qty), reason = s(body.reason).slice(0, 1000);
+  if (!item) throw Fail(400, 'What material do you need?');
+  if (!(qty > 0)) throw Fail(400, 'How many? Enter a quantity.');
+  if (!reason) throw Fail(400, 'Tell GrayCo why it is needed.');
+  const mine = await listRows([eq('collection', 'matreqs'), eq('user_id', me), eq('job_id', jobId)]);
+  if (mine.filter(function(r){ return r.data && r.data.status === 'pending'; }).length >= MR_MAX_OPEN) throw Fail(429, 'You have many requests waiting on this job — wait for GrayCo to answer them.');
+  const p = who.profile, job = jr.data || {};
+  const rec = { id: 'mr_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), jobId: jobId, jobTitle: s(job.title), item: item, qty: qty, unit: s(body.unit).slice(0, 20), reason: reason,
+    userId: me, userName: s(p.name), userCompany: s(p.company), userEmail: low(p.email), status: 'pending', at: new Date().toISOString(),
+    awarded: arr(sc.myBids).some(function(r){ return r.job_id === jobId && r.data && r.data.accepted === true; }) };
+  await upsertRows([rowFor('matreqs', rec)], who.email);
+  try { const pm = await jobPmEmail(job); if (pm) await pushTo([pm], '🧱 Material request — ' + s(job.title).slice(0, 60), rec.userCompany + ': ' + qty + ' ' + (rec.unit ? rec.unit + ' ' : '') + item + ' · open ✅ Approvals'); } catch (e) {}
+  return { ok: true, request: mrView(rec) };
+}
+/* the job's PM (the bid job's PM e-mail, else its PM profile's) */
+async function jobPmEmail(job){
+  if (okEmail(low(job && job.pmEmail))) return low(job.pmEmail);
+  if (job && okId(s(job.pmId))) { const r = await getRow('users', s(job.pmId)); if (r && okEmail(low(r.email))) return low(r.email); }
+  return '';
+}
+/* the CRM's ✅ Approvals (bid-hub.js): the waiting requests with their PM, and the decision */
+async function matReqsOpen(){
+  const rows = (await listRows([eq('collection', 'matreqs')])).map(function(r){ return r.data || {}; }).filter(function(d){ return d.status === 'pending'; });
+  const jobs = {}; for (const id of Array.from(new Set(rows.map(function(d){ return s(d.jobId); })))) { const jr = await getRow('jobs', id); if (jr) jobs[id] = jr.data; }
+  const out = [];
+  for (const d of rows) { const j = jobs[s(d.jobId)] || {}; out.push(Object.assign({}, d, { jobTitle: s(j.title) || s(d.jobTitle), pmEmail: await jobPmEmail(j), crmProjectId: s(j.crmProjectId), poNumber: s(j.poNumber) })); }
+  return out.sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); });
+}
+async function matReqDecide(by, b){
+  const r = await getRow('matreqs', s(b.id)); if (!r) throw Fail(404, 'No such material request.');
+  const d = Object.assign({}, r.data), jr = await getRow('jobs', s(d.jobId)), job = jr ? jr.data : {};
+  if (!by.admin && low(by.email) !== await jobPmEmail(job)) throw Fail(403, 'Only the job\'s PM or an admin answers a material request.');
+  if (d.status !== 'pending') return { ok: true, already: d.status, request: d };
+  const at = new Date().toISOString();
+  if (s(b.act) === 'decline') {
+    const note = s(b.note).slice(0, 1000); if (!note) throw Fail(400, 'Add a note for the sub (why not).');
+    Object.assign(d, { status: 'declined', answer: note, decidedAt: at, decidedBy: low(by.email), decidedByName: s(by.name) });
+    await upsertRows([rowFor('matreqs', d)], low(by.email));
+    return { ok: true, request: d };
+  }
+  if (s(b.act) !== 'approve') throw Fail(400, 'Approve or decline?');
+  const po = await mrToPo(d, job);
+  Object.assign(d, { status: 'approved', answer: s(b.note).slice(0, 1000) || 'Approved — GrayCo is ordering it.', decidedAt: at, decidedBy: low(by.email), decidedByName: s(by.name), poId: po.id || '', poNo: po.poNo || '' });
+  await upsertRows([rowFor('matreqs', d)], low(by.email));
+  if (!po.id) { try { await officeTodo('matreq_' + d.id, '🧱 Order material for ' + (s(job.title) || 'a bid job'), d.userCompany + ' asked for ' + d.qty + ' ' + (d.unit ? d.unit + ' ' : '') + d.item + ' (approved by ' + (s(by.name) || by.email) + '). The bid job is not linked to a CRM job — add it to a supplier PO by hand.'); } catch (e) {} }
+  return { ok: true, request: d, po: po };
+}
+/* the approved line on the job's DRAFT supplier PO (gc_kv gc_supplier_pos; the 📨 Proposals → POs list): one bid-site PO draft per CRM job,
+   status 'draft' (never sent by itself); the supplier of an accepted material quote when there is one, else picked in the CRM */
+async function mrToPo(d, job){
+  const pid = s(job && job.crmProjectId); if (!pid) return { id: '', why: 'no CRM job linked' };
+  let proj = {}; try { proj = arr((await crmData()).projects).find(function(x){ return s(x.id) === pid; }) || {}; } catch (e) {}
+  let sup = { name: '', id: '' };
+  try { const q = (await listRows([eq('collection', 'mquotes'), eq('job_id', s(job.id))])).map(function(r){ return r.data || {}; }).find(function(x){ return x.status === 'accepted'; });
+    if (q) { const u = await getRow('users', s(q.userId)); sup = { name: s(q.userCompany), id: s(u && u.data && u.data.crmVendorId) }; } } catch (e) {}
+  const at = new Date().toISOString(), item = { desc: d.item, qty: num(d.qty) || 1, unit: s(d.unit), cost: 0, note: 'Requested by ' + s(d.userCompany) + ': ' + s(d.reason).slice(0, 300), matreqId: d.id };
+  let made = null;
+  const res = await kvListUpd('gc_supplier_pos', function(list){
+    if (list.some(function(po){ return po && arr(po.items).some(function(i){ return i && i.matreqId === d.id; }); })) return null;   /* already on a PO */
+    const base = 'PO_mr_' + pid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60);
+    let po = list.find(function(x){ return x && s(x.id).indexOf(base) === 0 && s(x.status) === 'draft'; });
+    if (po) { po.items = arr(po.items).concat([item]); po.updatedAt = at; }
+    else {
+      const n = list.filter(function(x){ return x && s(x.id).indexOf(base) === 0; }).length;
+      po = { id: base + (n ? '_' + (n + 1) : ''), pid: pid, poNo: (s(proj.autoPO) || s(job.poNumber) || 'PO') + '-M' + (n + 1), supplier: sup.name, vendorId: sup.id, items: [item], cost: 0, status: 'draft',
+        createdAt: at, updatedAt: at, by: 'Bid site material request' };
+      list.push(po);
+    }
+    made = { id: po.id, poNo: po.poNo };
+    return { list: list, check: function(l){ return l.some(function(x){ return x && arr(x.items).some(function(i){ return i && i.matreqId === d.id; }); }); } };
+  });
+  if (!res.ok) throw Fail(502, 'The purchase order list could not be saved — try again.');
+  return made || { id: '', why: 'already on a PO' };
 }
 
 exports.handler = async function (event) {
@@ -2064,7 +2216,9 @@ exports.handler = async function (event) {
       if (target.role === 'supplier') return J(200, await supplierWork(target));   /* patch SUPPLIER: their POs + supplier bills */
       return J(200, await myWork(target));
     }
-    if (action === 'invite-send') return J(200, await inviteSend(who, body));   /* patch BIDINVITE: Invite → the e-mail at once */
+    if (action === 'invite-send') return J(200, await inviteSend(who, body));   /* patch BIDSITE3 B: Invite → the e-mail at once */
+    if (action === 'bidmail-cfg') return J(200, await bidmailCfg(who, body));   /* patch BIDSITE3 C: Admin → 📧 Bid site e-mails */
+    if (action === 'matreq') return J(200, await matReq(who, body, ctx));       /* patch BIDSITE3 F: "Request more materials" */
     if (action === 'po-link') return J(200, await poLink(who, body));   /* patch BIDPO: 🔗 Link to CRM job / Change link */
     if (action === 'po-cands') return J(200, await poCands(who, body));
     if (action === 'crm-vendors') {   /* patch SUPPLIER: the CRM's vendors, for linking a supplier account */
@@ -2088,7 +2242,7 @@ exports.handler = async function (event) {
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

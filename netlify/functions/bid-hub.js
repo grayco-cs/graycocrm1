@@ -379,7 +379,9 @@ async function invite(who, b){
   }
   if (rows.length) await SP.upsertRows(rows, who.email);
   let mailed = 0, es = 0;
+  const BM = require('./_lib/bidmail.js'), sw = await BM.cfg();   /* patch BIDSITE3: Admin → 📧 Bid site e-mails → Invite e-mail */
   for (const x of sent) {   /* one e-mail per sub: nobody sees who else was invited */
+    if (!sw.invite) break;
     const isEs = x.t.lang === 'es'; if (isEs) es++;
     const link = SP.PORTAL_ORIGIN + '/?invite=' + x.inv.token + '&job=' + encodeURIComponent(jobId);
     const m = inviteMail(job, link, isEs);
@@ -388,7 +390,7 @@ async function invite(who, b){
     try { if (await require('./_lib/bidinvite.js').sendMail(x.t.email, m)) { mailed++; x.inv.mailedAt = nowIso(); } } catch (e) {}
   }
   try { const st = sent.filter(x => x.inv.mailedAt).map(x => SP.rowFor('invites', x.inv)); if (st.length) await SP.upsertRows(st, who.email); } catch (e) {}
-  return { ok: true, invited: rows.length, mailed, spanish: es, to: sent.length, visibility: job.draft ? 'draft' : (job.visibility || 'public') };
+  return { ok: true, invited: rows.length, mailed, spanish: es, to: sent.length, visibility: job.draft ? 'draft' : (job.visibility || 'public'), mailOff: !sw.invite };
 }
 
 async function visibility(who, b){
@@ -464,12 +466,13 @@ function notSelectedMail(o, es){
     : ['Thank you for bidding ' + (trade ? '<b>' + SP.esc(trade) + '</b> on ' : '') + '<b>' + SP.esc(title) + '</b>.', 'GrayCo has selected another bid for this trade. We appreciate your time and look forward to working with you on the next one.'];
   return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? 'Gracias por su oferta' : 'Thank you for your bid', lines) };
 }
-async function mailGate(){
+async function mailGate(trade){
   if (process.env.PORTAL_MAIL_OFF === '1' || process.env.PORTAL_MAIL_OFF === 'true') return 'e-mail is off (PORTAL_MAIL_OFF)';
+  if (trade) return '';   /* patch BIDSITE3 (owner 11/20): the award e-mail to the sub is not a customer send — data-entry mode does not hold it */
   try { if (await require('./_lib/pause').isPaused()) return 'data-entry mode is on — nothing goes out'; } catch (e) { return 'data-entry mode could not be checked — nothing goes out'; }
   return '';
 }
-async function sendOne(to, m){ try { return !!(await SP.sendMail(to, m.subject, m.html)); } catch (e) { return false; } }
+async function sendOne(to, m){ try { return !!(await require('./_lib/bidmail.js').trade(() => SP.sendMail(to, m.subject, m.html))); } catch (e) { return false; } }   /* patch BIDSITE3: tagged 'trade' */
 
 async function award(who, b){
   if (!who.canPublic) return { code: 403, error: 'Only an admin or an estimator marks a sub bid awarded.' };
@@ -485,7 +488,8 @@ async function award(who, b){
     if (!wantMail) return { sent: false, skipped: 'not asked' };
     if (mailedAt && !b.mailAgain) return { sent: false, skipped: 'already e-mailed ' + mailedAt.slice(0, 10) + ' (tick "Send again")', mailedAt };
     if (!SP.okEmail(low(email))) return { sent: false, skipped: 'no e-mail address on this bid' };
-    const gate = await mailGate(); if (gate) return { sent: false, skipped: gate };
+    if (!(await require('./_lib/bidmail.js').cfg()).accepted) return { sent: false, skipped: 'switched off (Admin → 📧 Bid site e-mails → Your bid / quote was accepted)' };   /* patch BIDSITE3 */
+    const gate = await mailGate(true); if (gate) return { sent: false, skipped: gate };
     const es = (await langFor(email)) === 'es', m = awardMail({ job, trade, amount, pm, exclusions, po: awardPo }, es);
     const ok = await sendOne(low(email), m);
     return ok ? { sent: true, to: low(email), lang: es ? 'es' : 'en', mailedAt: at } : { sent: false, skipped: 'the e-mail could not be sent' };
@@ -537,7 +541,7 @@ async function award(who, b){
   /* "Tell the other bidders in this trade they were not selected" — only when ticked; no prices, no names */
   if (on && b.notifyOthers) {
     out.others = { mailed: 0, skipped: '' };
-    const gate = await mailGate();
+    const gate = await mailGate(true);   /* patch BIDSITE3: a sub e-mail */
     if (gate) out.others.skipped = gate;
     else {
       const trade = s(b.trade) || awardedTrade, tr = low(trade), list = (await subBids(s(b.jobId) || s(job.id)).catch(() => [])).filter(x => x && !(x.source === src && x.id === id) && low(x.trade) === tr && !x.awarded);
@@ -989,6 +993,10 @@ exports.handler = async function(event){
       }
       if (q.posted) { const r = await postedView(who, s(q.posted)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch BIDPOST */
       if (q.manage) { if (!who.canInvite && !(await posterRole(who, {}, await jobRow(s(q.manage)))))  return J(403, { error: 'Only an admin, an estimator or the office manages a bid job.' }, C); const r = await manageView(s(q.manage)); return r.code ? J(r.code, { error: r.error }, C) : J(200, r, C); }   /* patch SYS2 */
+      if (q.matreqs) {   /* patch BIDSITE3 F: the subs' "Request more materials" waiting — an admin sees every one, a PM those of their jobs */
+        const all = await SP.matReqsOpen();
+        return J(200, { ok: true, requests: all.filter(x => who.admin || (x.pmEmail && x.pmEmail === low(who.email))), me: { email: who.email, admin: !!who.admin } }, C);
+      }
       if (q.subs) { if (!who.canInvite) return J(403, { error: 'Only an admin, an estimator or the office invites subs.' }, C); return J(200, { ok: true, subs: await subsList(s(q.job)) }, C); }
       return J(400, { error: 'What do you want?' }, C);
     }
@@ -998,6 +1006,7 @@ exports.handler = async function(event){
     if (b.op === 'invite') r = who.canInvite ? await invite(who, b) : { code: 403, error: 'Only an admin, an estimator or the office invites subs.' };
     else if (b.op === 'visibility') r = await visibility(who, b);
     else if (b.op === 'award') r = await award(who, b);
+    else if (b.op === 'matreq') { try { r = await SP.matReqDecide({ email: who.email, name: who.name, admin: !!who.admin }, b); } catch (e) { r = { code: e.status || 500, error: e.message }; } }   /* patch BIDSITE3 F: approve → the PO draft / decline with a note */
     else if (b.op === 'signuplink') r = who.canInvite ? await require('./_lib/bidinvite.js').signupLink(Object.assign({}, b, { by: who.email })) : { code: 403, error: 'Only an admin, an estimator or the office sends sign-up links.' };   /* patch BIDINVITE: 📨 Send sign-up link */
     else if (b.op === 'sweep') r = await sweep(who);
     else if (b.op === 'link') r = await link(who, b);   /* patch BIDEST */

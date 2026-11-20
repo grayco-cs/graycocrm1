@@ -49,18 +49,18 @@ const call = async (tok, body) => { const r = await F.sp.handler({ httpMethod: '
 /* ═══ sign-up ═══ */
 let r = await call('', { action: 'register', email: 'sales@supply.test', password: 'Supply-Pass-1', profile: { name: 'Sam Supply', company: 'Demo Supply Co', phone: '901-555-0199', businessCity: 'Memphis', businessState: 'TN', trades: ['HVAC equipment'], einLast4: '6789', acctType: 'supplier' } });
 const supRow = rowsOf('users').find(x => x.email === 'sales@supply.test');
-ok('1 sign-up as a supplier → role supplier, waiting for approval (not a sub)', r.code === 200 && supRow && supRow.data.role === 'supplier' && supRow.data.approved === false, { r, d: supRow && supRow.data });
+ok('1 sign-up as a supplier → role supplier, approved at once (BIDSITE3, owner 11/20: supplier sign-ups need no approval)', r.code === 200 && supRow && supRow.data.role === 'supplier' && supRow.data.approved === true, { r, d: supRow && supRow.data });
 ACC['sales@supply.test'].id = supRow.data.authUserId;
 const SID = supRow.data.id;
 r = await call('tk-sup', { action: 'me' });
 ok('2 "me": role supplier', r.code === 200 && r.b.role === 'supplier' && r.b.user.role === 'supplier', r);
 r = await call('tk-sup', { action: 'load', keys: ['jobs', 'mquotes'] });
-ok('3 before approval: no jobs', r.code === 200 && r.b.data.jobs.length === 0, r.b);
+ok('3 approved at once: the jobs open for material quotes right away', r.code === 200 && r.b.data.jobs.map(j => j.id).join() === 'J_MAT', r.b);
 /* the admin approves it (the bid site's Pending) — it stays a supplier */
 r = await call('tk-owner', { action: 'load', keys: ['users'] });
 const su = r.b.data.users.find(u => u.id === SID);
 r = await call('tk-owner', { action: 'save', key: 'users', upsert: [Object.assign({}, su, { approved: true })] });
-ok('4 admin approves → approved, still role supplier', r.code === 200 && rowData('users/' + SID).approved === true && rowData('users/' + SID).role === 'supplier', rowData('users/' + SID));
+ok('4 an admin save (Pending / Suppliers) → approved, still role supplier', r.code === 200 && rowData('users/' + SID).approved === true && rowData('users/' + SID).role === 'supplier', rowData('users/' + SID));
 
 /* ═══ what the supplier sees ═══ */
 r = await call('tk-sup', { action: 'load', keys: ['jobs', 'bids', 'mquotes', 'plans:J_MAT', 'plans:J_LAB', 'users'] });

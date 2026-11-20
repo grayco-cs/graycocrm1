@@ -1179,7 +1179,13 @@ function isInsJob(p){
 }
 function insClaim(data, pid){ return arr(data && data.gc_claims).find(function(c){ return c && c.deleted !== true && s(c.projectId) === s(pid); }) || null; }
 function insWords(data, p){
-  /* what is replaced by "your insurance company": the carrier (unless the PM shows it), the TPA / program, the adjusting company */
+  /* patch BIDSITE3 G (owner 11/20: the customer's own carrier name is allowed everywhere the customer sees their own claim): e-mails,
+     statements and papers keep the customer's OWN carrier; another carrier's name (the common list), a TPA / program and the adjusting
+     companies still read "your insurance company" */
+  return portalInsWords(data, p).concat([require('./_lib/owncarrier.js').exceptOwn(COMMON_CARRIERS, ownCarriers(data, p))]);
+}
+/* the rule before 11/20 (every carrier name replaced) — kept for reference, not used */
+function insWordsHideAll(data, p){
   const c = insClaim(data, p.id) || {}, out = [];
   const showCarrier = false;   /* owner 11/01 (CLAIMWORDS): never — whatever the job's / ⚡ Automations' switch says */
   if (!showCarrier) { carrierWords(p).forEach(function(w){ out.push(w); }); if (s(c.carrier).length >= 3) out.push(s(c.carrier)); out.push(COMMON_CARRIERS); }
@@ -1668,7 +1674,7 @@ function invoiceDoc(data, p, r){
    (invoice-pdf.js) is no longer given to a customer. */
 function invoiceView(data, p, r){
   const flat = function(o){ const out = {}; Object.keys(o || {}).forEach(function(k){ const v = o[k]; if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v; }); return out; };
-  const both = scrub({ inv: flat(r), proj: flat(p) }, carrierWords(p).concat(claimWords(data, s(p.id), false)));
+  const both = scrub({ inv: flat(r), proj: flat(p) }, portalInsWords(data, p));   /* patch BIDSITE3 G: the customer's own carrier stays on their invoice */
   const review = jaAllows(data, p, 'reviewRequest') && (invFinal(r) || invPaid(r)) ? JA.reviewLinkFor(p, jaAdmin(data), REVIEW_URL) : '';   /* patch COTRAIN */
   return { inv: both.inv, proj: both.proj, reviewUrl: review };
 }
@@ -1828,8 +1834,8 @@ function withJob(subject, p){
   subject = s(subject); if (!p) return clip(subject, 240);
   const po = s(p.autoPO || p.po);
   if (po && subject.indexOf('PO ' + po) >= 0) return clip(subject, 240);
-  const words = carrierWords(p).map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); }).concat([COMMON_CARRIERS]);
-  const clean = function(x){ x = s(x); words.forEach(function(re){ re.lastIndex = 0; x = x.replace(re, ''); }); return x.replace(/\s*[\u2014\-\u2013]\s*(claim)?\s*$/i, '').replace(/\s{2,}/g, ' ').trim(); };   /* owner rule: never the carrier in a customer subject */
+  const words = [require('./_lib/owncarrier.js').exceptOwn(COMMON_CARRIERS, carrierWords(p))];   /* patch BIDSITE3 G: the customer's own carrier may stay (another carrier's name still goes) */
+  const clean = function(x){ x = s(x); words.forEach(function(re){ re.lastIndex = 0; x = x.replace(re, ''); }); return x.replace(/\s*[\u2014\-\u2013]\s*(claim)?\s*$/i, '').replace(/\s{2,}/g, ' ').trim(); };
   const name = clean(p.name), addr = clean(p.address || p.jobAddress), has = function(x){ return x && low(subject).indexOf(low(x)) >= 0; };
   const t = [po ? 'PO ' + po : '', has(name) ? '' : name, addr && !has(addr) && low(addr) !== low(name) ? addr : ''].filter(Boolean).join(' \u00b7 ');
   return clip(t ? subject + ' \u2014 ' + t : subject, 240);

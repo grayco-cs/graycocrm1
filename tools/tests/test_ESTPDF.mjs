@@ -458,7 +458,7 @@ async function browser(build){
   ok(call1 && stored && crypto.createHash('sha256').update(stored).digest('hex') === call1.body.pdf.sha256 && stored.slice(0, 5).toString() === '%PDF-', 'send: the PDF was stored FIRST and the e-mail call names exactly those bytes (sha256)', call1 && call1.body.pdf);
   ok(call1 && FN.indexOf(call1) > -1 && sends0 < FN.filter(x => x.fn === 'send-email').length, 'the e-mail goes through send-email.js mode estimate');
   const pdfText = stored ? stored.toString('latin1') : '';
-  ok(stored && !/State\s*Farm/i.test(pdfText) && !/INTERNAL: margin/i.test(pdfText), 'the customer copy has no carrier name and no internal notes', pdfText.slice(0, 120));
+  ok(stored && !/INTERNAL: margin/i.test(pdfText), 'the customer copy has no internal notes (BIDSITE3 G, owner 11/20: the customer\'s own carrier may be named)', pdfText.slice(0, 120));
   await sleep(1500);
   const est1 = await p.evaluate(() => { const e = window._gcEstPdf.versions((window._gcEstimatesState || window._crm.estimates || []).find(x => x.id === 'ESTTEST1') || { id: 'ESTTEST1' }); const j = (window._crm.projects || []).find(x => x.id === 'PRJTEST1') || {};
     const d = (window._gcProjectDocs || window._crm.projectDocs || []).filter(x => x.estimateId === 'ESTTEST1'); return { v: e.map(x => x.version + ':' + x.status + ':' + x.sha256.slice(0, 8)), doc: d.map(x => x.name + '|' + x.ref), feat: j.features, auto: j.auto && j.auto.weeklyUpdates, sentAt: j.proposalSentAt }; });
@@ -517,7 +517,7 @@ async function browser(build){
     const b = new Uint8Array(await r.blob.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
     return { html: html.length, ok: true, head: s.slice(0, 5), pages: (s.match(/\/Type\s*\/Page[^s]/g) || []).length, size: b.length, b64: btoa(s), carrier: /State\s*Farm/i.test(html), internal: /INTERNAL: margin/.test(html) }; });
   ok(p5.ok && p5.head === '%PDF-' && p5.pages >= 5, 'the 5-page proposal PDF is made from the same estimate (the Templates generator): ' + p5.pages + ' pages', { ok: p5.ok, pages: p5.pages, html: p5.html });
-  ok(p5.html > 1000 && !p5.carrier && !p5.internal, 'its customer copy: no carrier name, no internal notes');
+  ok(p5.html > 1000 && !p5.internal, 'its customer copy: no internal notes (BIDSITE3 G: the customer\'s own carrier may be named)', p5);
   if (p5.ok) {
     const pdfPath = path.join(SHOTS, 'proposal5.pdf'); fs.writeFileSync(pdfPath, Buffer.from(p5.b64, 'base64'));
     const PDFJS = process.env.GC_PDFJS || SPD + '/wSG/tb_sg/vendor/pdfjs';
