@@ -1,0 +1,94 @@
+<script id="gc-patch-bidsite3">
+/* __GC_PATCH_BIDSITE3__ — the CRM side of the bid site's subs / suppliers (owner 11/20; tools/patch_BIDSITE3.py).
+   1. 🧱 MATERIAL REQUESTS in ✅ Approvals: a sub on the bid site taps "Request more materials" (item, quantity, why) on a job they bid on
+      or were awarded → a card for the job's PM (an admin sees every one; the server — bid-hub ?matreqs — sends a PM only their jobs).
+      ✅ Approve → the line goes on the job's DRAFT supplier PO (gc_supplier_pos, 📨 Proposals → POs; never sent by itself — the PO's
+      own approval sends it). ✕ Decline asks for a note → the sub sees the answer on the bid site. Nothing goes to a customer.
+   2. 👤 The role "Insurance Restoration Manager" is offered in Admin → people (the call script sends water / fire / mold / storm calls
+      to whoever has it; nobody → Owner 1).
+   Console: _gcMatReq.list(), .load(true), .decide(id, 'approve' | 'decline', note) */
+(function(W, D){
+'use strict';
+if (W.__GC_PATCH_BIDSITE3__) return; W.__GC_PATCH_BIDSITE3__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function warn(e){ try { console.warn('[GC BIDSITE3]', e && e.message || e); } catch (x) {} }
+function toast(t, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(t, bad); } catch (e) {} try { console.log('[GC BIDSITE3] ' + t); } catch (e) {} }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+
+/* ── 2. the role ── */
+var ROLE = 'Insurance Restoration Manager';
+(function(){ var prev = W._gcRoles; W._gcRoles = function(){ var base = []; try { base = typeof prev === 'function' ? arr(prev()) : arr(prev); } catch (e) {} return base.indexOf(ROLE) < 0 ? base.concat([ROLE]) : base; }; })();
+
+/* ── 1. material requests ── */
+var MR = { list: [], at: 0, busy: null, err: '' };
+function load(force){
+  if (!signedIn()) return Promise.resolve(MR.list);
+  if (MR.busy) return MR.busy;
+  if (!force && MR.at && Date.now() - MR.at < 90000) return Promise.resolve(MR.list);
+  MR.busy = W.fetch('/.netlify/functions/bid-hub?matreqs=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+    MR.busy = null; MR.at = Date.now(); if (j && Array.isArray(j.requests)) { var was = MR.list.map(function(x){ return x.id; }).join(); MR.list = j.requests; if (was !== MR.list.map(function(x){ return x.id; }).join()) fresh(); } return MR.list;
+  }, function(){ MR.busy = null; return MR.list; });
+  return MR.busy;
+}
+function fresh(){ try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {} try { if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {} }
+function what(x){ return s(x.qty) + ' ' + (s(x.unit) ? s(x.unit) + ' ' : '') + s(x.item); }
+var BUSY = {};
+function decide(id, act, note){
+  if (BUSY[id]) return BUSY[id];
+  var x = MR.list.filter(function(r){ return r.id === id; })[0] || { id: id };
+  toast(act === 'approve' ? '⏳ Approving ' + what(x) + '…' : '⏳ Declining…');
+  return (BUSY[id] = W.fetch('/.netlify/functions/bid-hub', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'matreq', id: id, act: act, note: s(note) }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__s = r.status; return j; }); }).then(function(j){
+      delete BUSY[id];
+      if (!j || !j.ok) { toast((j && j.error) || 'Not saved — try again.', true); return j; }
+      MR.list = MR.list.filter(function(r){ return r.id !== id; }); fresh();
+      var po = j.po || {};
+      toast(act === 'approve' ? (po.poNo ? '✅ Approved — added to the draft PO ' + po.poNo + ' (📨 Proposals → POs)' : '✅ Approved — the bid job is not linked to a CRM job: an office To-Do was made to order it') : '✕ Declined — the sub sees your note');
+      return j;
+    }, function(){ delete BUSY[id]; toast('Not saved — check the connection and try again.', true); return { ok: false }; }));
+}
+function declineAsk(x){
+  var n = W.prompt('Decline "' + what(x) + '" for ' + s(x.userCompany) + '? The sub sees this note:', '');
+  if (n == null) return; if (!s(n)) { toast('Add a note for the sub (why not).', true); return; }
+  decide(x.id, 'decline', n);
+}
+/* ✅ Approvals tab rows (patch APX: window._gcApxExtra) — under the 🏗 Bid portal chip */
+function rows(sc, now){
+  load(false);
+  return MR.list.map(function(x){
+    return { key: 'bp:mr:' + s(x.id), id: s(x.id), src: 'bp', group: 'bp', kind: 'bid_matreq', kindL: 'Material request', icon: '🧱',
+      title: '🧱 ' + s(x.userCompany) + ' asks for ' + what(x) + ' — ' + s(x.jobTitle) + (x.awarded ? ' (awarded)' : ''),
+      pid: s(x.crmProjectId), job: s(x.jobTitle), pm: '', step: 'pm', waits: 'the job\'s PM', since: Date.parse(x.at) || 0, clock: '', amount: 0, mine: true, escalated: false,
+      chain: 'Why: ' + s(x.reason).slice(0, 160) + (x.crmProjectId ? '' : ' · ⚠ the bid job is not linked to a CRM job'),
+      approve: { l: '✅ Approve → PO draft', f: function(){ return decide(x.id, 'approve'); } }, open: null,
+      doc: { l: '✕ Decline…', f: function(){ declineAsk(x); } }, edit: null };
+  });
+}
+W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
+/* the ONE approval set (the APPROVE badge, the To-Do chip, Field's My Approvals → Other approvals) */
+function setAdd(r){
+  try {
+    if (!r || !r.groups || !MR.list.length) return r;
+    var g = r.groups.other = arr(r.groups.other), have = {}, n = 0; g.forEach(function(x){ have[s(x && x.id)] = 1; });
+    MR.list.forEach(function(x){ var id = 'matreq_' + s(x.id); if (have[id]) return; have[id] = 1; n++;
+      g.push({ id: id, title: '🧱 Material request: ' + what(x) + ' — ' + s(x.jobTitle), sub: s(x.userCompany) + ' · ' + s(x.reason).slice(0, 80), act: { l: '✅ Approve', f: function(){ return decide(x.id, 'approve'); } } }); });
+    if (n) { r.total = (r.total || 0) + n; r.tip = (s(r.tip) ? s(r.tip) + ' · ' : '') + n + ' material request' + (n === 1 ? '' : 's'); }
+  } catch (e) { warn(e); }
+  return r;
+}
+function wrapSet(){
+  var f = W._gcApprovalSet; if (typeof f !== 'function' || f.__gcMatReq) return;
+  var w = function(){ return setAdd(f.apply(this, arguments)); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcMatReq = true; W._gcApprovalSet = w; fresh();
+}
+wrapSet(); SI.call(W, wrapSet, 3000);
+SI.call(W, function(){ if (!D.hidden) load(false); }, 120000);
+later(function(){ load(true); }, 5000);
+W._gcMatReq = { list: function(){ return MR.list.slice(); }, load: load, decide: decide, rows: function(){ return rows({ kind: 'admin' }, Date.now()); } };
+try { console.log('[GC] patch BIDSITE3: 🧱 material requests in ✅ Approvals, the Insurance Restoration Manager role — _gcMatReq'); } catch (e) {}
+})(window, document);
+</script>

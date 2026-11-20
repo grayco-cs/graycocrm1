@@ -330,6 +330,7 @@ function fieldsFromText(parts, page, ref){
   F.prevailingWage = findSent(all, /\b(prevailing wages?|davis[- ]bacon|wage (rates?|determinations?|decisions?))\b/i, 3);
   F.certifiedPayroll = findSent(all, /\bcertified payrolls?\b/i, 2);
   F.mbeDbe = findSent(all, /\b(m\/?wbe|mbe|wbe|dbe|sbe|edge|hub ?zone|minorit(y|ies)|women[- ]owned|disadvantaged business(es)?|small business(es)?|section 3)\b/i, 4);
+  F.prequal = findSent(all, /\b(pre-?qualif\w*|prequal\w*|vendor registration|must (be )?register(ed)?|registration (form|deadline|is required)|statement of qualifications)\b/i, 3);   /* patch BIDSITE3 I: pre-qualification / registration paperwork */
   ['insurance', 'bonds', 'licensing', 'prevailingWage', 'certifiedPayroll', 'mbeDbe'].forEach(k => { if (F[k].length) snip(k, F[k][0], fromOf(new RegExp(F[k][0].slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))); });
   /* addenda named in the words */
   F.addendaText = uniq((all.match(/\baddend(?:um|a)\s*(?:no\.?|number|#)?\s*\d+[^\n.]{0,80}/gi) || []).map(x => clip(x, 120))).slice(0, 12);
@@ -405,6 +406,12 @@ function checklist(F, old){
   arr(F.certifiedPayroll).forEach(b => add('payroll', b));
   arr(F.mbeDbe).forEach(b => add('mbe', b));
   if (F.preBid && F.preBid.mandatory === true) add('prebid', 'Attend the MANDATORY pre-bid' + (F.preBid.date ? ' ' + F.preBid.date + (F.preBid.time ? ' ' + F.preBid.time : '') : ''));
+  /* patch BIDSITE3 I: every requirement with a reminder ladder (_lib/bidremind.js) has a box — ticked = no more reminders */
+  else if (F.preBid && F.preBid.date) add('prebid', 'Attend the pre-bid / site walk ' + F.preBid.date + (F.preBid.time ? ' ' + F.preBid.time : '') + (F.preBid.place ? ' at ' + F.preBid.place : ''));
+  if (/sealed/i.test(s(F.delivery))) add('sealed', 'Deliver the SEALED bid by hand' + (F.bidDue ? ' by ' + s(F.bidDue).replace('T', ' ') : '') + ((/delivered to ([^;]+)/i.exec(s(F.delivery)) || [])[1] ? ' to ' + /delivered to ([^;]+)/i.exec(s(F.delivery))[1] : ''));
+  arr(F.prequal).forEach(b => add('prequal', b));
+  if (/^\d{4}-\d{2}-\d{2}/.test(s(F.questionsDue))) add('questions', 'Send questions / RFIs by ' + s(F.questionsDue).replace('T', ' '));
+  if (/^\d{4}-\d{2}-\d{2}/.test(s(F.bidDue)) && items.some(x => /^(bond|prebid|sealed|prequal|questions)$/.test(x.kind))) add('biddue', 'Submit the bid by ' + s(F.bidDue).replace('T', ' '));   /* patch BIDSITE3 I */
   /* a box a person ticked or added by hand stays */
   arr(old).forEach(x => { if (x && x.id && (x.manual || x.done) && !items.some(y => y.id === x.id)) items.push(x); });
   return items.slice(0, 40);

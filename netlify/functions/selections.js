@@ -174,8 +174,11 @@ function optionsOf(c, lib){
 
 /* ── the words the customer never sees (insurance carriers) ── */
 function carrierWords(p){
-  const out = [COMMON_CARRIERS];
-  ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName', 'adjusterCompany', 'adjustingCompany', 'tpa'].forEach(function(k){ const v = s(p[k]); if (v.length >= 3) out.push(v); });
+  /* patch BIDSITE3 G (owner 11/20): the customer's OWN carrier may show on their selections / walkthrough copies; another carrier's name
+     (the common list), an adjusting company and a TPA still read "your insurance company" */
+  const OC = require('./_lib/owncarrier.js'), own = OC.own(p || {});
+  const out = [OC.exceptOwn(COMMON_CARRIERS, own)];
+  ['adjusterCompany', 'adjustingCompany', 'tpa'].forEach(function(k){ const v = s(p[k]); if (v.length >= 3 && own.indexOf(v) < 0) out.push(v); });
   return out;
 }
 function scrubText(t, words){

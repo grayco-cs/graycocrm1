@@ -178,6 +178,9 @@ async function guardedFetch(raw, url, opts){
   /* patch RESETMAIL (owner 11/13: a sub's "Forgot password" never arrived): a sign-in code or password-reset link the person
      just asked for (tagged custquiet.run('reply', …)) is e-mailed in data-entry mode too — it is not GrayCo reaching out. */
   if (c && c.mail && safetyTag() === 'reply' && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (sign-in / reset the person asked for)'); } catch (e) {} c = null; }
+  /* patch BIDSITE3 (owner 11/20: "sub / supplier e-mails are not customer sends"): a bid-site e-mail to a sub or supplier (an invite,
+     accepted / result notices — _lib/bidmail.js, tagged custquiet.run('trade', …)) goes in data-entry mode too. E-mail only — never a text. */
+  if (c && c.mail && safetyTag() === 'trade' && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (sub / supplier bid e-mail)'); } catch (e) {} c = null; }
   if (c && c.push && safetyTag() === 'staff') c = null;   /* AWAY: a staff phone push */
   if (c && c.twilio && PASS_TAGS[safetyTag()] && await isPaused()) { try { console.log('[pause] let through ' + c.kind + ' (tagged ' + safetyTag() + ')'); } catch (e) {} c = null; }
   if (c && await isPaused()) {
@@ -209,6 +212,6 @@ function install(){
   return module.exports;
 }
 /* for code that holds its own fetch: true when this send must be skipped right now */
-async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; if (c && c.mail && safetyTag() === 'reply') return false; return !!(c && await isPaused()); }
+async function shouldSkip(url, opts){ const c = classify(url, opts); if (c && c.twilio && PASS_TAGS[safetyTag()]) return false; if (c && c.mail && (safetyTag() === 'reply' || safetyTag() === 'trade')) return false; return !!(c && await isPaused()); }
 
 module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, PASS_TAGS, _t: { readFlag, addrList, fakeResponse, sendKind, logSend } };

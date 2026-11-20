@@ -111,8 +111,9 @@ function carrierWords(p){
   return out;
 }
 function scrubber(p){
-  /* owner 11/01 (CLAIMWORDS): the carrier's name is never shown to the customer, whatever portalShowCarrier says */
-  const res = carrierWords(p).map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); }).concat([COMMON_CARRIERS]);
+  /* patch BIDSITE3 G (owner 11/20): the customer's OWN carrier may show on their papers, their e-mail and the signed PDF — another
+     carrier's name (the common list) still reads "your insurance company" (was owner 11/01 CLAIMWORDS: never any carrier) */
+  const res = [require('./_lib/owncarrier.js').exceptOwn(COMMON_CARRIERS, carrierWords(p))];
   return function(t){ t = s(t); res.forEach(function(re){ re.lastIndex = 0; t = t.replace(re, 'your insurance company'); }); return t; };
 }
 

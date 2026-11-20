@@ -39,7 +39,7 @@ console.log('1. insurance info in the portal');
   ok(!/Sample TPA Services|Sample Adjusting Co/.test(vj), 'a TPA / adjusting company is still not shown to the customer');
   ok(!v.claimHelp || (v.claimHelp.claim && v.claimHelp.claim.company === S.carrier), 'the claim-help box (when on) names the carrier too', v.claimHelp && v.claimHelp.claim);
   const C = require(FN + '/portal.js')._core, p = W.get('projects').find(x => x.id === S.pid), d = { gc_claims: W.get('gc_claims') };
-  ok(C.insWords(d, p).some(w => w === S.carrier) && !C.portalInsWords(d, p).some(w => w === S.carrier) && C.portalInsWords(d, p).includes('Sample TPA Services'), 'e-mail scrubbing (insWords) unchanged; the portal\'s list drops only the customer\'s own carrier', C.portalInsWords(d, p));
+  ok(!C.insWords(d, p).some(w => w === S.carrier) && !C.portalInsWords(d, p).some(w => w === S.carrier) && C.portalInsWords(d, p).includes('Sample TPA Services') && C.insWords(d, p).includes('Sample TPA Services'), 'BIDSITE3 G (owner 11/20): e-mail scrubbing (insWords) now keeps the customer\'s own carrier too; a TPA is still replaced', C.insWords(d, p));
   const j2 = W.get('projects'); const jj = j2.find(x => x.id === S.pid); jj.portalShowAdjuster = false; W.put('projects', j2); W.resetCaches();
   r = await W.handlerCall('portal', { action: 'view' }, TOK);
   ok(!r.data.job.insurance.adjuster && !r.data.insurance.claim.adjuster && r.data.job.insurance.carrier === S.carrier, 'the job\'s "hide adjuster" switch still hides the adjuster', r.data.job.insurance);

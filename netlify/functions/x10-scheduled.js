@@ -84,7 +84,7 @@ async function statementsMonthly(data){
     const pid = s(r.pid || r.projectId || r.jobId || r.project_id), p = C().findProject(data, pid); if (!p || p.deleted === true) return;
     try { if (require('./_lib/invlink.js').notCounted(r, p)) return; } catch (e) {}   /* INVLINK: a past job's customer invoices are the QuickBooks ones only (no statement from a CRM draw) */
     const bal = C().invBalance(r); if (!(bal > 0.01)) return;
-    let jn = s(p.name); try { jn = C().scrub({ n: jn }, C().insWords(data, p)).n.replace(/your insurance company\s*claim/i, '').trim().replace(/\s*[\u2014\-\u2013]\s*(claim)?\s*$/i, '').trim(); } catch (e) {}   /* never the carrier */
+    let jn = s(p.name); try { jn = C().scrub({ n: jn }, C().insWords(data, p)).n.replace(/your insurance company\s*claim/i, '').trim().replace(/\s*[\u2014\-\u2013]\s*(claim)?\s*$/i, '').trim(); } catch (e) {}   /* patch BIDSITE3 G: the customer's own carrier stays; another carrier / a TPA / an adjusting company does not */
     rows.push({ pid: pid, job: jn, email: s(p.clientEmail || p.customerEmail || p.email), name: s(p.client || p.clientName || p.customer), number: C().invNumber(r), date: s(r.date || r.sentDate || r.created).slice(0, 10) || today, amount: C().invAmount(r), paid: C().invAmount(r) - bal, balance: bal }); });
   const groups = X.statements(rows, today);
   let queued = 0, calls = 0;

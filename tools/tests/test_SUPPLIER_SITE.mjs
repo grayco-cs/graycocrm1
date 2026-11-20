@@ -46,7 +46,7 @@ try {
   await S.fill('[data-su="tradeOther"]', 'HVAC equipment'); await S.fill('[data-su="pw"]', 'Supply-Pass-1');
   await shot(S, 'supplier_signup');
   await S.locator('button:has-text("Request Access")').last().click();
-  ok('3 the account: role supplier, waiting for approval', await until(() => rowsOf('users').some(r => r.email === 'sales@supply.test' && r.data.role === 'supplier' && r.data.approved === false)), rowsOf('users').map(r => r.email + ':' + r.data.role));
+  ok('3 the account: role supplier, approved at once (BIDSITE3: supplier sign-ups need no approval)', await until(() => rowsOf('users').some(r => r.email === 'sales@supply.test' && r.data.role === 'supplier' && r.data.approved === true)), rowsOf('users').map(r => r.email + ':' + r.data.role));
   const SID = (rowsOf('users').find(r => r.email === 'sales@supply.test') || {}).id;
 
   /* ═══ the admin: Pending → approve; ✎ Edit Job Details → Suppliers can quote ═══ */
@@ -54,10 +54,8 @@ try {
   await W.bidsLogin(A, 'owner@grayco-cs.com', 'Admin-Pass-1');
   await A.waitForSelector('h3:has-text("School HVAC Demo")', { timeout: 30000 });
   await A.click('button:has-text("Pending Approvals")');
-  await A.waitForSelector('[data-pending-supplier]', { timeout: 10000 });
-  ok('4 Pending lists the supplier with a 🧱 Supplier badge', /Demo Supply Co/.test(await body(A)));
-  await shot(A, 'supplier_pending');
-  await A.getByRole('button', { name: 'Approve', exact: true }).click();
+  await sleep(1500);
+  ok('4 Pending does not list the supplier (approved at once)', !(await A.$('[data-pending-supplier]')));
   ok('5 approved; still a supplier', await until(() => (rowData('users/' + SID) || {}).approved === true && rowData('users/' + SID).role === 'supplier'), rowData('users/' + SID));
   await A.click('button:has-text("Open Jobs")');
   await A.click('h3:has-text("School HVAC Demo")'); await A.click('button:has-text("Edit Job Details")');

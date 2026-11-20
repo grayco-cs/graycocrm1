@@ -146,6 +146,7 @@ const T = {
     acctTypeQ: 'I am signing up as', acctSub: 'Subcontractor (labour)', acctSupplier: 'Supplier / vendor (materials)', supplierL: 'Supplier',
     materialsTap: 'Materials you supply — tap all that fit', myQuotes: 'My Quotes', approvedSuppliers: 'Suppliers', materialList: 'Materials to quote',
     suppliersCanQuote: 'Suppliers can quote (materials)', suppliersHint: 'Approved suppliers see this job, its plans and the material list below, and send a material quote. They never see labour scopes or bids.',
+    /* patch BIDSITE3 */ bidMail: 'Bid site e-mails', bidMailHint: 'The e-mails the bid site sends to subs and suppliers. Each one has its own switch. They go out in data-entry mode too (they are not customer e-mails); never a price.', bidMailSaved: 'Saved', inviteAs: 'Inviting a', inviteSub: 'Subcontractor', inviteSupplier: 'Supplier', inviteMailed: 'Invite e-mailed', inviteNotMailed: 'Invite added (the invite e-mail is switched off) — copy the link to share.', inviteSend: 'Invite', inviteHint2: 'They get the e-mail "GrayCo invited you to bid" at once, with their sign-in link (or a sign-up link that approves them for this job).', mailedL: 'e-mailed', showSupMat: 'Show supplier materials to subs while bidding', showSupMatHint: 'Subs then see the suppliers\' materials, specs and quantities on this job (never a price). Once the job is WON they see them anyway.', supMat: 'Supplier materials (no prices)', specL: 'Spec / model', mqDocs: 'Your files, specs and quotes', mqDocsHint: 'Attach your quote PDF, spec sheets or cut sheets — any file up to 50 MB.', matListSub: 'Materials for this job', reqMat: 'Request more materials', reqItem: 'Material', reqQty: 'Quantity', reqUnit: 'Unit', reqReason: 'Why is it needed?', reqSend: 'Send the request', reqSent: 'Request sent to the job\'s PM', reqMine: 'Your material requests', reqStatus: { pending: 'Waiting for the PM', approved: 'Approved', declined: 'Declined' }, reqNone: 'No requests yet.',
     mqTitle: 'Material quote', mqEnter: 'Send a material quote', mqDesc: 'Item', mqQty: 'Qty', mqUnit: 'Unit', mqPrice: 'Unit price', mqAddLine: '+ Add a line',
     mqLead: 'Lead time', mqValid: 'Valid until', mqNotes: 'Notes', mqTax: 'Tax', mqFreight: 'Freight / delivery', mqSubtotal: 'Subtotal', mqTotal: 'Total',
     mqSubmit: 'Send quote', mqUpdate: 'Update quote', mqSent: 'Quote sent to GrayCo.', mqNeedLine: 'Add at least one item with a description.',
@@ -458,6 +459,7 @@ const T = {
     acctTypeQ: 'Me registro como', acctSub: 'Subcontratista (mano de obra)', acctSupplier: 'Proveedor (materiales)', supplierL: 'Proveedor',
     materialsTap: 'Materiales que suministra — toque todos los que apliquen', myQuotes: 'Mis cotizaciones', approvedSuppliers: 'Proveedores', materialList: 'Materiales a cotizar',
     suppliersCanQuote: 'Los proveedores pueden cotizar (materiales)', suppliersHint: 'Los proveedores aprobados ven este trabajo, sus planos y la lista de materiales, y envían una cotización. Nunca ven alcances ni ofertas de mano de obra.',
+    /* patch BIDSITE3 */ bidMail: 'Correos del sitio', bidMailHint: 'Los correos que el sitio envía a subcontratistas y proveedores. Cada uno tiene su interruptor. Salen también en modo de captura de datos (no son correos a clientes); nunca un precio.', bidMailSaved: 'Guardado', inviteAs: 'Invitar a un', inviteSub: 'Subcontratista', inviteSupplier: 'Proveedor', inviteMailed: 'Invitación enviada por correo', inviteNotMailed: 'Invitación agregada (el correo de invitación está apagado) — copie el enlace.', inviteSend: 'Invitar', inviteHint2: 'Recibe al instante el correo "GrayCo le invitó a ofertar" con su enlace para entrar (o para crear su cuenta, aprobada para este trabajo).', mailedL: 'enviado', showSupMat: 'Mostrar a los subs los materiales de los proveedores durante la licitación', showSupMatHint: 'Los subs verán los materiales, especificaciones y cantidades de los proveedores (nunca un precio). Cuando el trabajo se GANA los ven de todos modos.', supMat: 'Materiales de proveedores (sin precios)', specL: 'Especificación / modelo', mqDocs: 'Sus archivos, especificaciones y cotizaciones', mqDocsHint: 'Adjunte su cotización en PDF u hojas técnicas — cualquier archivo de hasta 50 MB.', matListSub: 'Materiales de este trabajo', reqMat: 'Pedir más materiales', reqItem: 'Material', reqQty: 'Cantidad', reqUnit: 'Unidad', reqReason: '¿Por qué se necesita?', reqSend: 'Enviar la solicitud', reqSent: 'Solicitud enviada al PM del trabajo', reqMine: 'Sus solicitudes de materiales', reqStatus: { pending: 'Esperando al PM', approved: 'Aprobada', declined: 'Rechazada' }, reqNone: 'Sin solicitudes todavía.',
     mqTitle: 'Cotización de materiales', mqEnter: 'Enviar una cotización de materiales', mqDesc: 'Artículo', mqQty: 'Cant.', mqUnit: 'Unidad', mqPrice: 'Precio unitario', mqAddLine: '+ Agregar línea',
     mqLead: 'Tiempo de entrega', mqValid: 'Válida hasta', mqNotes: 'Notas', mqTax: 'Impuesto', mqFreight: 'Flete / entrega', mqSubtotal: 'Subtotal', mqTotal: 'Total',
     mqSubmit: 'Enviar cotización', mqUpdate: 'Actualizar cotización', mqSent: 'Cotización enviada a GrayCo.', mqNeedLine: 'Agregue al menos un artículo con descripción.',
@@ -1435,6 +1437,7 @@ export default function App() {
     { id: 'suppliers', label: t.approvedSuppliers, icon: Building2 },
     { id: 'team', label: t.teamMembers, icon: Shield },
     { id: 'links', label: t.adminLinks, icon: LinkIcon },
+    { id: 'bidmail', label: '📧 ' + t.bidMail, icon: Mail },   /* patch BIDSITE3 */
   ] : isSupplier ? [
     { id: 'jobs', label: t.jobs, icon: Briefcase },
     { id: 'myQuotes', label: t.myQuotes, icon: FileText },
@@ -1636,6 +1639,7 @@ export default function App() {
                 onOpen={setActiveJob} />}
               {view === 'myWork' && (isSupplier ? <SupplierWork t={t} user={user} /> : <MyWork t={t} user={user} asAdmin={!!impersonatedFrom} />)}
               {view === 'myQuotes' && <MyQuotes t={t} mquotes={mquotes} jobs={jobs} user={user} onOpen={setActiveJob} />}
+              {view === 'bidmail' && isAdmin && <BidMailPanel t={t} showToast={showToast} />}
               {view === 'suppliers' && <ApprovedSuppliers t={t} users={users} setUsers={setUsers} subDocs={subDocs} showToast={showToast} />}
               {view === 'mySettings' && <SubSettings t={t} user={user}
                 onSaveProfile={patch => {
@@ -2885,6 +2889,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       grayCoRole: job.grayCoRole || 'gc',
       tradesSought: job.tradesSought || '',
       suppliersCanQuote: job.suppliersCanQuote === true, materialList: job.materialList || '',   /* patch SUPPLIER */
+      showSupplierMaterials: job.showSupplierMaterials === true,   /* patch BIDSITE3 */
       tradeScopes: job.tradeScopes || [],
       scope: job.scope || '',
       specifications: job.specifications || '',
@@ -2913,7 +2918,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       bidResultsSharing: editForm.bidResultsSharing,
       grayCoRole: editForm.grayCoRole,
       tradesSought: editForm.tradesSought,
-      suppliersCanQuote: !!editForm.suppliersCanQuote, materialList: editForm.materialList || '',
+      suppliersCanQuote: !!editForm.suppliersCanQuote, materialList: editForm.materialList || '', showSupplierMaterials: !!editForm.showSupplierMaterials,
       tradeScopes: editForm.tradeScopes,
       scope: editForm.scope,
       specifications: editForm.specifications,
@@ -3160,6 +3165,11 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             {editForm.suppliersCanQuote && <label style={{ fontSize: 12, color: styles.text2, display: 'block' }}>{t.materialList}
               <textarea style={{ ...inputStyle, minHeight: 90, fontFamily: styles.fontBody }} data-sq="list" value={editForm.materialList}
                 placeholder="e.g. 4 RTUs 10-ton, curbs, duct per M-101…" onChange={e => setEditForm({ ...editForm, materialList: e.target.value })} /></label>}
+            {/* patch BIDSITE3 E: subs see the suppliers' materials (no prices) while bidding — always once WON */}
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 700, fontSize: 13, cursor: 'pointer', marginTop: 8 }}>
+              <input type="checkbox" data-ssm="on" checked={!!editForm.showSupplierMaterials} onChange={e => setEditForm({ ...editForm, showSupplierMaterials: e.target.checked })} /> 👀 {t.showSupMat}
+            </label>
+            <div style={{ fontSize: 11, color: styles.text3 || styles.text2, margin: '4px 0 0', lineHeight: 1.4 }}>{t.showSupMatHint}</div>
           </div>
           <Field label={t.visibility} required>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -3658,6 +3668,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               <div data-material-list="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{job.materialList}</div>
             </Card>
           )}
+          {!isAdmin && !isSupplier && <SubMaterials t={t} job={job} user={user} bids={bids} showToast={showToast} />}
           {isAdmin && (job.suppliersCanQuote || (mquotes || []).some(q => q.jobId === job.id)) && (
             <MaterialQuotesAdmin t={t} job={job} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           )}
@@ -5287,8 +5298,9 @@ function MyBids({ t, bids, jobs, user, onOpen }) {
 const usd2 = n => '$' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function SupplierQuoteForm({ t, job, user, mquotes, setMquotes, showToast }) {
   const mine = (mquotes || []).find(q => q.jobId === job.id && q.userId === user.id);
-  const blank = () => ({ id: newId('l'), desc: '', qty: '', unit: '', unitPrice: '' });
-  const [lines, setLines] = useState(() => mine && mine.lines && mine.lines.length ? mine.lines.map(l => ({ ...l, qty: String(l.qty), unitPrice: String(l.unitPrice) })) : [blank()]);
+  const blank = () => ({ id: newId('l'), desc: '', spec: '', qty: '', unit: '', unitPrice: '' });
+  const [lines, setLines] = useState(() => mine && mine.lines && mine.lines.length ? mine.lines.map(l => ({ ...l, spec: l.spec || '', qty: String(l.qty), unitPrice: String(l.unitPrice) })) : [blank()]);
+  const [docs, setDocs] = useState(() => (mine && mine.docs) || []);   /* patch BIDSITE3 D: their own files, specs and quotes */
   const [f, setF] = useState(() => ({ leadTime: (mine && mine.leadTime) || '', validUntil: (mine && mine.validUntil) || '', notes: (mine && mine.notes) || '', tax: mine && mine.tax ? String(mine.tax) : '', freight: mine && mine.freight ? String(mine.freight) : '' }));
   const decided = mine && mine.status && mine.status !== 'submitted';
   const open = job.quotable !== false && !decided;
@@ -5301,7 +5313,8 @@ function SupplierQuoteForm({ t, job, user, mquotes, setMquotes, showToast }) {
     if (!ok.length) { showToast(t.mqNeedLine, 'error'); return; }
     const now = new Date().toISOString();
     const q = { ...(mine || {}), id: mine ? mine.id : newId('mq'), jobId: job.id, userId: user.id, userCompany: user.company, userName: user.name,
-      lines: ok.map(l => ({ id: l.id, desc: String(l.desc).trim(), qty: n(l.qty), unit: String(l.unit || '').trim(), unitPrice: n(l.unitPrice), total: Math.round(n(l.qty) * n(l.unitPrice) * 100) / 100 })),
+      docs: docs,
+      lines: ok.map(l => ({ id: l.id, desc: String(l.desc).trim(), spec: String(l.spec || '').trim(), qty: n(l.qty), unit: String(l.unit || '').trim(), unitPrice: n(l.unitPrice), total: Math.round(n(l.qty) * n(l.unitPrice) * 100) / 100 })),
       subtotal: Math.round(sub * 100) / 100, tax: n(f.tax), freight: n(f.freight), total: Math.round(total * 100) / 100,
       leadTime: f.leadTime, validUntil: f.validUntil, notes: f.notes, status: 'submitted', submittedAt: (mine && mine.submittedAt) || now, updatedAt: now };
     setMquotes([...(mquotes || []).filter(x => x.id !== q.id), q]);
@@ -5319,6 +5332,7 @@ function SupplierQuoteForm({ t, job, user, mquotes, setMquotes, showToast }) {
           {lines.map((l, i) => (
             <div key={l.id} data-mq-line={i} style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 4, paddingBottom: 6, borderBottom: `1px dashed ${styles.border}` }}>
               <input style={cell} disabled={!open} data-mq="desc" placeholder={t.mqDesc} value={l.desc} onChange={e => setL(l.id, 'desc', e.target.value)} />
+              <input style={cell} disabled={!open} data-mq="spec" placeholder={t.specL} value={l.spec || ''} onChange={e => setL(l.id, 'spec', e.target.value)} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr auto', gap: 4, alignItems: 'center' }}>
                 <input style={cell} disabled={!open} data-mq="qty" inputMode="decimal" placeholder={t.mqQty} value={l.qty} onChange={e => setL(l.id, 'qty', e.target.value)} />
                 <input style={cell} disabled={!open} data-mq="unit" placeholder={t.mqUnit} value={l.unit} onChange={e => setL(l.id, 'unit', e.target.value)} />
@@ -5336,6 +5350,8 @@ function SupplierQuoteForm({ t, job, user, mquotes, setMquotes, showToast }) {
           <label style={{ fontSize: 11, color: styles.text2 }}>{t.mqValid}<input style={cell} disabled={!open} type="date" data-mq="valid" value={f.validUntil} onChange={e => setF({ ...f, validUntil: e.target.value })} /></label>
         </div>
         <label style={{ fontSize: 11, color: styles.text2, display: 'block', marginTop: 6 }}>{t.mqNotes}<textarea style={{ ...cell, minHeight: 60 }} disabled={!open} data-mq="notes" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></label>
+        <div data-mq-docs="1" style={{ marginTop: 8 }}>{open ? <AttachmentList t={t} label={t.mqDocs} hint={t.mqDocsHint} docs={docs} setDocs={setDocs} accept={ACCEPT_ALL} showToast={showToast} />
+          : docs.length ? <div style={{ fontSize: 12 }}>{docs.map(d => <div key={d.id || d.name}>📎 {d.name}</div>)}</div> : null}</div>
         <div data-mq-total="1" style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 16, margin: '10px 0' }}><span>{t.mqTotal}</span><span>{usd2(total)}</span></div>
         {open && <Btn icon={Send} onClick={send} style={{ width: '100%' }}>{mine ? t.mqUpdate : t.mqSubmit}</Btn>}
       </>}
@@ -5367,16 +5383,92 @@ function MaterialQuotesAdmin({ t, job, mquotes, setMquotes, showToast }) {
           {openId === q.id && (
             <table style={{ width: '100%', fontSize: 12, marginTop: 8, borderCollapse: 'collapse' }}>
               <tbody>
-                {(q.lines || []).map(l => <tr key={l.id}><td style={{ padding: '3px 4px' }}>{l.desc}</td><td style={{ textAlign: 'right' }}>{l.qty} {l.unit}</td><td style={{ textAlign: 'right' }}>{usd2(l.unitPrice)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{usd2(l.total)}</td></tr>)}
+                {(q.lines || []).map(l => <tr key={l.id}><td style={{ padding: '3px 4px' }}>{l.desc}{l.spec ? <span style={{ color: styles.text2 }}> · {l.spec}</span> : null}</td><td style={{ textAlign: 'right' }}>{l.qty} {l.unit}</td><td style={{ textAlign: 'right' }}>{usd2(l.unitPrice)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{usd2(l.total)}</td></tr>)}
                 {Number(q.tax) > 0 && <tr><td colSpan={3}>{t.mqTax}</td><td style={{ textAlign: 'right' }}>{usd2(q.tax)}</td></tr>}
                 {Number(q.freight) > 0 && <tr><td colSpan={3}>{t.mqFreight}</td><td style={{ textAlign: 'right' }}>{usd2(q.freight)}</td></tr>}
               </tbody>
             </table>
           )}
           {openId === q.id && q.notes && <div style={{ fontSize: 12, marginTop: 6, whiteSpace: 'pre-wrap' }}>{q.notes}</div>}
+          {(q.docs || []).length > 0 && <div data-mq-files={q.id} style={{ fontSize: 12, marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>{q.docs.map(d => <a key={d.id || d.name} href="#" onClick={e => { e.preventDefault(); openFile(d.dataUrl, d.name); }} style={{ color: styles.accentDk || styles.accent }}>📎 {d.name}</a>)}</div>}
         </div>
       ))}
     </Card>
+  );
+}
+/* patch BIDSITE3 E/F: what a sub sees of a job's materials — the material list (no prices), the suppliers' materials once WON or when an
+   admin ticked "Show supplier materials to subs while bidding" (no supplier, no price), and "Request more materials" (item, qty, why) →
+   the job's PM in the CRM (✅ Approvals); the PM's answer shows here */
+function SubMaterials({ t, job, user, bids, showToast }) {
+  const [reqs, setReqs] = useState(null);
+  const [f, setF] = useState({ item: '', qty: '', unit: '', reason: '' });
+  const [busy, setBusy] = useState(false);
+  const myBid = (bids || []).find(b => b.jobId === job.id && b.userId === user.id);
+  const canReq = !!user.approved && (myBid || (job.status !== 'closed' && job.status !== 'lost'));
+  useEffect(() => { let on = true; if (!user.approved) return; api('matreq', { op: 'list' }).then(r => { if (on) setReqs((r.requests || []).filter(q => q.jobId === job.id)); }).catch(() => { if (on) setReqs([]); }); return () => { on = false; }; }, [job.id]);
+  async function send() {
+    if (!f.item.trim() || !(Number(f.qty) > 0) || !f.reason.trim()) { showToast(t.reqItem + ', ' + t.reqQty + ', ' + t.reqReason, 'error'); return; }
+    setBusy(true);
+    try { const r = await api('matreq', { op: 'add', jobId: job.id, item: f.item, qty: Number(f.qty), unit: f.unit, reason: f.reason }); setReqs([r.request, ...(reqs || [])]); setF({ item: '', qty: '', unit: '', reason: '' }); showToast(t.reqSent); }
+    catch (e) { showToast(e.message || 'Not sent', 'error'); }
+    setBusy(false);
+  }
+  const sm = job.supplierMaterials || [];
+  if (!job.materialList && !sm.length && !canReq) return null;
+  const cell = { ...inputStyle, padding: '7px 8px', fontSize: 13, marginBottom: 0 };
+  return (
+    <Card style={{ marginBottom: 16 }} data-sub-materials="1">
+      <h3 style={sectionTitleStyle}><ClipboardList size={18} /> {t.matListSub}</h3>
+      {job.materialList && <div data-material-list="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 10 }}>{job.materialList}</div>}
+      {sm.length > 0 && <div data-sup-materials="1" style={{ marginBottom: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{t.supMat}</div>
+        {sm.map((q, i) => <table key={i} style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', marginBottom: 6 }}><tbody>
+          {q.lines.map((l, k) => <tr key={k} style={{ borderBottom: `1px dashed ${styles.border}` }}><td style={{ padding: '3px 4px' }}>{l.desc}{l.spec ? <span style={{ color: styles.text2 }}> · {l.spec}</span> : null}</td><td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{l.qty} {l.unit}</td></tr>)}
+          {q.leadTime ? <tr><td colSpan={2} style={{ color: styles.text2, padding: '3px 4px' }}>{t.mqLead}: {q.leadTime}</td></tr> : null}
+        </tbody></table>)}
+      </div>}
+      {canReq && <div data-req-form="1" style={{ borderTop: `1px solid ${styles.border}`, paddingTop: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🧱 {t.reqMat}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 6 }}>
+          <input style={cell} data-req="item" placeholder={t.reqItem} value={f.item} onChange={e => setF({ ...f, item: e.target.value })} />
+          <input style={cell} data-req="qty" inputMode="decimal" placeholder={t.reqQty} value={f.qty} onChange={e => setF({ ...f, qty: e.target.value })} />
+          <input style={cell} data-req="unit" placeholder={t.reqUnit} value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} />
+        </div>
+        <textarea style={{ ...cell, minHeight: 50, marginTop: 6, width: '100%' }} data-req="reason" placeholder={t.reqReason} value={f.reason} onChange={e => setF({ ...f, reason: e.target.value })} />
+        <Btn size="sm" icon={Send} onClick={send} disabled={busy} style={{ marginTop: 6 }} data-req-send="1">{t.reqSend}</Btn>
+      </div>}
+      {reqs && reqs.length > 0 && <div data-req-list="1" style={{ marginTop: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{t.reqMine}</div>
+        {reqs.map(q => <div key={q.id} data-req-row={q.id} data-req-status={q.status} style={{ fontSize: 12, padding: '5px 0', borderBottom: `1px dashed ${styles.border}` }}>
+          <b>{q.qty} {q.unit} {q.item}</b> — <span style={{ color: q.status === 'approved' ? styles.green : q.status === 'declined' ? styles.red : styles.text2, fontWeight: 700 }}>{(t.reqStatus || {})[q.status] || q.status}</span>
+          {q.answer && q.status !== 'pending' ? <div style={{ color: styles.text2 }}>↩ {q.answer}</div> : null}
+        </div>)}
+      </div>}
+    </Card>
+  );
+}
+/* patch BIDSITE3 C: Admin → 📧 Bid site e-mails — one switch per e-mail */
+function BidMailPanel({ t, showToast }) {
+  const [st, setSt] = useState(null);
+  useEffect(() => { api('bidmail-cfg', { op: 'get' }).then(setSt).catch(e => showToast(e.message, 'error')); }, []);
+  async function flip(k, v) {
+    const sw = { ...(st.switches || {}), [k]: v };
+    setSt({ ...st, switches: sw });
+    try { const r = await api('bidmail-cfg', { op: 'set', switches: sw }); setSt(r); showToast(t.bidMailSaved); } catch (e) { showToast(e.message, 'error'); }
+  }
+  return (
+    <div>
+      <SectionHeader icon={Mail} title={t.bidMail} />
+      <Card data-bidmail="1">
+        <div style={{ fontSize: 13, color: styles.text2, marginBottom: 12, lineHeight: 1.5 }}>{t.bidMailHint}</div>
+        {!st ? <div>…</div> : (st.list || []).map(x => (
+          <label key={x.k} data-bidmail-row={x.k} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 0', borderBottom: `1px solid ${styles.border}`, cursor: 'pointer' }}>
+            <input type="checkbox" data-bidmail-sw={x.k} checked={!!(st.switches || {})[x.k]} onChange={e => flip(x.k, e.target.checked)} style={{ marginTop: 3 }} />
+            <span><b>{x.l}</b> <span style={{ fontSize: 11, color: (st.switches || {})[x.k] ? styles.green : styles.text2, fontWeight: 700 }}>{(st.switches || {})[x.k] ? 'ON' : 'OFF'}</span><br /><span style={{ fontSize: 12, color: styles.text2 }}>{x.d}</span></span>
+          </label>
+        ))}
+      </Card>
+    </div>
   );
 }
 function MyQuotes({ t, mquotes, jobs, user, onOpen }) {
@@ -6485,17 +6577,23 @@ function TeamPage({ t, users, setUsers, showToast }) {
    ============================================================ */
 function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
   const [email, setEmail] = useState('');
+  const [asWho, setAsWho] = useState('sub');   /* patch BIDSITE3: a sub or a supplier */
+  const [busy, setBusy] = useState(false);
   const jobInvites = invites.filter(i => i.jobId === job.id);
 
-  function addOne() {
-    if (!email.trim()) return;
-    const inv = addInvite(email);
-    if (inv) {
+  /* patch BIDSITE3 (owner 11/20): Invite → the server makes the invite and e-mails it at once ("GrayCo invited you to bid: <project>") */
+  async function addOne() {
+    const list = email.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(x => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
+    if (!list.length) { showToast('Invalid email', 'error'); return; }
+    setBusy(true);
+    try {
+      const r = await api('invite-send', { jobId: job.id, emails: list, as: asWho });
+      const got = r.invites || [];
+      setInvites(prev => { const next = [...prev.filter(i => !got.some(g => g.id === i.id)), ...got]; try { rememberLoaded(['invites'], { invites: next }); } catch (e) {} return next; });
       setEmail('');
-      showToast(t.inviteSent);
-    } else {
-      showToast('Invalid email', 'error');
-    }
+      showToast(r.mailed ? t.inviteMailed + ' (' + r.mailed + ')' : t.inviteNotMailed);
+    } catch (e) { showToast(e.message || 'Could not send the invite.', 'error'); }
+    setBusy(false);
   }
 
   function copyLink(inv) {
@@ -6522,15 +6620,21 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
         <Mail size={18} /> {t.inviteSubs}
       </h3>
       <div style={{ fontSize: 12, color: styles.text2, marginBottom: 10, lineHeight: 1.5 }}>
-        Enter a sub's email. They'll get a private link that opens the signup page pre-linked to this job.
+        {t.inviteHint2}
+      </div>
+      <div data-invite-as={asWho} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, fontSize: 12, flexWrap: 'wrap' }}>
+        <span style={{ color: styles.text2 }}>{t.inviteAs}</span>
+        {[['sub', '🔨 ' + t.inviteSub], ['supplier', '🧱 ' + t.inviteSupplier]].map(([k, l]) => (
+          <button key={k} type="button" data-invite-pick={k} onClick={() => setAsWho(k)} style={{ border: `1px solid ${asWho === k ? styles.accent : styles.border}`, background: asWho === k ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '4px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>{l}</button>
+        ))}
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        <input style={{ ...inputStyle, flex: 1 }} type="email"
-          placeholder="subcontractor@email.com"
+        <input style={{ ...inputStyle, flex: 1 }} type="email" data-invite-email="1"
+          placeholder={asWho === 'supplier' ? 'sales@supplier.com' : 'subcontractor@email.com'}
           value={email}
           onChange={e => setEmail(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addOne()} />
-        <Btn size="md" icon={Plus} onClick={addOne}>Add</Btn>
+        <Btn size="md" icon={Send} onClick={addOne} disabled={busy} data-invite-send="1">{t.inviteSend}</Btn>
       </div>
 
       {jobInvites.length === 0 ? (
@@ -6545,8 +6649,8 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
               padding: '8px 10px', background: styles.cream, borderRadius: 4,
               fontSize: 12, border: `1px solid ${styles.border}`,
             }}>
-              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <strong>{inv.email}</strong>
+              <div data-invite-row={inv.email} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <strong>{inv.email}</strong>{inv.as === 'supplier' ? ' · 🧱' : ''}{inv.mailedAt ? <span style={{ color: styles.green }}> · ✉ {t.mailedL}</span> : ''}{inv.usedAt ? ' · ✓' : ''}
               </div>
               <button onClick={() => copyLink(inv)} title="Copy invite link" style={{
                 background: styles.navy, color: '#fff', border: 'none', cursor: 'pointer',

@@ -58,6 +58,10 @@ async function run(){
     try { out.retry = await A.retry(); } catch (e) { out.retry = { error: L.s(e && e.message) }; }
   }
   out.portalQueue = (await AUTO.gate('bid_portal_drafts')) || await L.flushPortal();
+  /* patch BIDSITE3 I: the bid requirement reminders (bond, pre-bid, sealed delivery, prequal, questions, bid due) — 7 / 3 / 1 days, the morning-of */
+  try { const crm = crm0 || await crmLeads(), items = await L.kvGet(L.KV); out.bidReq = crm.why ? { skipped: crm.why } : await require('./_lib/bidremind.js').run({ leads: crm.leads, items: Array.isArray(items) ? items : [] }); } catch (e) { out.bidReq = { error: L.s(e && e.message) }; }
+  /* patch BIDSITE3: "Bid due reminder" to invited subs (off unless switched on in the bid site's 📧 Bid site e-mails) — the 8 AM Central runs only */
+  try { const h = +new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24; if (h === 8) out.dueReminders = await require('./_lib/bidmail.js').dueReminders(); } catch (e) { out.dueReminders = { error: L.s(e && e.message) }; }
   return out;
 }
 exports.handler = async function(){

@@ -65,9 +65,10 @@ function central(iso){ try { return new Date(iso).toLocaleString('en-US', { time
 function niceDay(d){ try { return new Date(s(d).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }); } catch (e) { return s(d); } }
 function firstName(n){ return s(n).split(/\s+/)[0]; }
 
-/* the carrier's name never reaches the customer (owner rule) */
+/* patch BIDSITE3 G (owner 11/20): the customer's OWN carrier may show on their maintenance plan papers / e-mails — scrub() takes out only
+   another carrier's name (the common list); carrierWords(p) is the job's own carrier names (kept) (was: the carrier's name never reached the customer) */
 function carrierWords(p){ const out = []; ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName'].forEach(function(k){ const v = s(p && p[k]); if (v.length >= 3) out.push(v); }); return out; }
-function scrub(t, words){ t = s(t); (words || []).forEach(function(w){ t = t.split(w).join(''); }); return t.replace(COMMON_CARRIERS, '').replace(/\s*[—\-–]\s*(claim)?\s*$/i, '').replace(/\s{2,}/g, ' ').trim(); }
+function scrub(t, words){ t = s(t); return t.replace(require('./_lib/owncarrier.js').exceptOwn(COMMON_CARRIERS, words || []), '').replace(/\s*[—\-–]\s*(claim)?\s*$/i, '').replace(/\s{2,}/g, ' ').trim(); }
 
 /* ── the portal link (gc_portal) / a signed-in customer session — as selections.js ── */
 async function tokenRow(token){

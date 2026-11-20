@@ -81,7 +81,7 @@ ok('three plans quoted', r.status === 200 && r.out.contracts.length === 3 && KV.
 const qs = APPROVALS.filter(function(a){ return a.kind === 'maint_quote'; });
 ok('ONE maint_quote item on Approvals', qs.length === 1, qs.length);
 ok('the e-mail lists every plan with its price', /Roof Check-up Plus/.test(qs[0].html) && /\$300\.00 per year/.test(qs[0].html) && /Gutter Clean &amp; Check/.test(qs[0].html) && /twice a year/.test(qs[0].html) && /Water &amp; Moisture Check/.test(qs[0].html));
-ok('no carrier name in the quote e-mail', !/state\s*farm/i.test(qs[0].html + qs[0].subject));
+ok('no OTHER carrier\'s name in the quote e-mail (BIDSITE3 G: the customer\'s own carrier may show)', !/allstate|usaa|geico|liberty\s*mutual/i.test(qs[0].html + qs[0].subject));
 ok('the gutter contract bills twice a year', KV.gc_maint.find(function(c){ return c.planId === 'gutter'; }).billsPerYear === 2);
 r = await X.staffAct({ action: 'quote-many', pid: 'job1', items: [{ planId: 'roof', price: 300 }, { planId: 'gutter', price: 260 }, { planId: 'water', price: 195 }] }, PM);
 ok('the same quote again: the same contracts, no second item', KV.gc_maint.length === 3 && APPROVALS.filter(function(a){ return a.kind === 'maint_quote'; }).length === 1);
@@ -122,7 +122,7 @@ const sent = await X.maintInvoiceSend(Object.assign({}, gi, { to: 'ann@example.c
 const sent2 = await X.maintInvoiceSend(Object.assign({}, ri, { to: 'ann@example.com' }), new Date().toISOString());
 const nums = KV.gc_maint.filter(function(c){ return c.status === 'signed'; }).map(function(c){ return (c.invoices.find(function(x){ return x.status === 'sent'; }) || {}).number; });
 ok('the approved invoices go out, each with its own number', sent.ok && sent2.ok && nums[0] && nums[1] && nums[0] !== nums[1], JSON.stringify(nums));
-ok('no carrier name in the e-mails (the invoices went out)', MAILS.length >= 2 && MAILS.every(function(m){ return !/state\s*farm/i.test(m.subject + m.html); }));
+ok('no OTHER carrier\'s name in the e-mails (the invoices went out; BIDSITE3 G: their own carrier may show)', MAILS.length >= 2 && MAILS.every(function(m){ return !/allstate|usaa|geico|liberty\s*mutual/i.test(m.subject + m.html); }));
 
 ok('a winter plan signed in June is on call from December 1st; in January, at once', M.firstVisit('winter', '2026-06-10T12:00:00Z') === '2026-12-01' && M.firstVisit('winter', '2027-01-15T12:00:00Z') === '2027-01-15' && M.firstVisit('quarterly', '2026-06-10T12:00:00Z') === '2026-09-10');
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
