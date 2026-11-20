@@ -4,6 +4,10 @@
    · Projects (desk, ≥ 641 px): the 💬 sits under the blue PO pill; the PO pill never wraps and the PO# column is the widest
      pill + padding (also the least a drag can make it); PROJECT takes the room the others leave (smaller shares for the
      rest in DESKFIT's FIT and the 33.x sizer's DEFAULTS); the job name has its own line(s), the 🏢 ▾ / 📸 chips a row under it.
+     When its box is narrow, Finish date / Spent / Alert (< 1250 px) and Type / Address (< 1060 px) are hidden; still too
+     wide → the box scrolls sideways. The 💬 list button also finds hyphenated POs (C1024-2).
+   · DESKFIT's tables (Projects, Invoices) never break a word in two: content layout, one-line headers and cells, only
+     name / address / description columns wrap, at spaces.
    · Every desk table in #root with a header row: a grab handle on each header's right edge; drag to set that column's
      width, double-click resets it. Widths are kept per table (by its header names) on this device for this user
      (localStorage gc_colw:<user>), and put back on every render. The old projects-only ._gcRz handle is hidden on a desk.
@@ -20,8 +24,18 @@ st.textContent = '@media (min-width:641px){'
   + '#root table[data-gcx-projects]>tbody>tr>td:first-child{text-align:center}'
   + '#root table[data-gcx-projects] .__gcListMsgBtn{display:block;margin:3px auto 0!important}'
   + '#root table[data-gcx-projects]>tbody>tr>td:nth-child(2)>b:first-child{display:block;margin-bottom:2px}'
-  + '#root table[data-gcx-projects]>tbody>tr>td:nth-child(2){white-space:nowrap!important}'
+  + '#root table[data-gcx-projects]>tbody>tr>td:nth-child(2):not(._){white-space:nowrap!important}'
   + '#root table[data-gcx-projects]>tbody>tr>td:nth-child(2)>b:first-child{white-space:normal}'
+  /* never a word broken in two (DESKFIT's break-word gave "SP EN T", "$13,0 00.00"): its tables lay out by content, headers and
+     cells on one line, only name / address / description columns wrap (at spaces); too wide → the box scrolls sideways */
+  + '#root table.gc-fit{table-layout:auto!important}'
+  + '#root table.gc-fit>thead>tr>th{width:auto!important;white-space:nowrap!important}'
+  + '#root table.gc-fit>thead>tr>th,#root table.gc-fit>tbody>tr>td{overflow-wrap:normal!important;word-break:normal!important}'
+  + '#root table.gc-fit>tbody>tr>td{white-space:nowrap!important}'
+  + '#root table.gc-fit>tbody>tr>td[data-gcw]{white-space:normal!important;min-width:110px}'
+  + '#root table[data-gcx-projects]>tbody>tr>td:nth-child(2)[data-gcw]{min-width:200px}'
+  + '#root table.gc-fit>tbody>tr>td[data-gcw] button{white-space:nowrap}'
+  + '#root table.gc-fit [data-gcopt]{display:none!important}'
   + '._gcRz{display:none!important}'
   + '#root table' + T3 + '{table-layout:fixed!important;width:var(--gccwt)!important;min-width:100%!important;max-width:none!important}'
   + '#root table' + T3 + '>thead>tr>th:nth-child(n){width:var(--gccw,auto)!important;max-width:none!important;min-width:0!important}'
@@ -55,7 +69,20 @@ function poMin(t){
   if (th.getAttribute('data-gcmin') !== String(w)) { th.setAttribute('data-gcmin', w); t.style.setProperty('--gcpo', w + 'px'); }
   return w;
 }
+var WRAP = /^(project|client|address|description|name|job|customer|notes?|title|scope|vendor|actions)$/;   /* actions: its buttons stack, a button is never split */
+/* Projects: the least-used columns go when its box is narrower than this many px (no squeezed letters, Project stays wide) */
+var OPT = { 'finish date': 1250, spent: 1250, alert: 1250, type: 1060, address: 1060 };
+function mark(el, a, on){ if (on !== el.hasAttribute(a)) { if (on) el.setAttribute(a, '1'); else el.removeAttribute(a); } }
+function wrapCols(t){   /* mark the cells of the columns that may wrap at spaces, and the ones hidden for room */
+  if (!t.classList.contains('gc-fit')) return;
+  var hs = ths(t), box = t.parentElement ? t.parentElement.clientWidth : 9999, pj = t.hasAttribute('data-gcx-projects');
+  var on = hs.map(function(th){ return WRAP.test(ckey(th)); }), off = hs.map(function(th){ return pj && (OPT[ckey(th)] || 0) > box; });
+  hs.forEach(function(th, i){ mark(th, 'data-gcopt', off[i]); });
+  [].forEach.call(t.querySelectorAll(':scope>tbody>tr'), function(tr){ var cs = tr.children; if (cs.length !== on.length) return;
+    for (var i = 0; i < cs.length; i++) { mark(cs[i], 'data-gcw', on[i]); mark(cs[i], 'data-gcopt', off[i]); } });
+}
 function apply(t){
+  wrapCols(t);
   var po = poMin(t), k = tkey(t), saved = load()[k] || {}, sig = k + JSON.stringify(saved) + ':' + ths(t).filter(function(th){ return th.offsetWidth; }).length + ':' + t.className + (t.getAttribute('data-gcfit-sig') || '') + (t.getAttribute('data-gcrz-sig') || '') + po;   /* re-measure when DESKFIT / the 33.x sizer lay it out again */
   ths(t).forEach(function(th){
     if (th.querySelector(':scope>.gccw-h')) return;

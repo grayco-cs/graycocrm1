@@ -13,7 +13,7 @@ if (!build) { console.error('usage: node test_PROJTBL.mjs <dir with index.html>'
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 700) : '')); } };
 H.resetCloud();
 H.cset('users', [{ id: 'U2', name: 'Wesley Johnson', email: 'wjohnson@grayco-cs.com', role: 'Admin', active: true, payType: 'owner' }, { id: 'U1', name: 'Nick Thomas', email: 'nthomas@grayco-cs.com', role: 'Admin', active: true }]);
-const names = ['Kitchen Remodel and Back Porch Addition', 'Roof Replacement', 'Outdoor Entertainment Area', 'Deck Job'], POS = ['J998', 'K795', 'C1024-2', 'T724'];
+const names = ['Kitchen Remodel and Back Porch Addition', 'Roof Replacement', 'Commercial Office Buildout Suite 200', 'Deck Job'], POS = ['J998', 'K795', 'C1024-2', 'T724'];
 H.cset('projects', names.map((n, i) => ({ id: 'P' + i, autoPO: POS[i], name: n, client: 'Sample Client ' + i, address: (100 + i) + ' Demo Ln, Lakeland, TN', pm: 'Nick Thomas', type: 'Residential', status: 'active', contract: 10000 + i * 1000, startDate: '2026-0' + (i + 1) + '-05' })));
 const W = []; const close = async () => { for (const c of W) await c.b.close().catch(() => {}); };
 const open = async c => { await H.waitFor(c, () => window._crm && (window._crm.projects || []).length >= 4 && window._gcColW ? 1 : 0, null, 60000);
@@ -31,6 +31,7 @@ try {
   ok(!!(await open(O)), 'desk: the Projects table is up with 💬 buttons and resize handles');
   await H.sleep(1500);
   let g = await geo(O);
+  ok(await O.ev(() => document.querySelectorAll('#root table[data-gcx-projects] .__gcListMsgBtn').length) === 4, 'every row has its 💬, the hyphenated PO C1024-2 too');
   ok(g.bubT >= g.pillB - 1 && Math.abs(g.bubX - g.pillX) < 6, 'the 💬 sits under the PO pill, centred', g);
   ok(g.w['po#'] <= 100 && g.w.project >= 190 && g.w.project === Math.max(...Object.values(g.w)), 'PO# is narrow, PROJECT is the widest column', g.w);
   ok(g.nameH < 24 && Math.abs(g.coT - g.camT) <= 2, 'a short name is one line; its 🏢 ▾ and 📸 chips share a row', g);
@@ -38,10 +39,19 @@ try {
   const pills = c => c.ev(() => [...document.querySelectorAll('#root table[data-gcx-projects] tbody tr > td:first-child')].map(td => { const sp = td.querySelector('span'), a = sp.getBoundingClientRect(), b = td.getBoundingClientRect();
     return { po: sp.textContent, h: Math.round(a.height), out: Math.round(a.right - b.right), th: td.closest('table').querySelector('th').offsetWidth }; }));
   const bad = L => L.filter(x => x.h > 28 || x.out > 0);
+  /* no word drawn on two lines (a mid-word break = a word with 2 rects), no cell text cut off at its right edge */
+  const broken = c => c.ev(() => { const t = document.querySelector('#root table[data-gcx-projects]'), out = [];
+    t.querySelectorAll('th, td').forEach(cell => { if (!cell.getClientRects().length) return;
+      if (cell.scrollWidth > cell.clientWidth + 1) out.push('cut: ' + cell.textContent.trim().slice(0, 30));
+      const w = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT); let n;
+      while ((n = w.nextNode())) { const re = /\S+/g; let m; while ((m = re.exec(n.data))) { const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
+        const tops = new Set([...r.getClientRects()].filter(x => x.width > 0).map(x => Math.round(x.top))); if (tops.size > 1) out.push('split: ' + m[0]); } } });
+    return out; });
   for (const side of ['as is', 'toggled'])
     for (const w of [1440, 1280, 1024]) {
       await O.page().setViewportSize({ width: w, height: 900 }); await H.sleep(1800);
       const L = await pills(O); ok(L.length === 4 && !bad(L).length, `${w} px, side menu ${side}: every PO pill is one line inside its cell`, L);
+      const B = await broken(O); ok(!B.length, `${w} px, side menu ${side}: no word broken in two, no cell cut off`, B);
       if (w === 1024 && side === 'as is' && process.env.GC_SHOT1024) await O.page().screenshot({ path: process.env.GC_SHOT1024 });
       if (w === 1024 && side === 'as is') { await O.page().mouse.click(17, 26); await H.sleep(800); }   /* ☰ */
     }
