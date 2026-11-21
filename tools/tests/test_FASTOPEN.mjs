@@ -145,8 +145,10 @@ try {
   await reload();
   const sf = await served();
   ok(sf && sf.from === 'cache', 'the saved copy opens first', sf);
-  const marked = await until(() => ev(async () => { const c = await caches.open('gc-crm-shell-v1'); const r = await c.match('/__gc_shell_meta'); const m = r ? await r.json() : null; return m && m.stale ? m : null; }), 30000);
-  ok(!!marked && marked.staleFor === R3.v, 'the copy is marked stale as soon as the newer build is seen', marked);
+  /* AUTOUPD: the old copy may also be updated by itself at once — BOOTWATCH's update then drops the copy (it is not the live build) */
+  const marked = await until(() => ev(async () => { const c = await caches.open('gc-crm-shell-v1'); const r = await c.match('/__gc_shell_meta'); const m = r ? await r.json() : null;
+    if (m && m.stale) return m; if (!m || !m.build) return { dropped: true }; window.__foLast = { meta: m, build: window.__GC_BUILD_ID__, sw: window._gcFastOpen && window._gcFastOpen.sw && window._gcFastOpen.sw.info(), bw: window._gcBootWatch && window._gcBootWatch.state().boot.updWait }; return null; }), 30000);
+  ok(!!marked && (marked.staleFor === R3.v || marked.dropped), 'the old copy is never opened again once the newer build is seen: marked stale, or dropped by the automatic update', marked || await ev(() => window.__foLast).catch(e => String(e)));
   ok(!!(await reload()), 'a reload (the update)');
   const sf2 = await served(); const b3 = await ev(() => window.__GC_BUILD_ID__);
   ok(sf2 && sf2.from === 'network' && b3 === R3.v, 'goes to the network and gets the new build (' + b3 + ')', sf2);

@@ -52938,6 +52938,12 @@ window._gcPullNow = async function(full){
       else if(await _pmReverify()) __gcLastFullPull = Date.now();
       else full0();
     }
+    /* a timed pull that started meanwhile (while the lists were checked) is waited for, never run beside: clearing its flag
+       let every following caller start one more (measured: 5 pulls of the same 15 lists at once) */
+    if(__gcPullDoneN && _syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
+      _pmTrace('wait-timed', full);
+      await new Promise(function(res){ var t0 = Date.now(); (function w(){ if(!_syncing || Date.now() - t0 > 180000) res(); else setTimeout(w, 400); })(); });
+    }
     _syncing = false;
     _pmTrace('pull', full);
     await pullAll(true);
