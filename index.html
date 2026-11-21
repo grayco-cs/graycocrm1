@@ -8505,7 +8505,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
    but the answer waited behind the rest of the page being read (the sync's merge steps each wait their turn), then the
    whole pull, then a redraw. A phone that has the lists saved (IndexedDB) already opens with them; this is for one that
    has NOT (a first sign-in, a phone whose storage was cleared):
-   • as the page starts, on a phone that is signed in and has no saved job list, ONE read asks the cloud for the lists the
+   • as the page starts (or the moment the person signs in on it), on a phone that is signed in and has no saved job list, ONE read asks the cloud for the lists the
      Field's screens need (jobs, schedule, people, leads — and the delete lists, so a deleted job never shows), through the
      page's own sign-in / access layers (a person gets only what they may read);
    • until the app's own lists arrive, window._crm shows that copy (jobs, schedule, people added to the built-in ones;
@@ -8533,7 +8533,7 @@ function phone(){
 }
 function signed(){ try { var j = JSON.parse(lsGet('gc_auth_v1') || 'null'); return !!(j && j.access_token && j.email); } catch (e) { return false; } }
 ST.phone = phone();
-if (!ST.phone || !signed()) return;
+if (!ST.phone) return;
 
 /* the app's own list is empty (or only the built-in people) — then the cloud's copy is shown */
 function appEmpty(o, k){ var v = o && o[k]; return !Array.isArray(v) || v.length === 0; }
@@ -8569,9 +8569,13 @@ function leadsNow(){
   W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; return fill(r || o); };
 })();
 /* the app's own people list has arrived when the sync applied it (it is then the cloud's merged with this phone's) */
+function sigNow(){ try { var c = W._crm || {}; return [arr(c.projects).length, arr(c.schedule).length, arr(c.users).length, arr(W.__gcLeadsLive).length].join(','); } catch (e) { return ''; } }
+var lastPoke = '';
 function poke(){
   try { if (W._crm) fill(W._crm); } catch (e) {}
   leadsNow();
+  var sg = sigNow(); if (sg === lastPoke) return;   /* nothing new on screen: no redraw */
+  lastPoke = sg;
   try { if (W._gcField && W._gcField.render && D.querySelector('#_gcJobPick.gc-fh')) W._gcField.render(); } catch (e) {}
   try { if (W._gcRA && W._gcRA.sync) W._gcRA.sync(); } catch (e) {}
   try { W.dispatchEvent(new Event('gc-boot-lists')); } catch (e) {}
@@ -8633,11 +8637,18 @@ function take(rows){
   /* the app's data object may be rebuilt before the Field is drawn: look again a few times while the copy is in use */
   [300, 1000, 2500, 5000].forEach(function(ms){ NST.call(W, poke, ms); });
 }
-savedCopy().then(function(has){
-  ST.saved = has;
-  if (has !== false) return;                         /* a saved copy (or unknown): the app opens from it, nothing is asked */
-  ask().then(take, function(e){ ST.err = s(e && e.message || e).slice(0, 120); });
-});
+function start(){
+  ST.started = Date.now();
+  savedCopy().then(function(has){
+    ST.saved = has;
+    if (has !== false) return;                       /* a saved copy (or unknown): the app opens from it, nothing is asked */
+    ask().then(take, function(e){ ST.err = s(e && e.message || e).slice(0, 120); });
+  });
+}
+/* signed in now — or the person signs in on this page (the sign-in screen; the first open after it is this same page
+   until the CRM reloads once): asked the moment the sign-in is there */
+if (signed()) start();
+else { var t0 = Date.now(); (function wait(){ NST.call(W, function(){ if (signed()) start(); else if (Date.now() - t0 < 600000) wait(); }, 400); })(); }
 })();
 </script>
 <script id="gc-patch-fastopen">
@@ -204705,7 +204716,7 @@ function phoneDevice(){ try { if (W._gcView) return !!(W._gcView.phone() || W._g
 var DESK_KEY = 'gc_phone_desk';
 function deskPref(){ try { if (W._gcView) return W._gcView.pref() === 'desk'; } catch (e) {} /* patch FIELDDESK */ return lsGet(DESK_KEY) === '1'; }
 function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
-function role(){ try { return W._gcRP && W._gcRP.role ? s(W._gcRP.role()) : ''; } catch (e) { return ''; } }
+function role(){ var r = ''; try { r = W._gcRP && W._gcRP.role ? s(W._gcRP.role()) : ''; } catch (e) {} if (!r && !W._gcMeNow) { try { var u = meU(); if (u) r = s(u.role); } catch (e) {} } return r; }   /* patch FIELDFAST: not known yet — the signed-in person's role */
 function isAdmin(){ try { if (W._gcVAS && W._gcVAS.active()) return /admin/i.test(role()); } catch (e) {} try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
 function holderIs(k){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder ? W._gcLeadRoles.holder(k) : null; return !!h && low(h.name) === low(myName()); } catch (e) { return false; } }
 /* the person's app: mitigation · insurance · roofing PM · residential PM · estimator · superintendent / crew · office · marketing · admin
@@ -204731,7 +204742,8 @@ function isPM(){ var k = rk(); return k === 'pm' || k === 'roof'; }
 function eligible(){ return inField() && phoneDevice(); }
 function meU(){
   try { if (W._gcVAS && W._gcVAS.active()) { var p = W._gcVAS.person(); if (p) return p; } } catch (e) {}
-  try { var m = low(lsGet('grayco_user')); return arr(C().users).filter(function(u){ return u && (low(u.email) === m || low(u.name) === m); })[0] || null; } catch (e) { return null; }
+  try { var m = low(lsGet('grayco_user')); var u0 = arr(C().users).filter(function(u){ return u && (low(u.email) === m || low(u.name) === m); })[0] || null; if (u0 || W._gcMeNow) return u0;
+    var em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); return em ? arr(C().users).filter(function(u){ return u && low(u.email) === em; })[0] || null : null; } catch (e) { return null; }   /* patch FIELDFAST: right after signing in, the person the sign-in says */
 }
 function myName(){ var u = meU(); return s(u && u.name) || s(lsGet('grayco_user')); }
 function uid(u){ return u ? (u.id || u.email || u.name) : ''; }
@@ -205452,6 +205464,9 @@ function render(force){
   loadPlanDocs();
   var m = model(); progressLines(m);
   var sig = sigOf(m); if (!force && sig === lastSig) { paintSync(); paintTabs(m.n); return; }
+  var _ffAgo = Date.now() - (render.__ffAt || 0);   /* patch FIELDFAST: at most one redraw per 1.5 s unless forced — the newest data, drawn once */
+  if (!force && el.firstChild && _ffAgo < 1500) { if (!render.__ffQ) render.__ffQ = later(function(){ render.__ffQ = 0; render(false); }, 1500 - _ffAgo); paintSync(); return; }
+  render.__ffAt = Date.now();
   lastSig = sig;
   var k = rk(), dt = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   var h = '<div class="fh-top"><div class="fh-brand"><img class="fh-logo" src="' + esc(fieldLogo(k)) + '" alt="GrayCo"><div style="min-width:0"><div class="fh-h">GrayCo Field</div><div class="fh-s">' + esc(myName()) + ' · ' + esc(ROLE_NAMES[k] || '') + ' · ' + esc(dt) + '</div></div></div><span id="gc-fh-sync" data-k="ok">✓ All sent</span>' + (W._gcView && W._gcView.headBtn ? W._gcView.headBtn() : '') + '</div><div class="fh-wrap">' /* patch FIELDDESK */;
@@ -205497,10 +205512,12 @@ function render(force){
 var orig = null;
 function openHome(){
   css();
-  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDash,#_gcJobPick'), function(o){ o.remove(); });
+  var keep = D.querySelector('#_gcJobPick.gc-fh');   /* patch FIELDFAST: Home already up — drawn again in place, not made anew */
+  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDash,#_gcJobPick'), function(o){ if (o !== keep) o.remove(); });
   W._gcCurrentJob = null;
-  var ov = D.createElement('div'); ov.id = '_gcJobPick'; ov.className = 'gc-fh'; D.body.appendChild(ov);
-  ov.addEventListener('click', onClick); pressWire(ov);   /* patch FIELDTAP */
+  var ov = keep;
+  if (!ov) { ov = D.createElement('div'); ov.id = '_gcJobPick'; ov.className = 'gc-fh'; D.body.appendChild(ov);
+    ov.addEventListener('click', onClick); pressWire(ov); }   /* patch FIELDTAP */
   lastSig = ''; render(true); tabs(); setOn(); pullFset();
   return ov;
 }

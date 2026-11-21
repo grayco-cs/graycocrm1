@@ -4,7 +4,7 @@
    but the answer waited behind the rest of the page being read (the sync's merge steps each wait their turn), then the
    whole pull, then a redraw. A phone that has the lists saved (IndexedDB) already opens with them; this is for one that
    has NOT (a first sign-in, a phone whose storage was cleared):
-   • as the page starts, on a phone that is signed in and has no saved job list, ONE read asks the cloud for the lists the
+   • as the page starts (or the moment the person signs in on it), on a phone that is signed in and has no saved job list, ONE read asks the cloud for the lists the
      Field's screens need (jobs, schedule, people, leads — and the delete lists, so a deleted job never shows), through the
      page's own sign-in / access layers (a person gets only what they may read);
    • until the app's own lists arrive, window._crm shows that copy (jobs, schedule, people added to the built-in ones;
@@ -32,7 +32,7 @@ function phone(){
 }
 function signed(){ try { var j = JSON.parse(lsGet('gc_auth_v1') || 'null'); return !!(j && j.access_token && j.email); } catch (e) { return false; } }
 ST.phone = phone();
-if (!ST.phone || !signed()) return;
+if (!ST.phone) return;
 
 /* the app's own list is empty (or only the built-in people) — then the cloud's copy is shown */
 function appEmpty(o, k){ var v = o && o[k]; return !Array.isArray(v) || v.length === 0; }
@@ -68,9 +68,13 @@ function leadsNow(){
   W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; return fill(r || o); };
 })();
 /* the app's own people list has arrived when the sync applied it (it is then the cloud's merged with this phone's) */
+function sigNow(){ try { var c = W._crm || {}; return [arr(c.projects).length, arr(c.schedule).length, arr(c.users).length, arr(W.__gcLeadsLive).length].join(','); } catch (e) { return ''; } }
+var lastPoke = '';
 function poke(){
   try { if (W._crm) fill(W._crm); } catch (e) {}
   leadsNow();
+  var sg = sigNow(); if (sg === lastPoke) return;   /* nothing new on screen: no redraw */
+  lastPoke = sg;
   try { if (W._gcField && W._gcField.render && D.querySelector('#_gcJobPick.gc-fh')) W._gcField.render(); } catch (e) {}
   try { if (W._gcRA && W._gcRA.sync) W._gcRA.sync(); } catch (e) {}
   try { W.dispatchEvent(new Event('gc-boot-lists')); } catch (e) {}
@@ -132,9 +136,16 @@ function take(rows){
   /* the app's data object may be rebuilt before the Field is drawn: look again a few times while the copy is in use */
   [300, 1000, 2500, 5000].forEach(function(ms){ NST.call(W, poke, ms); });
 }
-savedCopy().then(function(has){
-  ST.saved = has;
-  if (has !== false) return;                         /* a saved copy (or unknown): the app opens from it, nothing is asked */
-  ask().then(take, function(e){ ST.err = s(e && e.message || e).slice(0, 120); });
-});
+function start(){
+  ST.started = Date.now();
+  savedCopy().then(function(has){
+    ST.saved = has;
+    if (has !== false) return;                       /* a saved copy (or unknown): the app opens from it, nothing is asked */
+    ask().then(take, function(e){ ST.err = s(e && e.message || e).slice(0, 120); });
+  });
+}
+/* signed in now — or the person signs in on this page (the sign-in screen; the first open after it is this same page
+   until the CRM reloads once): asked the moment the sign-in is there */
+if (signed()) start();
+else { var t0 = Date.now(); (function wait(){ NST.call(W, function(){ if (signed()) start(); else if (Date.now() - t0 < 600000) wait(); }, 400); })(); }
 })();
