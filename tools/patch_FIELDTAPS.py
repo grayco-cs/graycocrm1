@@ -49,7 +49,7 @@ once("""        t.style.cssText='position:fixed;bottom:20px;right:20px;z-index:2
           +(color||'#16a34a')+';color:#fff;padding:11px 18px;border-radius:8px;'
           +'font-family:Arial,sans-serif;font-size:13px;font-weight:700;'
           +'box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:80vw;pointer-events:none';   /* patch FIELDTAPS: a toast never eats a tap */
-        try{ if(document.documentElement.classList.contains('_fieldmode')) t.style.bottom='calc(104px + env(safe-area-inset-bottom,0px))'; }catch(e){}   /* patch FIELDTAPS: above the Field's bottom bar */""")
+        try{ if(document.documentElement.classList.contains('_fieldmode')) t.style.bottom='calc(116px + env(safe-area-inset-bottom,0px))'; }catch(e){}   /* patch FIELDTAPS: above the Field's bottom bar */""")
 
 open(p, 'w', encoding='utf-8').write(t)
 print('FIELDTAPS: patched')
