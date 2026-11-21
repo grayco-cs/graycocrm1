@@ -60,6 +60,7 @@ try {
     if (!B.sa) B.sa = mq('(display-mode: standalone)'); };
   var fromCache = function(){
     B.sw = swUrl() || B.sw; if (B.sw && !/crm-push-sw\.js$/.test(B.sw)) return 'sw';
+    try { var sh = W.__GC_SHELL__; if (sh && /cache/.test(sh.from || '')) return 'sw-shell'; } catch (x) {}   /* patch FASTOPEN: the CRM's saved page */
     try { var e = PF.getEntriesByType('navigation')[0]; if (e && (e.deliveryType === 'cache' || (e.transferSize === 0 && e.decodedBodySize > 0))) return 'http-cache'; } catch (x) {}
     return '';
   };

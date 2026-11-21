@@ -80,7 +80,9 @@
     var jobs = [];
     try { if (NAV.serviceWorker && NAV.serviceWorker.getRegistrations) jobs.push(NAV.serviceWorker.getRegistrations().then(function(rs){
       return Promise.all(rs.map(function(w){ var u = ''; try { u = s((w.active || w.waiting || w.installing || {}).scriptURL); } catch (e) {} return /\/crm-push-sw\.js(\?|$)/.test(u) ? null : w.unregister(); })); })); } catch (e) {}
-    try { if (typeof caches !== 'undefined' && caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){ return caches.delete(n); })); })); } catch (e) {}
+    try { if (typeof caches !== 'undefined' && caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){
+      if (/^gc-crm-shell-/.test(n) && W._gcFastOpen && W._gcFastOpen.sw && W._gcFastOpen.sw.keep) return W._gcFastOpen.sw.keep(n, LIVE.v);   /* patch FASTOPEN */
+      return caches.delete(n); })); })); } catch (e) {}
     var go = false, reload = function(){
       if (go) return; go = true;
       W.__GC_USER_WANTS_RELOAD__ = true;   /* a person asked: the CRM's reload guard lets it through */
