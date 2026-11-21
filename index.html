@@ -52864,8 +52864,8 @@ var __gcLastFullPull = 0;
        on the owner-iPhone profile: 5-7 downloads of all 52 lists (12.9 MB of JSON each) side by side on one slow link, all
        arriving ~90 s later and parsed together (the page ran out of memory and closed). Now a call while a pull runs waits for
        it, then ONE follow-up pull runs for all who asked meanwhile (the widest ask: full > 'verify' > what changed). A pull
-       running for over 3 minutes is taken as stuck and a new one goes, as before. Not before the open's first pull is done
-       (the open is unchanged).
+       running for over 3 minutes is taken as stuck and a new one goes, as before. At the open: as before until the first
+       screen is drawn or a pull has finished (the sign-in waits for a pull).
    (b) 'verify' (the catch-up at a return after a minute away and at "online" — a 5G -> Wi-Fi switch) and the 10-minute
        "everything again" pull no longer download every list's value: each list is checked the way an open checks it
        (FASTOPEN): a list this page applied, that nothing wrote here since (the write watch; a list the screen wrote back
@@ -52874,8 +52874,13 @@ var __gcLastFullPull = 0;
        delete lists) is downloaded and merged as before. A real full pull still runs at _gcPullNow(true), every 6 hours, with
        the marks off (gc_fastopen_marks_off = '1') or when the write watch is not working. */
 var __gcLastTrueFull = Date.now(), _pmFlight = null, __gcPullStart = 0, __gcPullDoneN = 0;
+/* the open's first screen is not drawn yet and no pull has finished: as before (the sign-in / first screen paths wait for a pull) */
+function _pmOpening(){
+  if(__gcPullDoneN) return false;
+  try{ var b = window._gcBootWatch && window._gcBootWatch.state().boot; return !(b && b.m && b.m.paint != null); }catch(e){ return true; }
+}
 function _pmBusy(){
-  if(!__gcPullDoneN) return null;   /* the open itself: as before (its first pull waits for Field home on a phone) */
+  if(_pmOpening()) return null;
   if(_pmFlight && Date.now() - _pmFlight.at < 180000) return _pmFlight;
   if(_syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
     var fl = { at: __gcPullStart, want: undefined, next: null };
@@ -52912,7 +52917,7 @@ async function _pmReverify(){
       last[k] = e.u; seed[k] = e.hu; n++;
     });
     _lastPull = last; _pmSeedHeads = seed; _pmSnapKeep = {};
-    _pmStat.reverified = (_pmStat.reverified || 0) + 1; _pmStat.reverifiedKept = n;
+    _pmStat.reverified = (_pmStat.reverified || 0) + 1; _pmStat.reverifiedKept = n; _pmStat.pullsDone = __gcPullDoneN;
     return true;
   }catch(e){ return false; }
 }
@@ -52940,7 +52945,7 @@ window._gcPullNow = async function(full){
     }
     /* a timed pull that started meanwhile (while the lists were checked) is waited for, never run beside: clearing its flag
        let every following caller start one more (measured: 5 pulls of the same 15 lists at once) */
-    if(__gcPullDoneN && _syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
+    if(!_pmOpening() && _syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
       _pmTrace('wait-timed', full);
       await new Promise(function(res){ var t0 = Date.now(); (function w(){ if(!_syncing || Date.now() - t0 > 180000) res(); else setTimeout(w, 400); })(); });
     }
@@ -53888,7 +53893,7 @@ async function pullAll(force){
   }
   _syncing = false;
   try{ _pmSaveSoon(); }catch(_ps){}   /* patch FASTOPEN */
-  __gcPullDoneN++;   /* patch RESUME: pulls are lined up only once the open's first pull is done */
+  __gcPullDoneN++;   /* patch RESUME: pulls done (for _gcFastOpen.marks.info()) */
 }
 
 // ── Hook into every IDB write in the CRM ────────────────────────────────
