@@ -168,7 +168,7 @@ const PAGE = `(() => {
     const x = Math.max(1, Math.min(innerWidth - 2, r.left + r.width / 2)), y = Math.max(1, Math.min(innerHeight - 2, r.top + r.height / 2)); const h = document.elementFromPoint(x, y);
     const ok = !!h && (h === e || e.contains(h) || h.contains(e) && h.tagName === 'LABEL');
     /* covered by a visible prompt (a dialog with words in it, in the same screen) vs an invisible layer */
-    let prompt = false; if (!ok && h) { let q = h; while (q && q !== document.body) { const cs = getComputedStyle(q); if (/fixed|absolute/.test(cs.position) && norm(q.innerText).length > 12 && !q.contains(e)) { prompt = true; break; } q = q.parentElement; } }
+    let prompt = false; if (!ok && h) { let q = h; while (q && q !== document.body) { const cs = getComputedStyle(q); if (/fixed|absolute/.test(cs.position) && norm(q.innerText).length > 12 && !q.contains(e)) { prompt = !/toast|snack|pill|note/i.test(q.id + ' ' + q.className); break; } q = q.parentElement; } }
     const sel = /(^|\s)(on|active|sel|selected|cur|current|is-on)(\s|$)/.test(typeof e.className === 'string' ? e.className : '') || e.getAttribute('aria-pressed') === 'true' || e.getAttribute('aria-selected') === 'true' || e.getAttribute('aria-current') === 'page' || e === document.activeElement;
     return { x, y, ok, hit: h ? F.lname(F.layerOf(h)) + ' > ' + h.tagName.toLowerCase() + (h.id ? '#' + h.id : '') + (typeof h.className === 'string' && h.className ? '.' + h.className.trim().split(/\\s+/)[0] : '') + ' "' + norm(h.innerText).slice(0, 30) + '"' : 'nothing', w: r.width, h: r.height, onscreen: r.bottom > 0 && r.top < innerHeight, prompt, sel }; };
 })()`;
@@ -202,7 +202,7 @@ async function runOne(roleK, mode){
   const ev = (f, a) => pg.evaluate(f, a);
   const helpers = () => pg.evaluate(PAGE);
   const rows = [], screensSeen = new Set();
-  const log = (screen, control, result, why) => { rows.push({ role: roleK, mode, screen, control, result, why }); console.log(`  ${((Date.now() - T00) / 1000).toFixed(0)}s ${result === 'OK' ? '✓' : result === 'SKIP' ? '·' : '✗'} [${roleK}/${mode}] ${screen} · ${control} · ${result} · ${why}`); };
+  const log = (screen, control, result, why) => { rows.push({ role: roleK, mode, screen, control, result, why }); console.log(`  ${((Date.now() - T00) / 1000).toFixed(0)}s ${result === 'OK' ? '✓' : result === 'SKIP' ? '·' : result === 'NOTE' ? '!' : '✗'} [${roleK}/${mode}] ${screen} · ${control} · ${result} · ${why}`); };
   const boot = { ok: false };
   try {
     await throttle();
@@ -406,7 +406,7 @@ for (const r of ROLES) for (const m of MODES) {
   const t0 = Date.now();
   const rows = await runOne(r, m);
   ALL.push(...rows);
-  fs.writeFileSync(OUT + '/ft_' + r + '_' + m + '.json', JSON.stringify(rows, null, 1));
+  if (!process.env.FT_PROBE) fs.writeFileSync(OUT + '/ft_' + r + '_' + m + '.json', JSON.stringify(rows, null, 1));
   const n = rows.filter(x => x.result === 'OK' || x.result === 'FAIL').length, f = rows.filter(x => x.result === 'FAIL').length;
   console.log(`== ${r}/${m}: ${n} controls tapped, ${f} FAIL (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
 }
