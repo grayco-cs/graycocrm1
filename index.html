@@ -201,6 +201,167 @@ try {
 } catch (e) { try { console.warn('[GC] LSGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-fieldfast-net">
+/* patch FIELDFAST: the network layer (tools/fieldfast_net.js) */
+/* __GC_PATCH_FIELDFAST_NET__ — no request hangs: a time limit, a retry, a cap (tools/patch_FIELDFAST.py).   (patch FIELDFAST)
+   Owner 11/21 (GrayCo Field, iPhone): "The app has got to work quickly while I'm in the field" · "It's so slow".
+   Measured (tools/tests/test_FIELDTAPS.mjs, iPhone, CPU x4): after a network stall while the app opened, 127 requests hung
+   until the phone's ~40 s socket timeout and nothing asked again sooner — Home stayed empty 34-51 s, the sync pill said
+   "All sent". This first network layer (every later fetch wrapper sits on top of it) for the database (/rest/v1, /storage/v1,
+   /functions/v1) and the Netlify functions:
+   • a READ (GET / HEAD, and the gc_my_access check) has a time limit for its answer to start (8 s, then 10 s, then 15 s; a
+     function 12 s / 20 s; a file 15 s / 30 s): past it the request is cancelled and asked again (0.4 s, 1.2 s later); the
+     third miss fails like a dropped connection (TypeError) — never 40 s of nothing;
+   • at most 6 reads are on their way at once; the others wait in a queue, the lists the screen needs first (projects, people,
+     schedule, leads, approvals, the sync's own reads, the sign-in's checks), then the other lists, then files and functions;
+   • back online, or back in the app (visible / pageshow / resume): every read still waiting for its first answer from before
+     that moment is on a dead socket — it is cancelled and asked again at once (the RESUME catch-up pull then finds the
+     network working instead of waiting behind a hung read);
+   • a WRITE is never repeated here (a send / text / e-mail must not go twice): it starts at once (no queue) and has a long
+     limit that grows with its size (20 s + 1 s per 25 KB; a function 30 s, a server function 60 s); past it, it fails like
+     a dropped connection and the app's own save queue sends it again ("Saved on phone, will send");
+   • sign-in (/auth/v1), keepalive beacons, requests that are not ours and Request objects: untouched.
+   window.__gcNet.stuck() — the network is not answering (offline, a read waiting > 5 s, or reads failing with none
+   answered since): GrayCo Field's sync pill says "Offline — showing saved data" then, never "All sent".
+   Off on this device: localStorage gc_fieldfast_off = '1'.  Console: __gcNet.state() */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__gcNet) return;
+var off = false; try { off = W.localStorage.getItem('gc_fieldfast_off') === '1'; } catch (e) {}
+var NF = W.fetch, nST = W.setTimeout, nCT = W.clearTimeout, aEL = W.addEventListener;
+var CAP = 6;
+var ST = { off: off, cap: CAP, active: 0, queued: 0, maxActive: 0, maxQueued: 0, timeouts: 0, retries: 0, revived: 0, failed: 0, ok: 0, writes: 0, writeTimeouts: 0, lastOkAt: 0, lastFailAt: 0, revivedAt: 0 };
+var Q = [], ACT = [], seq = 0;
+function now(){ return Date.now(); }
+function s(v){ return v == null ? '' : String(v); }
+/* the jobs have loaded: a pull got through, the app has jobs, or the first-open copy came (patch FIELDFAST_BOOT) */
+W._gcDataLoaded = function(){
+  try { if (W.__gcPulledOkAt) return true; var c = W._crm; if (c && Array.isArray(c.projects) && c.projects.length) return true;
+    var b = W._gcBootLists && W._gcBootLists.lists && W._gcBootLists.lists(); if (b && Array.isArray(b.projects)) return true; } catch (e) {}
+  return false;
+};
+var API = W.__gcNet = {
+  off: off,
+  state: function(){ var o = JSON.parse(JSON.stringify(ST)); o.active = ACT.length; o.queued = Q.length; o.oldest = ACT.reduce(function(m, a){ return a.head ? m : Math.max(m, now() - a.t0); }, 0); return o; },
+  /* the network is not answering: offline, a read waiting > 5 s for its answer, or reads failing with none answered since */
+  stuck: function(){
+    try { if (W.navigator && W.navigator.onLine === false) return true; } catch (e) {}
+    var t = now();
+    for (var i = 0; i < ACT.length; i++) if (!ACT[i].head && t - ACT[i].t0 > 5000) return true;
+    return ST.lastFailAt > ST.lastOkAt && t - ST.lastFailAt < 60000;
+  },
+  busy: function(){ return ACT.length + Q.length; },
+  revive: function(why){ return revive(why || 'call'); }
+};
+if (off || typeof NF !== 'function') return;
+
+var SBH = /\.supabase\.co$/i, FNH = { 'graycocrm1.netlify.app': 1, 'crm.grayco-cs.com': 1 };
+var CORE = /(^|[",(.])(projects|users|schedule|leads|customers|estimates|timesheets|gc_approval_queue|gc_apx_decided_approvals|gc_job_messages|gc_office_tasks|gc_deleted_projects|gc_tombstones|gc_field_settings)([",)&]|$)/;
+function urlStr(input){ try { return typeof input === 'string' ? input : (input instanceof URL ? input.href : ''); } catch (e) { return ''; } }
+/* what kind of request: null = not ours (untouched) */
+function classify(input, init){
+  var u = urlStr(input); if (!u) return null;
+  if (init && init.keepalive) return null;
+  var x; try { x = new URL(u, W.location.href); } catch (e) { return null; }
+  var p = x.pathname, m = s((init && init.method) || 'GET').toUpperCase(), kind = '';
+  if (SBH.test(x.host)) {
+    if (p.indexOf('/rest/v1/') === 0) kind = 'rest';
+    else if (p.indexOf('/storage/v1/') === 0) kind = 'file';
+    else if (p.indexOf('/functions/v1/') === 0) kind = 'edge';
+    else return null;                                   /* /auth/v1 (sign-in, token refresh) and the rest: untouched */
+  } else if (p.indexOf('/.netlify/functions/') === 0 && (x.origin === W.location.origin || FNH[x.host])) kind = 'fn';
+  else return null;
+  var read = m === 'GET' || m === 'HEAD' || (kind === 'rest' && m === 'POST' && /\/rest\/v1\/rpc\/gc_my_access$/.test(p));
+  var o = { kind: kind, read: read, url: u, pri: 2, tmo: null };
+  if (read) {
+    var q = ''; try { q = decodeURIComponent(x.search); } catch (e) { q = x.search; }
+    if (kind === 'rest') o.pri = (/key=in\.\(/.test(q) || CORE.test(q) || /\/(gc_staff|rpc\/)/.test(p)) ? 0 : 1;
+    o.tmo = kind === 'rest' ? [8000, 10000, 15000] : kind === 'file' ? [15000, 30000] : [12000, 20000];
+  } else {
+    var n = 0; try { var b = init && init.body; n = typeof b === 'string' ? b.length : (b && (b.size || b.byteLength)) || 0; } catch (e) {}
+    o.tmo = [kind === 'fn' ? 30000 + n / 25 : kind === 'edge' ? 60000 + n / 25 : 20000 + n / 25];
+  }
+  return o;
+}
+function netErr(why){ var e = new TypeError('Failed to fetch (' + why + ')'); e.gcTimeout = true; return e; }
+function abortErr(){ try { return new DOMException('The operation was aborted.', 'AbortError'); } catch (e) { var x = new Error('The operation was aborted.'); x.name = 'AbortError'; return x; } }
+
+/* one request: its attempts, its queue place, its own cancel */
+function run(input, init, c){
+  return new Promise(function(resolve, reject){
+    var R = { c: c, n: 0, done: false, t0: 0, head: false, ctl: null, timer: 0, why: '', seq: ++seq, pri: c.pri, extra: 0 };
+    var sig = init && init.signal;
+    var finish = function(ok, v){ if (R.done) return; R.done = true; drop(R); if (ok) resolve(v); else reject(v); pump(); };
+    if (sig) {
+      if (sig.aborted) return reject(sig.reason !== undefined ? sig.reason : abortErr());
+      try { sig.addEventListener('abort', function(){ var i = Q.indexOf(R); if (i >= 0) Q.splice(i, 1); if (R.ctl) { R.why = 'caller'; try { R.ctl.abort(); } catch (e) {} } finish(false, sig.reason !== undefined ? sig.reason : abortErr()); }); } catch (e) {}
+    }
+    R.go = function(){
+      if (R.done) return;
+      var ms = c.tmo[Math.min(R.n, c.tmo.length - 1)]; R.n++;
+      var ctl = R.ctl = new AbortController(), o = Object.assign({}, init || {}); o.signal = ctl.signal;
+      R.t0 = now(); R.head = false; R.why = '';
+      ACT.push(R); if (ACT.length > ST.maxActive) ST.maxActive = ACT.length;
+      R.timer = nST.call(W, function(){ R.why = 'timeout'; try { ctl.abort(); } catch (e) {} }, ms);
+      var p; try { p = NF.call(W, input, o); } catch (e) { p = Promise.reject(e); }
+      Promise.resolve(p).then(function(res){
+        nCT.call(W, R.timer); R.head = true; ST.ok++; ST.lastOkAt = now(); finish(true, res);
+      }, function(err){
+        nCT.call(W, R.timer); drop(R);
+        if (R.done) return;
+        var why = R.why;
+        if (why === 'caller') return;
+        var again = c.read && (why === 'revive' || ((why === 'timeout' || (err && err.name === 'TypeError')) && R.n < c.tmo.length + R.extra && !(W.navigator && W.navigator.onLine === false && why !== 'timeout')));
+        if (why === 'timeout') { ST.timeouts++; if (!c.read) ST.writeTimeouts++; }
+        if (again) {
+          ST.retries++;
+          var wait = why === 'revive' ? 0 : (R.n === 1 ? 400 : 1200);
+          R.pri = -1;                                    /* asked again: first in line */
+          nST.call(W, function(){ if (!R.done) { Q.push(R); pump(); } }, wait);
+          pump(); return;
+        }
+        ST.failed++; ST.lastFailAt = now();
+        finish(false, why === 'timeout' ? netErr('no answer in ' + Math.round(c.tmo[Math.min(R.n - 1, c.tmo.length - 1)] / 1000) + ' s') : err);
+      });
+    };
+    if (c.read) { Q.push(R); pump(); } else { ST.writes++; R.go(); }
+  });
+}
+function drop(R){ var i = ACT.indexOf(R); if (i >= 0) ACT.splice(i, 1); }
+function reads(){ var n = 0; for (var i = 0; i < ACT.length; i++) if (ACT[i].c.read) n++; return n; }
+function pump(){
+  while (Q.length && reads() < CAP) {
+    var best = 0;
+    for (var i = 1; i < Q.length; i++) if (Q[i].pri < Q[best].pri || (Q[i].pri === Q[best].pri && Q[i].seq < Q[best].seq)) best = i;
+    var R = Q.splice(best, 1)[0];
+    if (!R.done) R.go();
+  }
+  if (Q.length > ST.maxQueued) ST.maxQueued = Q.length;
+}
+/* back online / back in the app: a read still waiting for its first answer from before now is on a dead socket */
+function revive(why){
+  var t = now(), n = 0;
+  ACT.slice().forEach(function(R){ if (R.c.read && !R.head && t - R.t0 > 300) { R.why = 'revive'; R.extra++; n++; try { R.ctl.abort(); } catch (e) {} } });
+  if (n) { ST.revived += n; ST.revivedAt = t; }
+  return n;
+}
+try {
+  aEL.call(W, 'online', function(){ revive('online'); }, true);
+  aEL.call(W, 'pageshow', function(e){ if (e && e.persisted) revive('pageshow'); }, true);
+  aEL.call(D, 'visibilitychange', function(){ if (D.visibilityState === 'visible') revive('visible'); }, true);
+  aEL.call(D, 'resume', function(){ revive('resume'); }, true);
+} catch (e) {}
+
+var net = function(input, init){
+  var c = null; try { c = classify(input, init); } catch (e) { c = null; }
+  if (!c) return NF.apply(W, arguments);
+  return run(input, init, c);
+};
+net.__gcNet = true;
+W.fetch = net;
+})();
+</script>
 <script id="gc-patch-resume">
 /* __GC_PATCH_RESUME__ — coming back into the app answers at once (tools/patch_RESUME.py). Owner 11/20 (GrayCo Field, iPhone):
    "Keeps lagging when I get back into it too." At a return ~90 visibilitychange / pageshow / focus / online listeners and
@@ -8334,6 +8495,149 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkVersion(); });
   window.addEventListener('pageshow', function(e){ if(e && e.persisted) checkVersion(); });
   setTimeout(checkVersion, 8000);             // and shortly after load
+})();
+</script>
+<script id="gc-patch-fieldfast-boot">
+/* patch FIELDFAST: the first-open copy (tools/fieldfast_boot.js) */
+/* __GC_PATCH_FIELDFAST_BOOT__ — a phone with no saved copy shows the jobs as soon as the cloud answers (tools/patch_FIELDFAST.py).
+   Owner 11/21: "New appointment and other buttons don't work" · "It's so slow". Measured (test_FIELDTAPS, iPhone, CPU x4):
+   after the first open Field Home had NO jobs for 10-13 s (office / PM / estimator / crew): the cloud answered in ~0.3 s,
+   but the answer waited behind the rest of the page being read (the sync's merge steps each wait their turn), then the
+   whole pull, then a redraw. A phone that has the lists saved (IndexedDB) already opens with them; this is for one that
+   has NOT (a first sign-in, a phone whose storage was cleared):
+   • as the page starts, on a phone that is signed in and has no saved job list, ONE read asks the cloud for the lists the
+     Field's screens need (jobs, schedule, people, leads — and the delete lists, so a deleted job never shows), through the
+     page's own sign-in / access layers (a person gets only what they may read);
+   • until the app's own lists arrive, window._crm shows that copy (jobs, schedule, people added to the built-in ones;
+     leads through the app's own lead mirror) — Home, Jobs, Approvals, the pickers and a job page draw from it at once;
+   • nothing is saved from it: it is never written to the phone or sent anywhere; the moment the app's own list for a
+     key has anything in it, that list is shown again (the sync then applies the cloud's copy exactly as before).
+   Off on this device: localStorage gc_fieldfast_off = '1'.  Console: _gcBootLists.state() */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W._gcBootLists) return;
+var NST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+var ST = { off: false, phone: false, saved: null, asked: 0, got: 0, ms: 0, err: '', used: {}, keys: {} };
+var L = null;   /* the cloud's lists: { projects, schedule, users, leads } */
+W._gcBootLists = { state: function(){ var o = JSON.parse(JSON.stringify(ST)); o.have = L ? Object.keys(L).map(function(k){ return k + ':' + (Array.isArray(L[k]) ? L[k].length : '-'); }) : []; return o; },
+  lists: function(){ return L; }, active: function(k){ return !!(L && ST.used[k]); } };
+function lsGet(k){ try { return W.localStorage.getItem(k); } catch (e) { return null; } }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function s(v){ return v == null ? '' : String(v); }
+try { if (lsGet('gc_fieldfast_off') === '1') { ST.off = true; return; } } catch (e) {}
+function phone(){
+  try { if (D.documentElement.classList.contains('gc-boot-field')) return true; } catch (e) {}
+  try { if (W._gcFieldBoot && W._gcFieldBoot.phone) return !!W._gcFieldBoot.phone(); } catch (e) {}
+  return false;
+}
+function signed(){ try { var j = JSON.parse(lsGet('gc_auth_v1') || 'null'); return !!(j && j.access_token && j.email); } catch (e) { return false; } }
+ST.phone = phone();
+if (!ST.phone || !signed()) return;
+
+/* the app's own list is empty (or only the built-in people) — then the cloud's copy is shown */
+function appEmpty(o, k){ var v = o && o[k]; return !Array.isArray(v) || v.length === 0; }
+function uKey(u){ return u ? s(u.email).toLowerCase() || s(u.id) || s(u.name).toLowerCase() : ''; }
+function withPeople(mine){
+  var a = arr(mine), seen = {}; a.forEach(function(u){ var k = uKey(u); if (k) seen[k] = 1; });
+  var add = arr(L && L.users).filter(function(u){ var k = uKey(u); return k && !seen[k] && (seen[k] = 1); });
+  return add.length ? a.concat(add) : a;
+}
+function fill(o){
+  if (!L || !o || typeof o !== 'object') return o;
+  try {
+    if (L.projects && L.projects.length && appEmpty(o, 'projects')) { o.projects = L.projects.slice(); ST.used.projects = 1; } else if (!appEmpty(o, 'projects')) ST.used.projects = 0;
+    if (L.schedule && L.schedule.length && appEmpty(o, 'schedule')) { o.schedule = L.schedule.slice(); ST.used.schedule = 1; } else if (!appEmpty(o, 'schedule')) ST.used.schedule = 0;
+    /* people: the app starts with a few built-in ones; the cloud's are added until the app's own list has arrived */
+    if (L.users && L.users.length && !W.__gcUsersLoaded) { var u = withPeople(o.users); if (u.length !== arr(o.users).length) { o.users = u; ST.used.users = 1; } }
+  } catch (e) {}
+  return o;
+}
+function leadsNow(){
+  try {
+    if (!L || !L.leads || !L.leads.length) return;
+    var cur = W.__gcLeadsLive;
+    if (Array.isArray(cur) && cur.length && !cur.__gcBoot) return;   /* the app's own leads are there */
+    if (Array.isArray(cur) && cur.__gcBoot) return;
+    var c = L.leads.slice(); try { Object.defineProperty(c, '__gcBoot', { value: true }); } catch (e) {}
+    W.__gcLeadsLive = c; ST.used.leads = 1;
+  } catch (e) {}
+}
+/* the CRM's data object goes through __gcCrmBox each time it is rebuilt */
+(function(){
+  var prev = W.__gcCrmBox;
+  W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; return fill(r || o); };
+})();
+/* the app's own people list has arrived when the sync applied it (it is then the cloud's merged with this phone's) */
+function poke(){
+  try { if (W._crm) fill(W._crm); } catch (e) {}
+  leadsNow();
+  try { if (W._gcField && W._gcField.render && D.querySelector('#_gcJobPick.gc-fh')) W._gcField.render(); } catch (e) {}
+  try { if (W._gcRA && W._gcRA.sync) W._gcRA.sync(); } catch (e) {}
+  try { W.dispatchEvent(new Event('gc-boot-lists')); } catch (e) {}
+}
+
+/* is a job list saved on this phone? (IndexedDB grayco_crm / kv: projects) — never creates the database */
+function savedCopy(){
+  return new Promise(function(res){
+    var done = function(v){ if (done.d) return; done.d = 1; res(v); };
+    NST.call(W, function(){ done(null); }, 1500);
+    try {
+      var q = W.indexedDB.open('grayco_crm');
+      q.onupgradeneeded = function(){ try { q.transaction.abort(); } catch (e) {} done(false); };
+      q.onerror = function(){ done(false); };
+      q.onblocked = function(){ done(null); };
+      q.onsuccess = function(){
+        var db = q.result;
+        try {
+          if (!db.objectStoreNames.contains('kv')) { db.close(); return done(false); }
+          var g = db.transaction('kv', 'readonly').objectStore('kv').get('projects');
+          g.onsuccess = function(){ var v = g.result, n = 0; try { if (Array.isArray(v)) n = v.length; else if (v && typeof v === 'object' && typeof v.v === 'string') n = v.v.length > 2 ? 1 : 0; else if (typeof v === 'string') n = v.length > 2 ? 1 : 0; else if (v && typeof v === 'object') n = 1; } catch (e) {} db.close(); done(n > 0); };
+          g.onerror = function(){ db.close(); done(null); };
+        } catch (e) { try { db.close(); } catch (x) {} done(null); }
+      };
+    } catch (e) { done(null); }
+  });
+}
+var KEYS = ['projects', 'schedule', 'users', 'leads', 'projects__manifest', 'schedule__manifest', 'gc_deleted_projects', 'gc_deleted_schedule', 'gc_deleted_leads', 'gc_tombstones'];
+function ask(){
+  ST.asked = Date.now();
+  var u = 'https://ieeonhpfahmwwecizdut.supabase.co/rest/v1/gc_kv?key=in.(' + KEYS.map(function(k){ return '"' + k + '"'; }).join(',') + ')&select=key,value,updated_at';
+  return W.fetch(u, { headers: { Accept: 'application/json' }, cache: 'no-store' }).then(function(r){ if (!r || !r.ok) throw new Error('HTTP ' + (r && r.status)); return r.json(); });
+}
+function dead(rows, k){
+  var d = {};
+  rows.forEach(function(r){
+    if (!r) return;
+    if (r.key === 'gc_deleted_' + k) arr(r.value).forEach(function(id){ d[s(id && typeof id === 'object' ? id.id : id)] = 1; });
+    if (r.key === 'gc_tombstones' && r.value && typeof r.value === 'object') Object.keys(r.value).forEach(function(t){ if (t.indexOf(k + ':') === 0) d[t.slice(k.length + 1)] = 1; });
+  });
+  try { (JSON.parse(lsGet('gc_deleted_' + k) || '[]') || []).forEach(function(id){ d[s(id)] = 1; }); } catch (e) {}
+  return d;
+}
+function take(rows){
+  if (!Array.isArray(rows)) return;
+  var by = {}; rows.forEach(function(r){ if (r && r.key) by[r.key] = r.value; });
+  var out = {};
+  ['projects', 'schedule', 'leads', 'users'].forEach(function(k){
+    if (by[k + '__manifest']) return;               /* a big list kept in pieces: the sync reads it whole */
+    var v = by[k]; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+    if (!Array.isArray(v)) return;
+    var d = k === 'users' ? {} : dead(rows, k);
+    v = v.filter(function(x){ return x && typeof x === 'object' && !x.deleted && !x.tombstoned && !(x.id != null && d[s(x.id)]); });
+    if (k === 'projects') { try { if (typeof W._gcStripDeletedProjects === 'function') v = arr(W._gcStripDeletedProjects(v)); } catch (e) {} }
+    out[k] = v; ST.keys[k] = v.length;
+  });
+  L = out; ST.got = Date.now(); ST.ms = ST.got - ST.asked;
+  poke();
+  /* the app's data object may be rebuilt before the Field is drawn: look again a few times while the copy is in use */
+  [300, 1000, 2500, 5000].forEach(function(ms){ NST.call(W, poke, ms); });
+}
+savedCopy().then(function(has){
+  ST.saved = has;
+  if (has !== false) return;                         /* a saved copy (or unknown): the app opens from it, nothing is asked */
+  ask().then(take, function(e){ ST.err = s(e && e.message || e).slice(0, 120); });
+});
 })();
 </script>
 <script id="gc-patch-fastopen">
@@ -53880,6 +54184,7 @@ async function pullAll(force){
       updated = true;
     }
 
+    try{ window.__gcPulledOkAt = Date.now(); }catch(_pk){}   /* patch FIELDFAST: a pull got through — the lists have loaded */
     try{ if(await pullDocs()) updated = true; }catch(e){ console.warn('[GC Sync] Document pull failed:', e.message); }
 
     if(updated){
@@ -204579,10 +204884,13 @@ function syncState(){
   try { if (typeof W._gcSending === 'function') waiting += arr(W._gcSending()).length; } catch (e) {}   /* APPLAG: still on its way (weak signal) — "sending…" */
   try { var cs = W._gcClaims && W._gcClaims.status && W._gcClaims.status(); if (cs && cs.dirty && cs.dirty.claims) waiting++; } catch (e) {}   /* SAVES: a drying reading not sent yet */
   var sbDirty = false; try { sbDirty = !!(W._gcRP && W._gcRP.site && W._gcRP.site().state().dirty); } catch (e) {}
-  if (!navigator.onLine) return { k: 'off', t: '📴 Saved on phone, will send' };
+  if (!navigator.onLine) return (waiting || sbDirty) ? { k: 'off', t: '📴 Saved on phone, will send' } : { k: 'off', t: '⚠️ Offline — showing saved data' };   /* patch FIELDFAST */
   if (waiting || sbDirty) return { k: 'wait', t: '⏳ Saved on phone, sending…' };
+  try { if (W.__gcNet && W.__gcNet.stuck()) return { k: 'off', t: '⚠️ Offline — showing saved data' }; } catch (e) {}   /* patch FIELDFAST: requests hung — never "All sent" */
+  try { if (W._gcDataLoaded && !W._gcDataLoaded()) return { k: 'wait', t: '⏳ Loading…' }; } catch (e) {}   /* patch FIELDFAST: the jobs have not loaded yet */
   return { k: 'ok', t: '✓ All sent' };
 }
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { if (!D.hidden && D.getElementById('gc-fh-sync')) paintSync(); } catch (e) {} }, 2000);   /* patch FIELDFAST: a stall changes nothing else on screen — the pill is looked at again */
 function paintSync(){ var el = D.getElementById('gc-fh-sync'); if (!el) return; var st = syncState(); if (el.textContent !== st.t) el.textContent = st.t; if (el.getAttribute('data-k') !== st.k) el.setAttribute('data-k', st.k); if (st.k !== 'ok') later(paintSync, 2500); }
 
 /* ── the look ── */
@@ -205152,11 +205460,11 @@ function render(force){
     if (sec === 'jobs') {
       var title = m.J.company ? 'Today on the schedule' : (m.J.today ? 'My jobs today' : 'My active jobs');
       h += '<div class="fh-sec"><span>' + title + ' (' + m.J.list.length + ')</span><button type="button" data-fa="alljobs">All jobs ›</button></div>';
-      h += m.J.list.length ? (W._gcFPSort ? W._gcFPSort(m.J.list) : m.J.list).map(jobCard).join('')   /* patch FIELDPORTAL */ : '<div class="fh-empty">' + (m.J.company ? 'Nothing is on the schedule today. Tap <b>All jobs</b> to find a job.' : 'No jobs assigned to you yet. Tap <b>All jobs</b> to find one.') + '</div>';
+      h += m.J.list.length ? (W._gcFPSort ? W._gcFPSort(m.J.list) : m.J.list).map(jobCard).join('')   /* patch FIELDPORTAL */ : (W._gcDataLoaded && !W._gcDataLoaded()) ? '<div class="fh-empty">⏳ Loading jobs…</div>' /* patch FIELDFAST */ : '<div class="fh-empty">' + (m.J.company ? 'Nothing is on the schedule today. Tap <b>All jobs</b> to find a job.' : 'No jobs assigned to you yet. Tap <b>All jobs</b> to find one.') + '</div>';
     } else if (sec === 'approvals') {
       if (k === 'super' && !m.ap.length) return;
       h += '<div class="fh-sec"><span>My approvals (' + m.ap.length + ')</span><button type="button" data-fa="allappr">See all ›</button></div>';
-      h += m.ap.length ? m.ap.slice(0, 5).map(function(x){ return '<div class="fh-ap" data-ap="' + esc(x.id) + '">' + tierChip(x) + '<div class="t"><b>' + esc(x.title) + '</b>' + (x.sub ? '<span>' + esc(x.sub) + '</span>' : '') + '</div>' + (W._gcApprDocChip ? W._gcApprDocChip(x.id) : '') /* patch APPRDOC */ + (W._gcCanApproveInPlace && W._gcCanApproveInPlace(x.id) ? '<button type="button" class="fh-ok" data-fa="apprnow" data-id="' + esc(x.id) + '">✅ Approve</button>' : '<button type="button" class="fh-ok" data-fa="appr" data-id="' + esc(x.id) + '">Review</button>') + '</div>'; }).join('') : '<div class="fh-empty">✓ Nothing is waiting on you.</div>';
+      h += m.ap.length ? m.ap.slice(0, 5).map(function(x){ return '<div class="fh-ap" data-ap="' + esc(x.id) + '">' + tierChip(x) + '<div class="t"><b>' + esc(x.title) + '</b>' + (x.sub ? '<span>' + esc(x.sub) + '</span>' : '') + '</div>' + (W._gcApprDocChip ? W._gcApprDocChip(x.id) : '') /* patch APPRDOC */ + (W._gcCanApproveInPlace && W._gcCanApproveInPlace(x.id) ? '<button type="button" class="fh-ok" data-fa="apprnow" data-id="' + esc(x.id) + '">✅ Approve</button>' : '<button type="button" class="fh-ok" data-fa="appr" data-id="' + esc(x.id) + '">Review</button>') + '</div>'; }).join('') : (W._gcDataLoaded && !W._gcDataLoaded()) ? '<div class="fh-empty">⏳ Loading…</div>' /* patch FIELDFAST */ : '<div class="fh-empty">✓ Nothing is waiting on you.</div>';
     } else if (sec === 'estimates') {
       h += '<div class="fh-sec"><span>Estimates to build (' + m.est.length + ')</span></div>';
       h += m.est.length ? m.est.map(function(l){ return '<div class="fh-est"><div><b>' + esc(l.client || l.name) + '</b> · ' + esc(l.type || l.name || 'lead') + '</div><button type="button" class="fh-sm" data-fa="estlead" data-lead="' + esc(l.id) + '">📐 Estimate</button></div>'; }).join('') : '<div class="fh-empty">No leads waiting on an estimate.</div>';
@@ -214743,6 +215051,7 @@ function run(id, pid){
     var p = pid ? proj(pid) : null;
     if (p) { x.run(p); return true; }
     var a = app(), list = jobsOf(a).list.filter(function(q){ return !x.jobOk || x.jobOk(q); });
+    if (!list.length && W._gcDataLoaded && !W._gcDataLoaded()) { toast('⏳ Loading jobs…'); var _ffT = Date.now(); (function _ffW(){ later(function(){ if (W._gcDataLoaded()) { run(id, pid); return; } if (Date.now() - _ffT < 25000) _ffW(); }, 400); })(); return true; }   /* patch FIELDFAST: the jobs have not loaded yet — it runs by itself once they have */
     if (!list.length) { toast(a === 'crew' || a === 'pm' ? 'No job for you today.' : 'No open job for that.'); return false; }
     if (list.length === 1) { x.run(list[0]); return true; }
     pickJob(label(id), list, function(q){ x.run(q); });
@@ -214854,7 +215163,7 @@ function fieldBottom0(a){
   if (!L.length && !arr(C().projects).length && LASTBOT) return LASTBOT;   /* FIELDPERF: the jobs are not there for a moment (a reload): keep the list shown */
   return '<div class="fh-sec"><span>All jobs (' + L.length + ')</span><button type="button" data-fa="alljobs">Find a job ›</button></div>' +
     (L.length ? L.slice(0, CAP).map(function(p){ var r = ''; try { r = FP() && FP().row ? FP().row(p) : ''; } catch (e) {} return '<div class="fh-job" data-job="' + esc(p.id) + '"><button type="button" class="fh-n" data-fa="open" data-pid="' + esc(p.id) + '">' + esc(p.name) + '</button><div class="fh-a">' + esc([p.address, p.client, p.status].filter(Boolean).join(' · ')) + '</div>' + r + '</div>'; }).join('') +
-      (L.length > CAP ? '<button type="button" class="gc-ra-allbtn" data-fa="alljobs">All ' + L.length + ' jobs ›</button>' : '') : '<div class="fh-empty">No open jobs.</div>');
+      (L.length > CAP ? '<button type="button" class="gc-ra-allbtn" data-fa="alljobs">All ' + L.length + ' jobs ›</button>' : '') : (W._gcDataLoaded && !W._gcDataLoaded()) ? '<div class="fh-empty">⏳ Loading jobs…</div>' /* patch FIELDFAST */ : '<div class="fh-empty">No open jobs.</div>');
 }
 var homeObs = null, homeEl = null, injecting = false, LASTBOT = '';   /* FIELDPERF */
 function fieldInject(){
@@ -215704,7 +216013,7 @@ function formSheet(kind, x, preset){
     var sel = preset.pid ? 'j:' + preset.pid : preset.leadId ? 'l:' + preset.leadId : it.pid ? 'j:' + it.pid : it.leadId ? 'l:' + it.leadId : '';
     var LL = myLeads(); if (it.leadId && !LL.some(function(l){ return s(l.id) === s(it.leadId); })) { var l0 = leadById(it.leadId); if (l0) LL = [l0].concat(LL); }
     h += '<label>What</label><div class="gc-pmf-seg wide" data-seg="ak">' + APPT_KINDS.map(function(k){ return '<button type="button" data-v="' + k + '"' + (k === ak ? ' class="on"' : '') + '>' + k + '</button>'; }).join('') + '</div>' +
-      '<label>With</label><select data-f="with"><option value="">— pick a job or lead —</option>' + (J.length ? '<optgroup label="My jobs">' + jobOpts(sel, J) + '</optgroup>' : '') +
+      '<label>With</label><select data-f="with"><option value="">— pick a job or lead —</option>' + (!J.length && !LL.length && W._gcDataLoaded && !W._gcDataLoaded() ? '<option value="" disabled>⏳ Loading jobs and leads…</option>' : '') /* patch FIELDFAST */ + (J.length ? '<optgroup label="My jobs">' + jobOpts(sel, J) + '</optgroup>' : '') +
       (LL.length ? '<optgroup label="My leads">' + LL.slice(0, 150).map(function(l){ return opt('l:' + l.id, s(l.client || l.contactName || l.name) + (l.address ? ' — ' + s(l.address).slice(0, 28) : ''), sel === 'l:' + l.id); }).join('') + '</optgroup>' : '') +
       '<option value="new"' + (!sel && it.customer ? ' selected' : '') + '>＋ A new customer…</option></select>' +
       '<div data-f="newc"' + (!sel && it.customer ? '' : ' hidden') + '><input data-f="cname" placeholder="Customer name" value="' + esc(it.customer) + '"><input data-f="cphone" type="tel" placeholder="Phone" value="' + esc(it.phone) + '"><input data-f="caddr" placeholder="Address" value="' + esc(it.address) + '"><div class="gc-pmf-hint">A new customer becomes your lead (the same as the Schedule screen).</div></div>';
@@ -215834,7 +216143,9 @@ function openItem(id){
 
 /* ═════ ✏️ Update job — one screen ═════ */
 function pickMyJob(title, cb){
-  var J = myJobs(); if (!J.length) { toast('No open job for you yet.'); return; }
+  var J = myJobs();
+  if (!J.length && W._gcDataLoaded && !W._gcDataLoaded()) { toast('⏳ Loading jobs…'); var _ffT = Date.now(); (function _ffW(){ later(function(){ if (W._gcDataLoaded()) { pickMyJob(title, cb); return; } if (Date.now() - _ffT < 25000) _ffW(); }, 400); })(); return; }   /* patch FIELDFAST */
+  if (!J.length) { toast('No open job for you yet.'); return; }
   var cur = null; try { if (D.getElementById('_gcJobDash') && W._gcCurrentJob) cur = J.filter(function(p){ return s(p.id) === s(W._gcCurrentJob.id); })[0]; } catch (e) {}
   if (cur || J.length === 1) { cb(cur || J[0]); return; }
   if (K()) K().pickJob(title, J, cb);
