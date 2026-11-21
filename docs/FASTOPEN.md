@@ -147,3 +147,70 @@ That needs (d) the quiet first 10 s on a phone and then (c) the split; (e) next:
   allows the worker (scratchpad fastopen/harness_fo.mjs, `GC_HARNESS_SW` for the test).
 
 
+
+
+## 4. Resume — coming back into the app (11/20–21, branch claude/fastopen2)
+
+Owner 11/20, in the field (GrayCo Field, iPhone): "Keeps lagging when I get back into it too. The app has got to work quickly
+while I'm in the field." Also: My Schedule blank / frozen after a 5G → Wi-Fi switch.
+
+Measured offline (session scratchpad `fo2/resume.mjs`): real-data snapshot of 11/19 in the fake cloud, owner-iPhone profile
+390×844, **CPU ×4**, 400/150 kbps, 300 ms RTT, localStorage full. A "return" = the page hidden, JS suspended for 60 s (as iOS
+does: every timer that falls due piles up), then visible + focus (every 2nd one also offline → online = a network switch); a
+tap on ☰ More 0.3 s after the return; long tasks counted for 10 s. The build machine was shared with other agents' browser
+tests (load 2–3 on 4 cores): single numbers vary a lot; compare ranges.
+
+### What a return did (main 9d50476)
+
+1. **Every return after > 1 min away, and every "online" (a network switch), re-downloaded every synced list.** The catch-up
+   (`catchUp()` in "back online / back to the screen", line ~130630) called `_gcPullNow(true)`: all 52 lists' values,
+   **12.4–13.1 MB of JSON per return** (0.8 MB on the wire, ~16 s on one bar), then parsed by the fetch wrappers (TOMBFIX,
+   files-in-storage, the learner…), merged, written to IndexedDB and redrawn: 1.0–1.6 s freezes 4–7 s after the return.
+2. **The pulls piled up.** `_gcPullNow` cleared the sync's "a pull is running" flag and started another pull beside it; the
+   focus / visibility / tab / catch-up handlers called it 4–7 times within seconds. Traced: 5–7 downloads of all 52 lists side
+   by side on the slow link, all arriving ~90 s later and parsed together; twice the page ran out of memory and closed (on
+   the phone that is a blank page — a likely cause of the blank My Schedule after the network switch).
+3. **~90 return listeners and ~150–300 overdue timer callbacks ran in the same moment** (visibilitychange / pageshow / focus /
+   online on window/document: the sync, photos, leads, approvals, version check, To-Do, badges…; plus every setInterval /
+   setTimeout that fell due while suspended). Each started its own read or redraw; the first frame took 53–226 ms and the
+   tap waited behind it.
+
+### What changed (tools/patch_RESUME.py, applied after FASTOPEN)
+
+* **The return is lined up** (`gc-patch-resume`, the page's 2nd script, before anything registers a listener or a timer):
+  the return's listeners and the overdue timers go into one queue that starts after the first frame + 0.35 s, runs one per
+  task (8 ms slices), waits longer after a long one, lets a tap go first (holds 0.25 s after a pointerdown / key), and runs a
+  listener queued twice in one return once (an interval once, however many ticks it missed). As before: the hidden-going
+  events (the saves on the way out), element focus, events the page sends itself, a hidden tab's timers (a desk's background
+  sync), everything before the first hide (the open), and the page's "native" timers. Kill switch `gc_resume_off = '1'`;
+  `__gcResume.state()`.
+* **The catch-up checks instead of re-downloading**: `_gcPullNow('verify')` (the catch-up and the 10-minute "everything
+  again" pull) uses the FASTOPEN marks: a list this page applied, not written here since (write watch; a list the screen
+  wrote back unchanged is recognised by its fingerprint) and whose cloud stamp is still EXACTLY the applied one is not
+  downloaded; every other list is downloaded and merged as before. A real full pull still at `_gcPullNow(true)`, every 6 h,
+  with the marks off, or when the write watch is not working.
+* **One pull at a time**: a `_gcPullNow` call while a pull runs waits for it, then one follow-up pull runs for all who asked
+  (the widest ask). A pull running > 3 min is taken as stuck (as before). `_gcFastOpen.marks.info()` → `trace`,
+  `coalesced`, `reverified`, `rebased`.
+* Nothing of the open is run again at a return (checked: no boot work is in the queue; BOOTWATCH's resume check is one of
+  the queued listeners).
+
+### Before / after (same profile; main vs claude/fastopen2, runs ab_base / ab_fo2 / net_fo2 / fo2d)
+
+| | main 9d50476 | claude/fastopen2 |
+|---|---|---|
+| JSON downloaded in the 10 s after a return | **12.4 / 12.4 / 13.1 MB** | **1.2 / 1.4 / 1.7 MB** (network switch: 2.4 / 8.6 MB) |
+| worst long task in the 10 s after a return | 1.0 / 1.4 / 1.6 s | **0.37 / 0.44 / 0.52 s** (one outlier 6.4 s on a loaded machine, not reproduced in 4 more returns: 0.36–0.84 s) |
+| first frame after the return | 53 / 57 / 226 ms | 4 / 5 / 55 ms |
+| tap on ☰ More 0.3 s after the return (to the sheet drawn) | 653 / 859 / 2251 ms | 190 / 562 / 607 / 1036 / 1607 ms |
+| the same tap with the page idle (floor) | 423 / 498 / 1560 ms | 656 / 792 / 1199 ms |
+| cold open (fresh tab), Field home | 28.1 / 29.4 s (page 304 from the HTTP cache) | 31.0 / 34.4 s (page from the saved copy, +~2 s to read 24 MB under CPU ×4) |
+| long tasks in the 10 s after Field home (cold) | worst 1.0 / 1.1 s | **worst 0.26 / 0.33 s** |
+| lists in the first pull of an open | 52 | 1–3 (39 kept by stamp) |
+
+**Not reached in this harness:** tap < 300 ms and Field home < 2–3 s. At CPU ×4 the page is ~65 % busy even when nobody
+touches it (idle-tap floor 0.4–1.6 s on main too): the desk-only DOM scans (AP3 `acceptNode`, NAV `isScreen`, J's list
+guard, QBCSV `decorate`, DESKFIT `tick`, TODOPERF, the invoice matcher's `partyOk`/`sameInvoice`, ADM tasks, PROJTBL `desk`)
+run on a Field phone; and Field home still waits for the HTML parser to reach PMFIELD (line ~213 k of 250 k). Those are plan
+items (d) "quiet on a phone" and (c) "split index.html" above — the next step. Single-key reads at a return that remain big:
+`estimates__chunkN` (1.1–2.0 MB), `gc_office_tasks` (0.76 MB, twice), `leads` (0.75 MB), `projects` (0.57 MB).

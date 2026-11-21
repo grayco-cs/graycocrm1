@@ -124,7 +124,10 @@ try {
   ok(!!st && st.live === R2.v, 'the stale gate sees the newer live build', st);
   const held = await ev(() => window._supaUpsert('gc_folded', [{ id: 'FX', note: 'automatic' }]).then(() => 'sent', e => String(e && e.message || e)));
   ok(/held/.test(held) && !H.writes.slice(w1).some(w => w.key === 'gc_folded'), 'an automatic upload from the old copy is held (nothing written to the cloud)', held);
-  ok(!!(await until(() => ev(() => !!document.getElementById('gc-bw-update') || !!document.getElementById('gc-update-bar') || !!document.getElementById('gc-stalegate-note')), 20000)), 'the update is offered');
+  /* AUTOUPD (main 11/19): no bar any more — BOOTWATCH sees the old copy and updates it by itself at the first quiet moment */
+  const upd = await until(() => ev(() => { if (document.getElementById('gc-bw-update') || document.getElementById('gc-update-bar') || document.getElementById('gc-stalegate-note') || document.getElementById('gc-bw-updating') || document.getElementById('gc-upd-pill')) return 'shown';
+    const b = window._gcBootWatch && window._gcBootWatch.state().boot; return b && (b.old || b.updWait || b.autoUpd) ? { old: b.old, wait: b.updWait, auto: b.autoUpd } : null; }), 20000);
+  ok(!!upd, 'the update is offered / runs by itself (AUTOUPD)', upd);
   await A.page().touchscreen.tap(200, 400).catch(() => {});
   const mine = await ev(() => window._supaUpsert('gc_team_settings', { fastopenTest: 1 }).then(() => 'sent', e => String(e && e.message || e)));
   ok(mine === 'sent', "a person's own save still goes (a tap in the last 15 s)", mine);
