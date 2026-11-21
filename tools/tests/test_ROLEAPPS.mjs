@@ -66,6 +66,7 @@ const ROLES = {
   crew:   { app: 'crew',   field: ['Home', 'Today', 'Photos', 'Messages'], desk: null },
   office: { app: 'office', field: ['Home', 'Approvals', 'Messages', 'More'], desk: ['Home', 'Approvals', 'Messages', 'More'] }
 };
+const SPEAK = { est: 1, office: 1, ins: 1 };   /* SPEAKTILE: GrayCo Field only (not the Desk) */
 const HOMEBTN = { admin: ['appr', 'leads', 'money', 'viewas', 'systems', 'addjob'], pm: ['log', 'photos', 'punch', 'sched', 'msgs', 'appr'], est: ['sendest', 'newcust', 'bids', 'visit', 'myleads', 'quickest', 'roofscout', 'photos'],   /* patch ESTPDF: 📤 Send estimate, 👤 New customer */
   ins: ['emerg', 'oncall', 'drying', 'equip', 'photos', 'claims', 'tpa'], crew: ['clock', 'photos', 'log', 'punch'], office: ['appr', 'msgs', 'match', 'todo'],
   mit: ['mws_read', 'mws_photos', 'mws_equip', 'mws_log', 'mws_auth', 'mws_note', 'clock', 'mws_emerg'] };   /* MITWS: the mitigation field buttons, in work order */
@@ -164,7 +165,8 @@ async function roleRun(role, where){
   ok(JSON.stringify(bl) === JSON.stringify(R[where]), `${role} ${where}: bottom bar ${R[where].join(' · ')}`, bl);
   const btns = await c.ev(([w, a]) => [...document.querySelectorAll(w === 'field' ? '#_gcJobPick .gc-ra-q [data-ra-a]' : '#gc-ra-desk .gc-ra-tiles [data-ra-a]')].map(b => b.getAttribute('data-ra-a')), [where, R.app]);
   if (where === 'field' && DASH[R.app]) ok(btns.length > 0 && (await c.ev(() => !!document.querySelector('#_gcJobPick .gc-pmf .gc-pmf-q [data-pmf-a="appt"]'))), `${role} field: the Home dashboard (quick actions + the role's tiles: ${btns.join(', ')})`, btns);   /* patch PMFIELD */
-  else ok(JSON.stringify(btns) === JSON.stringify(HOMEBTN[R.app]), `${role} ${where}: the home buttons ${HOMEBTN[R.app].join(', ')}`, btns);
+  else { const want = where === 'field' && SPEAK[R.app] ? (R.app === 'ins' ? HOMEBTN[R.app].concat(['speak']) : ['speak'].concat(HOMEBTN[R.app])) : HOMEBTN[R.app];   /* SPEAKTILE: 🎤 Speak in GrayCo Field */
+    ok(JSON.stringify(btns) === JSON.stringify(want), `${role} ${where}: the home buttons ${want.join(', ')}`, btns); }
   if (where === 'desk') {
     const look = await c.ev(() => { const d = document.getElementById('gc-ra-desk'); const r = d.getBoundingClientRect(); const body = d.querySelector('.ra-body'); return { full: r.width >= innerWidth - 1 && r.bottom >= innerHeight - 1 && r.top < 120, bg: getComputedStyle(d).backgroundColor, pageScroll: document.scrollingElement.scrollHeight > innerHeight + 2 && getComputedStyle(document.body).overflow !== 'hidden', inner: getComputedStyle(body).overflowY }; });
     ok(look.full && /245, 246, 248/.test(look.bg) && look.inner === 'auto', `${role} desk: a full-window white app (only the cards scroll)`, look);

@@ -103,7 +103,12 @@ function hdrs(event){ const h = {}; Object.keys((event && event.headers) || {}).
 function rawBody(event){ return event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : (event.body || ''); }
 function same(a, b){ a = Buffer.from(s(a)); b = Buffer.from(s(b)); if (!a.length || a.length !== b.length) return false; try { return crypto.timingSafeEqual(a, b); } catch (e) { return false; } }
 const KV = 'gc_voice_inbox';
-const TYPES = ['note', 'board', 'todo', 'change_order', 'schedule', 'customer_update', 'daily_log', 'message', 'announcement'];
+const TYPES = ['note', 'board', 'todo', 'change_order', 'schedule', 'customer_update', 'daily_log', 'message', 'announcement',
+  'appointment', 'lead', 'expense', 'schedule_work', 'my_schedule'];   /* SPEAKTILE: the 🎤 Speak tile's places */
+const KINDS = ['Estimate', 'Site visit', 'Inspection', 'Walkthrough', 'Meeting'];
+/* today in Central time (the company's clock), and the next two weeks with their weekdays — "Tuesday" is a real date */
+function chicagoToday(){ try { const p = {}; new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).forEach(function(x){ p[x.type] = x.value; }); if (p.year) return p.year + '-' + p.month + '-' + p.day; } catch (e) {} return new Date().toISOString().slice(0, 10); }
+function calendar(today){ const DW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], out = [], d0 = new Date(today + 'T12:00:00Z'); if (isNaN(d0)) return ''; for (let i = 0; i < 15; i++) { const d = new Date(d0.getTime() + i * 864e5); out.push(DW[d.getUTCDay()] + ' ' + d.toISOString().slice(0, 10)); } return out.join(', '); }
 
 /* ── Resend's signature (Svix), the same check as bid-inbox.js ── */
 function svixOk(raw, h, secret){
@@ -137,15 +142,29 @@ const TOOL = { name: 'route_voice_note', description: 'Split a construction PM\'
       scope: { type: 'string', description: 'change order: the extra work' },
       price: { type: ['number', 'null'], description: 'change order: the price if one was said, else null' },
       schedule_item: { type: 'string', description: 'schedule change: what moves' },
-      new_date: { type: 'string', description: 'schedule change: YYYY-MM-DD' } }, required: ['type', 'text'] } } },
+      new_date: { type: 'string', description: 'schedule change: YYYY-MM-DD' },
+      appt_kind: { type: 'string', enum: KINDS.concat(['']), description: 'appointment: what kind' },
+      date: { type: 'string', description: 'appointment / expense / schedule_work start: YYYY-MM-DD (Central time) or ""' },
+      time: { type: 'string', description: 'appointment / schedule_work: HH:MM 24-hour or ""' },
+      end_time: { type: 'string', description: 'appointment: HH:MM 24-hour or ""' },
+      contact_name: { type: 'string', description: 'appointment / lead: the customer\'s name as said, "" if none' },
+      phone: { type: 'string' }, email: { type: 'string' }, address: { type: 'string', description: 'appointment / lead: the street address as said' },
+      amount: { type: ['number', 'null'], description: 'expense: the amount said, else null' },
+      vendor: { type: 'string', description: 'expense: the store / vendor' } }, required: ['type', 'text'] } } },
     required: ['job_id', 'job_confidence', 'summary', 'actions'] } };
 function prompt(text, jobs, people, today, picked){
   return 'You turn a construction project manager\'s spoken note (dictated on a phone, so expect transcription errors) into CRM actions for GrayCo Construction Services. ' +
-    'Today is ' + today + ' (dates are Central time; "Friday" means the next Friday). Call the route_voice_note tool exactly once.\n' +
+    'Today is ' + today + ' (dates are Central time — America/Chicago; "Friday" means the next Friday; the next days: ' + calendar(today) + '). Times are HH:MM 24-hour; a bare hour from 1 to 5 ("Tuesday at 2") is in the afternoon. Call the route_voice_note tool exactly once.\n' +
     'Action types: note (a job note for the team record), board (a message on the job\'s team message board), todo (a task: text, assignee from the people list or "" for the speaker, due date when said), ' +
     'change_order (extra work the customer asked for or that was found: scope, price only if a number was said), schedule (a date that moves: schedule_item + new_date), ' +
     'customer_update (something to tell the customer — friendly, no internal details, no prices unless said for the customer), daily_log (what the crew did today, weather, crew count), ' +
-    'message (to one person: assignee), announcement (to the whole company). One note may give several actions; do not repeat the same thing twice; never invent anything that was not said. ' +
+    'message (to one person: assignee), announcement (to the whole company), ' +
+    'appointment (a NEW estimate / site visit / inspection / walkthrough with a customer, a lead or on a job — appt_kind, date, time, contact_name, phone, address; it goes on the company calendar), ' +
+    'lead (a NEW potential customer or job inquiry — contact_name, phone, email, address, text = what they need), ' +
+    'expense (money spent / a receipt for a job — amount, vendor, date), ' +
+    'schedule_work (NEW work for a crew or a sub on the job — keep the who / what / when words in text, e.g. "Marco framing Monday 8am for 3 days"), ' +
+    'my_schedule (the speaker\'s own appointment that is not with a customer — a doctor, a meeting with a co-worker: keep the words in text). ' +
+    'A reminder for the speaker is a todo with its due date. One note may give several actions; do not repeat the same thing twice; never invent anything that was not said. ' +
     (picked ? 'The speaker already picked the job: ' + picked + '. ' : 'Pick the job from the list by name, customer, street or PO; leave job_id "" and job_confidence "none" when it is not clear. ') +
     '\nJobs: ' + JSON.stringify(jobs.slice(0, 120)) + '\nPeople: ' + JSON.stringify(people.slice(0, 80)) + '\n\nThe note:\n"""' + clip(text, 12000) + '"""';
 }
@@ -162,6 +181,7 @@ function fuzzyJob(text, jobs){
   return score >= 2 ? best : null;
 }
 function ymdOk(v){ return /^\d{4}-\d{2}-\d{2}$/.test(s(v)) ? s(v) : ''; }
+function hmOk(v){ const m = /^(\d{1,2}):(\d{2})$/.exec(s(v)); return m && +m[1] < 24 && +m[2] < 60 ? ('0' + m[1]).slice(-2) + ':' + m[2] : ''; }
 function normalize(out, jobs, picked, text){
   const ids = {}; jobs.forEach(function(j){ ids[s(j.id)] = j; });
   let jobId = picked && ids[picked] ? picked : (out && ids[s(out.job_id)] ? s(out.job_id) : '');
@@ -170,7 +190,10 @@ function normalize(out, jobs, picked, text){
   const acts = arr(out && out.actions).filter(function(a){ return TYPES.indexOf(s(a.type)) >= 0 && s(a.text || a.scope); }).slice(0, 12).map(function(a, i){
     const price = typeof a.price === 'number' && isFinite(a.price) ? Math.round(a.price * 100) / 100 : null;
     return { id: 'va' + i, type: s(a.type), text: clip(a.text || a.scope, 2000), assignee: clip(a.assignee, 80), due: ymdOk(a.due), scope: clip(a.scope, 1000), price: price,
-      scheduleItem: clip(a.schedule_item, 200), newDate: ymdOk(a.new_date) };
+      scheduleItem: clip(a.schedule_item, 200), newDate: ymdOk(a.new_date),
+      apptKind: KINDS.indexOf(s(a.appt_kind)) >= 0 ? s(a.appt_kind) : '', date: ymdOk(a.date), time: hmOk(a.time), endTime: hmOk(a.end_time),
+      contactName: clip(a.contact_name, 80), phone: clip(a.phone, 30), email: clip(a.email, 120), address: clip(a.address, 160),
+      amount: typeof a.amount === 'number' && isFinite(a.amount) && a.amount > 0 ? Math.round(a.amount * 100) / 100 : null, vendor: clip(a.vendor, 80) };
   });
   return { jobId: jobId, jobConfidence: conf, summary: clip(out && out.summary, 600), actions: acts };
 }
@@ -241,7 +264,7 @@ async function inbound(evt){
   const users = arr(d.users), me = users.find(function(u){ return low(u.email) === mail.from; }) || {};
   const jobs = arr(d.projects).filter(function(p){ return p.deleted !== true && !/complete|closed|cancel|lost/i.test(s(p.status)); })
     .map(function(p){ return { id: p.id, name: p.name, client: p.client, address: p.address, po: p.autoPO || p.po, pm: p.pm }; });
-  const r = await route(mail.text, jobs, users.filter(function(u){ return u.active !== false; }).map(function(u){ return u.name; }), '', new Date().toISOString().slice(0, 10));
+  const r = await route(mail.text, jobs, users.filter(function(u){ return u.active !== false; }).map(function(u){ return u.name; }), '', chicagoToday());
   const item = { id: 'vn_' + (mail.id ? crypto.createHash('sha256').update(mail.id).digest('hex').slice(0, 16) : Date.now().toString(36)), at: new Date().toISOString(), source: 'email',
     from: mail.from, fromName: s(me.name), subject: mail.subject, text: mail.text, result: r.ok ? r : Object.assign({ aiError: r.error }, r.fallback), status: 'new' };
   const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
@@ -278,12 +301,12 @@ exports.handler = async function(event){
     if (body.action === 'route') {
       const text = s(body.text); if (!text) return J(400, { ok: false, error: 'Say or type something first.' }, cors);
       if (!AI.ready()) return J(200, { ok: false, error: 'ANTHROPIC_API_KEY is not set on Netlify', noAi: true }, cors);
-      const r = await route(text, body.jobs, body.people, s(body.projectId), ymdOk(body.today) || new Date().toISOString().slice(0, 10));
+      const r = await route(text, body.jobs, body.people, s(body.projectId), ymdOk(body.today) || chicagoToday());
       return J(200, r, cors);
     }
     if (body.action === 'transcribe') return J(200, await transcribe(body.audio, body.mime), cors);
     return J(400, { ok: false, error: 'Bad request' }, cors);
   } catch (e) { return J(500, { ok: false, error: 'The voice note hit a problem: ' + clip(e && e.message || e, 120) }, cors); }
 };
-exports._test = { route: route, normalize: normalize, fuzzyJob: fuzzyJob, inbound: inbound, svixOk: svixOk, transcriber: transcriber };
+exports._test = { calendar: calendar, chicagoToday: chicagoToday, TYPES: TYPES, prompt: prompt, route: route, normalize: normalize, fuzzyJob: fuzzyJob, inbound: inbound, svixOk: svixOk, transcriber: transcriber };
 exports._transcribe = transcribe; exports._transcriber = transcriber;   /* LSAREC: call recordings / voicemails are transcribed the same way (_lib/lsarec.js) */

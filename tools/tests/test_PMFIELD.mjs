@@ -353,7 +353,7 @@ try {
   const d2 = await dash(nk);
   console.log('    Nick home: ' + JSON.stringify({ secs: d2 && d2.secs, today: d2 && d2.today, extra: d2 && d2.extra, nums: d2 && d2.nums }));
   ok(d2 && d2.app === 'admin' && d2.today.includes('SCHa') && d2.today.includes('SCHb'), 'Nick Today: the company\'s day (every job)', d2 && d2.today);
-  ok(d2 && ['leads', 'viewas', 'systems'].every(k => d2.extra.includes(k)) && !d2.extra.includes('money'), 'Nick: the admin tiles are on Home (💵 Money is in ☰ More)', d2 && d2.extra);
+  ok(d2 && ['leads', 'speak', 'systems'].every(k => d2.extra.includes(k)) && !d2.extra.includes('viewas') && !d2.extra.includes('money'), 'Nick: the admin tiles are on Home — 🎤 Speak where 👁 View as… was (SPEAKTILE; View as… in 💎), 💵 Money in ☰ More', d2 && d2.extra);
   const close = d2 && (d2.nums.find(x => /^close=/.test(x)) || '');
   ok(close === 'close=67%', 'Close rate (res + ins): jobs made from leads are won, stale clean-ups and commercial bids are left out (2 won · 1 lost = 67%)', d2 && d2.nums);
   ok(d2 && /Close rate \(res \+ ins\)/i.test(d2.text), 'the tile says the close rate is residential + insurance');

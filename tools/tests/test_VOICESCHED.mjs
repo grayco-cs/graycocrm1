@@ -40,7 +40,7 @@ const cloudSched = () => { let v = cget('schedule'); if (typeof v === 'string') 
 const c = await computer('VS', { build }); const p = c.page();
 try {
   await p.goto('https://app.local/index.html'); await sleep(2500);
-  if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email').fill(email); await p.locator('#gc-auth-password').fill(ACCOUNTS[email].pw); await sleep(300); const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }
+  if (await p.locator('#gc-auth-email').count()) { await p.locator('#gc-auth-email').fill(email); await p.locator('#gc-auth-password').fill((ACCOUNTS[email].pw || 'pw')); await sleep(300); const bb = await p.locator('#gc-auth-submit').boundingBox(); await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); }
   await waitFor(c, () => (window._crm && window._crm.projects || []).length > 20 && window._gcVoiceSched && window._gcAUTAI && typeof window._setSchedule === 'function', null, 120000, 300); await sleep(8000);
   ok(!!(await waitFor(c, () => window._gcSchedHist && window._gcSchedHist.state().armed, null, 40000, 500)), 'the schedule change history is watching');
   const job = await c.ev(id => { const j = (window._crm.projects || []).find(x => x && x.id === id); return j && { name: j.name, po: j.autoPO, pm: j.pm, address: j.address }; }, JOB);
@@ -191,7 +191,7 @@ try {
     return ['meeting with Nate Thursday 2pm', 'dentist Friday 9 to 10', 'walkthrough with adjuster at 123 Main tomorrow 3pm'].map(t => Object.assign(V.parseMine(t, T), { want: V.want(t) })); });
   ok(P2[0].want === 'mine' && P2[0].title === 'Meeting with Nate' && P2[0].start === '2026-10-29' && P2[0].time === '14:00' && P2[0].endTime === '15:00' && P2[0].invite === STAFF, '"meeting with Nate Thursday 2pm" → Meeting with Nate · Thu Oct 29 14:00–15:00 · invite Nate Sample', P2[0]);
   ok(P2[1].want === 'mine' && P2[1].title === 'Dentist' && P2[1].start === '2026-10-30' && P2[1].time === '09:00' && P2[1].endTime === '10:00', '"dentist Friday 9 to 10" → Dentist · Fri Oct 30 09:00–10:00', P2[1]);
-  ok(P2[2].want === 'mine' && /walkthrough/i.test(P2[2].title) && P2[2].start === '2026-10-28' && P2[2].time === '15:00' && P2[2].where === '123 Main', '"walkthrough with adjuster at 123 Main tomorrow 3pm" → Wed Oct 28 15:00 at 123 Main', P2[2]);
+  ok(P2[2].want === 'appt' /* SPEAKTILE: a walkthrough with a customer / adjuster is a 📅 New appointment now */ && /walkthrough/i.test(P2[2].title) && P2[2].start === '2026-10-28' && P2[2].time === '15:00' && P2[2].where === '123 Main', '"walkthrough with adjuster at 123 Main tomorrow 3pm" → 📅 New appointment; parsed Wed Oct 28 15:00 at 123 Main', P2[2]);
   await c.ev(id => window._gcAUTAI.mic(id), JOB); await sleep(800);
   await p.locator('#_gcMicText').fill('meeting with Nate Thursday 2pm'); await sleep(1500);
   const s3 = await c.ev(() => { const ch = [...document.querySelectorAll('#_gcMicDest [data-d]')]; return { first: ch[0].getAttribute('data-d'), on: ch.filter(b => b.classList.contains('on')).map(b => b.getAttribute('data-d')).join() }; });
