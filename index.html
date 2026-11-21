@@ -201,6 +201,168 @@ try {
 } catch (e) { try { console.warn('[GC] LSGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-resume">
+/* __GC_PATCH_RESUME__ — coming back into the app answers at once (tools/patch_RESUME.py). Owner 11/20 (GrayCo Field, iPhone):
+   "Keeps lagging when I get back into it too." At a return ~90 visibilitychange / pageshow / focus / online listeners and
+   every timer that fell due in the background ran in the same moment; the first tap waited behind all of it. Here: the
+   return's listeners and overdue timers go into one queue that starts after the first frame (+0.35 s), runs one per task,
+   lets a tap go first, and runs a listener queued twice in one return once. Hidden-going events, element focus, events the
+   page sends itself and the page's native timers: as before. While hidden and before the first hide: nothing changes.
+   Off: localStorage gc_resume_off = '1'.  Console: __gcResume.state() */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__gcResume) return;
+var off = false; try { off = W.localStorage.getItem('gc_resume_off') === '1'; } catch (e) {}
+var nST = W.setTimeout, nSI = W.setInterval, nCI = W.clearInterval, RAF = W.requestAnimationFrame;
+/* the browser's own timers, for the patches that must never be paced (33.129 keeps the first value it finds) */
+try { if (!W.__GC_NATIVE_SETINTERVAL__) W.__GC_NATIVE_SETINTERVAL__ = nSI; if (!W.__GC_NATIVE_SETTIMEOUT__) W.__GC_NATIVE_SETTIMEOUT__ = nST; if (!W.__GC_NATIVE_CLEARINTERVAL__) W.__GC_NATIVE_CLEARINTERVAL__ = nCI; } catch (e) {}
+var PF = W.performance;
+function now(){ try { return PF.now(); } catch (e) { return Date.now(); } }
+var R = { hideAt: 0, showAt: 0, blurAt: 0, vis: true, returns: 0, q: [], draining: false, kickT: 0, inputAt: 0,
+  st: { queuedEv: 0, queuedTimers: 0, deduped: 0, ran: 0, worst: 0, worstWhat: '', lastDrainMs: 0, lastReturn: null } };
+var API = W.__gcResume = { off: off, state: function(){ var s = JSON.parse(JSON.stringify(R.st)); s.off = off; s.queue = R.q.length; s.returns = R.returns; s.hideAt = R.hideAt; s.showAt = R.showAt; s.visible = R.vis; return s; } };
+if (off) return;
+function hidden(){ try { return D.visibilityState === 'hidden'; } catch (e) { return false; } }
+var ET = W.EventTarget && W.EventTarget.prototype; if (!ET || !ET.addEventListener) return;
+var aEL = ET.addEventListener, rEL = ET.removeEventListener;
+
+/* ── the return / the hide (own listeners, registered with the browser's own method: never queued) ── */
+function onHide(){ if (!R.vis) return; R.vis = false; R.hideAt = Date.now(); }
+function onShow(why){
+  if (hidden()) return;
+  var n = Date.now();
+  if (!R.vis || !R.showAt || R.showAt < R.hideAt) { R.vis = true; R.showAt = n; R.returns++; R.st.lastReturn = { why: why, at: n, awayMs: R.hideAt ? n - R.hideAt : 0 }; }
+  kick();
+}
+try {
+  aEL.call(D, 'visibilitychange', function(){ if (hidden()) onHide(); else onShow('visible'); }, true);
+  aEL.call(W, 'pagehide', onHide, true);
+  aEL.call(W, 'pageshow', function(e){ if (e && e.persisted) onShow('pageshow'); }, true);
+  aEL.call(W, 'blur', function(e){ if (e && e.target === W) R.blurAt = Date.now(); }, true);
+  aEL.call(D, 'freeze', onHide, true); aEL.call(D, 'resume', function(){ onShow('resume'); }, true);
+  var inp = function(){ R.inputAt = Date.now(); };
+  ['pointerdown', 'touchstart', 'keydown', 'mousedown'].forEach(function(t){ aEL.call(W, t, inp, { capture: true, passive: true }); });
+} catch (e) {}
+
+/* ── the queue ── */
+function label(fn){ try { return String((fn && (fn.__gcLabel || fn.name)) || fn).replace(/\s+/g, ' ').slice(0, 80); } catch (e) { return '?'; } }
+function report(err){ try { if (typeof W.reportError === 'function') W.reportError(err); else nST.call(W, function(){ throw err; }, 0); } catch (e) {} }
+function queue(key, run, what, kind){
+  for (var i = 0; i < R.q.length; i++) if (R.q[i].key === key) { R.st.deduped++; return; }
+  R.q.push({ key: key, run: run, what: what, at: Date.now() });
+  if (kind === 't') R.st.queuedTimers++; else R.st.queuedEv++;
+  kick();
+}
+function afterFrame(cb){
+  var done = false, go = function(){ if (done) return; done = true; nST.call(W, cb, 0); };
+  try { RAF.call(W, go); } catch (e) {}
+  nST.call(W, go, 120);
+}
+var FIRST = 350, TAP = 250, BUDGET = 8;
+function kick(){
+  if (R.draining || R.kickT || !R.q.length || hidden()) return;
+  var wait = Math.max(0, (R.showAt || 0) + FIRST - Date.now());
+  R.kickT = nST.call(W, function(){ R.kickT = 0; afterFrame(drain); }, wait);
+}
+function drain(){
+  if (hidden()) { R.draining = false; return; }          /* gone again: the rest waits for the next return */
+  R.draining = true;
+  var since = Date.now() - R.inputAt;
+  if (since < TAP && !(R.q.length && Date.now() - R.q[0].at > 3000)) { nST.call(W, drain, TAP - since + 30); return; }   /* a tap / key: it goes first */
+  var t0 = now(), d = 0;
+  while (R.q.length) {
+    var it = R.q.shift(), a = now();
+    try { it.run(); } catch (e) { report(e); }
+    var ms = now() - a; R.st.ran++; if (ms > R.st.worst) { R.st.worst = Math.round(ms); R.st.worstWhat = it.what; }
+    d = now() - t0; if (d > BUDGET) break;
+  }
+  if (R.q.length) nST.call(W, drain, d > 50 ? Math.min(250, Math.round(d)) : 16);
+  else { R.draining = false; R.st.lastDrainMs = R.showAt ? Date.now() - R.showAt : 0; }
+}
+
+/* ── 1. return events ── */
+var TYPES = { visibilitychange: 1, pageshow: 1, focus: 1, online: 1 };
+var MAP = new WeakMap();
+function isReturn(e){
+  if (!e || !(e.isTrusted || W.__GC_RESUME_SIM__)) return false;
+  var t = e.type;
+  if (t === 'visibilitychange') return !hidden() && R.hideAt > 0;
+  if (t === 'pageshow') return !!e.persisted;
+  if (t === 'focus') {
+    /* only the window coming back: after a hide (the app switcher / another app) or a window blur of over 1 s — never the
+       page's first focus or a tap that focuses the window (that runs inside the event, as before) */
+    if (e.target !== W) return false;
+    var n = Date.now(), back = (R.blurAt && n - R.blurAt > 1000) || (R.hideAt && R.showAt >= R.hideAt && n - R.showAt < 2500);
+    R.blurAt = 0; return !!back;
+  }
+  return t === 'online';
+}
+function keyOf(type, o, tgt){ var c = typeof o === 'boolean' ? o : !!(o && o.capture); return (tgt === W ? 'w' : 'd') + type + (c ? 1 : 0); }
+ET.addEventListener = function(type, fn, o){
+  var tgt = this;
+  if (!fn || !TYPES[type] || (tgt !== W && tgt !== D) || (typeof fn !== 'function' && typeof fn !== 'object')) return aEL.apply(tgt, arguments);
+  var m = MAP.get(fn); if (!m) { m = {}; MAP.set(fn, m); }
+  var k = keyOf(type, o, tgt), w = m[k];
+  if (!w) {
+    w = m[k] = function(e){
+      if (isReturn(e)) {
+        if (e.type === 'online' || e.type === 'focus') onShow(e.type);
+        var self = this;
+        queue(fn, function(){ return typeof fn === 'function' ? fn.call(self, e) : fn.handleEvent(e); }, e.type + ' · ' + label(typeof fn === 'function' ? fn : fn.handleEvent), 'e');
+        return;
+      }
+      return typeof fn === 'function' ? fn.call(this, e) : fn.handleEvent(e);
+    };
+  }
+  var a = Array.prototype.slice.call(arguments); a[1] = w;
+  return aEL.apply(tgt, a);
+};
+ET.removeEventListener = function(type, fn, o){
+  var tgt = this;
+  if (fn && TYPES[type] && (tgt === W || tgt === D)) { var m = MAP.get(fn), w = m && m[keyOf(type, o, tgt)]; if (w) { var a = Array.prototype.slice.call(arguments); a[1] = w; return rEL.apply(tgt, a); } }
+  return rEL.apply(tgt, arguments);
+};
+
+/* ── 2. overdue timers ── */
+var CATCH = 1200, SETTLE = 400;
+/* true when the call was taken over: a timer whose time came while the page was hidden and that fires > 1.2 s late.
+   Visible now: it goes into the queue. Still hidden: the phone may be waking (iOS runs the overdue timers before it says
+   "visible"), so it waits 0.4 s: visible by then -> the queue; still hidden (a desk's background tab) -> it runs, as before. */
+function late(due, key, run, what){
+  if (!R.hideAt) return false;                            /* never hidden (the open): as before */
+  var n = Date.now(); if (n - due < CATCH || due < R.hideAt - CATCH) return false;
+  if (!hidden()) { if (!R.vis || R.showAt < R.hideAt) onShow('timer'); queue(key, run, what, 't'); return true; }
+  nST.call(W, function(){
+    if (!hidden()) { if (!R.vis || R.showAt < R.hideAt) onShow('timer'); queue(key, run, what, 't'); }
+    else { try { run(); } catch (e) { report(e); } }
+  }, SETTLE);
+  return true;
+}
+var tSeq = 0;
+W.setTimeout = function(fn, ms){
+  if (typeof fn !== 'function' || !(ms >= 250)) return nST.apply(W, arguments);
+  var a = Array.prototype.slice.call(arguments), due = Date.now() + ms, f = fn, id = ++tSeq;
+  a[0] = function(){
+    var self = this, args = arguments;
+    if (late(due, 't' + id, function(){ return f.apply(self, args); }, 'timeout · ' + label(f))) return;
+    return f.apply(this, args);
+  };
+  return nST.apply(W, a);
+};
+W.setInterval = function(fn, ms){
+  if (typeof fn !== 'function' || !(ms >= 400)) return nSI.apply(W, arguments);
+  var a = Array.prototype.slice.call(arguments), last = Date.now(), f = fn, id = ++tSeq, held = false;
+  a[0] = function(){
+    var n = Date.now(), prev = last, self = this, args = arguments; last = n;
+    if (held) return;                                     /* one catch-up tick is already waiting: the missed ones are not run again */
+    if (n - prev > ms + CATCH && late(prev + ms, 'i' + id, function(){ held = false; return f.apply(self, args); }, 'interval · ' + label(f))) { held = true; return; }
+    return f.apply(this, args);
+  };
+  return nSI.apply(W, a);
+};
+})();
+</script>
 <script id="gc-patch-supply">
 /* __GC_PATCH_SUPPLY__ — outside scripts are pinned and checked (tools/patch_SUPPLY.py).
    · supabase-js is our own copy: /vendor/supabase-js-2.119.0.min.js (the UMD build; the same bytes on jsdelivr, unpkg and in the npm
@@ -772,7 +934,9 @@ try {
     var jobs = [];
     try { if (NAV.serviceWorker && NAV.serviceWorker.getRegistrations) jobs.push(NAV.serviceWorker.getRegistrations().then(function(rs){
       return Promise.all(rs.map(function(w){ var u = ''; try { u = s((w.active || w.waiting || w.installing || {}).scriptURL); } catch (e) {} return /\/crm-push-sw\.js(\?|$)/.test(u) ? null : w.unregister(); })); })); } catch (e) {}
-    try { if (typeof caches !== 'undefined' && caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){ return caches.delete(n); })); })); } catch (e) {}
+    try { if (typeof caches !== 'undefined' && caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){
+      if (/^gc-crm-shell-/.test(n) && W._gcFastOpen && W._gcFastOpen.sw && W._gcFastOpen.sw.keep) return W._gcFastOpen.sw.keep(n, LIVE.v);   /* patch FASTOPEN */
+      return caches.delete(n); })); })); } catch (e) {}
     var go = false, reload = function(){
       if (go) return; go = true;
       W.__GC_USER_WANTS_RELOAD__ = true;   /* a person asked: the CRM's reload guard lets it through */
@@ -1025,6 +1189,7 @@ try {
     if (!B.sa) B.sa = mq('(display-mode: standalone)'); };
   var fromCache = function(){
     B.sw = swUrl() || B.sw; if (B.sw && !/crm-push-sw\.js$/.test(B.sw)) return 'sw';
+    try { var sh = W.__GC_SHELL__; if (sh && /cache/.test(sh.from || '')) return 'sw-shell'; } catch (x) {}   /* patch FASTOPEN: the CRM's saved page */
     try { var e = PF.getEntriesByType('navigation')[0]; if (e && (e.deliveryType === 'cache' || (e.transferSize === 0 && e.decodedBodySize > 0))) return 'http-cache'; } catch (x) {}
     return '';
   };
@@ -1448,6 +1613,51 @@ try {
 
   FL.state = function(){ return { field: FL.fieldUp(), scrolling: FL.scrolling(), skippedTicks: FL.skippedTicks, deskSkips: Object.assign({}, FL.deskSkips), lsSkipped: FL.lsSkipped, lsSkippedChars: FL.lsSkippedChars, lsHeld: FL.lsHeld, memory: MEMV ? Object.keys(MEMV) : [], apprReused: FL.apprReused }; };
 } catch (e) { try { console.warn('[GC] FIELDLAG not installed:', e && e.message || e); } catch (x) {} }
+})();
+</script>
+<script id="gc-patch-fastopen-dirty">
+/* patch FASTOPEN (part 1, the write watch): every write of this device's CRM store (IndexedDB grayco_crm / kv) that is not the
+   sync's own apply marks that list "changed here" (IndexedDB gc_fastopen / m / 'dirty' — not localStorage: the owner's phone has
+   it full); the mark is ISSUED BEFORE the write itself. A list marked so is never skipped by the next open's pull (it is pulled
+   and merged, and the SAVES "ahead" check sends what this device has). A cleared store / a deleted database marks everything
+   ('*'). If the mark cannot be written, the kept marks are dropped and the next open pulls everything, as before.
+   Console: _gcFastOpen.dirty.all() */
+(function(){
+'use strict';
+var W = window; if (W._gcFastOpen && W._gcFastOpen.dirty) return;
+var FO = W._gcFastOpen = W._gcFastOpen || {};
+var D = {}, Q = {}, broken = false, db = null, want = false;
+function openDb(){ return new Promise(function(res){ try { var q = indexedDB.open('gc_fastopen', 1); q.onupgradeneeded = function(){ try { q.result.createObjectStore('m'); } catch (e) {} }; q.onsuccess = function(){ res(q.result); }; q.onerror = function(){ res(null); }; q.onblocked = function(){ res(null); }; } catch (e) { res(null); } }); }
+function fail(){ if (broken) return; broken = true; try { if (db) db.transaction('m', 'readwrite').objectStore('m').delete('marks'); } catch (e) {} }
+function save(){
+  if (!db) { want = true; return; }
+  try { var tx = db.transaction('m', 'readwrite'); tx.objectStore('m').put(Object.keys(D), 'dirty'); tx.onerror = tx.onabort = fail; } catch (e) { fail(); }
+}
+var ready = openDb().then(function(d){
+  db = d; if (!d) { broken = true; return; }
+  return new Promise(function(res){ try { var g = d.transaction('m', 'readonly').objectStore('m').get('dirty');
+    g.onsuccess = function(){ var had = Object.keys(D).length; (g.result || []).forEach(function(k){ D[k] = 1; }); if (want || had) save(); res(); }; g.onerror = function(){ D['*'] = 1; res(); }; } catch (e) { D['*'] = 1; res(); } });
+}).catch(function(){ broken = true; });
+function mark(k){ k = String(k); if (Q[k] || D[k]) return; D[k] = 1; save(); }
+function ours(st){ try { return st.name === 'kv' && st.transaction.db.name === 'grayco_crm'; } catch (e) { return false; } }
+try {
+  var P = IDBObjectStore.prototype;
+  [['put', 1], ['add', 1], ['delete', 0]].forEach(function(x){
+    var f = P[x[0]]; if (typeof f !== 'function' || f.__gcfo) return;
+    var w = function(){ try { if (ours(this)) { var k = arguments[x[1]]; if (typeof k === 'string') mark(k); else if (!D['*']) { D['*'] = 1; save(); } } } catch (e) {} return f.apply(this, arguments); };
+    w.__gcfo = true; P[x[0]] = w;
+  });
+  var fc = P.clear; if (typeof fc === 'function' && !fc.__gcfo) { var wc = function(){ try { if (ours(this)) { D['*'] = 1; save(); } } catch (e) {} return fc.apply(this, arguments); }; wc.__gcfo = true; P.clear = wc; }
+  var fd = IDBFactory.prototype.deleteDatabase; if (typeof fd === 'function' && !fd.__gcfo) { var wd = function(n){ try { if (String(n) === 'grayco_crm') { D['*'] = 1; save(); } } catch (e) {} return fd.apply(this, arguments); }; wd.__gcfo = true; IDBFactory.prototype.deleteDatabase = wd; }
+} catch (e) { broken = true; }
+FO.dirty = {
+  ready: function(){ return ready; },
+  has: function(k){ return !!D[k]; }, all: function(){ return Object.keys(D); }, broken: function(){ return broken; },
+  quiet: function(k, on){ if (on) Q[k] = 1; else delete Q[k]; },
+  clean: function(k){ if (D[k]) { delete D[k]; save(); } },
+  mark: function(k){ mark(k); },   /* patch RESUME */
+  wiped: function(){ return !!D['*']; }, unwipe: function(){ if (D['*']) { delete D['*']; save(); } }
+};
 })();
 </script>
 <script id="gc-patch-bootsafe">
@@ -7628,7 +7838,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<script>/* AWAY: every old service worker goes, except the CRM's phone-notifications one (/crm-push-sw.js: no cache, no fetch handler) */if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(w){var u='';try{u=String((w.active||w.waiting||w.installing||{}).scriptURL||'')}catch(e){}if(!/\/crm-push-sw\.js(\?|$)/.test(u))w.unregister()})})};if(typeof caches!=='undefined'){caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}</script>
+<script>/* AWAY: every old service worker goes, except the CRM's phone-notifications one (/crm-push-sw.js: no cache, no fetch handler) */if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(w){var u='';try{u=String((w.active||w.waiting||w.installing||{}).scriptURL||'')}catch(e){}if(!/\/crm-push-sw\.js(\?|$)/.test(u))w.unregister()})})};if(typeof caches!=='undefined'){caches.keys().then(function(k){k.forEach(function(n){if(!/^gc-crm-shell-/.test(n))caches.delete(n)})})}/* FASTOPEN: the CRM's saved page (gc-crm-shell-*) is kept; its own script keeps it right */</script>
 
 <script>
 // === PRE-INIT: Ensure IndexedDB stores exist before React boots ===
@@ -8124,6 +8334,143 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkVersion(); });
   window.addEventListener('pageshow', function(e){ if(e && e.persisted) checkVersion(); });
   setTimeout(checkVersion, 8000);             // and shortly after load
+})();
+</script>
+<script id="gc-patch-fastopen">
+/* __GC_PATCH_FASTOPEN__ (part 2) — the CRM page opens from a saved copy (tools/patch_FASTOPEN.py, crm-push-sw.js).
+   This script: (1) asks the service worker how this page was answered (window.__GC_SHELL__: cache / network / cache-offline —
+   BOOTWATCH counts a saved copy as a cached copy); (2) once the open has settled, registers /crm-push-sw.js (the same worker as
+   the phone notifications) and keeps the saved copy right: the live build from /version.txt; this page's own build is kept (a
+   revalidated read, normally 304); a NEWER live build is downloaded when the phone is idle and kept only if the download really
+   is that build; until then the copy is marked "stale" so a reload goes to the network; (3) BOOTWATCH's update keeps the copy
+   only when it holds the live build. Mode: "fast" on a phone / GrayCo Field device, "safe" (network first) on a desk.
+   Off on this device: localStorage gc_fastopen_sw_off = '1' (the worker empties the cache).  Console: _gcFastOpen.sw.info() */
+(function(){
+'use strict';
+var W = window, NAV = W.navigator || {};
+if (W._gcFastOpen && W._gcFastOpen.sw) return;
+var FO = W._gcFastOpen = W._gcFastOpen || {};
+var SHELL = 'gc-crm-shell-v1', PAGE = '/index.html', META = '/__gc_shell_meta';
+var NST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, NF = W.fetch;
+var off = false; try { off = W.localStorage.getItem('gc_fastopen_sw_off') === '1'; } catch (e) {}
+var ok = !!(NAV.serviceWorker && typeof caches !== 'undefined' && W.isSecureContext !== false);
+var ST = { off: off, ok: ok, served: null, mode: '', live: '', mine: String(W.__GC_BUILD_ID__ || ''), meta: null, did: [], err: '', at: 0, kept: 0, bytes: 0 };
+var s = function(v){ return v == null ? '' : String(v); };
+function log(m){ ST.did.push(Math.round((W.performance && performance.now()) || 0) + ' ' + m); if (ST.did.length > 30) ST.did.shift(); }
+/* (1) how was this page answered? */
+if (ok && NAV.serviceWorker.controller) {
+  try {
+    NAV.serviceWorker.addEventListener('message', function(e){ var d = e.data || {}; if (d.gcShellA) { ST.served = W.__GC_SHELL__ = d.gcShellA; } });
+    NAV.serviceWorker.controller.postMessage({ gcShellQ: 1 });
+    NST.call(W, function(){ if (ST.served) return; try { var ne = performance.getEntriesByType('navigation')[0]; if (ne && ne.workerStart > 0) ST.served = W.__GC_SHELL__ = { from: ne.transferSize === 0 ? 'cache?' : 'network?', guessed: true }; } catch (e) {} }, 4000);
+  } catch (e) {}
+}
+if (!ok) { FO.sw = { info: function(){ return JSON.parse(JSON.stringify(ST)); }, keep: function(n){ return caches.delete(n); } }; return; }
+function older(mine, live){
+  try { if (W._gcBootWatch && typeof W._gcBootWatch.older === 'function') return !!W._gcBootWatch.older(mine, live); } catch (e) {}
+  return false;
+}
+function fieldDevice(){ try { if (W._gcDevice && W._gcDevice.fieldDevice) return !!W._gcDevice.fieldDevice(); } catch (e) {} return /iPhone|iPod|Android.*Mobile/i.test(s(NAV.userAgent)); }
+function readMeta(c){ return c.match(META).then(function(r){ return r ? r.json() : null; }).catch(function(){ return null; }); }
+function writeMeta(c, m){ ST.meta = m; return c.put(META, new Response(JSON.stringify(m), { headers: { 'content-type': 'application/json' } })); }
+function liveBuild(){
+  var q = ''; try { q = W._gcBootWatch && W._gcBootWatch.live ? W._gcBootWatch.live(120000) : ''; } catch (e) {}
+  if (q) return Promise.resolve(q);
+  return NF.call(W, '/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r && r.ok ? r.text() : ''; }, function(){ return ''; }).then(function(v){ return s(v).trim().slice(0, 60); });
+}
+/* read the page and check it IS build `want` before keeping it (the build id sits in the first ~1 MB: read that part only) */
+function fetchBuild(want){
+  return NF.call(W, PAGE, { cache: 'no-cache', credentials: 'same-origin' }).then(function(r){
+    if (!r || !r.ok || r.status !== 200 || r.redirected || !/text\/html/i.test(s(r.headers.get('content-type')))) throw new Error('not the page (' + (r && r.status) + ')');
+    var probe = r.clone(), rd = probe.body.getReader(), dec = new TextDecoder(), txt = '', n = 0;
+    function pump(){
+      return rd.read().then(function(x){
+        if (x.done) return '';
+        n += x.value.length; txt += dec.decode(x.value, { stream: true });
+        var m = /var BUILD_ID = "([^"]{1,60})"/.exec(txt);
+        if (m) { try { rd.cancel(); } catch (e) {} return m[1]; }
+        if (n > 4e6) { try { rd.cancel(); } catch (e) {} return ''; }
+        if (txt.length > 4096) txt = txt.slice(-4096);
+        return pump();
+      });
+    }
+    return pump().then(function(b){ if (b !== want) throw new Error('the download is build ' + (b || '?') + ', not ' + want); return r; });
+  });
+}
+var busy = false;
+function refresh(why){
+  if (busy || off) return Promise.resolve(false);
+  busy = true; ST.at = Date.now(); log('refresh: ' + why);
+  var c = null;
+  return caches.open(SHELL).then(function(cc){ c = cc; return Promise.all([readMeta(c), liveBuild()]); }).then(function(a){
+    var meta = a[0] || {}, live = a[1], mine = ST.mine = s(W.__GC_BUILD_ID__);
+    ST.live = live; ST.mode = fieldDevice() ? 'fast' : 'safe';
+    if (meta.off) { log('off on this device'); return false; }
+    if (!live) { log('no answer from /version.txt'); return false; }
+    if (meta.build === live) {
+      if (meta.stale || meta.mode !== ST.mode) return writeMeta(c, Object.assign({}, meta, { stale: false, mode: ST.mode })).then(function(){ log('copy = live ' + live); return true; });
+      log('copy = live ' + live); ST.meta = meta; return true;
+    }
+    var newer = older(mine, live);
+    if (!newer && mine !== live) { log('this page (' + mine + ') is newer than the live build (' + live + '): nothing kept'); return false; }
+    /* the copy is not the live build: until the live build is saved, a reload goes to the network */
+    var mark = meta.build && !meta.stale ? writeMeta(c, Object.assign({}, meta, { stale: true, mode: ST.mode, staleFor: live })) : Promise.resolve();
+    return mark.then(function(){ return fetchBuild(live); }).then(function(r){
+      var len = +(r.headers.get('content-length') || 0);
+      return c.put(PAGE, r).then(function(){ ST.kept++; ST.bytes = len; return writeMeta(c, { build: live, at: Date.now(), mode: ST.mode, stale: false }); })
+        .then(function(){ log('kept build ' + live + (newer ? ' (newer than this page: the next open / update is instant)' : '')); return true; });
+    });
+  }).catch(function(e){ ST.err = s(e && e.message || e).slice(0, 160); log('not kept: ' + ST.err); return false; })
+    .then(function(v){ busy = false; return v; });
+}
+/* the update (BOOTWATCH / "Yes, update"): keep the copy only when it IS the live build */
+function keep(name, live){
+  return caches.open(name).then(function(c){ return readMeta(c).then(function(m){
+    if (name === SHELL && m && m.build && live && m.build === live && !m.off) return writeMeta(c, Object.assign({}, m, { stale: false })).then(function(){ log('update: copy kept (= live ' + live + ')'); return true; });
+    return caches.delete(name).then(function(){ log('update: copy dropped'); return false; });
+  }); }).catch(function(){ return caches.delete(name); });
+}
+function turnOff(){
+  try { if (NAV.serviceWorker.controller) NAV.serviceWorker.controller.postMessage({ gcShellOff: 1 }); } catch (e) {}
+  try { caches.delete(SHELL); } catch (e) {}
+}
+FO.sw = { info: function(){ return JSON.parse(JSON.stringify(ST)); }, refresh: refresh, keep: keep, off: turnOff, start: function(){ start(); } };
+if (off) { turnOff(); return; }
+/* (2) once the open has settled: register the worker, keep the copy right — a phone waits until the first screen and the
+   first sync are well past (the download of a new build never competes with the open) */
+var started = false;
+function start(){
+  if (started) return; started = true;
+  var reg = NAV.serviceWorker.getRegistration('/').then(function(r){
+    var u = ''; try { u = s((r && (r.active || r.waiting || r.installing) || {}).scriptURL); } catch (e) {}
+    if (r && /\/crm-push-sw\.js(\?|$)/.test(u)) return r;
+    return NAV.serviceWorker.register('/crm-push-sw.js', { scope: '/' });
+  }).catch(function(e){ ST.err = 'register: ' + s(e && e.message || e).slice(0, 120); });
+  reg.then(function(){ return refresh('open'); });
+}
+/* as soon as the live build is known: an out-of-date copy is marked stale at once (a reload must not open it again) */
+var tries = 0;
+function early(){
+  var live = ''; try { live = W._gcBootWatch && W._gcBootWatch.live ? W._gcBootWatch.live(120000) : ''; } catch (e) {}
+  if (!live) { if (++tries < 60) NST.call(W, early, 1000); return; }
+  caches.open(SHELL).then(function(c){ return readMeta(c).then(function(m){
+    if (m && m.build && m.build !== live && !m.stale && !m.off) return writeMeta(c, Object.assign({}, m, { stale: true, staleFor: live })).then(function(){ log('copy ' + m.build + ' is behind live ' + live + ': marked stale'); });
+  }); }).catch(function(){});
+}
+NST.call(W, early, 1500);
+function whenSettled(){
+  var t0 = Date.now(), phone = fieldDevice();
+  (function wait(){
+    var age = Date.now() - t0, fh = false;
+    try { var b = W._gcBootWatch && W._gcBootWatch.state().boot; fh = !!(b && b.m && b.m.paint != null && b.m.load != null); } catch (e) {}
+    if ((fh && age > (phone ? 30000 : 8000)) || age > 120000) { if (W.document.visibilityState === 'hidden') { NST.call(W, wait, 5000); return; } start(); return; }
+    NST.call(W, wait, 2000);
+  })();
+}
+if (W.document.readyState === 'complete') whenSettled(); else W.addEventListener('load', whenSettled);
+/* back from the background after a while: look again (a release may have gone out) */
+var lastVis = Date.now();
+try { W.document.addEventListener('visibilitychange', function(){ if (W.document.visibilityState === 'visible' && started && Date.now() - lastVis > 10 * 60e3) { lastVis = Date.now(); NST.call(W, function(){ refresh('back'); }, 20000); } }); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-regfix-stalegate">
@@ -51969,6 +52316,124 @@ var SYNC_KEYS = ["gc_job_source",'gc_sub_approvals','gc_check_queue','timesheets
   'ccw_bidTrades','ccw_matBids','ccw_phases','ccw_suppliers','ccw_pnlEntries','ccw_loans','ccw_ccInvoices','ccw_checklist','ccw_trades','ccw_bidCrews',
   'ccw_docFiles','ccw_crews','ccw_loanStmts','ccw_tabOrder','ccw_estExtras','ccw_estMarkup','ccw_checkCollapsed'];
 var _lastPull = {};
+/* patch FASTOPEN (part 1): the marks survive a reload — see tools/patch_FASTOPEN.py. _pmSeedHeads: the cloud stamp each kept
+   list had when it was applied (a list is skipped only while the cloud still shows EXACTLY that stamp); _pmApplied: what can
+   be kept at the end of this pull ({u: the row's updated_at, hu: the stamp in the key+stamp read, h: fingerprint of what was
+   written here}). */
+var _pmSeedHeads = {}, _pmApplied = {}, _pmHeadsNow = {}, _pmSnapKeep = {}, _pmNoRestore = false, _pmRestoreP = null, _pmSeq = 0, _pmSaveT = null;
+var _pmStat = { restored: 0, seeded: 0, mismatch: 0, missing: 0, unchanged: 0, changed: 0, saves: 0, lastSave: 0, mis: [], why: '', ms: 0, pulled: [] };
+function _pmOff(){ try{ return localStorage.getItem('gc_fastopen_marks_off') === '1'; }catch(e){ return false; } }
+function _pmUser(){ try{ return String((window.__GC_AUTH__ && window.__GC_AUTH__.email && window.__GC_AUTH__.email()) || '').toLowerCase(); }catch(e){ return ''; } }
+function _pmDB(){
+  return new Promise(function(res){
+    try{ var q = indexedDB.open('gc_fastopen', 1); q.onupgradeneeded = function(){ try{ q.result.createObjectStore('m'); }catch(e){} };
+      q.onsuccess = function(){ res(q.result); }; q.onerror = function(){ res(null); }; q.onblocked = function(){ res(null); }; }catch(e){ res(null); }
+  });
+}
+function _pmDbGet(){ return _pmDB().then(function(db){ if(!db) return null; return new Promise(function(res){ try{ var g = db.transaction('m','readonly').objectStore('m').get('marks'); g.onsuccess = function(){ res(g.result || null); db.close(); }; g.onerror = function(){ res(null); db.close(); }; }catch(e){ res(null); } }); }); }
+function _pmDbPut(v){ return _pmDB().then(function(db){ if(!db) return false; return new Promise(function(res){ try{ var tx = db.transaction('m','readwrite'); if(v === null) tx.objectStore('m').delete('marks'); else tx.objectStore('m').put(v, 'marks'); tx.oncomplete = function(){ res(true); db.close(); }; tx.onerror = function(){ res(false); db.close(); }; }catch(e){ res(false); } }); }); }
+function _pmHash(s){
+  s = String(s);
+  try{
+    if(window.crypto && crypto.subtle && typeof TextEncoder === 'function'){
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function(b){ var a = new Uint8Array(b), o = ''; for(var i = 0; i < a.length; i++) o += ('0' + a[i].toString(16)).slice(-2); return 's' + s.length + ':' + o; });
+    }
+  }catch(e){}
+  var h1 = 0x811c9dc5, h2 = 0x1b873593;
+  for(var i = 0; i < s.length; i++){ var c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = Math.imul(h2 ^ c, 2246822507) >>> 0; }
+  return Promise.resolve('f' + s.length + ':' + h1.toString(16) + h2.toString(16));
+}
+/* the first pull of an open: what the last open kept. A list is kept only if nothing wrote this device's copy since (the write
+   watch, script gc-patch-fastopen-dirty, marks every IndexedDB write of a list that is not the sync's own apply — atomic enough:
+   it is recorded BEFORE the write is made) and the copy is still there (a key-only read, no value is read or parsed) */
+function _pmRestoreOnce(){
+  if(_pmRestoreP) return _pmRestoreP;
+  var t0 = Date.now();
+  var job = (async function(){
+    /* a phone: the first pull waits for the first screen (Field home) — its download and apply never compete with drawing it.
+       Only a warm open (marks kept for this person): on a first sign-in the phone has no data yet, its first pull goes at once */
+    var _warm = false;
+    try{ var _r0 = await _pmDbGet(), _w0 = _pmUser(); _warm = !!(_r0 && _r0.v === 3 && _r0.m && _w0 && _r0.user === _w0 && Date.now() - _r0.at < 7 * 864e5); }catch(_wr){}
+    _pmStat.warm = _warm;
+    try{ if(_warm && !_pmOff() && window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()){
+      var tw = Date.now();
+      while(Date.now() - tw < 45000){ var bw = window._gcBootWatch && window._gcBootWatch.state().boot; if(bw && bw.m && bw.m.paint != null) break; await new Promise(function(r){ setTimeout(r, 500); }); }
+      await new Promise(function(r){ setTimeout(r, 1500); }); _pmStat.waitedMs = Date.now() - tw;
+    } }catch(_w){}
+    if(_pmOff()){ _pmStat.why = 'off'; return; }
+    var DT = window._gcFastOpen && window._gcFastOpen.dirty;
+    try{ if(DT) await DT.ready(); }catch(_dr){}
+    if(!DT || DT.broken() || DT.has('*')){ _pmStat.why = !DT ? 'no write watch' : 'write watch lost / copy wiped'; return; }
+    var who = _pmUser(); if(!who){ _pmStat.why = 'not signed in'; return; }
+    var rec = await _pmDbGet();
+    if(!rec || rec.v !== 3 || !rec.m){ _pmStat.why = 'nothing kept'; return; }
+    if(rec.user !== who){ _pmStat.why = 'another person'; return; }
+    if(!(Date.now() - rec.at < 7 * 864e5)){ _pmStat.why = 'older than 7 days'; return; }
+    var ks = Object.keys(rec.m).filter(function(k){ var e = rec.m[k]; return SYNC_KEYS.indexOf(k) >= 0 && e && e.u && e.hu && e.h; });
+    _pmStat.restored = ks.length;
+    var here = await _spOpenDB().then(function(db){ return new Promise(function(res){
+      var out = {}; if(!db){ res(out); return; }
+      try{ var st = db.transaction('kv', 'readonly').objectStore('kv'), n = ks.length; if(!n){ res(out); return; }
+        ks.forEach(function(k){ var q = st.getKey ? st.getKey(k) : st.count(k); q.onsuccess = function(){ if(q.result !== undefined && q.result !== 0) out[k] = 1; if(--n === 0) res(out); }; q.onerror = function(){ if(--n === 0) res(out); }; });
+      }catch(e){ res(out); }
+    }); });
+    for(var i = 0; i < ks.length; i++){
+      var k = ks[i], e = rec.m[k];
+      if(_pmNoRestore) { _pmStat.why = 'a full pull was asked for'; break; }
+      if(Object.prototype.hasOwnProperty.call(_lastPull, k)) continue;
+      if(!here[k]){ _pmStat.missing++; continue; }
+      if(DT.has(k)){ _pmStat.mismatch++; if(_pmStat.mis.length < 20) _pmStat.mis.push(k); continue; }
+      _lastPull[k] = e.u; _pmSeedHeads[k] = e.hu; _pmApplied[k] = { u: e.u, hu: e.hu, h: e.h };
+      _pmStat.seeded++;
+    }
+  })().catch(function(e){ _pmStat.why = 'error: ' + (e && e.message || e); });
+  _pmRestoreP = Promise.race([job, new Promise(function(r){ setTimeout(r, 60000); })]).then(function(){ _pmStat.ms = Date.now() - t0; });
+  return _pmRestoreP;
+}
+function _pmMayRestore(){ return !_pmOff() && !_pmNoRestore; }
+function _pmDrop(){ _pmNoRestore = true; _pmSeedHeads = {}; _pmSnapKeep = {}; }
+/* a list was applied: keep its stamp and the fingerprint of what was written here (only when this device is not ahead of the cloud) */
+function _pmDone(k, u, v, isJson){
+  var hu = _pmHeadsNow[k]; if(!u || !hu) return;
+  var js; try{ js = isJson ? v : JSON.stringify(v); }catch(e){ return; }
+  var seq = ++_pmSeq; _pmApplied[k] = { seq: seq };
+  try{ var DT = window._gcFastOpen && window._gcFastOpen.dirty; if(DT) DT.clean(k); }catch(e){}   /* this device's copy = the applied cloud version */
+  _pmHash(js).then(function(h){ if(_pmApplied[k] && _pmApplied[k].seq === seq) _pmApplied[k] = { u: u, hu: hu, h: h }; });
+}
+function _pmSaveSoon(late){
+  if(_pmSaveT || _pmOff()) return;
+  _pmSaveT = setTimeout(async function(){
+    _pmSaveT = null;
+    var who = _pmUser(); if(!who) return;
+    var DT = window._gcFastOpen && window._gcFastOpen.dirty; if(!DT || DT.broken()) return;
+    if(DT.wiped() && /wiped/.test(_pmStat.why)) DT.unwipe();   /* the store was cleared BEFORE this open's first pull: what this open applied is current */
+    var m = {}, ks = Object.keys(_pmApplied);
+    for(var i = 0; i < ks.length; i++){
+      var k = ks[i], e = _pmApplied[k];
+      if(!e || !e.u || !e.hu || !e.h || _idbSnapshot[k] === '__gc_local_differs__' || (typeof _gcsvBad === 'object' && _gcsvBad[k])) continue;
+      /* written here since: kept again only if this device's copy is EXACTLY what was applied (the screen often writes a pulled
+         list back unchanged), or exactly the sync's own base for it (nothing waiting to go up). Checked once the open has settled. */
+      if(DT.has(k)){
+        if(!late) continue;
+        try{
+          var cur = await idbGet(k); if(cur == null) continue;
+          var cs = JSON.stringify(cur), ch = await _pmHash(cs);
+          if(ch === e.h){ DT.clean(k); _pmStat.rebased = (_pmStat.rebased || 0) + 1; }
+          else if(cs === _idbSnapshot[k]){ DT.clean(k); e = _pmApplied[k] = { u: e.u, hu: e.hu, h: ch }; _pmStat.rebased = (_pmStat.rebased || 0) + 1; }
+          else continue;
+        }catch(_rb){ continue; }
+        await new Promise(function(r){ setTimeout(r, 50); });
+      }
+      m[k] = { u: e.u, hu: e.hu, h: e.h };
+    }
+    _pmDbPut({ v: 3, user: who, at: Date.now(), m: m }).then(function(ok){ if(ok){ _pmStat.saves++; _pmStat.lastSave = Date.now(); _pmStat.kept = Object.keys(m).length; } });
+  }, late ? 500 : 2500);
+}
+window._gcFastOpen = window._gcFastOpen || {};
+window._gcFastOpen.marks = {
+  info: function(){ return JSON.parse(JSON.stringify(Object.assign({}, _pmStat, { seededNow: Object.keys(_pmSeedHeads), applied: Object.keys(_pmApplied).length }))); },
+  clear: function(){ _pmDrop(); _pmApplied = {}; return _pmDbPut(null); }
+};
 var _syncing = false;
 // Rows this large can't be uploaded reliably. Once a key is found to be over
 // the cap we stop touching it entirely — otherwise we'd re-serialize several
@@ -52393,11 +52858,103 @@ window._gcSyncKeys = SYNC_KEYS;                                   /* 33.144 (pat
 window._gcPullChanged = function(){ return pullAll(true); };     /* only the lists whose timestamp moved */
 window._gcPullBusy = function(){ return _syncing; };
 var __gcLastFullPull = 0;
+/* patch RESUME (tools/patch_RESUME.py) — the sync at a return to the app.
+   (a) ONE PULL AT A TIME. _gcPullNow cleared the "a pull is running" flag (_syncing) and started another pull beside the
+       running one; at a return the focus / visibility / tab / catch-up handlers called it 4-7 times within seconds. Measured
+       on the owner-iPhone profile: 5-7 downloads of all 52 lists (12.9 MB of JSON each) side by side on one slow link, all
+       arriving ~90 s later and parsed together (the page ran out of memory and closed). Now a call while a pull runs waits for
+       it, then ONE follow-up pull runs for all who asked meanwhile (the widest ask: full > 'verify' > what changed). A pull
+       running for over 3 minutes is taken as stuck and a new one goes, as before. At the open: as before until the first
+       screen is drawn or a pull has finished (the sign-in waits for a pull).
+   (b) 'verify' (the catch-up at a return after a minute away and at "online" — a 5G -> Wi-Fi switch) and the 10-minute
+       "everything again" pull no longer download every list's value: each list is checked the way an open checks it
+       (FASTOPEN): a list this page applied, that nothing wrote here since (the write watch; a list the screen wrote back
+       unchanged is recognised by its fingerprint) and whose cloud stamp is still EXACTLY the one applied is not downloaded
+       again. Every other list (changed in the cloud with any stamp, even from a slow clock; written here; never applied; the
+       delete lists) is downloaded and merged as before. A real full pull still runs at _gcPullNow(true), every 6 hours, with
+       the marks off (gc_fastopen_marks_off = '1') or when the write watch is not working. */
+var __gcLastTrueFull = Date.now(), _pmFlight = null, __gcPullStart = 0, __gcPullDoneN = 0;
+/* the open's first screen is not drawn yet and no pull has finished: as before (the sign-in / first screen paths wait for a pull) */
+function _pmOpening(){
+  if(__gcPullDoneN) return false;
+  try{ var b = window._gcBootWatch && window._gcBootWatch.state().boot; return !(b && b.m && b.m.paint != null); }catch(e){ return true; }
+}
+function _pmBusy(){
+  if(_pmOpening()) return null;
+  if(_pmFlight && Date.now() - _pmFlight.at < 180000) return _pmFlight;
+  if(_syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
+    var fl = { at: __gcPullStart, want: undefined, next: null };
+    fl.p = new Promise(function(res){ var t0 = Date.now(); (function w(){ if(!_syncing || Date.now() - t0 > 180000) res(); else setTimeout(w, 400); })(); });
+    _pmFlight = fl; fl.p.then(function(){ if(_pmFlight === fl && !fl.next) _pmFlight = null; });
+    return fl;
+  }
+  return null;
+}
+/* lists written here since they were applied: still exactly what was applied? (the screen writes pulled lists back unchanged).
+   The mark is taken off BEFORE the copy is read: a write after that marks it again; a copy that differs is marked again. */
+async function _pmRebase(DT){
+  var ks = Object.keys(_pmApplied).filter(function(k){ var e = _pmApplied[k]; return e && e.u && e.hu && e.h && DT.has(k) && SYNC_KEYS.indexOf(k) >= 0; });
+  var t0 = Date.now();
+  for(var i = 0; i < ks.length && Date.now() - t0 < 8000; i++){
+    var k = ks[i], e = _pmApplied[k], same = false;
+    DT.clean(k);
+    try{ var cur = await idbGet(k); if(cur != null){ var cs = JSON.stringify(cur); if(cs.length < 4e6) same = (await _pmHash(cs)) === e.h; } }catch(_r){}
+    if(same) _pmStat.rebased = (_pmStat.rebased || 0) + 1; else DT.mark(k);
+    await new Promise(function(r){ setTimeout(r, 30); });
+  }
+}
+async function _pmReverify(){
+  try{
+    if(_pmOff() || Date.now() - __gcLastTrueFull > 6 * 3600e3) return false;
+    var DT = window._gcFastOpen && window._gcFastOpen.dirty;
+    if(!DT || DT.broken() || DT.has('*') || typeof DT.mark !== 'function') return false;
+    await _pmRebase(DT);
+    var last = {}, seed = {}, n = 0;
+    Object.keys(_pmApplied).forEach(function(k){
+      var e = _pmApplied[k];
+      if(!e || !e.u || !e.hu || !e.h || DT.has(k) || SYNC_KEYS.indexOf(k) < 0) return;
+      if(_idbSnapshot[k] === '__gc_local_differs__' || (typeof _gcsvBad === 'object' && _gcsvBad[k])) return;
+      last[k] = e.u; seed[k] = e.hu; n++;
+    });
+    _lastPull = last; _pmSeedHeads = seed; _pmSnapKeep = {};
+    _pmStat.reverified = (_pmStat.reverified || 0) + 1; _pmStat.reverifiedKept = n; _pmStat.pullsDone = __gcPullDoneN;
+    return true;
+  }catch(e){ return false; }
+}
+function _pmTrace(ev, full){ try{ var t = _pmStat.trace || (_pmStat.trace = []); t.push([Date.now() % 1e7, ev, full === true ? 'full' : full || '']); if(t.length > 16) t.shift(); }catch(e){} }
 window._gcPullNow = async function(full){
-  /* 33.144 (patch N): everything again only every 10 minutes (or _gcPullNow(true)); otherwise what changed */
-  if(full === true || Date.now() - __gcLastFullPull > 600000){ _lastPull = {}; __gcLastFullPull = Date.now(); }
-  _syncing = false;
-  await pullAll(true);
+  var _fl = _pmBusy();
+  _pmTrace(_fl ? 'wait' : 'run', full);
+  if(_fl){
+    _fl.want = (full === true || _fl.want === true) ? true : (full === 'verify' || _fl.want === 'verify') ? 'verify' : _fl.want;
+    _pmStat.coalesced = (_pmStat.coalesced || 0) + 1;
+    if(!_fl.next) _fl.next = _fl.p.then(function(){}, function(){}).then(function(){ if(_pmFlight === _fl) _pmFlight = null; return window._gcPullNow(_fl.want); });
+    return _fl.next;
+  }
+  var _me = _pmFlight = { at: Date.now(), want: undefined, next: null };
+  _me.p = (async function(){
+    /* 33.144 (patch N): everything again only every 10 minutes (or _gcPullNow(true)); otherwise what changed */
+    var full0 = function(){ _lastPull = {}; _pmDrop(); __gcLastFullPull = __gcLastTrueFull = Date.now(); };
+    if(full === true) full0();
+    else if(full === 'verify'){ if(await _pmReverify()) __gcLastFullPull = Date.now(); else full0(); }
+    else if(Date.now() - __gcLastFullPull > 600000){
+      /* patch FASTOPEN: the first pull of an open starts from the marks the last open kept (each checked against this device's copy) */
+      if(!__gcLastFullPull && _pmMayRestore()) __gcLastFullPull = Date.now();
+      else if(await _pmReverify()) __gcLastFullPull = Date.now();
+      else full0();
+    }
+    /* a timed pull that started meanwhile (while the lists were checked) is waited for, never run beside: clearing its flag
+       let every following caller start one more (measured: 5 pulls of the same 15 lists at once) */
+    if(!_pmOpening() && _syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
+      _pmTrace('wait-timed', full);
+      await new Promise(function(res){ var t0 = Date.now(); (function w(){ if(!_syncing || Date.now() - t0 > 180000) res(); else setTimeout(w, 400); })(); });
+    }
+    _syncing = false;
+    _pmTrace('pull', full);
+    await pullAll(true);
+    _pmTrace('done', full);
+  })();
+  try{ await _me.p; } finally { if(_pmFlight === _me && !_me.next) _pmFlight = null; }
   console.log('[GC Sync] Pulled latest from the cloud.');
 };
 
@@ -53021,9 +53578,10 @@ async function pullAll(force){
     return;
   }
   window.__GC_SYNC_PENDING__ = false;
-  _syncing = true;
+  _syncing = true; __gcPullStart = Date.now();   /* patch RESUME */
   var updated = false;
   try{
+    try{ await _pmRestoreOnce(); }catch(_pr){}   /* patch FASTOPEN */
     // DISK IO: two-phase pull. Ask first for just the key + timestamp (tiny),
     // and only download the actual VALUES for keys whose timestamp changed
     // since we last looked. The old version downloaded every table's full
@@ -53041,6 +53599,11 @@ async function pullAll(force){
     if(!Array.isArray(_heads)) throw new Error('Bad response: '+JSON.stringify(_heads).slice(0,100));
     var _changed = _heads.filter(function(h){
       if(!h || !h.key) return false;
+      _pmHeadsNow[h.key] = h.updated_at;   /* patch FASTOPEN */
+      if(Object.prototype.hasOwnProperty.call(_pmSeedHeads, h.key)){   /* kept from the last open: unchanged only if the cloud's stamp is EXACTLY the one seen then */
+        if(h.updated_at === _pmSeedHeads[h.key]){ _pmStat.unchanged++; return false; }
+        delete _pmSeedHeads[h.key]; delete _lastPull[h.key]; delete _pmSnapKeep[h.key]; _pmStat.changed++; return true;
+      }
       var seen = _lastPull[h.key];
       return !(seen && seen >= h.updated_at);
     });
@@ -53056,6 +53619,7 @@ async function pullAll(force){
     if(_changed.length){
       console.log('[GC Sync] '+_changed.length+' of '+_heads.length+' tables changed — downloaded only those.');
     }
+    try{ if(_pmStat.seeded && !_pmStat.logged){ _pmStat.logged = 1; _pmStat.pulled = _changed.map(function(h){ return h.key; }); console.log('[GC Sync] FASTOPEN: ' + _changed.length + ' of ' + _heads.length + ' lists changed since this device last pulled (' + _pmStat.seeded + ' kept, checked in ' + _pmStat.ms + ' ms).'); } }catch(_pl){}
 
     // Reassemble any CHUNKED keys (big lists split across multiple rows) and add
     // them to the row set so the normal merge logic below applies them. Without
@@ -53105,6 +53669,7 @@ async function pullAll(force){
       var lastSeen = _lastPull[row.key];
       if(lastSeen && lastSeen >= row.updated_at) continue; // no change
       _lastPull[row.key] = row.updated_at;
+      delete _pmApplied[row.key]; delete _pmSeedHeads[row.key]; delete _pmSnapKeep[row.key];   /* patch FASTOPEN: kept again only once this version is applied */
 
       var _val = row.value, _cloudRaw = row.value;   /* SAVES: what the cloud has, before this computer's copy is merged in */
       try{ if(window._gcCloudSeen) window._gcCloudSeen(row.key, _val); }catch(_cs){}   /* patch CUSTSYNC */
@@ -53274,7 +53839,7 @@ async function pullAll(force){
       // dashboard totals visibly jump on every 30s pull).
       var _rem;
       try{ _rem = JSON.stringify(_val); }catch(e){ _rem = null; }
-      if(_rem !== null && _idbSnapshot[row.key] === _rem) continue;
+      if(_rem !== null && _idbSnapshot[row.key] === _rem){ _pmDone(row.key, row.updated_at, _rem, true); continue; }   /* patch FASTOPEN: already this */
 
       // SAFETY NET: if this is a list of records (has ids) and not already handled
       // by a specific merge branch above, union-merge it with local rather than
@@ -53290,7 +53855,9 @@ async function pullAll(force){
       /* patch D: never apply by replacement — merge with what this computer has (lists by id,
          maps by entry, settings only if missing); localStorage-backed keys are merged there too */
       try{ if(window._gcPullMerge) _val = await window._gcPullMerge(row.key, _val, await idbGet(row.key)); }catch(_pm){}
-      await idbSet(row.key, _val);
+      var _pmDT = window._gcFastOpen && window._gcFastOpen.dirty; if(_pmDT) _pmDT.quiet(row.key, true);   /* patch FASTOPEN: the sync's own apply is not a change made here */
+      var _pmOk = await idbSet(row.key, _val);
+      if(_pmDT) _pmDT.quiet(row.key, false);
       // Mark this value as "already known" for the diff-pusher. Without this,
       // checkAndPushDiffs() sees the freshly-pulled value as a local change and
       // uploads it again — two machines then bounce values back and forth.
@@ -53302,6 +53869,7 @@ async function pullAll(force){
         if(Array.isArray(_val) && Array.isArray(_cloudRaw) && _gcsvAhead(_val, _cloudRaw)){ _idbSnapshot[row.key] = '__gc_local_differs__'; try{ if(_spWritten) _spWritten[row.key] = 1; }catch(e){} _gcsvSoon(); }
         else _idbSnapshot[row.key] = _rem;
       }
+      try{ if(_pmOk && _idbSnapshot[row.key] !== '__gc_local_differs__') _pmDone(row.key, row.updated_at, _val); }catch(_pd){}   /* patch FASTOPEN */
       // Push the freshly-pulled value into the running app's state.
       // Without this the UI keeps its stale in-memory copy and then writes
       // it back over the newer cloud data (why two admins saw different totals).
@@ -53324,6 +53892,8 @@ async function pullAll(force){
     console.warn('[GC Sync] Pull failed:', e.message);
   }
   _syncing = false;
+  try{ _pmSaveSoon(); }catch(_ps){}   /* patch FASTOPEN */
+  __gcPullDoneN++;   /* patch RESUME: pulls done (for _gcFastOpen.marks.info()) */
 }
 
 // ── Hook into every IDB write in the CRM ────────────────────────────────
@@ -130141,7 +130711,11 @@ function catchUp(why){
   try{
     var f = window._gcPullNow; if(typeof f !== 'function') return;
     /* everything again, not only "what changed since the last pull" — that bookkeeping is what went stale offline */
-    ST.call(window, function(){ try{ Promise.resolve(f(true)).then(function(){ fixDisk(); fixScreen(); }, function(){}); }catch(e){} }, 1500);
+    /* patch RESUME: 'verify' — every list is checked by its EXACT cloud stamp (a list changed anywhere, with any clock, is
+       downloaded; a list written here is downloaded and merged); only the unchanged ones are not downloaded again. It was
+       _gcPullNow(true): at every return to the app after a minute and at every network switch (5G -> Wi-Fi fires "online")
+       the phone downloaded and parsed all 52 lists, 12.9 MB of JSON, and redrew — the freezes after a return. */
+    ST.call(window, function(){ try{ Promise.resolve(f('verify')).then(function(){ fixDisk(); fixScreen(); }, function(){}); }catch(e){} }, 1500);
     ST.call(window, function(){ try{ Promise.resolve(f()).then(function(){ fixDisk(); fixScreen(); }, function(){}); }catch(e){} }, 9000);
     stats.catchUps = (stats.catchUps || 0) + 1;
   }catch(e){}
