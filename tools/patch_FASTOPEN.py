@@ -70,8 +70,12 @@ function _pmRestoreOnce(){
   if(_pmRestoreP) return _pmRestoreP;
   var t0 = Date.now();
   var job = (async function(){
-    /* a phone: the first pull waits for the first screen (Field home) — its download and apply never compete with drawing it */
-    try{ if(!_pmOff() && window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()){
+    /* a phone: the first pull waits for the first screen (Field home) — its download and apply never compete with drawing it.
+       Only a warm open (marks kept for this person): on a first sign-in the phone has no data yet, its first pull goes at once */
+    var _warm = false;
+    try{ var _r0 = await _pmDbGet(), _w0 = _pmUser(); _warm = !!(_r0 && _r0.v === 3 && _r0.m && _w0 && _r0.user === _w0 && Date.now() - _r0.at < 7 * 864e5); }catch(_wr){}
+    _pmStat.warm = _warm;
+    try{ if(_warm && !_pmOff() && window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()){
       var tw = Date.now();
       while(Date.now() - tw < 45000){ var bw = window._gcBootWatch && window._gcBootWatch.state().boot; if(bw && bw.m && bw.m.paint != null) break; await new Promise(function(r){ setTimeout(r, 500); }); }
       await new Promise(function(r){ setTimeout(r, 1500); }); _pmStat.waitedMs = Date.now() - tw;

@@ -11,7 +11,8 @@ cloud read and its own redraw; the first tap after the return waited behind all 
 
 The patch (the 2nd script of the page, before every other script registers anything):
   1. RETURN EVENTS ARE LINED UP. A listener of window / document for visibilitychange (only when the page becomes VISIBLE),
-     pageshow (only a page restored from the back-forward cache), focus (only the window's own focus) or online is not run
+     pageshow (only a page restored from the back-forward cache), focus (only the window's own focus after a hide or a blur of
+     over 1 s — not the page's first focus or a tap that focuses the window) or online is not run
      inside the event: it goes into one queue. The queue starts after the first frame is drawn and ~0.35 s have passed (the
      first tap goes first), then runs ONE listener per task, waits longer after a long one, and holds while a finger / key is
      down (a tap within 0.25 s goes first). The same listener queued twice in one return (focus + visibilitychange +
@@ -59,7 +60,7 @@ var nST = W.setTimeout, nSI = W.setInterval, nCI = W.clearInterval, RAF = W.requ
 try { if (!W.__GC_NATIVE_SETINTERVAL__) W.__GC_NATIVE_SETINTERVAL__ = nSI; if (!W.__GC_NATIVE_SETTIMEOUT__) W.__GC_NATIVE_SETTIMEOUT__ = nST; if (!W.__GC_NATIVE_CLEARINTERVAL__) W.__GC_NATIVE_CLEARINTERVAL__ = nCI; } catch (e) {}
 var PF = W.performance;
 function now(){ try { return PF.now(); } catch (e) { return Date.now(); } }
-var R = { hideAt: 0, showAt: 0, vis: true, returns: 0, q: [], draining: false, kickT: 0, inputAt: 0,
+var R = { hideAt: 0, showAt: 0, blurAt: 0, vis: true, returns: 0, q: [], draining: false, kickT: 0, inputAt: 0,
   st: { queuedEv: 0, queuedTimers: 0, deduped: 0, ran: 0, worst: 0, worstWhat: '', lastDrainMs: 0, lastReturn: null } };
 var API = W.__gcResume = { off: off, state: function(){ var s = JSON.parse(JSON.stringify(R.st)); s.off = off; s.queue = R.q.length; s.returns = R.returns; s.hideAt = R.hideAt; s.showAt = R.showAt; s.visible = R.vis; return s; } };
 if (off) return;
@@ -79,6 +80,7 @@ try {
   aEL.call(D, 'visibilitychange', function(){ if (hidden()) onHide(); else onShow('visible'); }, true);
   aEL.call(W, 'pagehide', onHide, true);
   aEL.call(W, 'pageshow', function(e){ if (e && e.persisted) onShow('pageshow'); }, true);
+  aEL.call(W, 'blur', function(e){ if (e && e.target === W) R.blurAt = Date.now(); }, true);
   aEL.call(D, 'freeze', onHide, true); aEL.call(D, 'resume', function(){ onShow('resume'); }, true);
   var inp = function(){ R.inputAt = Date.now(); };
   ['pointerdown', 'touchstart', 'keydown', 'mousedown'].forEach(function(t){ aEL.call(W, t, inp, { capture: true, passive: true }); });
@@ -126,9 +128,15 @@ var MAP = new WeakMap();
 function isReturn(e){
   if (!e || !(e.isTrusted || W.__GC_RESUME_SIM__)) return false;
   var t = e.type;
-  if (t === 'visibilitychange') return !hidden();
+  if (t === 'visibilitychange') return !hidden() && R.hideAt > 0;
   if (t === 'pageshow') return !!e.persisted;
-  if (t === 'focus') return e.target === W;
+  if (t === 'focus') {
+    /* only the window coming back: after a hide (the app switcher / another app) or a window blur of over 1 s — never the
+       page's first focus or a tap that focuses the window (that runs inside the event, as before) */
+    if (e.target !== W) return false;
+    var n = Date.now(), back = (R.blurAt && n - R.blurAt > 1000) || (R.hideAt && R.showAt >= R.hideAt && n - R.showAt < 2500);
+    R.blurAt = 0; return !!back;
+  }
   return t === 'online';
 }
 function keyOf(type, o, tgt){ var c = typeof o === 'boolean' ? o : !!(o && o.capture); return (tgt === W ? 'w' : 'd') + type + (c ? 1 : 0); }
@@ -220,7 +228,8 @@ PULLNOW_NEW = """/* patch RESUME (tools/patch_RESUME.py) — the sync at a retur
        on the owner-iPhone profile: 5-7 downloads of all 52 lists (12.9 MB of JSON each) side by side on one slow link, all
        arriving ~90 s later and parsed together (the page ran out of memory and closed). Now a call while a pull runs waits for
        it, then ONE follow-up pull runs for all who asked meanwhile (the widest ask: full > 'verify' > what changed). A pull
-       running for over 3 minutes is taken as stuck and a new one goes, as before.
+       running for over 3 minutes is taken as stuck and a new one goes, as before. Not before the open's first pull is done
+       (the open is unchanged).
    (b) 'verify' (the catch-up at a return after a minute away and at "online" — a 5G -> Wi-Fi switch) and the 10-minute
        "everything again" pull no longer download every list's value: each list is checked the way an open checks it
        (FASTOPEN): a list this page applied, that nothing wrote here since (the write watch; a list the screen wrote back
@@ -228,8 +237,9 @@ PULLNOW_NEW = """/* patch RESUME (tools/patch_RESUME.py) — the sync at a retur
        again. Every other list (changed in the cloud with any stamp, even from a slow clock; written here; never applied; the
        delete lists) is downloaded and merged as before. A real full pull still runs at _gcPullNow(true), every 6 hours, with
        the marks off (gc_fastopen_marks_off = '1') or when the write watch is not working. */
-var __gcLastTrueFull = Date.now(), _pmFlight = null, __gcPullStart = 0;
+var __gcLastTrueFull = Date.now(), _pmFlight = null, __gcPullStart = 0, __gcPullDoneN = 0;
 function _pmBusy(){
+  if(!__gcPullDoneN) return null;   /* the open itself: as before (its first pull waits for Field home on a phone) */
   if(_pmFlight && Date.now() - _pmFlight.at < 180000) return _pmFlight;
   if(_syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
     var fl = { at: __gcPullStart, want: undefined, next: null };
@@ -321,7 +331,12 @@ CATCH_NEW = """    /* patch RESUME: 'verify' — every list is checked by its EX
        the phone downloaded and parsed all 52 lists, 12.9 MB of JSON, and redrew — the freezes after a return. */
     ST.call(window, function(){ try{ Promise.resolve(f('verify')).then(function(){ fixDisk(); fixScreen(); }, function(){}); }catch(e){} }, 1500);
 """
-SYNC_EDITS = ((PULLNOW_OLD, PULLNOW_NEW, 'pull now'), (START_OLD, START_NEW, 'pull start'), (DTAPI_OLD, DTAPI_NEW, 'write watch api'), (CATCH_OLD, CATCH_NEW, 'catch-up pull'))
+END_OLD = """  try{ _pmSaveSoon(); }catch(_ps){}   /* patch FASTOPEN */
+"""
+END_NEW = """  try{ _pmSaveSoon(); }catch(_ps){}   /* patch FASTOPEN */
+  __gcPullDoneN++;   /* patch RESUME: pulls are lined up only once the open's first pull is done */
+"""
+SYNC_EDITS = ((END_OLD, END_NEW, 'pull end'), (PULLNOW_OLD, PULLNOW_NEW, 'pull now'), (START_OLD, START_NEW, 'pull start'), (DTAPI_OLD, DTAPI_NEW, 'write watch api'), (CATCH_OLD, CATCH_NEW, 'catch-up pull'))
 
 def main():
     p = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'index.html')

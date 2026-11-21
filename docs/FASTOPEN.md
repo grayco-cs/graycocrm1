@@ -192,6 +192,13 @@ tests (load 2–3 on 4 cores): single numbers vary a lot; compare ranges.
 * **One pull at a time**: a `_gcPullNow` call while a pull runs waits for it, then one follow-up pull runs for all who asked
   (the widest ask). A pull running > 3 min is taken as stuck (as before). `_gcFastOpen.marks.info()` → `trace`,
   `coalesced`, `reverified`, `rebased`.
+* The open itself is unchanged by the queue (nothing is queued before the first hide) and by "one pull at a time" (only
+  once the open's first pull is done). A window `focus` counts as a return only after a hide or a window blur of > 1 s (the
+  page's first focus / a tap that focuses the window runs inside the event, as before).
+* FASTOPEN fix found on the way (regression tests on current main): the phone's first pull waited for Field home (up to 45 s)
+  also on a FIRST sign-in, when the phone has no data yet — COICONF (a fresh phone saw the old W-9 / COI list), BOOTWATCH
+  ("signed in with GrayCo Field on screen" not in the report) and PMFIELD failed. It now waits only on a warm open (marks kept
+  for this person, < 7 days); `_gcFastOpen.marks.info().warm`.
 * Nothing of the open is run again at a return (checked: no boot work is in the queue; BOOTWATCH's resume check is one of
   the queued listeners).
 

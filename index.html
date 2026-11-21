@@ -219,7 +219,7 @@ var nST = W.setTimeout, nSI = W.setInterval, nCI = W.clearInterval, RAF = W.requ
 try { if (!W.__GC_NATIVE_SETINTERVAL__) W.__GC_NATIVE_SETINTERVAL__ = nSI; if (!W.__GC_NATIVE_SETTIMEOUT__) W.__GC_NATIVE_SETTIMEOUT__ = nST; if (!W.__GC_NATIVE_CLEARINTERVAL__) W.__GC_NATIVE_CLEARINTERVAL__ = nCI; } catch (e) {}
 var PF = W.performance;
 function now(){ try { return PF.now(); } catch (e) { return Date.now(); } }
-var R = { hideAt: 0, showAt: 0, vis: true, returns: 0, q: [], draining: false, kickT: 0, inputAt: 0,
+var R = { hideAt: 0, showAt: 0, blurAt: 0, vis: true, returns: 0, q: [], draining: false, kickT: 0, inputAt: 0,
   st: { queuedEv: 0, queuedTimers: 0, deduped: 0, ran: 0, worst: 0, worstWhat: '', lastDrainMs: 0, lastReturn: null } };
 var API = W.__gcResume = { off: off, state: function(){ var s = JSON.parse(JSON.stringify(R.st)); s.off = off; s.queue = R.q.length; s.returns = R.returns; s.hideAt = R.hideAt; s.showAt = R.showAt; s.visible = R.vis; return s; } };
 if (off) return;
@@ -239,6 +239,7 @@ try {
   aEL.call(D, 'visibilitychange', function(){ if (hidden()) onHide(); else onShow('visible'); }, true);
   aEL.call(W, 'pagehide', onHide, true);
   aEL.call(W, 'pageshow', function(e){ if (e && e.persisted) onShow('pageshow'); }, true);
+  aEL.call(W, 'blur', function(e){ if (e && e.target === W) R.blurAt = Date.now(); }, true);
   aEL.call(D, 'freeze', onHide, true); aEL.call(D, 'resume', function(){ onShow('resume'); }, true);
   var inp = function(){ R.inputAt = Date.now(); };
   ['pointerdown', 'touchstart', 'keydown', 'mousedown'].forEach(function(t){ aEL.call(W, t, inp, { capture: true, passive: true }); });
@@ -286,9 +287,15 @@ var MAP = new WeakMap();
 function isReturn(e){
   if (!e || !(e.isTrusted || W.__GC_RESUME_SIM__)) return false;
   var t = e.type;
-  if (t === 'visibilitychange') return !hidden();
+  if (t === 'visibilitychange') return !hidden() && R.hideAt > 0;
   if (t === 'pageshow') return !!e.persisted;
-  if (t === 'focus') return e.target === W;
+  if (t === 'focus') {
+    /* only the window coming back: after a hide (the app switcher / another app) or a window blur of over 1 s — never the
+       page's first focus or a tap that focuses the window (that runs inside the event, as before) */
+    if (e.target !== W) return false;
+    var n = Date.now(), back = (R.blurAt && n - R.blurAt > 1000) || (R.hideAt && R.showAt >= R.hideAt && n - R.showAt < 2500);
+    R.blurAt = 0; return !!back;
+  }
   return t === 'online';
 }
 function keyOf(type, o, tgt){ var c = typeof o === 'boolean' ? o : !!(o && o.capture); return (tgt === W ? 'w' : 'd') + type + (c ? 1 : 0); }
@@ -52343,8 +52350,12 @@ function _pmRestoreOnce(){
   if(_pmRestoreP) return _pmRestoreP;
   var t0 = Date.now();
   var job = (async function(){
-    /* a phone: the first pull waits for the first screen (Field home) — its download and apply never compete with drawing it */
-    try{ if(!_pmOff() && window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()){
+    /* a phone: the first pull waits for the first screen (Field home) — its download and apply never compete with drawing it.
+       Only a warm open (marks kept for this person): on a first sign-in the phone has no data yet, its first pull goes at once */
+    var _warm = false;
+    try{ var _r0 = await _pmDbGet(), _w0 = _pmUser(); _warm = !!(_r0 && _r0.v === 3 && _r0.m && _w0 && _r0.user === _w0 && Date.now() - _r0.at < 7 * 864e5); }catch(_wr){}
+    _pmStat.warm = _warm;
+    try{ if(_warm && !_pmOff() && window._gcDevice && window._gcDevice.fieldDevice && window._gcDevice.fieldDevice()){
       var tw = Date.now();
       while(Date.now() - tw < 45000){ var bw = window._gcBootWatch && window._gcBootWatch.state().boot; if(bw && bw.m && bw.m.paint != null) break; await new Promise(function(r){ setTimeout(r, 500); }); }
       await new Promise(function(r){ setTimeout(r, 1500); }); _pmStat.waitedMs = Date.now() - tw;
@@ -52853,7 +52864,8 @@ var __gcLastFullPull = 0;
        on the owner-iPhone profile: 5-7 downloads of all 52 lists (12.9 MB of JSON each) side by side on one slow link, all
        arriving ~90 s later and parsed together (the page ran out of memory and closed). Now a call while a pull runs waits for
        it, then ONE follow-up pull runs for all who asked meanwhile (the widest ask: full > 'verify' > what changed). A pull
-       running for over 3 minutes is taken as stuck and a new one goes, as before.
+       running for over 3 minutes is taken as stuck and a new one goes, as before. Not before the open's first pull is done
+       (the open is unchanged).
    (b) 'verify' (the catch-up at a return after a minute away and at "online" — a 5G -> Wi-Fi switch) and the 10-minute
        "everything again" pull no longer download every list's value: each list is checked the way an open checks it
        (FASTOPEN): a list this page applied, that nothing wrote here since (the write watch; a list the screen wrote back
@@ -52861,8 +52873,9 @@ var __gcLastFullPull = 0;
        again. Every other list (changed in the cloud with any stamp, even from a slow clock; written here; never applied; the
        delete lists) is downloaded and merged as before. A real full pull still runs at _gcPullNow(true), every 6 hours, with
        the marks off (gc_fastopen_marks_off = '1') or when the write watch is not working. */
-var __gcLastTrueFull = Date.now(), _pmFlight = null, __gcPullStart = 0;
+var __gcLastTrueFull = Date.now(), _pmFlight = null, __gcPullStart = 0, __gcPullDoneN = 0;
 function _pmBusy(){
+  if(!__gcPullDoneN) return null;   /* the open itself: as before (its first pull waits for Field home on a phone) */
   if(_pmFlight && Date.now() - _pmFlight.at < 180000) return _pmFlight;
   if(_syncing && __gcPullStart && Date.now() - __gcPullStart < 180000){
     var fl = { at: __gcPullStart, want: undefined, next: null };
@@ -53869,6 +53882,7 @@ async function pullAll(force){
   }
   _syncing = false;
   try{ _pmSaveSoon(); }catch(_ps){}   /* patch FASTOPEN */
+  __gcPullDoneN++;   /* patch RESUME: pulls are lined up only once the open's first pull is done */
 }
 
 // ── Hook into every IDB write in the CRM ────────────────────────────────
