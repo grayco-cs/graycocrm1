@@ -202,18 +202,18 @@ tests (load 2–3 on 4 cores): single numbers vary a lot; compare ranges.
 * Nothing of the open is run again at a return (checked: no boot work is in the queue; BOOTWATCH's resume check is one of
   the queued listeners).
 
-### Before / after (same profile; main vs claude/fastopen2, runs ab_base / ab_fo2 / net_fo2 / fo2d)
+### Before / after (same profile; main 9d50476 = ab_base; claude/fastopen2 final build 961c74c = final3, earlier builds ab_fo2 / net_fo2)
 
-| | main 9d50476 | claude/fastopen2 |
+| | main 9d50476 | claude/fastopen2 (final) |
 |---|---|---|
-| JSON downloaded in the 10 s after a return | **12.4 / 12.4 / 13.1 MB** | **1.2 / 1.4 / 1.7 MB** (network switch: 2.4 / 8.6 MB) |
-| worst long task in the 10 s after a return | 1.0 / 1.4 / 1.6 s | **0.37 / 0.44 / 0.52 s** (one outlier 6.4 s on a loaded machine, not reproduced in 4 more returns: 0.36–0.84 s) |
-| first frame after the return | 53 / 57 / 226 ms | 4 / 5 / 55 ms |
-| tap on ☰ More 0.3 s after the return (to the sheet drawn) | 653 / 859 / 2251 ms | 190 / 562 / 607 / 1036 / 1607 ms |
-| the same tap with the page idle (floor) | 423 / 498 / 1560 ms | 656 / 792 / 1199 ms |
-| cold open (fresh tab), Field home | 28.1 / 29.4 s (page 304 from the HTTP cache) | 31.0 / 34.4 s (page from the saved copy, +~2 s to read 24 MB under CPU ×4) |
-| long tasks in the 10 s after Field home (cold) | worst 1.0 / 1.1 s | **worst 0.26 / 0.33 s** |
-| lists in the first pull of an open | 52 | 1–3 (39 kept by stamp) |
+| JSON downloaded in the 10 s after a return | **12.4 / 12.4 / 13.1 MB** | **0.2 / 1.8 / 2.4 MB**; one network switch 10.2 MB (lists written on the phone are pulled and merged) |
+| worst long task in the 10 s after a return | 1.0 / 1.4 / 1.6 s | **0.56 / 0.56 / 0.58 / 0.64 s** |
+| first frame after the return | 53 / 57 / 226 ms | 4 / 5 / 23 ms (one 507 ms) |
+| tap on ☰ More 0.3 s after the return (to the sheet drawn) | 653 / 859 / 2251 ms | 735 / 806 / 1018 / 1086 ms |
+| the same tap with the page idle (floor) | 423 / 498 / 1560 ms | 317 / 824 / 1869 ms |
+| cold open (fresh tab), Field home | 28.1 / 29.4 s (page 304 from the HTTP cache) | 30.1 / 32.8 s (page from the saved copy, +~2 s to read 24 MB under CPU ×4) |
+| long tasks in the 10 s after Field home (cold) | worst 1.0 / 1.1 s | worst 0.35 / 0.68 s |
+| lists in the first pull of an open | 52 | the changed ones only (39 kept by stamp) |
 
 **Not reached in this harness:** tap < 300 ms and Field home < 2–3 s. At CPU ×4 the page is ~65 % busy even when nobody
 touches it (idle-tap floor 0.4–1.6 s on main too): the desk-only DOM scans (AP3 `acceptNode`, NAV `isScreen`, J's list
