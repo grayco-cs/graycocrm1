@@ -254390,7 +254390,7 @@ W.addEventListener('pointercancel', function(){ T = null; }, true);
 /* 4: the Field Home is never blank */
 var blankSince = 0;
 function homeCheck(){
-  var h = D.querySelector('#_gcJobPick.gc-fh'), w = h && h.querySelector('.fh-wrap'), f = D.getElementById('gc-sf-homefail');
+  var h = D.getElementById('_gcJobPick'), w = h && h.querySelector('.fh-wrap'), f = D.getElementById('gc-sf-homefail');
   if (!w) { blankSince = 0; return; }
   var has = Array.prototype.some.call(w.children, function(c){ return c.id !== 'gc-to-strip' && c.id !== 'gc-sf-homefail' && c.getClientRects().length && c.getBoundingClientRect().height > 8; });
   if (has) { blankSince = 0; if (f) f.remove(); return; }
@@ -254413,7 +254413,7 @@ D.addEventListener('click', function(e){
 SI.call(W, function(){ if (!D.hidden) { homeCheck(); if (blankSince && Date.now() - blankSince > 2500 && (Date.now() - blankSince) % 6000 < 1600) homeRetry(); } }, 1500);
 try { var cs0 = D.createElement('style'); cs0.id = 'gc-sf-css'; cs0.textContent = '.gc-pmf-sferr{margin:10px 0;padding:12px;border:1px solid #fcd34d;background:#fffbeb;border-radius:12px;color:#92400e;display:flex;flex-direction:column;gap:6px;font:600 14px Inter,sans-serif}.gc-pmf-sferr small{font-weight:500;color:#78350f}.gc-pmf-sferr button{align-self:flex-start;min-height:44px;padding:8px 14px;border-radius:10px;border:1px solid #d97706;background:#fff;color:#92400e;font:700 14px Inter,sans-serif}#gc-fh-sync[data-k="wait"],#gc-fh-sync[data-k="off"]{cursor:pointer}'; (D.head || D.documentElement).appendChild(cs0); } catch (e) {}
 later(sweep, 1500);
-W._gcSF = { log: function(){ return LOG.slice(); }, repull: repull, listsMissing: listsMissing, sweep: sweep, resend: resend, homeCheck: homeCheck, waiting: waiting, ghost: ghost,
+W._gcSF = { log: function(){ return LOG.slice(); }, state: function(){ return { blankSince: blankSince, pushAt: pushAt, pullAt: pullAt }; }, repull: repull, listsMissing: listsMissing, sweep: sweep, resend: resend, homeCheck: homeCheck, waiting: waiting, ghost: ghost,
   pull: function(){ try { if (navigator.onLine !== false && typeof W._gcPullNow === 'function') Promise.resolve(W._gcPullNow()).catch(function(){}); } catch (e) {} } };
 })(window);
 </script>

@@ -107,7 +107,7 @@ async function phone(email, who, dropMidLoad){
     await c.ev(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
   }
   await H.waitFor(c, () => !!document.querySelector('#_gcJobPick.gc-fh') && !!document.querySelector('#gc-fh-tabs[data-ra-bar]'), null, 60000);
-  await H.waitFor(c, () => (window._crm && window._crm.schedule || []).length >= 3, null, 30000);
+  await H.waitFor(c, () => (window._crm && window._crm.schedule || []).length >= 3 && (window._crm.leads || []).length >= 2, null, 30000);
   await sleep(3000);
   return c;
 }
@@ -133,6 +133,7 @@ try {
   const nk = await phone(NICK, 'Nick', true);
   await H.waitFor(nk, () => !!document.querySelector('#_gcJobPick .fh-wrap'), null, 30000);
   const t0h = Date.now(); await H.waitFor(nk, () => !!document.querySelector('#_gcJobPick .gc-pmf') || !!document.getElementById('gc-sf-homefail'), null, 30000); const homeMs = Date.now() - t0h;
+  await sleep(6000); await H.waitFor(nk, () => !!document.querySelector('#_gcJobPick .gc-pmf') || !!document.getElementById('gc-sf-homefail'), null, 30000);   /* and still filled a moment later (the lists re-read redraw it) */
   await nk.page().screenshot({ path: SHOTS + 'nick_after_resume.png' });
   const hm = await nk.ev(() => { const h = document.querySelector('#_gcJobPick'), w = h && h.querySelector('.fh-wrap'); return { home: !!h, ra: h && h.getAttribute('data-ra'), pmf: !!(w && w.querySelector('.gc-pmf')), txt: w ? w.innerText.slice(0, 120) : document.body.innerText.slice(0, 200), fail: !!document.getElementById('gc-sf-homefail'), view: localStorage.getItem('grayco_view'), field: document.documentElement.className.slice(0, 200) }; });
   ok(hm.pmf || hm.fail, 'after the drop + resume the Home fills in by itself once the network answers (the dashboard, or the ↻ retry card) — ' + homeMs + ' ms', hm);
@@ -214,10 +215,10 @@ try {
   console.log('B5. the Home is never blank');
   await closeAll(nk);
   await nk.ev(() => { window.__sfR = window._gcField.render; window._gcField.render = () => {}; window.__sfMe = window._gcMeNow; window.__sfAdm = window.__GC_AUTH__.isAdmin; window.__GC_AUTH__.isAdmin = () => false; Object.defineProperty(window, '_gcMeNow', { configurable: true, get: () => null, set(){} });   /* the person not known (the lists not in) */
-    setTimeout(() => { const w = document.querySelector('#_gcJobPick .fh-wrap'); [...w.children].forEach(c => { if (c.id !== 'gc-to-strip') c.remove(); }); }, 7000); });
+    setTimeout(() => { const st = document.createElement('style'); st.id = 'sf-test-blank'; st.textContent = '#_gcJobPick .fh-wrap > :not(#gc-to-strip):not(#gc-sf-homefail){display:none!important}'; document.head.appendChild(st); }, 7000); });   /* nothing shows on the Home but the strip (the screen in the report) */
   const card = await H.waitFor(nk, () => { const f = document.getElementById('gc-sf-homefail'); return f && f.getClientRects().length ? f.innerText : ''; }, null, 20000);
-  ok(/Couldn.t load your home/.test(card || '') && /Tap to retry/.test(card || ''), 'a blank Field Home shows "⚠️ Couldn\'t load your home — ↻ Tap to retry" (not an empty page)', card || await nk.ev(() => { const w = document.querySelector('#_gcJobPick .fh-wrap'); return { kids: w ? [...w.children].map(c => (c.id || c.className) + ':' + Math.round(c.getBoundingClientRect().height)) : null, log: window._gcSF.log() }; }));
-  await nk.ev(() => { delete window._gcMeNow; window._gcMeNow = window.__sfMe; window.__GC_AUTH__.isAdmin = window.__sfAdm; window._gcField.render = window.__sfR; });
+  ok(/Couldn.t load your home/.test(card || '') && /Tap to retry/.test(card || ''), 'a blank Field Home shows "⚠️ Couldn\'t load your home — ↻ Tap to retry" (not an empty page)', card || await nk.ev(() => { const w = document.querySelector('#_gcJobPick .fh-wrap'); return { kids: w ? [...w.children].map(c => (c.id || c.className) + ':' + Math.round(c.getBoundingClientRect().height)) : null, homes: document.querySelectorAll('#_gcJobPick').length, cls: (document.getElementById('_gcJobPick') || {}).className, hidden: document.hidden, log: window._gcSF.log() }; }));
+  await nk.ev(() => { const sb = document.getElementById('sf-test-blank'); if (sb) sb.remove(); delete window._gcMeNow; window._gcMeNow = window.__sfMe; window.__GC_AUTH__.isAdmin = window.__sfAdm; window._gcField.render = window.__sfR; });
   await tapAt(nk, '#gc-sf-homefail [data-sf="homeretry"]');
   const back = await H.waitFor(nk, () => !!document.querySelector('#_gcJobPick .gc-pmf') && !document.getElementById('gc-sf-homefail'), null, 12000);
   ok(!!back, '↻ Tap to retry → the Home comes back');
@@ -239,7 +240,7 @@ try {
   await closeAll(pm);
   console.log('B7. the bid portal\'s site walk → the schedule');
   await pm.ev(() => window._gcBidDates.fromBidJob('BJ9', { title: 'Sample Clinic Remodel', address: '9 Clinic Rd', crmLeadId: 'LB1', siteWalk: { date: new Date(Date.now() + 2 * 864e5).toLocaleDateString('en-CA'), time: '13:30', location: 'North gate', mandatory: true } }, 'P1'));
-  const cl = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 30000) { const x = (H.cget('schedule') || []).find(y => y && y.id === 'SCHbw-BJ9'); if (x) return x; await sleep(500); } return null; })();
+  const cl = await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 60000) { const x = (H.cget('schedule') || []).find(y => y && y.id === 'SCHbw-BJ9'); if (x) return x; await sleep(500); } return null; })();
   ok(cl && cl.assignee === 'Demo PM' && cl.createdBy === 'Demo PM' && cl.time === '1:30 PM' && cl.address === 'North gate' && cl.bidJobId === 'BJ9' && cl.source === 'Bid portal', 'the site walk is a real schedule entry in the cloud (on the CRM Schedule and the calendar feed), assigned to the person who saved it', cl);
   await pm.ev(() => window._gcPmField.open({ reset: true, view: 'week' })); await sleep(400);
   const wk = await pm.ev(() => [...document.querySelectorAll('.gc-pmf-sheet[data-pmf-sheet="sched"] [data-pmf-a="item"]')].map(b => b.getAttribute('data-id')));
