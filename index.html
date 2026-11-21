@@ -91876,7 +91876,8 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
         t.style.cssText='position:fixed;bottom:20px;right:20px;z-index:2147483647;background:'
           +(color||'#16a34a')+';color:#fff;padding:11px 18px;border-radius:8px;'
           +'font-family:Arial,sans-serif;font-size:13px;font-weight:700;'
-          +'box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:80vw';
+          +'box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:80vw;pointer-events:none';   /* patch FIELDTAPS: a toast never eats a tap */
+        try{ if(document.documentElement.classList.contains('_fieldmode')) t.style.bottom='calc(116px + env(safe-area-inset-bottom,0px))'; }catch(e){}   /* patch FIELDTAPS: above the Field's bottom bar */
         document.body.appendChild(t);
         setTimeout(function(){ try{t.remove();}catch(e){} }, 5000);
       }catch(e){}
@@ -138799,13 +138800,17 @@ function open(jobId, opts){
   pullSoon(300); ccWake(); rtConnect();   /* patch PHOTOLINK */
   return true;
 }
+try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('#gc-fh-tabs [data-t],#gc-ra-dock [data-t],#_gcAppBack')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */
 function close(){
   S.open = false;
   gpsStop(); teardown();
   try { document.documentElement.classList.remove('gcu-open'); } catch (e) {}
   paintEntries();
   var fd = S.fromDash; S.fromDash = '';
-  if (fd) [150, 700].forEach(function(ms){ later(function(){ try { if (!S.open && !document.getElementById('_gcJobDash') && document.documentElement.classList.contains('_fieldmode') && typeof window._gcJobDashboard === 'function') window._gcJobDashboard(fd); } catch (e) {} }, ms); });
+  /* patch FIELDTAPS: closed by a tap on the bottom bar (🏠 Home, Jobs, Today…): the tab goes where it says — no job page over it */
+  var tabbed = function(){ return Date.now() - (+window.__gcTabTapAt || 0) < 2500; };
+  if (fd && tabbed()) fd = '';
+  if (fd) [150, 700].forEach(function(ms){ later(function(){ try { if (!S.open && !tabbed() && !document.getElementById('_gcJobDash') && document.documentElement.classList.contains('_fieldmode') && typeof window._gcJobDashboard === 'function') window._gcJobDashboard(fd); } catch (e) {} }, ms); });
   if (tabHost && tabHost.isConnected) later(function(){ mountTab(tabHost); }, 0);   /* back on the left-menu tab: the app is there again */
 }
 /* the left-menu tab "GrayCo Photos" (case "allphotos"): the app inside the page. Called by the tab's
@@ -181219,9 +181224,11 @@ function openLead(id, sec){
 var FAST;   // not reset: readHash may have started it already
 function fastWant(){ if (FAST) return; var t0 = Date.now(); FAST = setInterval(function(){ try { if (!WANT || !WANT.id || Date.now() - t0 > 150e3) { clearInterval(FAST); FAST = null; return; } if (!D.hidden && byId(WANT.id) && D.getElementById('gc-leads-hub')) tickWant(); } catch (e) { clearInterval(FAST); FAST = null; } }, 250); }   /* only once the Leads list is on screen (re-clicking the tab sooner stops it drawing) */
 if (WANT && WANT.id) { try { if (typeof W._setView !== 'function') localStorage.setItem('grayco_view', 'leads'); } catch (e) {} }
+try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('#gc-fh-tabs [data-t],#gc-ra-dock [data-t],#_gcAppBack')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */
 W._gcOpenLead = function(id, sec){ WANT = { id: s(id), sec: s(sec), at: Date.now(), refreshed: true }; return tickWant(); };
 function tickWant(){
   if (!WANT || !signedIn()) return false;
+  if (WANT.at && (+W.__gcTabTapAt || 0) > WANT.at) { WANT = null; clearHash(); return false; }   /* patch FIELDTAPS: the person went elsewhere — the lead does not pop up later */
   if (!WANT.id) { try { W._setView('leads'); } catch (e) {} WANT = null; clearHash(); return true; }
   if (Date.now() - WANT.at > 150e3) { toast('That lead is not in the CRM yet — look in Leads → 📥 Lead Inbox.'); try { W._setView('leads'); } catch (e) {} WANT = null; clearHash(); return false; }
   if (byId(WANT.id) && openLead(WANT.id, WANT.sec)) { WANT = null; clearHash(); return true; }
