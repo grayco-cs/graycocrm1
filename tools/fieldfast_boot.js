@@ -7,10 +7,10 @@
    • as the page starts (or the moment the person signs in on it), on a phone that is signed in and has no saved job list, ONE read asks the cloud for the lists the
      Field's screens need (jobs, schedule, people, leads — and the delete lists, so a deleted job never shows), through the
      page's own sign-in / access layers (a person gets only what they may read);
-   • until the app's own lists arrive, window._crm shows that copy (jobs, schedule, people added to the built-in ones;
-     leads through the app's own lead mirror) — Home, Jobs, Approvals, the pickers and a job page draw from it at once;
+   • until the app's own first pull has got through, window._crm shows that copy (jobs; people added to the built-in
+     ones; the schedule) — Home, Jobs, the job pickers and a job page draw from it at once (leads stay the app's own);
    • nothing is saved from it: it is never written to the phone or sent anywhere; the moment the app's own list for a
-     key has anything in it, that list is shown again (the sync then applies the cloud's copy exactly as before).
+     key has anything in it, or its first pull got through, that list is shown (the sync applies the cloud's copy exactly as before).
    Off on this device: localStorage gc_fieldfast_off = '1'.  Console: _gcBootLists.state() */
 (function(){
 'use strict';
@@ -42,17 +42,19 @@ function withPeople(mine){
   var add = arr(L && L.users).filter(function(u){ var k = uKey(u); return k && !seen[k] && (seen[k] = 1); });
   return add.length ? a.concat(add) : a;
 }
+function over(){ return !!W.__gcPulledOkAt; }   /* the app's own pull got through: its lists are the ones shown from then on */
 function fill(o){
-  if (!L || !o || typeof o !== 'object') return o;
+  if (!L || !o || typeof o !== 'object' || over()) return o;
   try {
     if (L.projects && L.projects.length && appEmpty(o, 'projects')) { o.projects = L.projects.slice(); ST.used.projects = 1; } else if (!appEmpty(o, 'projects')) ST.used.projects = 0;
-    if (L.schedule && L.schedule.length && appEmpty(o, 'schedule')) { o.schedule = L.schedule.slice(); ST.used.schedule = 1; } else if (!appEmpty(o, 'schedule')) ST.used.schedule = 0;
+    if (L.schedule && L.schedule.length && appEmpty(o, 'schedule')) { o.schedule = L.schedule.slice(); ST.used.schedule = 1; } else if (!appEmpty(o, 'schedule')) ST.used.schedule = 0;   /* the office's / crew's "today" */
     /* people: the app starts with a few built-in ones; the cloud's are added until the app's own list has arrived */
     if (L.users && L.users.length && !W.__gcUsersLoaded) { var u = withPeople(o.users); if (u.length !== arr(o.users).length) { o.users = u; ST.used.users = 1; } }
   } catch (e) {}
   return o;
 }
 function leadsNow(){
+  return;   /* leads: the app's own (its lead mirror has writers of its own) */
   try {
     if (!L || !L.leads || !L.leads.length) return;
     var cur = W.__gcLeadsLive;

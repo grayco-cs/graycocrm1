@@ -23,8 +23,8 @@ Measured by tools/tests/test_FIELDTAPS.mjs (iPhone 390x844, standalone, CPU x4) 
    pickers say "Loading jobs…" while the jobs have not loaded; a job button tapped then runs by itself once they have.
 5. Fewer early redraws of Home: an unforced redraw waits until 1.5 s after the last one (one trailing draw); opening Home
    while it is up redraws it in place (it was thrown away and made again).
-6. Right after a sign-in (before the CRM's one reload) the Field takes the person from the sign-in's e-mail in the people
-   list (name + role, the Field's screens only) — a PM / estimator / crew member sees their jobs at once.
+6. At a first sign-in on a phone the person is looked up in the cloud's people list when this phone's lists do not have
+   them: the CRM opens as that person at once (it opened as nobody and reloaded 7-10 s later).
 """
 import os, sys
 p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
@@ -40,9 +40,9 @@ def js(name):
     assert '</script' not in s.lower()
     return s
 
-# 1. the network layer: the very first fetch wrapper (before RESUME and every other one)
-once('<script id="gc-patch-resume">',
-     '<script id="gc-patch-fieldfast-net">\n/* patch FIELDFAST: the network layer (tools/fieldfast_net.js) */\n' + js('fieldfast_net.js') + '</script>\n<script id="gc-patch-resume">')
+# 1. the network layer: the very first fetch wrapper (right after RESUME — RESUME stays the page's 2nd script)
+once('<script id="gc-patch-supply">',
+     '<script id="gc-patch-fieldfast-net">\n/* patch FIELDFAST: the network layer (tools/fieldfast_net.js) */\n' + js('fieldfast_net.js') + '</script>\n<script id="gc-patch-supply">')
 
 # 2. the first-open copy: after the sign-in / access layers and the CRM's data box (patch R17FIX2), before FASTOPEN part 2
 once('<script id="gc-patch-fastopen">',
@@ -108,17 +108,23 @@ once("""  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDa
   if (!ov) { ov = D.createElement('div'); ov.id = '_gcJobPick'; ov.className = 'gc-fh'; D.body.appendChild(ov);
     ov.addEventListener('click', onClick); pressWire(ov); }   /* patch FIELDTAP */""")
 
-# 6. the person, right after signing in (patch FIELD). The first page after a sign-in does not know the person yet (the
-#    app's own "me" comes with the CRM's one reload): GrayCo Field had no name and no role, so a PM / estimator / crew
-#    member saw "No jobs assigned to you yet" for ~10 s even with the jobs on the phone. Until the app knows, the person
-#    is the one the sign-in says (the signed-in e-mail in the people list) — name and role for the Field's screens only.
-once("""  try { var m = low(lsGet('grayco_user')); return arr(C().users).filter(function(u){ return u && (low(u.email) === m || low(u.name) === m); })[0] || null; } catch (e) { return null; }""",
-     """  try { var m = low(lsGet('grayco_user')); var u0 = arr(C().users).filter(function(u){ return u && (low(u.email) === m || low(u.name) === m); })[0] || null; if (u0 || W._gcMeNow) return u0;
-    var em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); return em ? arr(C().users).filter(function(u){ return u && low(u.email) === em; })[0] || null : null; } catch (e) { return null; }   /* patch FIELDFAST: right after signing in, the person the sign-in says */""")
-once("""function role(){ try { return W._gcRP && W._gcRP.role ? s(W._gcRP.role()) : ''; } catch (e) { return ''; } }
-function isAdmin(){ try { if (W._gcVAS && W._gcVAS.active()) return /admin/i.test(role()); }""",
-     """function role(){ var r = ''; try { r = W._gcRP && W._gcRP.role ? s(W._gcRP.role()) : ''; } catch (e) {} if (!r && !W._gcMeNow) { try { var u = meU(); if (u) r = s(u.role); } catch (e) {} } return r; }   /* patch FIELDFAST: not known yet — the signed-in person's role */
-function isAdmin(){ try { if (W._gcVAS && W._gcVAS.active()) return /admin/i.test(role()); }""")
+# 6. the person, at the sign-in (the auth block). At a sign-in the CRM looks for the person in this phone's people
+#    lists and, found, opens again as them. A first sign-in on a phone has only the built-in people: a PM / estimator /
+#    crew member was not found, the page opened without knowing who they were (no name, no role — "No jobs assigned to you
+#    yet") and reloaded ~7-10 s later once the people list came. Now, not found here, the cloud's people list is asked
+#    (at most 6 s) — the CRM opens as that person at once.
+once("""  lists.push(await idb('get', 'users'));
+  try { lists.push(window._uDef); } catch (e) {}""",
+     """  lists.push(await idb('get', 'users'));
+  try { lists.push(window._uDef); } catch (e) {}
+  try {   /* patch FIELDFAST: not on this phone's lists — the cloud's people list (a first sign-in on this phone) */
+    var here = lists.some(function(L){ return Array.isArray(L) && L.some(function(u){ return u && low(u.email) === email && u.active !== false; }); });
+    if (!here) {
+      var cr = await Promise.race([window.fetch(SB_URL + '/rest/v1/gc_kv?key=eq.users&select=value', { headers: { Accept: 'application/json' }, cache: 'no-store' }).then(function(r){ return r && r.ok ? r.json() : null; }, function(){ return null; }), new Promise(function(res){ nST(function(){ res(null); }, 6000); })]);
+      var cv = cr && cr[0] && cr[0].value; if (typeof cv === 'string') { try { cv = JSON.parse(cv); } catch (e) { cv = null; } }
+      if (Array.isArray(cv)) lists.push(cv);
+    }
+  } catch (e) {}""")
 
 open(p, 'w', encoding='utf-8').write(t)
 print('FIELDFAST: patched')

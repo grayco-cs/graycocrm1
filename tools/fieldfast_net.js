@@ -2,13 +2,14 @@
    Owner 11/21 (GrayCo Field, iPhone): "The app has got to work quickly while I'm in the field" · "It's so slow".
    Measured (tools/tests/test_FIELDTAPS.mjs, iPhone, CPU x4): after a network stall while the app opened, 127 requests hung
    until the phone's ~40 s socket timeout and nothing asked again sooner — Home stayed empty 34-51 s, the sync pill said
-   "All sent". This first network layer (every later fetch wrapper sits on top of it) for the database (/rest/v1, /storage/v1,
+   "All sent". This first network layer (right after patch RESUME; every fetch wrapper sits on top of it) for the database (/rest/v1, /storage/v1,
    /functions/v1) and the Netlify functions:
    • a READ (GET / HEAD, and the gc_my_access check) has a time limit for its answer to start (8 s, then 10 s, then 15 s; a
      function 12 s / 20 s; a file 15 s / 30 s): past it the request is cancelled and asked again (0.4 s, 1.2 s later); the
      third miss fails like a dropped connection (TypeError) — never 40 s of nothing;
-   • at most 6 reads are on their way at once; the others wait in a queue, the lists the screen needs first (projects, people,
-     schedule, leads, approvals, the sync's own reads, the sign-in's checks), then the other lists, then files and functions;
+   • at most 6 reads are on their way at once; the others wait in a queue: what a tap asked for (the 3 s after it) first,
+     then the lists the screen needs (projects, people, schedule, leads, approvals, the sync's own reads, the sign-in's
+     checks), then the other lists, then files and functions;
    • back online, or back in the app (visible / pageshow / resume): every read still waiting for its first answer from before
      that moment is on a dead socket — it is cancelled and asked again at once (the RESUME catch-up pull then finds the
      network working instead of waiting behind a hung read);
@@ -25,7 +26,7 @@ var W = window, D = document;
 if (W.__gcNet) return;
 var off = false; try { off = W.localStorage.getItem('gc_fieldfast_off') === '1'; } catch (e) {}
 var NF = W.fetch, nST = W.setTimeout, nCT = W.clearTimeout, aEL = W.addEventListener;
-var CAP = 6;
+var CAP = 6, TAP_AT = 0;
 var ST = { off: off, cap: CAP, active: 0, queued: 0, maxActive: 0, maxQueued: 0, timeouts: 0, retries: 0, revived: 0, failed: 0, ok: 0, writes: 0, writeTimeouts: 0, lastOkAt: 0, lastFailAt: 0, revivedAt: 0 };
 var Q = [], ACT = [], seq = 0;
 function now(){ return Date.now(); }
@@ -85,7 +86,7 @@ function abortErr(){ try { return new DOMException('The operation was aborted.',
 /* one request: its attempts, its queue place, its own cancel */
 function run(input, init, c){
   return new Promise(function(resolve, reject){
-    var R = { c: c, n: 0, done: false, t0: 0, head: false, ctl: null, timer: 0, why: '', seq: ++seq, pri: c.pri, extra: 0 };
+    var R = { c: c, n: 0, done: false, t0: 0, head: false, ctl: null, timer: 0, why: '', seq: ++seq, pri: now() - TAP_AT < 3000 ? -1 : c.pri, extra: 0 };   /* asked for by a tap: first in line */
     var sig = init && init.signal;
     var finish = function(ok, v){ if (R.done) return; R.done = true; drop(R); if (ok) resolve(v); else reject(v); pump(); };
     if (sig) {
@@ -142,6 +143,7 @@ function revive(why){
   return n;
 }
 try {
+  ['pointerdown', 'keydown', 'touchstart'].forEach(function(t){ aEL.call(W, t, function(e){ if (!e || e.isTrusted !== false) TAP_AT = now(); }, { capture: true, passive: true }); });
   aEL.call(W, 'online', function(){ revive('online'); }, true);
   aEL.call(W, 'pageshow', function(e){ if (e && e.persisted) revive('pageshow'); }, true);
   aEL.call(D, 'visibilitychange', function(){ if (D.visibilityState === 'visible') revive('visible'); }, true);
