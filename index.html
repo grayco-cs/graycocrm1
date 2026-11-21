@@ -212363,7 +212363,7 @@ function fileDoc(e, p, v, portal){
     uploadedAt: s(v.sentAt || v.heldAt) || nowIso(), uploaded: s(v.sentAt || v.heldAt || nowIso()).slice(0, 10), by: s(v.sentBy) || meName(), source: 'estimate-sent', sentPdf: true, version: +v.version || 1,
     sentTo: s(v.sentTo), portalShare: portal ? true : (e.portalShare === true ? true : false), confirmed: true, noNotice: true });
   /* the older versions stay, marked superseded */
-  patchDocs(function(d){ return d && s(d.estimateId) === s(e.id) && d.sentPdf === true && s(d.id) !== id && (+d.version || 0) < (+v.version || 1) && !d.supersededBy; }, { supersededBy: id, supersededAt: nowIso() });
+  patchDocs(function(d){ return d && s(d.estimateId) === s(e.id) && ((d.sentPdf === true && s(d.id) !== id && (+d.version || 0) < (+v.version || 1)) || (s(d.source) === 'estimate-upload' && s(d.ref) === s(v.ref))) && !d.supersededBy; }, { supersededBy: id, supersededAt: nowIso() });   /* SENDEST2 */
   return id;
 }
 
@@ -212742,7 +212742,7 @@ function ensureJob(e){
   p = { id: 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), name: s(e.name) || s(l && l.name) || 'Estimate', client: s(e.client) || s(l && (l.contactName || l.name)),
     address: s(e.address) || s(l && l.address), autoPO: po, status: 'bidding', type: W._gcJobTypeFor ? W._gcJobTypeFor({ est: e, lead: l }) : (s(e.jobType) || s(l && l.projectType)), contract: 0, estimateId: s(e.id), _lastEstId: s(e.id),
     pm: W._gcNewJobPeople ? W._gcNewJobPeople(e, l).pm : (s(e.pm) || s(l && l.pm)), estimator: W._gcNewJobPeople ? W._gcNewJobPeople(e, l).estimator : '', clientEmail: s(e.clientEmail || e.email) || s(l && l.email), clientPhone: s(e.clientPhone) || s(l && l.phone), leadId: l ? l.id : '', fromLeadId: l ? l.id : '',
-    customerId: s(l && l.customerId), source: 'grayco', graycoOrigin: true, created: today(), createdAt: nowIso(), createdFrom: 'estimate (📤 Send estimate)', createdBy: meName() };
+    customerId: s(l && l.customerId) || s(e.customerId), source: 'grayco', graycoOrigin: true, created: today(), createdAt: nowIso(), createdFrom: 'estimate (📤 Send estimate)', createdBy: meName() };   /* SENDEST2 */
   addProj(p); setEst(e.id, { pid: p.id, autoPO: e.autoPO || p.autoPO });
   if (l) setLead(l.id, { projectId: p.id, pid: p.id, estimateId: e.id });
   return p;
@@ -212799,7 +212799,7 @@ function wireDesign(ov, p, e, toUpload){
   sel.onchange = function(){ if (sel.value === 'upload') toUpload(); };
   var pv = ov.querySelector('[data-dprev]'); if (pv) pv.onclick = function(){
     var d = sel.value === 'upload' ? 'simple' : sel.value; pv.disabled = true; pv.textContent = '…';
-    makePdf(e, d).then(function(r){ pv.disabled = false; pv.textContent = '👁 Preview'; if (!r || !r.blob) { toast('That PDF could not be made here — try the other design.', true); return; } var u = URL.createObjectURL(r.blob); S.lastPreview = u; W.open(u, '_blank'); });
+    makePdf(e, d).then(function(r){ pv.disabled = false; pv.textContent = '👁 Preview'; if (!r || !r.blob) { toast('That PDF could not be made here — try the other design.', true); return; } S.lastPreview = 'viewer'; showPdf({ blob: r.blob, name: 'Preview — ' + s(e.name || 'Estimate') + '.pdf' }); });   /* SENDEST2 */
   };
   var df = ov.querySelector('[data-ddef]'); if (df) df.onclick = function(){
     var g = df.getAttribute('data-g'), v = sel.value; if (!/^(p5|simple)$/.test(v)) { toast('Pick the 5-page proposal or the simple estimate first.', true); return; }
@@ -212808,19 +212808,161 @@ function wireDesign(ov, p, e, toUpload){
   };
 }
 function quietNow(){ try { return !!(W._gcCQ && W._gcCQ.quiet()); } catch (e) { return false; } }
-function pickEstimate(then, onlyPid){
+/* SENDEST2 */
+function standaloneApp(){ try { return W.navigator.standalone === true || !!(W.matchMedia && (W.matchMedia('(display-mode: standalone)').matches || W.matchMedia('(display-mode: fullscreen)').matches)); } catch (e) { return false; } }
+/* a PDF on screen INSIDE the CRM (the CRM's viewer: ‹ Back, Download, Share) — never a new window */
+function showPdf(o){
+  o = o || {}; var name = s(o.name) || 'Estimate.pdf';
+  if (W._gcViewer && typeof W._gcViewer.open === 'function') return W._gcViewer.open({ blob: o.blob, ref: o.ref, data: o.url, name: name, type: 'application/pdf' });
+  sheetCss(); var old = D.getElementById('gc-estpdf-pv'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-estpdf-pv'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483300;background:#0f2440;display:flex;flex-direction:column;font-family:Inter,Arial,sans-serif';
+  ov.innerHTML = '<div style="display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;color:#fff"><button type="button" class="gcep-b" data-x>‹ Close</button><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(name) + '</b></div><iframe data-fr title="' + esc(name) + '" style="flex:1;width:100%;border:0;background:#fff"></iframe>';
+  D.body.appendChild(ov);
+  var u = o.blob ? URL.createObjectURL(o.blob) : s(o.url), fr = ov.querySelector('[data-fr]');
+  ov.querySelector('[data-x]').onclick = function(){ ov.remove(); if (o.blob) { try { URL.revokeObjectURL(u); } catch (e) {} } };
+  if (u) fr.src = u; else if (s(o.ref) && typeof W._gcFileUrl === 'function') Promise.resolve(W._gcFileUrl(o.ref)).then(function(x){ fr.src = x; }, warn);
+  return ov;
+}
+/* the Home Screen app: window.open of a blob: or a blank page (that is then written into) opens a separate browser sheet
+   that shows black with no way back to the CRM. There it shows in the CRM's viewer instead (same window, ‹ Back). */
+(function guardOpen(){
+  var o = W.open; if (typeof o !== 'function' || o.__gcSendest2) return;
+  var fake = function(){
+    var parts = [], tm = 0, shown = null, w;
+    var render = function(){ if (tm) { clearTimeout(tm); tm = 0; } var h = parts.join(''); if (!h) return; var t = /<title>([^<]*)<\/title>/i.exec(h); shown = W._gcViewer.open({ html: h, name: (t && s(t[1])) || 'Document' }); };
+    var go = function(u){ u = s(u); if (/^blob:/i.test(u)) shown = W._gcViewer.open({ data: u, name: s(w.document.title) || 'Document' }); else if (/^https?:/i.test(u)) { try { o.call(W, u, '_blank'); } catch (e) {} } };
+    w = { closed: false, opener: W, name: '', focus: function(){}, blur: function(){}, moveTo: function(){}, resizeTo: function(){},
+      print: function(){ var v = D.getElementById('gc-viewer'), b = v && v.querySelector('[data-gv="print"]'); if (b) { b.hidden = false; b.click(); } },
+      close: function(){ w.closed = true; var v = D.getElementById('gc-viewer'); if (shown && v === shown) W._gcViewer.close(); },
+      addEventListener: function(t, f){ if (t === 'load' && typeof f === 'function') later(function(){ try { f(); } catch (e) {} }, 400); }, removeEventListener: function(){},
+      document: { title: '', body: null, open: function(){ parts = []; }, write: function(){ parts.push([].slice.call(arguments).join('')); if (tm) clearTimeout(tm); tm = later(render, 300); },
+        writeln: function(){ w.document.write([].slice.call(arguments).join('') + '\n'); }, close: function(){ render(); }, querySelector: function(){ return null; }, getElementById: function(){ return null; }, createElement: function(t){ return D.createElement(t); } },
+      location: { replace: go, assign: go, set href(u){ go(u); }, get href(){ return 'about:blank'; } } };
+    return w;
+  };
+  var g = function(u, target){
+    try {
+      var t = s(target), url = u == null ? '' : String(u);
+      if (standaloneApp() && W._gcViewer && typeof W._gcViewer.open === 'function' && !/^_(self|parent|top)$/i.test(t) && (url === '' || url === 'about:blank' || /^blob:/i.test(url))) {
+        S.inApp = (S.inApp || 0) + 1;
+        if (!url || url === 'about:blank') return fake();
+        W._gcViewer.open({ data: url, name: 'Document' }); var f = fake(); f.closed = true; return f;
+      }
+    } catch (e) { warn(e); }
+    return o.apply(this, arguments);
+  };
+  try { Object.keys(o).forEach(function(k){ g[k] = o[k]; }); } catch (e) {}
+  g.__gcSendest2 = true; W.open = g;
+})();
+function addEstRec(est){
+  var has = function(l){ return arr(l).some(function(x){ return s(x.id) === s(est.id); }); }, done = false;
+  manual('estimate (uploaded PDF)');
+  try { if (typeof W._gcSetEstimates === 'function') { W._gcSetEstimates(function(prev){ var a = Array.isArray(prev) ? prev.slice() : []; if (!has(a)) a.unshift(est); return a; }); done = true; } } catch (e) { warn(e); }
+  try { if (Array.isArray(crm().estimates) && !has(crm().estimates)) W._crm.estimates = [est].concat(crm().estimates); } catch (e) {}
+  if (!has(S.est)) S.est = [est].concat(arr(S.est));
+  if (!done) idb('estimates').then(function(v){ var a = arr(v); if (!has(a)) a.unshift(est); try { W.idbSet('estimates', a); } catch (e) {} try { if (W._gcApplySync) W._gcApplySync('estimates', a); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert('estimates', a); } catch (e) {} });
+}
+/* a photo of the estimate → a one-page PDF (letter, fitted) */
+function imgToPdf(file){
+  var go = (W.jspdf && W.jspdf.jsPDF) ? Promise.resolve(true) : loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  return go.then(function(ok){
+    if (!ok || !(W.jspdf && W.jspdf.jsPDF)) throw new Error('The photo could not be made into a PDF here — pick a PDF.');
+    return new Promise(function(res, rej){
+      var u = URL.createObjectURL(file), im = new Image();
+      im.onload = function(){
+        try {
+          var k = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight)), cv = D.createElement('canvas'); cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+          var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(im, 0, 0, cv.width, cv.height); URL.revokeObjectURL(u);
+          var doc = new W.jspdf.jsPDF({ unit: 'pt', format: 'letter', orientation: cv.width > cv.height ? 'landscape' : 'portrait' }), pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight();
+          var sc = Math.min((pw - 36) / cv.width, (ph - 36) / cv.height), w = cv.width * sc, h = cv.height * sc;
+          doc.addImage(cv.toDataURL('image/jpeg', 0.85), 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h); res(doc.output('blob'));
+        } catch (e) { rej(e); }
+      };
+      im.onerror = function(){ URL.revokeObjectURL(u); rej(new Error('That photo could not be read — pick a PDF or a JPG / PNG.')); };
+      im.src = u;
+    });
+  });
+}
+/* "📎 Upload a PDF estimate": the PDF → the job (or the customer) → the CRM → the send sheet */
+function openNewPdf(opts){
+  opts = opts || {};
+  var live = projects().filter(function(p){ return p && !p.deleted && !/lost|dead|cancel|archiv/i.test(s(p.status)); }).sort(function(a, b){ return s(b.updatedAt || b.createdAt || b.created).localeCompare(s(a.updatedAt || a.createdAt || a.created)); }).slice(0, 400);
+  var cs = customers().filter(function(c){ return c && !c.deleted && s(c.name); }).sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).slice(0, 600);
+  var pre = s(opts.pid);
+  var ov = overlay('gc-estpdf-newpdf', '<h3>📎 Upload a PDF estimate</h3><div class="sub">The PDF is kept on the job (Files &amp; Docs → Estimates) and you send it from your own address next.</div>' +
+    '<label for="gcep-np-f">The estimate (PDF, or a photo of it)</label><input id="gcep-np-f" type="file" accept="application/pdf,.pdf,image/*" data-file style="font-size:15px">' +
+    '<label for="gcep-np-q">Job (or customer, no job yet)</label><input id="gcep-np-q" type="text" data-q placeholder="Search job, PO, customer…" aria-label="Search jobs and customers">' +
+    '<select id="gcep-np-t" data-t aria-label="Job or customer" style="margin-top:6px"></select>' +
+    '<label for="gcep-np-n">Estimate name</label><input id="gcep-np-n" type="text" data-name>' +
+    '<label for="gcep-np-a">Amount (optional)</label><input id="gcep-np-a" type="text" inputmode="decimal" data-amt placeholder="$0.00">' +
+    '<div class="gcep-msg" data-m aria-live="polite"></div><div class="row"><button type="button" class="gcep-b" data-x>Cancel</button><button type="button" class="gcep-b pri" data-go>Continue to send ›</button></div>');
+  var q = function(sel){ return ov.querySelector(sel); }, msg = function(t, bad){ var m = q('[data-m]'); m.textContent = t; m.className = 'gcep-msg ' + (bad ? 'bad' : 'ok'); };
+  var named = false;
+  var fill = function(f){
+    f = low(f); var sel = q('[data-t]'), cur = sel.value || (pre ? 'p:' + pre : '');
+    var J = live.filter(function(p){ return !f || low([p.name, p.autoPO, p.po, p.client, p.address].join(' ')).indexOf(f) >= 0 || s(p.id) === pre; }).slice(0, 150);
+    var C = cs.filter(function(c){ return !f || low([c.name, c.company, c.email, c.phone, c.address].join(' ')).indexOf(f) >= 0; }).slice(0, 150);
+    sel.innerHTML = '<option value="">— pick the job —</option>' + (J.length ? '<optgroup label="Jobs">' + J.map(function(p){ return '<option value="p:' + esc(p.id) + '">' + esc((p.autoPO ? p.autoPO + ' · ' : '') + s(p.name) + (p.client && low(p.client) !== low(p.name) ? ' — ' + s(p.client) : '')) + '</option>'; }).join('') + '</optgroup>' : '') +
+      (C.length ? '<optgroup label="Customer — no job yet (one is made at the send)">' + C.map(function(c){ return '<option value="c:' + esc(c.id) + '">👤 ' + esc(s(c.name) + (c.email ? ' · ' + s(c.email) : '')) + '</option>'; }).join('') + '</optgroup>' : '');
+    if (cur && sel.querySelector('option[value="' + cur.replace(/"/g, '') + '"]')) sel.value = cur;
+  };
+  var nameFor = function(){ if (named) return; var v = q('[data-t]').value, p = /^p:/.test(v) ? proj(v.slice(2)) : null, f = q('[data-file]').files && q('[data-file]').files[0];
+    q('[data-name]').value = s(p && p.name) || (f ? s(f.name).replace(/\.[a-z0-9]+$/i, '').replace(/[_]+/g, ' ') : ''); };
+  fill(''); nameFor();
+  q('[data-q]').oninput = function(ev){ fill(ev.target.value); };
+  q('[data-t]').onchange = nameFor; q('[data-file]').onchange = function(){ nameFor(); msg(''); }; q('[data-name]').oninput = function(){ named = true; };
+  q('[data-x]').onclick = function(){ ov.remove(); };
+  q('[data-go]').onclick = function(){
+    var f = q('[data-file]').files && q('[data-file]').files[0], t = s(q('[data-t]').value);
+    if (!f) { msg('Pick the estimate PDF (or a photo of it).', true); return; }
+    if (!t) { msg('Pick the job (or the customer).', true); return; }
+    var b = q('[data-go]'); b.disabled = true;
+    uploadNew({ file: f, pid: /^p:/.test(t) ? t.slice(2) : '', customerId: /^c:/.test(t) ? t.slice(2) : '', name: s(q('[data-name]').value), amount: num(q('[data-amt]').value) }, msg).then(function(r){
+      if (!r || !r.ok) { b.disabled = false; return; }
+      ov.remove(); openSend(r.estId, Object.assign({}, opts, { pid: r.pid || opts.pid }));
+    });
+  };
+  return ov;
+}
+function uploadNew(o, msg){
+  msg = msg || function(){};
+  var p = o.pid ? proj(o.pid) : null, c = o.customerId ? customers().filter(function(x){ return s(x.id) === s(o.customerId); })[0] : null;
+  if (!p && !c) { msg('Pick the job (or the customer).', true); return Promise.resolve({ ok: false }); }
+  var f = o.file, isImg = /^image\//i.test(s(f && f.type)) || /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(s(f && f.name));
+  msg(isImg ? 'Making the photo into a PDF…' : 'Saving the PDF in the CRM…');
+  var nm = s(o.name) || s(p && p.name) || s(c && c.name) || 'Estimate', fname = 'Estimate — ' + nm.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80) + '.pdf';
+  return (isImg ? imgToPdf(f) : Promise.resolve(f)).then(function(blob){ msg('Saving the PDF in the CRM…'); return storeConfirmed(blob, fname); }).then(function(file){
+    var have = estAll().filter(function(e){ return e && s(e.sourceRef) === file.ref && (p ? s(e.pid) === s(p.id) : s(e.customerId) === s(c.id)) && !deadMap()[e.id]; })[0];
+    if (have) { msg('This PDF is already in the CRM as "' + s(have.name) + '" — opening the send.'); return { ok: true, estId: have.id, pid: s(have.pid), again: true }; }
+    var at = nowIso(), l = p ? lead(p.leadId || p.fromLeadId) : null;
+    var est = { id: 'EUPS_' + file.sha256.slice(0, 12) + Date.now().toString(36).slice(-3), name: nm, client: s(p && p.client) || s(c && (c.name || c.company)), address: s(p && p.address) || s(c && c.address),
+      clientEmail: s(p && p.clientEmail) || s(c && c.email), clientPhone: s(p && p.clientPhone) || s(c && (c.mobile || c.phone)), pid: p ? p.id : '', leadId: l ? l.id : '', customerId: s(c && c.id) || s(p && p.customerId),
+      lines: [], totalCharge: Math.round(num(o.amount) * 100) / 100, status: 'Draft', date: today(), created: today(), createdAt: at, savedAt: at, updatedAt: at, by: meName(), estimator: meName(),
+      source: 'upload', sourceName: s(f && f.name), sourceRef: file.ref, sourceType: 'application/pdf', sourceSha256: file.sha256, customerSees: 'pdf', customerSeesBy: meName(), customerSeesAt: at, uploadedVia: '📤 Send estimate → 📎 Upload a PDF estimate' };
+    try { var sg = W._gcEstin && W._gcEstin._t && W._gcEstin._t.sigOf; if (typeof sg === 'function') est.estin = { sig: sg(est), state: 'skipped', reason: 'The uploaded PDF is the estimate (📤 Send estimate) — no proposal made from it', at: at }; } catch (e) {}
+    addEstRec(est);
+    if (p) upsertDoc({ id: 'DESTUP_' + est.id, pid: p.id, projectId: p.id, estimateId: est.id, cat: 'Estimates', name: fname, ref: file.ref, type: 'application/pdf', size: file.size, sha256: file.sha256,
+      uploadedAt: at, uploaded: at.slice(0, 10), by: meName(), source: 'estimate-upload', portalShare: false, confirmed: true, noNotice: true });
+    note('uploaded estimate PDF ' + nm + (p ? ' on ' + s(p.autoPO || p.id) : ' for ' + s(c && c.name)));
+    msg('✓ Saved in the CRM' + (p ? ' on the job' : '') + ' — now the send.');
+    return { ok: true, estId: est.id, pid: p ? p.id : '' };
+  }).catch(function(err){ warn(err); var t = /not a PDF/.test(s(err && err.message)) ? 'That file is not a PDF — pick the PDF (or a photo).' : (/photo|PDF/.test(s(err && err.message)) ? s(err.message) : BLOCK); msg(t, true); return { ok: false, error: t }; });
+}
+function pickEstimate(then, onlyPid, withUpload){
   var me = low(meName()), list = estAll().filter(function(e){ if (onlyPid && !(s(e && (e.pid || e.projectId || e.jobId)) === s(onlyPid) || s((jobOf(e) || {}).id) === s(onlyPid))) return false; return e && !e._isDraft && !/^draft_/.test(s(e.id)) && !isMarker(e) && !e.isTemplate && !deadMap()[e.id] && (s(e.name) || s(e.num)); })
     .sort(function(a, b){ var am = low(a.estimator || a.by) === me ? 1 : 0, bm = low(b.estimator || b.by) === me ? 1 : 0; return bm - am || stampOf(b).localeCompare(stampOf(a)); }).slice(0, 80);
-  var ov = overlay('gc-estpdf-pick', '<h3>📤 Send estimate</h3><div class="sub">Pick the estimate. It goes from your own address, the PDF is kept in the CRM.</div><input type="text" data-q placeholder="Search name, customer, PO…" aria-label="Search estimates"><div data-rows></div><div class="row"><button type="button" class="gcep-b" data-x>Cancel</button></div>');
+  var ov = overlay('gc-estpdf-pick', '<h3>📤 Send estimate</h3>' + (withUpload ? '<button type="button" class="gcep-b gold" data-newpdf style="display:block;width:100%;min-height:56px;margin:6px 0 4px;text-align:left;padding:12px 14px">📎 Upload a PDF estimate<small style="display:block;font:600 12.5px Inter,Arial,sans-serif;margin-top:2px">From your phone → pick the job → send it to the customer</small></button><div class="sub" style="margin-top:10px">Or pick an estimate already in the CRM. It goes from your own address, the PDF is kept in the CRM.</div>' : '<div class="sub">Pick the estimate. It goes from your own address, the PDF is kept in the CRM.</div>') + '<input type="text" data-q placeholder="Search name, customer, PO…" aria-label="Search estimates"><div data-rows></div><div class="row"><button type="button" class="gcep-b" data-x>Cancel</button></div>');
   var draw = function(q){ q = low(q); ov.querySelector('[data-rows]').innerHTML = list.filter(function(e){ var p = jobOf(e); return !q || low([e.name, e.num, e.client, p && p.name, p && p.autoPO].join(' ')).indexOf(q) >= 0; }).map(function(e){ var p = jobOf(e), c = current(e); return '<button type="button" class="gcep-ver" data-id="' + esc(e.id) + '"><b>' + esc(e.name || e.num) + '</b> ' + (num(e.totalCharge) ? money(e.totalCharge) : '') + '<div style="font-size:12px;color:#64748b">' + esc([p ? 'PO ' + s(p.autoPO) + ' · ' + s(p.name) : 'no job yet', c ? verLine(c) : 'Not sent yet'].join(' · ')) + '</div></button>'; }).join('') || '<div class="sub">No estimates.</div>'; };
   draw('');
   ov.querySelector('[data-q]').oninput = function(ev){ draw(ev.target.value); };
   ov.querySelector('[data-x]').onclick = function(){ ov.remove(); };
+  var np = ov.querySelector('[data-newpdf]'); if (np) np.onclick = function(){ ov.remove(); openNewPdf(withUpload); };   /* SENDEST2 */
   ov.querySelector('[data-rows]').onclick = function(ev){ var b = ev.target.closest('[data-id]'); if (!b) return; ov.remove(); then(b.getAttribute('data-id')); };
 }
 function openSend(estId, opts){
   opts = opts || {};
-  if (!estId) { pickEstimate(function(id){ openSend(id, opts); }, opts.pid); return; }
+  if (!estId) { pickEstimate(function(id){ openSend(id, opts); }, opts.pid, opts); return; }   /* SENDEST2: 📎 Upload a PDF estimate on top */
   var e = estById(estId);
   if (!e) { toast('Estimate not found — open it once, then Send.', true); return; }
   if (!/@grayco-cs\.com$/.test(myEmail())) { toast('Sign in with your @grayco-cs.com account to send from the CRM.', true); return; }
@@ -213020,7 +213162,7 @@ function paintSlot(el, estId, pid){
       var a = b.getAttribute('data-ep');
       if (a === 'pdf') view(estId); else if (a === 'all') versionsList(estId); else if (a === 'attach') attach(estId, { backfill: true }); else if (a === 'send') openSend(estId); else if (a === 'upsent') openUpload(estId); else if (a === 'p5') { try { setEst(estId, { customerSees: 'template', customerSeesBy: meName(), customerSeesAt: nowIso() }); } catch (x) {} makeProposal(estId, pid); }   /* patch CUSTPORTAL: 📘 Make proposal = the Template version */
       else if (a === 'cs') { var cv = b.getAttribute('data-v') === 'template' ? 'template' : 'pdf'; setEst(estId, { customerSees: cv, customerSeesBy: meName(), customerSeesAt: nowIso() }); el.__h = ''; later(function(){ paintSlot(el, estId, pid); }, 50); toast('Customer sees: ' + (cv === 'template' ? 'the Template version' : 'your PDF') + '.'); }
-      else if (a === 'edit') openEditor(estId, pid); else if (a === 'upl') { var x = estById(estId); if (x && W._gcFileUrl) W._gcFileUrl(x.sourceRef).then(function(u){ W.open(u, '_blank'); }); }
+      else if (a === 'edit') openEditor(estId, pid); else if (a === 'upl') { var x = estById(estId); if (x) showPdf({ ref: x.sourceRef, name: s(x.name || 'Estimate') + '.pdf' }); }   /* SENDEST2 */
       else if (a === 'dopen') openEditor(b.getAttribute('data-d'), pid); else if (a === 'ddisc') discardDraft(b.getAttribute('data-d'), estId);
     };
   } catch (x) { warn(x); }
@@ -213057,6 +213199,7 @@ function view(estId, verId){
   D.body.appendChild(ov);
   ov.querySelector('[data-x]').onclick = function(){ ov.remove(); };
   var al = ov.querySelector('[data-all]'); if (al) al.onclick = function(){ versionsList(estId); };
+  if (standaloneApp()) { var tb = ov.querySelector('[data-tab]'); tb.textContent = '⬇️ Download / Share'; tb.removeAttribute('target'); tb.onclick = function(ev){ ev.preventDefault(); showPdf({ ref: c.ref, name: s(c.name) || s(e.name || 'Estimate') + '.pdf' }); }; }   /* SENDEST2 */
   var get = typeof W._gcFileUrl === 'function' ? W._gcFileUrl(c.ref) : Promise.reject(new Error('no file helper'));
   Promise.resolve(get).then(function(u){ var f = ov.querySelector('[data-fr]'); f.src = u; f.style.display = ''; ov.querySelector('[data-load]').remove(); ov.querySelector('[data-tab]').href = u; ov.setAttribute('data-ready', '1'); },
     function(err){ var l = ov.querySelector('[data-load]'); if (l) l.textContent = 'This PDF is in the CRM’s file storage but cannot be opened right now (' + s(err && err.message || 'offline') + ').'; });
@@ -213361,7 +213504,7 @@ later(function(){
   try { if (!(isAdmin()) || !signedIn()) return; var k = 'gc_estpdf_bf_day', d = today(); if (localStorage.getItem(k) === d) return; localStorage.setItem(k, d); backfill({ apply: true }); } catch (e) {}
 }, 45000);
 
-W._gcEstPdf = { makeProposal: makeProposal, proposal5Html: proposal5Html, designDefault: designDefault, openSend: openSend, send: send, openUpload: openUpload, uploadSent: uploadSent, inPortal: inPortal, gateSheet: gateSheet, fromLine: fromLine, versions: versions, current: current, hasSend: hasSend, paintSlot: paintSlot, openCard: openCard, view: view, versionsList: versionsList, attach: attach,
+W._gcEstPdf = { openNewPdf: openNewPdf, uploadNew: uploadNew, showPdf: showPdf, standalone: standaloneApp, makeProposal: makeProposal, proposal5Html: proposal5Html, designDefault: designDefault, openSend: openSend, send: send, openUpload: openUpload, uploadSent: uploadSent, inPortal: inPortal, gateSheet: gateSheet, fromLine: fromLine, versions: versions, current: current, hasSend: hasSend, paintSlot: paintSlot, openCard: openCard, view: view, versionsList: versionsList, attach: attach,
   backfill: backfill, backfillPlan: backfillPlan, loadEvidence: loadEvidence, outside: outside, raCard: raCard, profileGaps: profileGaps, profileOf: profileOf, profileSheet: profileSheet,
   features: featureState, featureList: FEATURES, saveFeatures: saveFeatures, openFeatureDefaults: openFeatureDefaults, newCustomer: newCustomer, makeCustomer: makeCustomer,
   jobList: jobList, drafts: draftsFor, customerCopy: customerCopy, proposalHtml: proposalHtml, makePdf: makePdf, storeConfirmed: storeConfirmed, pull: pull, fold: fold, scrub: scrub,
