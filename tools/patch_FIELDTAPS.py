@@ -10,6 +10,9 @@ installed iPhone app, per role, fresh / after a background-resume / after a netw
 2. "✅ Estimate saved — N on file" toast (every estimate save, autosave included): 5 s at the bottom right, z-index max, taking
    taps — on the phone it lay over the bottom bar and ate taps on 🏠 Home / ☰ More (PM: More → 🧮 Estimates → 🏠 Home did
    nothing; job page → back to Home trapped). Now pointer-events:none, and above the Field's bottom bar.
+3. A lead asked to open (Field Home "Open", a link) waits up to 150 s for Leads to be ready, then opens its drawer — even when
+   the person had already tapped 🏠 Home: the lead drawer popped up over Home later (start, a big company, after a network
+   drop). A bottom-bar tap after the ask now cancels it.
 """
 import sys
 p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
@@ -19,6 +22,10 @@ if MARK in t: print('FIELDTAPS: already patched'); sys.exit(0)
 def once(a, b):
     global t
     n = t.count(a); assert n == 1, ('FIELDTAPS anchor', n, a[:90]); t = t.replace(a, b)
+
+# the bottom bar (and a desk page's ‹ in the Field) — a tap there means "take me there", newer than anything pending
+TABSEL = "#gc-fh-tabs [data-t],#gc-ra-dock [data-t],#_gcAppBack"
+HOOK = "try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('" + TABSEL + "')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */\n"
 
 # 1. GrayCo Photos close(): no "back to the job page" when a bottom-bar tab closed it
 once("""  var fd = S.fromDash; S.fromDash = '';
@@ -33,8 +40,7 @@ once("""  var fd = S.fromDash; S.fromDash = '';
 once("""function close(){
   S.open = false;
   gpsStop(); teardown();""",
-"""try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('#gc-fh-tabs [data-t],#gc-ra-dock [data-t]')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */
-function close(){
+HOOK + """function close(){
   S.open = false;
   gpsStop(); teardown();""")
 
@@ -50,6 +56,15 @@ once("""        t.style.cssText='position:fixed;bottom:20px;right:20px;z-index:2
           +'font-family:Arial,sans-serif;font-size:13px;font-weight:700;'
           +'box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:80vw;pointer-events:none';   /* patch FIELDTAPS: a toast never eats a tap */
         try{ if(document.documentElement.classList.contains('_fieldmode')) t.style.bottom='calc(116px + env(safe-area-inset-bottom,0px))'; }catch(e){}   /* patch FIELDTAPS: above the Field's bottom bar */""")
+
+# 3. a lead asked to open (Field Home "Open", a lead link …) waits up to 150 s for the Leads screen to be ready and then opens
+#    its drawer. If the person meanwhile tapped 🏠 Home (or another tab, or the page's ‹), the drawer still popped up later
+#    over that screen (seen at the start, on a big company and after a network drop). A tap on the bar after the ask cancels it.
+once("""W._gcOpenLead = function(id, sec){ WANT = { id: s(id), sec: s(sec), at: Date.now(), refreshed: true }; return tickWant(); };""",
+HOOK + """W._gcOpenLead = function(id, sec){ WANT = { id: s(id), sec: s(sec), at: Date.now(), refreshed: true }; return tickWant(); };""")
+once("""  if (!WANT || !signedIn()) return false;""",
+"""  if (!WANT || !signedIn()) return false;
+  if (WANT.at && (+W.__gcTabTapAt || 0) > WANT.at) { WANT = null; clearHash(); return false; }   /* patch FIELDTAPS: the person went elsewhere — the lead does not pop up later */""")
 
 open(p, 'w', encoding='utf-8').write(t)
 print('FIELDTAPS: patched')

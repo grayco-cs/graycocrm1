@@ -138226,7 +138226,7 @@ function open(jobId, opts){
   pullSoon(300); ccWake(); rtConnect();   /* patch PHOTOLINK */
   return true;
 }
-try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('#gc-fh-tabs [data-t],#gc-ra-dock [data-t]')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */
+try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('#gc-fh-tabs [data-t],#gc-ra-dock [data-t],#_gcAppBack')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */
 function close(){
   S.open = false;
   gpsStop(); teardown();
@@ -180442,9 +180442,11 @@ function openLead(id, sec){
 var FAST;   // not reset: readHash may have started it already
 function fastWant(){ if (FAST) return; var t0 = Date.now(); FAST = setInterval(function(){ try { if (!WANT || !WANT.id || Date.now() - t0 > 150e3) { clearInterval(FAST); FAST = null; return; } if (!D.hidden && byId(WANT.id) && D.getElementById('gc-leads-hub')) tickWant(); } catch (e) { clearInterval(FAST); FAST = null; } }, 250); }   /* only once the Leads list is on screen (re-clicking the tab sooner stops it drawing) */
 if (WANT && WANT.id) { try { if (typeof W._setView !== 'function') localStorage.setItem('grayco_view', 'leads'); } catch (e) {} }
+try { if (!window.__gcTabTapHook) { window.__gcTabTapHook = 1; ['pointerdown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(e){ var x = e.target; if (x && x.closest && x.closest('#gc-fh-tabs [data-t],#gc-ra-dock [data-t],#_gcAppBack')) window.__gcTabTapAt = Date.now(); }, true); }); } } catch (e) {}   /* patch FIELDTAPS */
 W._gcOpenLead = function(id, sec){ WANT = { id: s(id), sec: s(sec), at: Date.now(), refreshed: true }; return tickWant(); };
 function tickWant(){
   if (!WANT || !signedIn()) return false;
+  if (WANT.at && (+W.__gcTabTapAt || 0) > WANT.at) { WANT = null; clearHash(); return false; }   /* patch FIELDTAPS: the person went elsewhere — the lead does not pop up later */
   if (!WANT.id) { try { W._setView('leads'); } catch (e) {} WANT = null; clearHash(); return true; }
   if (Date.now() - WANT.at > 150e3) { toast('That lead is not in the CRM yet — look in Leads → 📥 Lead Inbox.'); try { W._setView('leads'); } catch (e) {} WANT = null; clearHash(); return false; }
   if (byId(WANT.id) && openLead(WANT.id, WANT.sec)) { WANT = null; clearHash(); return true; }
