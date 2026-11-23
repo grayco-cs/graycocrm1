@@ -126,6 +126,13 @@ async function add(keys, input, actor, opt){
   const same = rows.find(function(m){ return (email && low(m.email) === email) || (phone && phone10(m.phone) === phone); });
   if (same && same.status === 'active') throw Fail(409, s(same.name) + ' is already on the team.');
   if (same && same.status === 'removed') throw Fail(409, s(same.name) + ' was removed from the team — use "Restore" next to their name.');
+  if (same && same.status === 'verify' && opt.status !== 'verify') {   /* SECURITY (domain join waiting on its e-mail): a teammate adding them vouches for them */
+    same.status = 'active'; same.decidedAt = nowIso(); same.decidedBy = { email: low(actor && actor.email), name: clip(actor && actor.name, 80), role: s(actor && actor.role) };
+    delete same.verifyHash; delete same.verifyExp;
+    logAdd(same, actor, 'added (was confirming their e-mail)');
+    return put(same, actor && actor.email);
+  }
+  if (same && same.status === 'verify') throw Fail(409, s(same.name) + ' already signed up — they need to tap the confirm link in their e-mail.');
   if (same && same.status === 'requested' && opt.status !== 'requested') {   /* they asked to join; a teammate adding them vouches for them */
     same.status = 'active'; same.decidedAt = nowIso(); same.decidedBy = { email: low(actor && actor.email), name: clip(actor && actor.name, 80), role: s(actor && actor.role) };
     if (!s(same.name)) same.name = name;
@@ -134,14 +141,16 @@ async function add(keys, input, actor, opt){
   }
   if (same && same.status === 'requested') throw Fail(409, s(same.name) + ' already asked to join — GrayCo\'s office will decide.');
   const elsewhere = (email ? await find({ kind: 'email', value: email }) : []).concat(phone ? await find({ kind: 'phone', value: phone }) : [])
-    .filter(function(m){ return keys.indexOf(m.company) < 0 && m.primary !== true && (m.status === 'active' || m.status === 'requested'); });
+    .filter(function(m){ return keys.indexOf(m.company) < 0 && m.primary !== true && (m.status === 'active' || m.status === 'requested' || m.status === 'verify'); });
   if (elsewhere.length) throw Fail(409, 'That ' + (email ? 'e-mail' : 'number') + ' is already on another company\'s portal team. Call GrayCo ' + '901-585-0944' + '.');
   if (opt.taken) { const why = await opt.taken(email, phone); if (why) throw Fail(409, why); }
   const m = { id: newId(), company: key, kind: opt.kind === 'customer' ? 'customer' : 'sub', companyName: clip(opt.companyName, 120), name: name, email: email, phone: phone ? clip(input.phone, 40) : '',
-    status: opt.status === 'requested' ? 'requested' : 'active', via: s(opt.via) || 'team', addedAt: nowIso(), addedBy: { email: low(actor && actor.email), name: clip(actor && actor.name, 80), role: s(actor && actor.role) },
+    status: opt.status === 'requested' || opt.status === 'verify' ? opt.status : 'active', via: s(opt.via) || 'team', addedAt: nowIso(), addedBy: { email: low(actor && actor.email), name: clip(actor && actor.name, 80), role: s(actor && actor.role) },
     notify: false, invites: [], log: [] };
   if (same && same.status === 'denied') m.id = same.id;   /* a new request after "not this company": the same record, a new decision */
-  logAdd(m, actor, m.status === 'requested' ? 'asked to join' : 'added');
+  if (m.status === 'verify') { const v = verifyToken(); m.verifyHash = v.hash; m.verifyExp = v.exp; m.__token = v.token; }
+  logAdd(m, actor, m.status === 'requested' ? 'asked to join' : m.status === 'verify' ? 'signed up (company e-mail domain) — waiting for the e-mail confirm' : 'added');
+  if (m.__token) { const tok = m.__token; delete m.__token; await put(m, actor && actor.email); return Object.assign({}, m, { verifyToken: tok }); }
   return put(m, actor && actor.email);
 }
 async function getOne(key, id){ const m = (await ofCompany(key)).find(function(x){ return s(x.id) === s(id) && x.primary !== true; }); if (!m) throw Fail(404, 'That person is not on this team.'); return m; }
@@ -160,10 +169,10 @@ async function setStatus(keys, id, op, actor, opt){
   const at = nowIso(), by = { email: low(actor && actor.email), name: clip(actor && actor.name, 80), role: s(actor && actor.role) };
   if (op === 'remove') {
     if (m.status === 'removed') return { member: m, unchanged: true };
-    if (m.status !== 'active' && m.status !== 'requested') throw Fail(400, 'That person is not active.');
+    if (m.status !== 'active' && m.status !== 'requested' && m.status !== 'verify') throw Fail(400, 'That person is not active.');
     const others = rows.filter(function(x){ return x.id !== m.id; }).concat([Object.assign({}, m, { status: 'removed' })]);
     if (!opt.staff && m.status === 'active' && activeCount(opt.primary, others) < 1) throw Fail(409, 'That is the last active person on this team, so they can\'t be removed. Call GrayCo ' + '901-585-0944' + ' to close the account.');
-    m.status = 'removed'; m.removedAt = at; m.removedBy = by;
+    m.status = 'removed'; m.removedAt = at; m.removedBy = by; delete m.verifyHash; delete m.verifyExp;
   } else if (op === 'restore') {
     if (m.status === 'active') return { member: m, unchanged: true };
     if (m.status !== 'removed') throw Fail(400, 'Only a removed person can be restored.');
@@ -189,6 +198,25 @@ async function setNotify(key, id, on, actor){
 async function noteInvite(m, actor, how){ m.invites = arr(m.invites).concat([{ at: nowIso(), by: low(actor && actor.email), how: s(how) }]).slice(-20); logAdd(m, actor, 'invite ' + s(how)); return put(m, actor && actor.email); }
 /* e-mails of the members who turned "Notify me" on (never the primary — they already get it) */
 async function notifyList(keys){ try { return Array.from(new Set(members(await ofCompany(keys)).filter(function(m){ return active(m) && m.notify === true && okEmail(m.email); }).map(function(m){ return low(m.email); }))); } catch (e) { return []; } }
+
+/* ── SECURITY: a domain auto-join proves the mailbox first (status 'verify' = no access) ──
+   A one-time token (only its SHA-256 is stored), good for 24 hours, e-mailed to that address. Using it → 'active'. */
+const VERIFY_MS = 24 * 3600e3;
+function verifyToken(){ const token = crypto.randomBytes(32).toString('base64url'); return { token: token, hash: crypto.createHash('sha256').update(token).digest('hex'), exp: new Date(D.now() + VERIFY_MS).toISOString() }; }
+/* a new token for a 'verify' row (re-sign-up / "send it again") → { member, token } */
+async function reVerify(m, by){ if (!m || m.status !== 'verify') throw Fail(400, 'Nothing to confirm.'); const v = verifyToken(); m.verifyHash = v.hash; m.verifyExp = v.exp; logAdd(m, { email: by, role: 'signup' }, 'new confirm link'); await put(m, by); return { member: m, token: v.token }; }
+async function confirm(token){
+  token = s(token); if (!/^[A-Za-z0-9_-]{30,80}$/.test(token)) throw Fail(400, 'That confirm link is not right. Sign up again to get a new one.');
+  const h = crypto.createHash('sha256').update(token).digest('hex');
+  const m = (await all()).find(function(x){ return s(x.verifyHash) && crypto.timingSafeEqual(Buffer.from(s(x.verifyHash)), Buffer.from(h)); });
+  if (!m) throw Fail(400, 'That confirm link was already used or is not right. Sign in, or sign up again to get a new one.');
+  if (m.status !== 'verify') throw Fail(403, 'This sign-up can\'t be confirmed any more. Call GrayCo 901-585-0944.');
+  if (Date.parse(s(m.verifyExp)) < D.now()) throw Fail(410, 'That confirm link has run out (24 hours). Sign up again with the same e-mail to get a new one.');
+  m.status = 'active'; m.verifiedAt = nowIso(); delete m.verifyHash; delete m.verifyExp;
+  logAdd(m, { email: m.email, name: m.name, role: 'signup' }, 'confirmed their e-mail');
+  await put(m, m.email);
+  return m;
+}
 
 /* ── the invite (a person's click) ── */
 function mailOff(){ return process.env.PORTAL_MAIL_OFF === '1' || process.env.PORTAL_MAIL_OFF === 'true'; }
@@ -276,5 +304,5 @@ function commercial(p, c){
 /* the customer company key → the sign-in it stands for ({ kind, value, key } like portal-access identOf) */
 function custIdent(key){ const m = /^cu:(e|p):(.+)$/.exec(s(key)); if (!m) return null; return m[1] === 'e' ? { kind: 'email', value: m[2], key: 'e:' + m[2] } : { kind: 'phone', value: m[2], key: 'p:' + m[2] }; }
 
-module.exports = { custOf, custKeys, commercial, custIdent, COLL, FREE, D, priId, priRow, members, primaryOff, domainOf, isFreeMail, sameDomain, keySub, keyCrm, keyCust, all, ofCompany, find, put, active, activeFor, identOfMember,
+module.exports = { VERIFY_MS, verifyToken, reVerify, confirm, custOf, custKeys, commercial, custIdent, COLL, FREE, D, priId, priRow, members, primaryOff, domainOf, isFreeMail, sameDomain, keySub, keyCrm, keyCust, all, ofCompany, find, put, active, activeFor, identOfMember,
   view, teamOut, activeCount, add, getOne, setStatus, setNotify, noteInvite, notifyList, sendEmail, inviteMail, invite, signupMatch, phone10, okEmail };

@@ -189,13 +189,43 @@ let coreyS = '', coreyId = '';
 
 /* ═══ 4. same business domain → joins at once ═══ */
 {
+  const confirmTok = to => { const mm = MAIL.filter(x => (x.to || []).includes(to) && /Confirm your e-mail/.test(x.subject + x.html)).slice(-1)[0]; return mm ? decodeURIComponent((/team-confirm=([A-Za-z0-9_%-]+)/.exec(mm.html) || [])[1] || '') : ''; };
+  KV.gc_automation_pause = { on: true }; PAUSE.reset && PAUSE.reset();   /* the confirm e-mail is the sub's own sign-up mail: it goes in data-entry mode too */
   const r = await call(SPF, { action: 'register', email: DANA, password: 'Dana-Pass-111', profile: { name: 'Dana Domain', company: 'Acme Drywall', phone: '901-555-0111' } });
-  const row = team().find(m => m.email === DANA);
-  ok('4 a sign-up with @acmedrywall.test (an APPROVED company\'s domain) joins that company at once', r.st === 200 && r.b.ok && r.b.joined === 'Acme Drywall LLC' && r.b.approved === true && row && row.status === 'active' && row.via === 'domain' && row.company === 'sp:' + P1.id, { r: r.b, row });
-  ok('4 … no second company profile is made (no duplicate account to approve)', !T.sp_rows.some(x => x.collection === 'users' && x.email === DANA));
-  ok('4 … the office is told (a staff-only e-mail)', MAIL.some(x => /joined Acme Drywall LLC/.test(x.subject) && (x.to || []).every(t => /grayco-cs\.com$/.test(t))));
-  const s = await pwSignin(DANA, 'Dana-Pass-111');
-  ok('4 … and they sign straight in to the company portal with their new password', s.st === 200 && s.b.kind === 'partner', s);
+  delete KV.gc_automation_pause; PAUSE.reset && PAUSE.reset();
+  let row = team().find(m => m.email === DANA);
+  ok('4 SECURITY: a sign-up with @acmedrywall.test (an APPROVED company\'s domain, same name) is held as "verify" — NO access yet', r.st === 200 && r.b.ok && r.b.verify === true && r.b.approved === false && r.b.joined === 'Acme Drywall LLC' && row && row.status === 'verify' && row.via === 'domain' && row.company === 'sp:' + P1.id && /^[0-9a-f]{64}$/.test(row.verifyHash) && Date.parse(row.verifyExp) - Date.now() > 23.9 * 3600e3, { r: r.b, row });
+  const tok = confirmTok(DANA);
+  ok('4 … a one-time confirm link went to THAT mailbox (even in data-entry mode), only its hash is stored', !!tok && JSON.stringify(T.sp_rows).indexOf(tok) < 0, tok);
+  ok('4 … no second company profile is made', !T.sp_rows.some(x => x.collection === 'users' && x.email === DANA));
+  ok('4 … the office is told (a staff-only e-mail)', MAIL.some(x => /is joining Acme Drywall LLC/.test(x.subject) && (x.to || []).every(t => /grayco-cs\.com$/.test(t))));
+  TOK['tok-dana'] = DANA;
+  const u1 = await pwSignin(DANA, 'Dana-Pass-111'), u2 = await bid('tok-dana', 'me'), u3 = await bid('tok-dana', 'load', { keys: ['bids'] }), u4 = await codeSignin(DANA);
+  ok('4 SECURITY: unconfirmed, they can NOT see company data — portal password 403 "check your e-mail", bid site 403, no sign-in code', u1.st === 403 && /confirm link/.test(u1.b.error) && u2.st === 403 && u3.st === 403 && JSON.stringify(u3.b).indexOf('BID1') < 0 && (u4.nomail === true || u4.st !== 200), { u1, u2, u3, u4 });
+  const pg = await SPF.handler({ httpMethod: 'GET', headers: {}, queryStringParameters: { 'team-confirm': tok }, body: '' });
+  ok('4 opening the link shows a page with a Confirm button — merely opening it (a mail scanner) confirms nothing', pg.statusCode === 200 && /Confirm my e-mail/.test(pg.body) && team().find(m => m.email === DANA).status === 'verify', pg.statusCode);
+  const bad = await call(SPF, { action: 'team-confirm', token: 'x'.repeat(43) });
+  ok('4 a wrong code fails', bad.st === 400 && team().find(m => m.email === DANA).status === 'verify', bad);
+  const c = await call(SPF, { action: 'team-confirm', token: tok });
+  row = team().find(m => m.email === DANA);
+  ok('4 tapping Confirm → active (verified when), the code is used up', c.st === 200 && c.b.ok && c.b.company === 'Acme Drywall LLC' && row.status === 'active' && !!row.verifiedAt && !row.verifyHash, { c, row });
+  const again = await call(SPF, { action: 'team-confirm', token: tok });
+  ok('4 … the same link a second time does nothing', again.st === 400, again);
+  const s = await pwSignin(DANA, 'Dana-Pass-111'), me = await bid('tok-dana', 'load', { keys: ['bids'] });
+  ok('4 after the confirm they CAN: the company portal with their password, and the company\'s bid on the bid site', s.st === 200 && s.b.kind === 'partner' && me.st === 200 && JSON.stringify(me.b).indexOf('BID1') > -1, { s, me: me.st });
+  /* an expired code */
+  const er = await call(SPF, { action: 'register', email: 'eve@acmedrywall.test', password: 'Eve-Pass-1111', profile: { name: 'Eve Expired', company: 'Acme Drywall LLC' } });
+  const etok = confirmTok('eve@acmedrywall.test');
+  T.sp_rows.find(x => x.collection === 'team' && x.email === 'eve@acmedrywall.test').data.verifyExp = new Date(Date.now() - 1000).toISOString();
+  const ec = await call(SPF, { action: 'team-confirm', token: etok }), es = await pwSignin('eve@acmedrywall.test', 'Eve-Pass-1111');
+  ok('4 SECURITY: a code older than 24 hours fails (410) and gives no access', er.st === 200 && er.b.verify && ec.st === 410 && /run out/.test(ec.b.error) && team().find(m => m.email === 'eve@acmedrywall.test').status === 'verify' && es.st === 403, { ec, es: es.st });
+  const er2 = await call(SPF, { action: 'register', email: 'eve@acmedrywall.test', password: 'Eve-Pass-1111', profile: { name: 'Eve Expired', company: 'Acme Drywall LLC' } });
+  const etok2 = confirmTok('eve@acmedrywall.test');
+  ok('4 … signing up again sends a NEW 24-hour link (the old one stays dead)', er2.st === 200 && er2.b.verify && etok2 && etok2 !== etok && (await call(SPF, { action: 'team-confirm', token: etok })).st === 400, er2.b);
+  /* a removed (never-confirmed) sign-up stays refused, even with its link */
+  const rmv = await sa('tok-office', { action: 'team-set', id: P1.id, op: 'remove', memberId: team().find(m => m.email === 'eve@acmedrywall.test').id });
+  const ec2 = await call(SPF, { action: 'team-confirm', token: etok2 }), es2 = await pwSignin('eve@acmedrywall.test', 'Eve-Pass-1111');
+  ok('4 SECURITY: the office removes the unconfirmed sign-up → its link no longer works and sign-in stays refused (record kept)', rmv.st === 200 && ec2.st === 400 && es2.st === 403 && team().find(m => m.email === 'eve@acmedrywall.test').status === 'removed', { rmv: rmv.st, ec2, es2 });
   const od = await call(SPF, { action: 'register', email: 'odd@acmedrywall.test', password: 'Odd-Pass-1111', profile: { name: 'Odd Name', company: 'Zebra Framing' } });
   ok('4 the same domain under a DIFFERENT company name is not joined by itself — its own pending sign-up + "wants to join" for the office',
     od.st === 200 && !od.b.joined && team().some(m => m.email === 'odd@acmedrywall.test' && m.status === 'requested') && T.sp_rows.some(x => x.collection === 'users' && x.email === 'odd@acmedrywall.test' && x.data.approved === false), od.b);
@@ -438,7 +468,7 @@ if (!NO_BROWSER) {
       await p.click('tr[data-sa-row="u_acme"]');
       await p.waitForSelector('#gc-sa-sheet [data-sa-team] [data-sa-member="primary"]', { timeout: 15000 });
       const tt = await txt(p, '#gc-sa-sheet [data-sa-team]');
-      ok('C ' + tag + ': the office opens Acme → 👥 Team: main contact, Corey (active), Dana (joined by company e-mail), Fred, removed people kept', /main contact/.test(tt) && /Corey Coworker/.test(tt) && /joined by company e-mail/.test(tt) && /Fred Freemail/.test(tt) && /removed by Bo Boss/.test(tt), tt);
+      ok('C ' + tag + ': the office opens Acme → 👥 Team: main contact, Corey (active), Dana (joined by company e-mail), Fred, removed people kept', /main contact/.test(tt) && /Corey Coworker/.test(tt) && /signed up with the company e-mail/.test(tt) && /Fred Freemail/.test(tt) && /removed by Bo Boss/.test(tt), tt);
       const nm = 'Office Added ' + tag;
       await p.fill('[data-sa-tm=name]', nm); await p.fill('[data-sa-tm=email]', 'office.added.' + tag + '@acmedrywall.test');
       await p.click('[data-sa-act=team][data-op=add]');

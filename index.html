@@ -232450,8 +232450,8 @@ function teamSection(g){
   if (T.error) h += '<div class="err">' + esc(T.error) + '</div>';
   if (T.wantsJoin && T.wantsJoin.company) h += '<div class="note" data-sa-wants>This sign-up asked to join <b>' + esc(T.wantsJoin.company) + '</b> (a free-mail address, so it was not joined by itself). Open that company\'s account to approve it.</div>';
   L.forEach(function(x){
-    var st = x.status === 'active' ? '🟢 active' : x.status === 'requested' ? '⏳ wants to join' : x.status === 'denied' ? '⛔ not this company' : '⏸ removed';
-    var meta = [x.primary ? 'main contact' : (x.via === 'domain' ? 'joined by company e-mail' : x.via === 'request' ? 'asked to join' : x.addedBy ? 'added by ' + who(x.addedBy) + ' ' + when(x.addedAt, true) : ''),
+    var st = x.status === 'active' ? '🟢 active' : x.status === 'requested' ? '⏳ wants to join' : x.status === 'denied' ? '⛔ not this company' : x.status === 'verify' ? '✉️ confirming their e-mail (no access yet)' : '⏸ removed';
+    var meta = [x.primary ? 'main contact' : (x.via === 'domain' ? 'signed up with the company e-mail' : x.via === 'request' ? 'asked to join' : x.addedBy ? 'added by ' + who(x.addedBy) + ' ' + when(x.addedAt, true) : ''),
       x.status === 'removed' && x.removedBy ? 'removed by ' + who(x.removedBy) + ' ' + when(x.removedAt, true) : '', x.decidedBy ? 'decided by ' + who(x.decidedBy) + ' ' + when(x.decidedAt, true) : '',
       x.invitedAt ? 'invited ' + when(x.invitedAt, true) : '', x.notify ? '🔔 notices on' : ''].filter(Boolean).join(' · ');
     var acts = '';

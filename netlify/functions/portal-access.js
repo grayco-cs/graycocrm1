@@ -893,7 +893,9 @@ async function subPortalAfterPassword(data, email){
   let sub = (crmId ? subById(data, crmId) : null) || crmSubOf(data, prof) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;   /* patch SUBSYNC: + the merged / matched CRM sub */
   const approved = !!bidOnlySub(prof);
   if (!sub && approved) sub = bidOnlySub(prof);   /* BIDONLY: approved on the bid site, not in the CRM yet */
-  if (!sub && !prof) { try { if ((await TEAM().find({ kind: 'email', value: low(email) })).some(function(m){ return m.kind === 'sub' && m.status === 'removed'; })) throw Fail(403, TEAM_OFF); } catch (e) { if (e && e.status === 403) throw e; } }   /* patch PORTALTEAM */
+  if (!sub && !prof) { try { const tr = await TEAM().find({ kind: 'email', value: low(email) });   /* patch PORTALTEAM */
+    if (tr.some(function(m){ return m.kind === 'sub' && m.primary !== true && m.status === 'verify'; })) throw Fail(403, TEAM_VERIFY);   /* SECURITY: not confirmed = no access */
+    if (tr.some(function(m){ return m.kind === 'sub' && m.status === 'removed'; })) throw Fail(403, TEAM_OFF); } catch (e) { if (e && e.status === 403) throw e; } }
   if (!sub) return { noPortal: true, prof: prof };   /* not approved yet → the caller opens the pending session */
   let link = await subLinkActive(sub.id);
   if (!link && approved) { try { link = await subLinkCreate(sub.id, sub.name, 'bid site approval (automatic)'); } catch (e) { link = null; } }   /* BIDONLY: approval turns their portal on */
@@ -2185,6 +2187,7 @@ async function staffAction(action, body, who){
    A member's sign-in (code or password) opens exactly the company's portal: the same CRM sub (partner) or the holder's job links
    (customer). Removing someone ends their signed-in devices at once and refuses their next sign-in; the record stays. */
 const TEAM_OFF = 'You were taken off your company\'s GrayCo portal team. Ask a coworker to add you back, or call GrayCo ' + OFFICE_PHONE + '.';
+const TEAM_VERIFY = 'Check your e-mail: tap the confirm link we sent to finish joining your company on the GrayCo portal (it works for 24 hours). Signing up again sends a new one.';
 function TEAM(){ return require('./_lib/portalteam.js'); }
 async function teamPrimaryOff(id, match){ try { return (await TEAM().find(id)).some(function(m){ return m.primary === true && m.status === 'removed' && match(m); }); } catch (e) { return false; } }
 async function bidProfById(pid){ try { const r = (await dbGet('sp_rows', 'select=data&collection=eq.users&id=' + eq(pid)))[0]; return r && r.data || null; } catch (e) { return null; } }

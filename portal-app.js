@@ -1079,13 +1079,13 @@ function papersTab(){
    Inline (no pop-up); phone and desk. Server: portal-access.js p-team* (_lib/portalteam.js). */
 var TEAMW = {
   en: { title: '👥 My team', intro: 'Everyone here can sign in and see your company\'s jobs, bids, papers, pay and messages.', main: 'Main contact', you: 'You',
-    removed: 'Removed', removedBy: 'by {n} on {d}', asking: 'Asking to join', add: '＋ Add a coworker', name: 'Name', email: 'E-mail', mobile: 'Mobile (if no e-mail)',
+    removed: 'Removed', removedBy: 'by {n} on {d}', asking: 'Asking to join', verifying: 'Confirming their e-mail', add: '＋ Add a coworker', name: 'Name', email: 'E-mail', mobile: 'Mobile (if no e-mail)',
     save: 'Add to my team', cancel: 'Cancel', invite: '✉️ Send invite', reinvite: '✉️ Invite again', invited: 'Invited {d}', remove: 'Remove', restore: 'Restore', confirmRm: 'Tap again to remove {n}',
     notifyOn: '🔔 Notify me too', notifyOff: '🔕 Stop notifying me', notifyHint: 'The main contact always gets GrayCo\'s e-mails. Turn this on to get them too.', notifyIsOn: 'You get GrayCo\'s notices.',
     sent: 'Invite sent to {to}', held: 'Invite will go out at 7:00 AM', paused: 'Not sent — GrayCo has sending paused. They can already sign in at portal.grayco-cs.com with their e-mail.', textIt: '📱 Text the invite from my phone',
     added: '{n} is on your team now — send the invite so they know.', needName: 'Type their name.', needWay: 'Type their e-mail or mobile number.', load: 'Loading your team…' },
   es: { title: '👥 Mi equipo', intro: 'Todos aquí pueden entrar y ver los trabajos, licitaciones, papeles, pagos y mensajes de su compañía.', main: 'Contacto principal', you: 'Usted',
-    removed: 'Quitado', removedBy: 'por {n} el {d}', asking: 'Pide unirse', add: '＋ Agregar un compañero', name: 'Nombre', email: 'Correo', mobile: 'Celular (si no tiene correo)',
+    removed: 'Quitado', removedBy: 'por {n} el {d}', asking: 'Pide unirse', verifying: 'Confirmando su correo', add: '＋ Agregar un compañero', name: 'Nombre', email: 'Correo', mobile: 'Celular (si no tiene correo)',
     save: 'Agregar a mi equipo', cancel: 'Cancelar', invite: '✉️ Enviar invitación', reinvite: '✉️ Invitar otra vez', invited: 'Invitado {d}', remove: 'Quitar', restore: 'Restaurar', confirmRm: 'Toque otra vez para quitar a {n}',
     notifyOn: '🔔 Avisarme también', notifyOff: '🔕 Dejar de avisarme', notifyHint: 'El contacto principal siempre recibe los correos de GrayCo. Actívelo para recibirlos también.', notifyIsOn: 'Usted recibe los avisos de GrayCo.',
     sent: 'Invitación enviada a {to}', held: 'La invitación saldrá a las 7:00 AM', paused: 'No se envió — GrayCo tiene los envíos en pausa. Ya puede entrar en portal.grayco-cs.com con su correo.', textIt: '📱 Enviar la invitación por texto desde mi teléfono',
@@ -1109,11 +1109,11 @@ function teamDo(action, body, btn){
 }
 function teamRow(x){
   var me = TEAM || {}, off = x.status === 'removed', who = [x.email, x.phone].filter(Boolean).join(' · ');
-  var tags = [x.primary ? tw('main') : '', x.mine ? tw('you') : '', x.status === 'requested' ? tw('asking') : '', off ? tw('removed') + (x.removedBy && x.removedBy.name ? ' — ' + tw('removedBy', { n: x.removedBy.name, d: dt(x.removedAt) }) : '') : '',
+  var tags = [x.primary ? tw('main') : '', x.mine ? tw('you') : '', x.status === 'requested' ? tw('asking') : x.status === 'verify' ? tw('verifying') : '', off ? tw('removed') + (x.removedBy && x.removedBy.name ? ' — ' + tw('removedBy', { n: x.removedBy.name, d: dt(x.removedAt) }) : '') : '',
     !off && !x.primary && x.invitedAt ? tw('invited', { d: dt(x.invitedAt) }) : ''].filter(Boolean).join(' · ');
   var acts = [];
   if (me.canManage && !off && !x.primary && x.status === 'active' && !x.mine) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-invite': x.id, text: x.invitedAt ? tw('reinvite') : tw('invite'), on: { click: function(ev){ teamInvite(x, ev.currentTarget); } } }));
-  if (me.canManage && !off && (x.status === 'active' || x.status === 'requested')) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-remove': x.id, text: TEAM_RM === x.id ? tw('confirmRm', { n: x.name }) : tw('remove'),
+  if (me.canManage && !off && (x.status === 'active' || x.status === 'requested' || x.status === 'verify')) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-remove': x.id, text: TEAM_RM === x.id ? tw('confirmRm', { n: x.name }) : tw('remove'),
     on: { click: function(ev){ if (TEAM_RM !== x.id) { TEAM_RM = x.id; teamPaint(); return; } teamDo('p-team-remove', { id: x.id }, ev.currentTarget).then(function(j){ if (j.self) { ENDED = true; H.ended(); return; } teamPaint(); }, function(){}); } } }));
   if (me.canManage && off) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-restore': x.id, text: tw('restore'), on: { click: function(ev){ teamDo('p-team-restore', { id: x.id }, ev.currentTarget).then(teamPaint, function(){}); } } }));
   return h('div', { class: 'tm-row' + (off ? ' tm-off' : ''), 'data-tm': x.id }, [h('div', { class: 'tm-who' }, [h('b', { text: x.name || who }), who ? h('div', { class: 'muted', text: who }) : null, tags ? h('div', { class: 'muted', text: tags }) : null]), acts.length ? h('div', { class: 'tm-acts' }, acts) : null]);
