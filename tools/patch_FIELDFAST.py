@@ -157,11 +157,13 @@ function _ffKeepLocalLeads(v){
   }catch(e){ return v; }
 }
 function _flushPendingSync(){""")
-# 8. SPEAKTILE ➕ → Leads: "✓ Leads — …" once the lead is on the Leads list (the app has drawn it), not the moment it was
+# 8. SPEAKTILE ➕ → Leads: "✓ Leads — …" once the lead is on the Leads list (the app's list answers with it, at once — no
+#    redraw still pending), not the moment it was
 #    handed over (at most 3 s). Measured (test_SPEAKTILE debug): with Home usable sooner the Post lands while the open's
 #    first sync is still being applied; the lead was on the list (window.__gcLeadsLive) but the app had not drawn it yet.
 once("""  return Promise.resolve({ ok: true, lead: L, where: 'Leads — ' + L.name + ' · New lead (nobody was contacted)' });""",
      """  var res = { ok: true, lead: L, where: 'Leads — ' + L.name + ' · New lead (nobody was contacted)' };
-  return new Promise(function(done){ var t0 = Date.now(); (function look(){ var on = false; try { on = (Array.isArray(W.__gcLeadsLive) ? W.__gcLeadsLive : []).some(function(x){ return x && x.id === L.id; }); } catch (e) {} if (on || Date.now() - t0 > 3000) { ST(function(){ done(res); }, on ? 50 : 0); return; } ST(look, 60); })(); });   /* patch FIELDFAST: ✓ once it is on the list */""")
+  return new Promise(function(done){ var t0 = Date.now(); (function look(){ var on = false; try { on = (Array.isArray(W.__gcLeadsLive) ? W.__gcLeadsLive : []).some(function(x){ return x && x.id === L.id; }); } catch (e) {}
+    if (on) { var drawn = false; try { W._setLeads(function(p){ drawn = Array.isArray(p) && p.some(function(x){ return x && x.id === L.id; }); return p; }); } catch (e) { drawn = true; } on = drawn; }   /* the list itself says so (asked the app; nothing changes) */ if (on || Date.now() - t0 > 3000) { ST(function(){ done(res); }, on ? 50 : 0); return; } ST(look, 60); })(); });   /* patch FIELDFAST: ✓ once it is on the list */""")
 open(p, 'w', encoding='utf-8').write(t)
 print('FIELDFAST: patched')
