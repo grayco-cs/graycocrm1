@@ -54,7 +54,7 @@ const T = {
     projectTitle: 'Project Title', address: 'Project Address',
     bidDueDate: 'Bid Due Date', scope: 'Scope of Work',
     specifications: 'Specifications', notes: 'Notes',
-    plans: 'Plans & Documents', uploadPlans: 'Upload Plans (PDF)',
+    plans: 'Plans & Documents', uploadPlans: 'Upload Plans (PDF)', zipAll: '⬇ All plans (ZIP)', zipBusy: 'Making the ZIP…', pastDueClosed: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.',   /* patch SUBFLOW */
     analyzeWithAI: 'Auto-Fill from Plans (AI)',
     analyzing: 'Analyzing plans with AI…',
     downloadPlans: 'Download Plans',
@@ -375,7 +375,7 @@ const T = {
     projectTitle: 'Título del Proyecto', address: 'Dirección del Proyecto',
     bidDueDate: 'Fecha Límite de Oferta', scope: 'Alcance del Trabajo',
     specifications: 'Especificaciones', notes: 'Notas',
-    plans: 'Planos y Documentos', uploadPlans: 'Subir Planos (PDF)',
+    plans: 'Planos y Documentos', uploadPlans: 'Subir Planos (PDF)', zipAll: '⬇ Todos los planos (ZIP)', zipBusy: 'Preparando el ZIP…', pastDueClosed: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.',   /* patch SUBFLOW */
     analyzeWithAI: 'Auto-Llenar desde los Planos (IA)',
     analyzing: 'Analizando los planos con IA…',
     downloadPlans: 'Descargar Planos',
@@ -2789,6 +2789,19 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
     })();
   }, [job.id]);
 
+  /* patch SUBFLOW: ⬇ All plans (ZIP) */
+  const [zipBusy, setZipBusy] = useState(false);
+  async function zipAll() {
+    let w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
+    setZipBusy(true);
+    try {
+      const r = await api('plans-zip', { jobId: job.id });
+      if (w) { try { w.location = r.url; } catch (e) { openFile(r.url, r.name); } } else openFile(r.url, r.name);
+      logDownload('All plans (ZIP)');
+    } catch (e) { if (w) { try { w.close(); } catch (x) {} } showToast((e && e.message) || 'Could not make the ZIP', 'error'); }
+    setZipBusy(false);
+  }
+
   async function downloadPlan(plan) {
     // Find the hydrated plan (with dataUrl) by filename match
     let dataUrl = plan.dataUrl;
@@ -3622,6 +3635,12 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           {/* PLANS */}
           <Card style={{ marginBottom: 16 }}>
             <h3 style={sectionTitleStyle}><FileText size={18} /> {t.plans}</h3>
+            {/* patch SUBFLOW: every plan file in one ZIP (the server builds it) — a phone opened only the first of several files */}
+            {(job.plans || []).length > 1 && (
+              <div style={{ margin: '0 0 10px' }}>
+                <Btn size="sm" icon={Download} data-zip="1" disabled={zipBusy} onClick={zipAll}>{zipBusy ? t.zipBusy : t.zipAll}</Btn>
+              </div>
+            )}
             <PlansRequests t={t} job={job} user={user} isAdmin={isAdmin} showToast={showToast}
               onAdded={(added, scoped) => { loadPlansFor(job.id).then(setFullPlans).catch(() => {});
                 /* patch PLANREQ-C: files sorted into a trade's scope changed the job on the server — take the server's copy (never save a stale one over it) */
@@ -3825,7 +3844,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             <SupplierQuoteForm t={t} job={job} user={user} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           ) : !isAdmin ? (
             <>
-            {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" style={{ fontWeight: 700 }}>⏸ {t.biddingClosed}</div></Card>}
+            {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" data-pastdue={job.pastDue ? '1' : undefined} style={{ fontWeight: 700 }}>⏸ {job.pastDue ? t.pastDueClosed : t.biddingClosed}</div></Card>}
             {!job.biddingClosed && <Card>
               <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>
                 <Send size={18} /> {myBid ? `${t.yourBid}` : t.enterBid}
