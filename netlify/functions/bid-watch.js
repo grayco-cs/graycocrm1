@@ -55,6 +55,20 @@ const TN_WEST = /\b(Shelby|Fayette|Tipton|Lauderdale|Haywood|Hardeman|Madison|Cr
 const SOURCES = [
   /*BARGEROOM*/ { id: 'barge-planroom', name: 'Barge Design Solutions — public plan room', label: 'Barge Design (public owner)', owner: '', city: '', state: '', type: 'government',
     auto: true, kind: 'rka', companyIs: 'owner', radius: true, url: 'https://bidding.bargedesign.com/projects/public', noAi: true },
+  /*PLANSCAN*/ /* owner 11/23: "make sure a2h planroom is on scan, wtplanroom centralbidding.com ionwave". Checked from the build
+     container on 2026-11-23 (robots.txt, terms, one read of each listing):
+       · A2H plan room (www.a2hplanroom.com, A2H Inc., Lakeland TN): the same ReproConnect plan room software as MR / RKA / Barge
+         (parseRka). robots.txt "User-agent: *" allows /projects/public (Crawl-delay 5; Content-Signal ai-input=no → plain reader,
+         no AI); the site terms (/more/disclaimer) say nothing against automated reading; no login. The card's "company" is
+         A2H itself (the designer), so it is neither the owner nor a GC (companyIs: 'designer').
+       · West Tennessee Plan Room (wtplanroom.com — www. has no working https): a paid, password-protected plan room
+         ("Current Private Projects — please login to view"); nothing public to read → its weekly e-mail bulletin to leads@.
+       · Central Bidding (centralbidding.com): the bid lists live on www.centralauctionhouse.com and every list
+         (rfp.php?cid=…, rfpc…html, List/CategoriesBids) answers 302 → SignIn → e-mail notifications to leads@.
+       · Ion Wave (mscsprocurementservices.ionwave.net): robots.txt "User-agent: * / Disallow: /" → e-mail alerts to leads@
+         (MSCS's own bid page, scsk12.org, is read above). No other local agency portal on ionwave.net was found. */
+  /*A2HROOM*/ { id: 'a2h-planroom', name: 'A2H — public plan room (a2hplanroom.com)', label: 'A2H plan room', owner: '', city: '', state: '', type: 'government',
+    auto: true, kind: 'rka', companyIs: 'designer', radius: true, url: 'https://www.a2hplanroom.com/projects/public', noAi: true },
   /*MRPLANROOM*/ { id: 'mr-planroom', name: 'Memphis Reprographics — public plan room (mrplanroom.com)', label: 'MR plan room', owner: '', city: '', state: '', type: 'commercial',
     auto: true, kind: 'rka', companyIs: 'owner', url: 'https://www.mrplanroom.com/projects/public', noAi: true },
   /*RKAROOM*/ { id: 'rka-planroom', name: 'RKA Construction — public plan room', label: 'RKA plan room', owner: '', city: '', state: 'MS', type: 'commercial',
@@ -91,13 +105,18 @@ const SOURCES = [
   { id: 'ar-dba', name: 'Arkansas Division of Building Authority — bid announcements', label: 'State of AR (Building Authority)', owner: 'Arkansas Division of Building Authority', city: 'Little Rock', state: 'AR', auto: true, kind: 'links', hrefRe: /Advertisement-[^\/]*\.(doc|docx|pdf)/i, url: 'https://sas.arkansas.gov/building-authority/bid-announcements/' },
   /* e-mail alerts only */
   { id: 'mlgw', name: 'MLGW — Bid Notification System / iSupplier', label: 'MLGW', auto: false, how: 'Register in MLGW\'s Bid Notification System (contracted services) and iSupplier Portal (materials); use leads@grayco-cs.com as the contact e-mail.' },
-  { id: 'southaven', name: 'City of Southaven — Central Bidding', label: 'Southaven', auto: false, how: 'Free vendor account on Central Bidding (centralbidding.com), follow City of Southaven, notification e-mail leads@grayco-cs.com.' },
-  { id: 'olive-branch', name: 'City of Olive Branch — bid notices', label: 'Olive Branch', auto: false, how: 'Follow the City of Olive Branch on Central Bidding (or its legal notices); notification e-mail leads@grayco-cs.com.' },
-  { id: 'desoto-central', name: 'DeSoto County — Central Bidding documents', label: 'DeSoto County', auto: false, how: 'Follow DeSoto County on Central Bidding for bid packages; notification e-mail leads@grayco-cs.com.' },
+  /*PLANSCAN*/ { id: 'central-bidding', name: 'Central Bidding — Mississippi / Arkansas / Alabama agencies (centralbidding.com)', label: 'Central Bidding', auto: false, url: 'https://www.centralbidding.com/register/',
+    how: 'Its bid lists need a sign-in, so they are not read here. centralbidding.com → Register Now: vendor account with leads@grayco-cs.com as the e-mail. E-mail bid notifications come with a paid subscription (its Pricing page, 11/2026: $99–$109 a month, $499–$549 for 6 months or $899 a year). Then pick the Mississippi agencies (City of Southaven, City of Olive Branch, DeSoto County…) and the construction / roofing categories, with notifications to leads@grayco-cs.com.' },
+  { id: 'southaven', name: 'City of Southaven — Central Bidding', label: 'Southaven', auto: false, how: 'Central Bidding vendor account (see “Central Bidding”), follow City of Southaven, notification e-mail leads@grayco-cs.com.' },
+  { id: 'olive-branch', name: 'City of Olive Branch — bid notices', label: 'Olive Branch', auto: false, how: 'Follow the City of Olive Branch on Central Bidding (see “Central Bidding”) or its legal notices; notification e-mail leads@grayco-cs.com.' },
+  { id: 'desoto-central', name: 'DeSoto County — Central Bidding documents', label: 'DeSoto County', auto: false, how: 'Follow DeSoto County on Central Bidding (see “Central Bidding”) for bid packages; notification e-mail leads@grayco-cs.com.' },
+  /*PLANSCAN*/ { id: 'wt-planroom', name: 'West Tennessee Plan Room (wtplanroom.com, Jackson TN)', label: 'WT plan room', auto: false, url: 'https://wtplanroom.com/',
+    how: 'Members only (password protected), so it is not read here. wtplanroom.com → New Account, or call the plan room: a subscription is $65 a quarter (its Services/Rates page, 11/2026) and brings the weekly bulletin (published each Tuesday) by e-mail. Ask for the bulletin to go to leads@grayco-cs.com (one subscription may send it to several addresses).' },
   { id: 'arbuy', name: 'Arkansas — ARBuy / state eProcurement', label: 'State of AR', auto: false, how: 'Register (free) in ARBuy with your NIGP codes for roofing / building construction / repair; notification e-mail leads@grayco-cs.com.' },
   { id: 'ms-magic', name: 'Mississippi — MAGIC procurement', label: 'State of MS', auto: false, how: 'Register (free) as a MAGIC supplier with the construction / roofing product codes; notification e-mail leads@grayco-cs.com.' },
   { id: 'tn-edison', name: 'Tennessee — Edison supplier alerts', label: 'State of TN (CPO)', auto: false, how: 'Register in Edison and choose the UNSPSC codes for roofing / building repair; alerts go to leads@grayco-cs.com.' },
-  { id: 'mscs-ionwave', name: 'MSCS — Ion Wave e-bid alerts', label: 'MSCS', auto: false, how: 'Register (free) at mscsprocurementservices.ionwave.net with the construction / roofing categories; e-mail leads@grayco-cs.com.' },
+  { id: 'mscs-ionwave', name: 'MSCS — Ion Wave e-bid alerts', label: 'MSCS', auto: false, url: 'https://mscsprocurementservices.ionwave.net/',
+    how: 'Ion Wave asks robots not to read it (robots.txt), so it is not read here. mscsprocurementservices.ionwave.net → Supplier Registration (free): company details, leads@grayco-cs.com as the contact e-mail, and the commodity codes for construction, roofing, maintenance and repair; e-mail notifications of new bid events then reach leads@.' },
   { id: 'memphis-oracle', name: 'City of Memphis — supplier portal alerts', label: 'City of Memphis', auto: false, how: 'Register as a City of Memphis supplier (Become a Supplier) with the construction / roofing commodity codes; e-mail leads@grayco-cs.com.' },
   { id: 'shelby-notify', name: 'Shelby County — vendor registration', label: 'Shelby County', auto: false, how: 'Keep the county vendor registration (BRN + vendor number) current with the NIGP codes for roofing / building repair; e-mail leads@grayco-cs.com.' },
   { id: 'mscaa-opengov', name: 'MSCAA — OpenGov procurement portal', label: 'Memphis Airport (MSCAA)', auto: false, how: 'Follow the Memphis-Shelby County Airport Authority on OpenGov Procurement; notification e-mail leads@grayco-cs.com.' },
@@ -309,10 +328,10 @@ function toRecord(src, it, hits){
   let host = ''; try { host = new URL(it.url).hostname; } catch (e) {}
   return {
     id: itemId('watch|' + src.id + '|' + it.id), title: it.title, source: src.label, sourceKind: 'public_bid', sourceRef: src.name, type: src.type || 'government',
-    owner: (src.companyIs === 'owner' ? it.gc : '') || src.owner || '', gc: src.companyIs === 'owner' ? '' : (it.gc || ''), address: '', city: it.city || src.city || '', state: it.state || src.state || '', zip: '', bidDue: it.due || '', preBid: '', trades: [], scope: it.context ? it.context.slice(0, 300) : '',
+    owner: (src.companyIs === 'owner' ? it.gc : '') || src.owner || '', gc: src.companyIs ? '' : (it.gc || ''),   /* PLANSCAN: 'designer' = the architect / engineer, neither */ address: '', city: it.city || src.city || '', state: it.state || src.state || '', zip: '', bidDue: it.due || '', preBid: '', trades: [], scope: it.context ? it.context.slice(0, 300) : '',
     bidNumber: it.number || '', contact: { name: '', email: '', phone: '' }, estValue: null,
     plansLinks: it.url ? [{ url: it.url, label: 'Solicitation & documents (' + src.label + ')', board: 'Government', host }] : [],
-    files: [], emails: [], emailIds: [], watchKeys: ['w:' + src.id + ':' + it.id], notes: ['Found on ' + src.name + '. Matched: ' + hits.join(', ') + '.'],
+    files: [], emails: [], emailIds: [], watchKeys: ['w:' + src.id + ':' + it.id], notes: ['Found on ' + src.name + '. Matched: ' + hits.join(', ') + '.'].concat(src.companyIs === 'designer' && it.gc ? ['Designer: ' + s(it.gc).replace(/\.$/, '') + '.'] : []),
     matchWords: hits, origin: 'watch', addendum: 0
   };
 }

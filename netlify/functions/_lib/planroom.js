@@ -46,14 +46,14 @@ const PDF = require('./pdftext.js');
 
 const UA = 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; leads@grayco-cs.com; GrayCo Construction Services, Bartlett TN)';
 const LIM = { page: 3 * 1024 * 1024, doc: 8 * 1024 * 1024, docs: 3, text: 60000, timeout: 12000 };
-const REPRO_HOST = /(^|\.)(mrplanroom\.com|memphisreprographics\.com|rkaplanroom\.build|bargedesign\.com|reproconnect\.com)$/i;
+const REPRO_HOST = /(^|\.)(mrplanroom\.com|memphisreprographics\.com|rkaplanroom\.build|bargedesign\.com|a2hplanroom\.com|reproconnect\.com)$/i;   /* PLANSCAN: + A2H (the same ReproConnect software) */
 const REPRO_PATH = /^\/projects\/(\d+)\/(details|plans|specs|addenda|plan-holders|bidding)\/?([^\/?#]*)/i;
 const LOGIN_BOARDS = [
   [/(^|\.)buildingconnected\.com$/i, 'BuildingConnected'], [/(^|\.)planhub\.com$/i, 'PlanHub'],
   [/(^|\.)(isqft|constructconnect|bidclerk|cmdgroup)\.com$/i, 'ConstructConnect / iSqFt'], [/(^|\.)procore\.com$/i, 'Procore'],
   [/(^|\.)smartbidnet\.com$/i, 'SmartBid'], [/(^|\.)pipelinesuite\.com$/i, 'PipelineSuite'], [/(^|\.)dodge(data|construction)?\.com$/i, 'Dodge']
 ];
-const BOARD_NAMES = [[/mrplanroom|memphisreprographics/i, 'MR plan room (Memphis Reprographics)'], [/rkaplanroom/i, 'RKA plan room'], [/bargedesign/i, 'Barge Design plan room']];
+const BOARD_NAMES = [[/mrplanroom|memphisreprographics/i, 'MR plan room (Memphis Reprographics)'], [/rkaplanroom/i, 'RKA plan room'], [/bargedesign/i, 'Barge Design plan room'], [/a2hplanroom/i, 'A2H plan room']];
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }

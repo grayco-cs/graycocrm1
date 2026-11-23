@@ -32,7 +32,7 @@ function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (
 
 /* strong signs of a bid invitation / solicitation */
 const INVITE = /\b(invitations? to bid|invited to bid|you(?:'ve| have) been invited|request for (?:proposals?|qualifications?|quotes?|bids?)|itb|ifb|rfp|rfq|rfqs|solicitation|sealed bids?|bids? (?:are )?due|bid (?:due|date|opening|invitation|package|documents?|form|bond|results)|pre-?bid|addend(?:um|a)|plan ?room|plans and spec(?:ification)?s|bidding documents|bid board|project invitation|new projects? (?:in|near) your)\b/i;
-const PLATFORM = /buildingconnected|planhub|isqft|constructconnect|bidclerk|dodge|smartbid|pipelinesuite|bidnet|centralbidding|ionwave|opengov|bonfire|demandstar|questcdn|periscope|bidsync|aandbplanroom|rkaplanroom|procore/i;
+const PLATFORM = /buildingconnected|planhub|isqft|constructconnect|bidclerk|dodge|smartbid|pipelinesuite|bidnet|centralbidding|ionwave|opengov|bonfire|demandstar|questcdn|periscope|bidsync|aandbplanroom|rkaplanroom|a2hplanroom|wtplanroom|centralauctionhouse|procore/i;   /* PLANSCAN: + A2H / WT plan rooms, Central Bidding's list host */
 /* a homeowner / customer writing in */
 const HOMEOWNER = /\b(my (?:house|home|roof|basement|kitchen|bathroom|ceiling|garage|deck|yard)|our (?:house|home|roof)|free (?:estimate|inspection|quote)|squarespace|form submission|new (?:form|contact) (?:entry|submission)|homeowner|leak(?:s|ing)? (?:in|into|from)|water in my|storm damaged my|need (?:a|my) (?:roof|estimate))\b/i;
 

@@ -189,10 +189,12 @@ Registering still matters. Many agencies only e-mail their packages, addenda and
 |---|---|
 | **Shelby County** | Purchasing, 160 N. Main St, 5th Fl, 901-222-2250 (or the county's vendor registration page). Keep the vendor number and BRN current. Pick the **NIGP codes for roofing and building repair / construction**. |
 | **City of Memphis** | memphistn.gov → Business → **Become a Supplier**. Commodity codes for **construction / roofing / building maintenance**. Contact e-mail: bids@. |
-| **Memphis-Shelby County Schools** | **mscsprocurementservices.ionwave.net → Supplier Registration** (free). Categories: construction, roofing, maintenance and repair. |
+| **Memphis-Shelby County Schools** | **mscsprocurementservices.ionwave.net → Supplier Registration** (free). Categories: construction, roofing, maintenance and repair. Ion Wave's robots.txt asks robots not to read it, so its e-mails to `leads@grayco-cs.com` are the only way in. (MSCS's own bid page on scsk12.org is still read automatically.) |
 | **MLGW** | **Bid Notification System** (contracted services) and **iSupplier Portal** (materials). Purchasing: 901-528-4701. |
 | **Memphis Airport (MSCAA)** | **OpenGov Procurement** (procurement.opengov.com) → create a free vendor account → **Follow** "Memphis-Shelby County Airport Authority". |
-| **Southaven, Olive Branch, DeSoto County** | **centralbidding.com** → free vendor account → follow each agency, notifications to bids@. |
+| **Southaven, Olive Branch, DeSoto County** (Central Bidding) | Its bid lists need a sign-in, so the CRM cannot read them. **centralbidding.com → Register Now** → vendor account with `leads@grayco-cs.com`. E-mail bid notifications come with a paid subscription (Pricing page, 11/2026: $99–$109 a month, $499–$549 for 6 months, or $899 a year). Follow each agency and the construction / roofing categories, with notifications to `leads@grayco-cs.com`. |
+| **West Tennessee Plan Room** (wtplanroom.com, Jackson TN) | Members only (password protected), so the CRM cannot read it. **wtplanroom.com → New Account**, or call the plan room. The subscription is $65 a quarter and includes the weekly bulletin (each Tuesday) by e-mail. Ask for the bulletin to go to `leads@grayco-cs.com`. |
+| **A2H plan room** (a2hplanroom.com) | Nothing to do. Its public projects page is **read automatically**, the same way as the MR, RKA and Barge plan rooms. |
 | **State of Tennessee** | **Edison** supplier registration (sso.edison.tn.gov) → UNSPSC codes for roofing and building repair. |
 | **State of Arkansas** | **ARBuy** (arbuy.arkansas.gov) → free vendor registration → NIGP codes for roofing / construction. Help: ARBuySupport@arkansas.gov, 501-682-8888. |
 | **State of Mississippi** | **MAGIC** supplier self-service → supplier registration → construction / roofing codes. |

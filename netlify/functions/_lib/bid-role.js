@@ -41,8 +41,8 @@ var PRIME_SRC = /^government$|^gov$|sam\.gov|\bfederal\b|\bcounty\b|\bcity\s+of\
 var PUB = /\b(city|town|village|county|parish|state|commonwealth)\s+of\b|\bcounty\b|\bschools?\b|\bschool\s+(district|system|board)\b|board\s+of\s+education|\bisd\b|universit(y|ies)\b|\bcollege\b|\bmlgw\b|\bmscaa\b|\bmscs\b|\b(airport|housing|port|transit|water|utility|park|parks)\s+(authority|district|commission)\b|utility\s+district|public\s+(works|utilit\w*|library|schools)|\bmunicipal\b|\bfederal\b|\bdepartment\s+of\b|\bdept\.?\s+of\b|\bu\.?\s?s\.?\s+(army|navy|air\s+force|department)\b|corps\s+of\s+engineers|general\s+services\s+administration|\bgsa\b|veterans\s+affairs|\bsam\.gov\b|\bgovernment\b|\bprocurement\b|purchasing\s+(dept|department|division|office)/i;
 /* a company's name (a contractor) */
 var CO = /\b(llc|l\.l\.c|inc|incorporated|corp|corporation|company|ltd|construction|constructors?|builders?|building\s+(group|company|co)|contracting|contractors?|general\s+contractors?|\bgc\b|enterprises|group|partners|associates|roofing|restoration|developers?|development)\b\.?/i;
-var SUB_DOM = /(^|\.)(buildingconnected|planhub|aandbplanroom|rkaplanroom|isqft|constructconnect|bidclerk|cmdgroup|dodge|construction|smartbidnet|pipelinesuite|procore|bidmail|bidplanroom)\.(com|net)$/;
-var PUB_DOM = /\.(gov|mil|edu)$|\.k12\.|\.us$|(^|\.)(mlgw|scsk12|flymemphis|memphistn|shelbycountytn|shelbycountybids|desotocountyms|southaven|olivebranchms|cityofsouthaven|hernandoms|ionwave|bidnetdirect|centralbidding|demandstar|bonfirehub|opengov|periscopeholdings|bidsync|questcdn)\.(com|org|net|gov|us)$/;
+var SUB_DOM = /(^|\.)(buildingconnected|planhub|aandbplanroom|rkaplanroom|isqft|constructconnect|bidclerk|cmdgroup|dodge|construction|smartbidnet|pipelinesuite|procore|bidmail|bidplanroom|wtplanroom)\.(com|net)$/;   /* PLANSCAN: + West Tennessee Plan Room */
+var PUB_DOM = /\.(gov|mil|edu)$|\.k12\.|\.us$|(^|\.)(mlgw|scsk12|flymemphis|memphistn|shelbycountytn|shelbycountybids|desotocountyms|southaven|olivebranchms|cityofsouthaven|hernandoms|ionwave|bidnetdirect|centralbidding|centralauctionhouse|demandstar|bonfirehub|opengov|periscopeholdings|bidsync|questcdn)\.(com|org|net|gov|us)$/;
 var OWN_DOM = /(^|\.)grayco-cs\.com$/;
 var INVITE = /invitation\s+to\s+(bid|quote|propose)|\binvite\s+to\s+bid\b|\bbid\s+invit\w*|\bitb\b|\brfq\b|\brfp\b|request\s+for\s+(bids?|quotes?|proposals?|pricing)|\bbid\s+request|\bpricing\s+request|\bbidding\s+(opportunity|invitation)|\bplease\s+bid\b/i;
 var NOT_BID_TYPE = /resid|home|house|kitchen|bath|insur|claim|storm|mitig|restor|water|fire|mold|careers|partner/;
@@ -72,6 +72,8 @@ function roleOf(x){
   /* MRPRIME (owner 11/9): Memphis Reprographics' plan room / e-mails are public projects GrayCo bids as the prime */
   var mrHosts = arr(x.plansLinks).map(function(l){ return l ? (low(l.host) || hostOf(l.url)) : ''; }), mrFrom = domOf(x.fromEmail || x.from || (x.contact && x.contact.email) || (arr(x.emails)[0] || {}).from);
   if (/mr\s*plan\s*room|mrplanroom|memphis\s*reprographics/i.test(st) || /(^|\.)(mrplanroom|memphisreprographics)\.com$/.test(mrFrom) || mrHosts.some(function(h){ return /(^|\.)mrplanroom\.com$/.test(h); })) return out('prime', 'Memphis Reprographics plan room — public projects, bid as the prime');
+  /* PLANSCAN (owner 11/23): A2H's public plan room (a2hplanroom.com) — public works A2H designs, bid to the owner as the prime */
+  if (/a2h\s*plan\s*room|a2hplanroom/i.test(st) || /(^|\.)a2hplanroom\.com$/.test(mrFrom) || mrHosts.some(function(h){ return /(^|\.)a2hplanroom\.com$/.test(h); })) return out('prime', 'A2H plan room — public projects, bid as the prime');
   if (SUB_SRC.test(st)) return out('sub', 'came from ' + srcName(x) + ' (a plan room / GC)');
   if (org === 'api') return out('sub', 'came from the BuildingConnected bid board');
   if (PRIME_SRC.test(st)) return out('prime', 'came from ' + srcName(x) + ' (a public owner)');
