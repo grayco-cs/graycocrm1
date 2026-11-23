@@ -431,9 +431,10 @@ const MAIL = {
 };
 function mailHtml(head, body, big, button){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
-    '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
-    '<div style="font-size:18px;font-weight:bold">' + esc(head) + '</div></div>' +
+    /* patch MAILHEAD (owner 11/23: "more white and navy and look better, not faded"): white header + the full-colour logo + a navy bar with the title */
+    '<div style="background:#ffffff;padding:16px 20px 12px;border-radius:12px 12px 0 0;text-align:center;border:1px solid #E2DCCD;border-bottom:0">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/grayco-logo-wide.jpg') + '" alt="GrayCo Construction Services" width="200" style="display:block;margin:0 auto;border:0;max-width:200px;height:auto"></div>' +
+    '<div style="background:#0F1D2F;color:#ffffff;padding:12px 20px;text-align:center;font-size:18px;font-weight:bold">' + esc(head) + '</div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px;line-height:1.5">' + esc(body) + '</p>' +
     (big ? '<p style="font-size:32px;font-weight:bold;letter-spacing:6px;text-align:center;margin:18px 0">' + esc(big) + '</p>' : '') +

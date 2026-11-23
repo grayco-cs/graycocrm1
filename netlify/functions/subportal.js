@@ -1310,7 +1310,9 @@ async function deleteAuthUser(id){
 function portalLink(){ return PORTAL_ORIGIN + '/'; }
 function mailHtml(title, lines, button){
   return '<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F172A">' +
-    '<div style="background:#0F1D2F;color:#fff;padding:16px 20px;font-weight:700;font-size:16px;text-align:center"><img src="' + esc(CUSTOMER_PORTAL_ORIGIN + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="160" style="display:block;margin:0 auto 6px">GrayCo Bids</div>' +
+    /* patch MAILHEAD (owner 11/23: "I don't want it to say GrayCo Bids, I want that to be more white and navy and look better, not faded"):
+       a white header with the full-colour logo (its own white box — phones' dark mode can't wash it out) and a solid navy bar under it */
+    '<div style="background:#ffffff;padding:16px 20px 12px;text-align:center;border-bottom:6px solid #0F1D2F"><img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/grayco-logo-wide.jpg') + '" alt="GrayCo Construction Services" width="200" style="display:block;margin:0 auto;border:0;max-width:200px;height:auto"></div>' +
     '<div style="padding:20px;border:1px solid #EDE9E0;border-top:0"><h2 style="margin:0 0 12px;font-size:18px">' + esc(title) + '</h2>' +
     lines.map(function(l){ return '<p style="margin:0 0 10px;line-height:1.5">' + l + '</p>'; }).join('') +
     (button ? '<p style="margin:18px 0 0"><a href="' + esc(button.href) + '" style="background:#D4A017;color:#140665;padding:11px 18px;border-radius:999px;text-decoration:none;font-weight:700">' + esc(button.label) + '</a></p>' : '') +
@@ -1323,7 +1325,7 @@ async function sendMail(to, subject, html){
   if (!key || mailOff() || !to.length) return false;
   const r = await fetch('https://api.resend.com/emails', { method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Bids <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: to, subject: require('./_lib/mailtag.js').tag(subject, to, 'subs bids'), html: html }) });
+    body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>' /* MAILHEAD */, reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: to, subject: require('./_lib/mailtag.js').tag(subject, to, 'subs bids'), html: html }) });
   return r.ok;
 }
 /* patch RESETMAIL (owner 11/13: "the link didn't send to one guy for forgot password … fix this right now"): the bid site's
@@ -1353,7 +1355,7 @@ async function resetPassword(body){
   } catch (e) { throw Fail(503, 'The sign-in service did not answer. Try again in a minute.'); }
   let es = false;
   try { const rows = await fetch(sbUrl() + '/rest/v1/sp_rows?select=data&collection=eq.users&email=eq.' + encodeURIComponent(email) + '&limit=1', { headers: H() }).then(function(x){ return x.ok ? x.json() : []; }); es = !!(rows[0] && rows[0].data && rows[0].data.lang === 'es'); } catch (e) {}
-  const subj = es ? 'Cambie su contraseña de GrayCo Bids' : 'Reset your GrayCo Bids password';
+  const subj = es ? 'Cambie su contraseña de GrayCo' : 'Reset your GrayCo password';   /* MAILHEAD */
   const html = mailHtml(es ? 'Cambiar la contraseña' : 'Reset your password', es
     ? ['Alguien (esperamos que usted) pidió cambiar la contraseña de ' + esc(email) + ' en bids.grayco-cs.com.', 'Toque el botón para elegir una contraseña nueva. El enlace sirve una sola vez.', 'Si no lo pidió, ignore este correo.']
     : ['Someone (hopefully you) asked to reset the password for ' + esc(email) + ' on bids.grayco-cs.com.', 'Tap the button to choose a new password. The link works once.', 'If you did not ask, you can ignore this e-mail.'],
