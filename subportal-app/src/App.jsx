@@ -259,6 +259,7 @@ const T = {
     signupOptionalInfo: 'Optional but Helpful',
     signupDocsInfo: 'Company Documents',
     openPlans: 'Open plans', linkNeed: 'Paste the share link.', linkBad: 'That is not a link.', linkAdded: 'Plan link added — subs see "Open plans ↗".', driveBig: 'Upload big file to Google Drive', linkOr: 'Or paste a Drive / Dropbox link', linkBig: 'Over 50 MB? Paste a Drive/Dropbox link', linkLabelPh: 'Name (e.g. Full plan set)', linkAddBtn: 'Add plan link',
+    lateBid: 'Late bid', lateBidOk: 'The bid due date has passed. Because this job is on your list, you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', pastDueTab: '⏰ Past due', openTab: 'Open', jobNotFound: 'That job was not found.',   /* patch LATEBID */
     noDueDate: 'No due date', archivedJobs: 'Archived', showArchived: 'Show archived', hideArchived: 'Hide archived', archivedBadge: 'Archived',
     ppLater: 'I have it — will send later', ppUpload: 'Upload', ppExemptS: 'Exempt (sole proprietor)', ppLicOpt: 'License (optional)', cellPhone: 'Cell phone', crewSize: 'Crew size', tradesTap: 'Your trade(s) — tap all that fit', tradeOther: 'Other trade(s) — type them here', optional: 'optional',
     ppT: 'Your papers — optional', ppWhy: 'Upload these now for faster approval — a PDF or a phone photo is fine. With your W-9, general liability and workers’ comp on file, GrayCo can approve you and you can bid right away. No files handy? Tick “I have it — will send later”.',
@@ -563,6 +564,7 @@ const T = {
     signupOptionalInfo: 'Opcional pero Útil',
     signupDocsInfo: 'Documentos de la Compañía',
     openPlans: 'Abrir planos', linkNeed: 'Pegue el enlace.', linkBad: 'Eso no es un enlace.', linkAdded: 'Enlace agregado — los subcontratistas ven "Abrir planos ↗".', driveBig: 'Subir archivo grande a Google Drive', linkOr: 'O pegue un enlace de Drive / Dropbox', linkBig: '¿Más de 50 MB? Pegue un enlace de Drive/Dropbox', linkLabelPh: 'Nombre (p. ej. Juego completo)', linkAddBtn: 'Agregar enlace',
+    lateBid: 'Oferta tardía', lateBidOk: 'La fecha límite ya pasó. Como este trabajo está en su lista, todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', pastDueTab: '⏰ Vencidos', openTab: 'Abiertos', jobNotFound: 'No se encontró ese trabajo.',   /* patch LATEBID */
     noDueDate: 'Sin fecha límite', archivedJobs: 'Archivados', showArchived: 'Ver archivados', hideArchived: 'Ocultar archivados', archivedBadge: 'Archivado',
     ppLater: 'Lo tengo — lo envío después', ppUpload: 'Subir', ppExemptS: 'Exento (propietario único)', ppLicOpt: 'Licencia (opcional)', cellPhone: 'Celular', crewSize: 'Cuadrilla', tradesTap: 'Su(s) oficio(s) — toque todos los que hace', tradeOther: 'Otro(s) oficio(s) — escríbalos aquí', optional: 'opcional',
     ppT: 'Sus documentos — opcional', ppWhy: 'Súbalos ahora para una aprobación más rápida. Con el W-9, el seguro de responsabilidad general y el de compensación de trabajadores, GrayCo puede aprobarlo y usted puede licitar de inmediato. También puede agregarlos después en Mis Documentos.',
@@ -1198,7 +1200,6 @@ function BidApp() {
   useEffect(() => { setActiveJob(prev => prev ? (jobs.find(j => j.id === prev.id) || prev) : prev); }, [jobs]);
   /* patch BIDREMIND2: a reminder e-mail's link (?open=<job id>) opens that job once the list is loaded */
   const openWanted = useRef((() => { try { return new URLSearchParams(window.location.search).get('open') || ''; } catch (e) { return ''; } })());
-  useEffect(() => { const id = openWanted.current; if (!id || !jobs.length) return; const j = jobs.find(x => x.id === id); if (j) { openWanted.current = ''; setActiveJob(j); } }, [jobs]);
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [toast, setToast] = useState(null);
@@ -1208,6 +1209,9 @@ function BidApp() {
     setToast({ msg, kind });
     setTimeout(() => setToast(null), kind === 'error' ? 10000 : 3500);
   };
+  /* patch BIDREMIND2 · LATEBID (after loading / showToast exist) */
+  useEffect(() => { const id = openWanted.current; if (!id) return; const j = jobs.find(x => x.id === id); if (j) { openWanted.current = ''; setActiveJob(j); }
+    else if (!loading && user) { openWanted.current = ''; showToast(t.jobNotFound, 'error'); } }, [jobs, loading, user]);   /* patch LATEBID: a job they may not see (a past-due one they never had) → "not found" */
 
   // Load everything this person may see (the server filters it), after sign-in.
   async function loadAll(u) {
@@ -2204,8 +2208,11 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   /* patch BIDPOST: archived jobs (deleted in the CRM, auto-added ones cleaned up, taken off the bid portal) are hidden — "Show archived" */
   const [showArch, setShowArch] = useState(false);
   const archN = user.role === 'admin' ? jobs.filter(isArchivedJob).length : 0;
+  /* patch LATEBID: past-due jobs come off GrayCo's default list — "⏰ Past due" finds them */
+  const [showPast, setShowPast] = useState(false);
+  const pastN = user.role === 'admin' ? jobs.filter(j => !isArchivedJob(j) && jobPastDue(j)).length : 0;
   const visibleJobs = user.role === 'admin'
-    ? jobs.filter(j => showArch ? isArchivedJob(j) : !isArchivedJob(j))
+    ? jobs.filter(j => showArch ? isArchivedJob(j) : !isArchivedJob(j) && (showPast ? jobPastDue(j) : !jobPastDue(j)))
     : jobs.filter(j => {
         if (isArchivedJob(j)) return false;
         if (bidJobIds.has(j.id)) return true;  // always show jobs they've bid on
@@ -2213,12 +2220,17 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
         return canSeeJob(j, user, invites);
       });
 
-  const archBtn = archN > 0 && (
-    <div style={{ margin: '0 0 12px' }}>
-      <button type="button" data-archived-toggle="1" onClick={() => setShowArch(!showArch)}
+  const tabSt = on => ({ border: `1px solid ${styles.border}`, background: on ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13 });
+  const archBtn = (archN > 0 || user.role === 'admin') && (
+    <div style={{ margin: '0 0 12px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {user.role === 'admin' && !showArch && <>
+        <button type="button" data-jobtab="open" onClick={() => setShowPast(false)} style={tabSt(!showPast)}>{t.openTab}</button>
+        <button type="button" data-jobtab="pastdue" onClick={() => setShowPast(true)} style={tabSt(showPast)}>{t.pastDueTab} ({pastN})</button>
+      </>}
+      {archN > 0 && <button type="button" data-archived-toggle="1" onClick={() => setShowArch(!showArch)}
         style={{ border: `1px solid ${styles.border}`, background: showArch ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
         🗄 {showArch ? t.hideArchived : t.showArchived} ({archN})
-      </button>
+      </button>}
     </div>
   );
   if (visibleJobs.length === 0) {
@@ -2338,6 +2350,14 @@ function dueInfo(v, t) {
   return { ok: true, days, text: `${days} ${t.daysLeft}`, color: days <= 3 ? styles.accent : styles.text2, date: d.toLocaleDateString() };
 }
 function isArchivedJob(j) { return !!j && (j.status === 'archived' || !!j.archivedAt); }
+/* patch LATEBID: past the sub due date — the server's rule (bid due date + time, Central; no time = the end of that day) */
+function jobPastDue(j) {
+  const d = String((j && j.bidDueDate) || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const tm = /^\d{2}:\d{2}$/.test(String(j.bidDueTime || '')) ? j.bidDueTime + ':00' : '23:59:59';
+  let off = '-06:00';
+  try { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' }).formatToParts(new Date(d + 'T18:00:00Z')).find(x => x.type === 'timeZoneName'); const m = /GMT([+-])(\d{1,2})/.exec(p ? p.value : ''); if (m) off = m[1] + ('0' + m[2]).slice(-2) + ':00'; } catch (e) { /* the default */ }
+  const at = Date.parse(d + 'T' + tm + off); return !!at && Date.now() > at;
+}
 
 /* patch PLANREQ-T (owner 11/12: "need to put what trades we are bidding on some places"): the job's trades as chips; a sub's own trades
    are highlighted ("Your trade: Drywall") */
@@ -3989,6 +4009,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                           <div style={{ fontWeight: 700, fontSize: 15 }}>{b.userCompany}</div>
                           {b.accepted && <Badge color={styles.green}>✓ {t.accepted}</Badge>}
                           {b.rejected && <Badge color={styles.red}>{t.rejected}</Badge>}
+                          {b.late && <span data-latebid={b.id} title={b.lateChangedAt ? 'Changed after the due date' : 'Sent after the due date'}><Badge color="#B45309">⏰ {t.lateBid}</Badge></span>}
                         </div>
                         <div style={{ fontSize: 12, color: styles.text2 }}>{b.userName} • {new Date(b.submittedAt).toLocaleString()}</div>
                       </div>
@@ -4081,6 +4102,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             <SupplierQuoteForm t={t} job={job} user={user} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           ) : !isAdmin ? (
             <>
+            {job.lateBid && !job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidlate="1" style={{ fontWeight: 700, color: '#B45309' }}>⏰ {t.lateBidOk}</div></Card>}
             {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" data-pastdue={job.pastDue ? '1' : undefined} style={{ fontWeight: 700 }}>⏸ {job.pastDue ? t.pastDueClosed : t.biddingClosed}</div></Card>}
             {!job.biddingClosed && <Card>
               <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>

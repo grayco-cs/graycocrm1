@@ -182,6 +182,12 @@ await A.ev(() => { try { window._gcSys2.close(); } catch (e) {} });
 await A.ev(() => window._gcSys.bp.load(true)); await sleep(800);
 const dc = await A.ev(() => ({ j1: (document.querySelector('[data-sys-duecell="J1"]') || {}).textContent, past: !!document.querySelector('[data-sys-duecell="J4"] [data-pastdue]'), pastColor: getComputedStyle(document.querySelector('[data-sys-duecell="J4"] [data-pastdue]')).color }));
 ok('6 the list row: "Subs due … ✏️" and "Our bid due 11/20/26 14:00"; a past due date is red', /Subs due .* ✏️/.test(dc.j1) && /Our bid due 11\/20\/26 14:00/.test(dc.j1) && dc.past && /185, 28, 28/.test(dc.pastColor), dc);
+/* patch LATEBID: a past-due job is off the default "Open" list; "⏰ Past due" finds it (and only past-due ones) */
+const f0 = await A.ev(() => (document.querySelector('#gc-sys-bp-mount [data-sys="f"].on') || {}).getAttribute ? document.querySelector('#gc-sys-bp-mount [data-sys="f"].on').getAttribute('data-f') : '');
+const rowsIn = async f => { await A.ev(x => document.querySelector('#gc-sys-bp-mount [data-sys="f"][data-f="' + x + '"]').click(), f); await sleep(250); return A.ev(() => [...document.querySelectorAll('#gc-sys-bp-mount tr[data-sys-job]')].map(r => r.getAttribute('data-sys-job'))); };
+const lbOpen = await rowsIn('open'), lbPast = await rowsIn('pastdue'), lbBtn = await A.ev(() => (document.querySelector('#gc-sys-bp-mount [data-sys="f"][data-f="pastdue"]') || {}).textContent);
+ok('6b LATEBID: the past-due job (J4) is off "Open"; "⏰ Past due (1)" shows only it', lbOpen.indexOf('J4') < 0 && lbOpen.indexOf('J1') > -1 && lbPast.join() === 'J4' && /⏰ Past due \(1\)/.test(lbBtn), { lbOpen, lbPast, lbBtn });
+if (f0) await rowsIn(f0);
 await A.ev(() => document.querySelector('[data-sys-duecell="J4"] [data-sys="dueedit"]').click()); await sleep(200);
 await A.ev(() => { const f = document.querySelector('[data-sys-dueform="J4"]'); f.querySelector('[data-k=due]').value = '2026-12-04'; f.querySelector('[data-k=duet]').value = '10:00'; });
 await shot(A, 'crm07_list_due_inline_edit');

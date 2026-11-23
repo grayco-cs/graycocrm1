@@ -89,6 +89,7 @@ async function jobsList(){
     id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft' || ad,
     visibility: j.draft === true || low(j.status) === 'draft' || ad ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
     invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, reqSince: reqAt[s(j.id)] || '', leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
+    pastDue: !!(SP.dueOver && SP.dueOver(j)), lateBids: k.late || 0,   /* patch LATEBID: past the sub due date (Central, the server's rule) → off the default Open list; ⏰ late bids */
     biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), ourDue: validDay(j.ourDue), ourDueTime: s(j.ourDueTime), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
     auto: !GONE.test(s(j.status)) && autoAdded(j, k)
@@ -106,13 +107,13 @@ function tradesPicked(j){ if (!j) return false; if (j.tradesPicked === true) ret
 function tradeSplit(v){ const seen = {}; return s(v).split(/\s*[,;]\s*/).map(x => s(x)).filter(x => { const k = low(x); if (!x || seen[k]) return false; seen[k] = 1; return true; }); }
 function validDay(v){ const d = s(v).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || s(v).length > 10 && !/^[T ]/.test(s(v).slice(10, 11))) return ''; const x = new Date(d + 'T12:00:00Z'); return !isNaN(x) && x.toISOString().slice(0, 10) === d ? d : ''; }
 function counts(invites, bids, mail, plans, qs){
-  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 }); o[k] += v == null ? 1 : v; };
+  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0, late: 0 }); o[k] += v == null ? 1 : v; };
   invites.forEach(r => add(r.job_id, 'invites'));
-  bids.forEach(r => { if (!(r.data && r.data.fromEmailBid)) add(r.job_id, 'bids'); });
+  bids.forEach(r => { if (!(r.data && r.data.fromEmailBid)) { add(r.job_id, 'bids'); if (r.data && r.data.late) add(r.job_id, 'late'); } });   /* patch LATEBID: + ⏰ late bids */
   mail.forEach(x => { if (x && x.jobId) add(x.jobId, 'bids'); });
   plans.forEach(r => { const it = arr(r.data && r.data.items); add(r.job_id || r.id, 'plans', it.length); add(r.job_id || r.id, 'leadPlans', it.filter(leadFile).length); });   /* patch QAA: the bid-board files the Lead Inbox copied in */
   qs.forEach(r => { add(r.job_id, 'questions'); if (!s(r.data && r.data.answer)) add(r.job_id, 'openQ'); });
-  return id => n[id] || { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 };
+  return id => n[id] || { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0, late: 0 };
 }
 function postedOnPurpose(j){
   const person = v => !!s(v) && s(v) !== 'auto' && s(v) !== 'lead-inbox';
@@ -311,7 +312,8 @@ async function subBids(jobId){
       trade: s(b.trade) || tradeOf(u, crmByEmail, b.userEmail || u.email), amount: b.amount == null || b.amount === '' ? null : Number(b.amount),
       files: arr(b.docs).map(fileOut), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 3000),
       notes: s(b.notes).slice(0, 3000), awardMailedAt: s(b.awardMailedAt), lang: langOf(u, crmByEmail[low(b.userEmail || u.email)]),
-      phone: s(b.userPhone || u.phone), read: readOut(b.read), hasPdf: arr(b.docs).some(d => d && (/pdf/i.test(s(d.type)) || /\.pdf$/i.test(s(d.name || d.fileName)))) };   /* patch SUBSIMPLE: what GrayCo's reader got from the bid PDF (staff only) */   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
+      phone: s(b.userPhone || u.phone), late: !!b.late, lateAt: s(b.lateAt), lateChangedAt: s(b.lateChangedAt), read: readOut(b.read),   /* patch LATEBID: ⏰ Late bid */
+      hasPdf: arr(b.docs).some(d => d && (/pdf/i.test(s(d.type)) || /\.pdf$/i.test(s(d.name || d.fileName)))) };   /* patch SUBSIMPLE: what GrayCo's reader got from the bid PDF (staff only) */   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
   });
   arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).filter(x => x && x.jobId === jobId).forEach(x => {
     const sub = x.sub || {};
