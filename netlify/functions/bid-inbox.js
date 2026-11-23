@@ -456,6 +456,17 @@ const BOARDS = [
 function boardOf(host){ host = low(host); for (const b of BOARDS) if (b[0].test(host)) return b[1]; if (/\.gov$|\.k12\.|\.us$/.test(host)) return 'Government'; return ''; }
 const FILE_HOSTS = /(^|\.)(dropbox\.com|box\.com|drive\.google\.com|docs\.google\.com|sharefile\.com|egnyte\.com|onedrive\.live\.com|1drv\.ms|sharepoint\.com|wetransfer\.com|we\.tl|hightail\.com)$/;
 const JUNK_LINK = /unsubscribe|optout|opt-out|preferences|privacy|terms|facebook\.com|twitter\.com|x\.com\/|linkedin\.com|instagram\.com|youtube\.com|apple\.com\/app|play\.google\.com|mailto:|tel:|\.(png|jpg|gif)(\?|$)|tracking|\/o\/[A-Za-z0-9]{20,}|list-manage|sendgrid\.net\/wf\/open|google\.com\/maps/i;
+/* patch ACCTMAIL: a bid site's account e-mail (not a bid) — and its confirm / verify / reset links for the office To-Do */
+const ACCT_MAIL = /\b(verify (your )?(e-?mail|account|address)|confirm (your )?(e-?mail|account|registration|subscription|address|sign[- ]?up)|activate (your )?account|account (activation|created|approved|registration|confirmation|verification)|reset (your )?password|password reset|verification code|one[- ]time (code|passcode|password)|(sign[- ]?in|login|security) code|complete your (registration|sign[- ]?up|profile)|registration (confirmation|received|approved|complete)|thanks? (you )?for (registering|signing up)|welcome to\b)/i;
+const ACCT_NOT = /\b(invitation|invited?|invite to|bids?|bidding|rfp|rfq|itb|ifb|addend(um|a)|pre-?bid|proposals?|due date|bids? due)\b/i;
+function acctLinks(mail){
+  const out = [];
+  String(mail.html || '').replace(/href\s*=\s*["'](https?:\/\/[^"']+)["']/gi, (m, u) => { out.push(decodeEntities(u)); return m; });
+  String(mail.text || '').replace(/https?:\/\/[^\s<>"')\]]+/g, (u) => { out.push(u); return u; });
+  const uniq = Array.from(new Set(out.map(u => u.replace(/[).,;]+$/, '')))).filter(u => u.length < 600 && !/unsubscribe|privacy|facebook|twitter|linkedin|instagram|\.(png|jpe?g|gif)(\?|$)/i.test(u));
+  const key = uniq.filter(u => /confirm|verif|activat|token|reset|password|register|signup|sign-up|login|code/i.test(u));
+  return (key.length ? key : uniq).slice(0, 3);
+}
 function linksOf(mail){
   const out = [], seen = {};
   const add = (url, label) => {
@@ -1046,6 +1057,18 @@ async function processEventCore(evt, opts){
   if (/^(forwarding-noreply|groups-noreply|noreply-.*groups)@google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email)) {
     await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== mail.id).concat([{ id: mail.id || itemId(mail.subject + mail.date), at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20));
     return { status: 200, body: { ok: true, notice: true } };
+  }
+  /* patch ACCTMAIL (owner 11/23: "I signed up for leads@ email, does that go to office when people send confirmation emails etc"):
+     a plan room / bid site's account e-mail to leads@ or bids@ (confirm your e-mail, activate, verification code, password reset,
+     welcome / registration approved) was read as "not a bid" and dropped. Now: kept under Lead Inbox → Messages, and on the office
+     To-Do with the sender, the subject, the confirm links and the start of the text. Never a lead; nothing is sent anywhere. */
+  if ((toLeads || toBids) && ACCT_MAIL.test(mail.subject) && !ACCT_NOT.test(mail.subject)) {   /* (a plan room's own domain reads as a bid board, so the subject decides) */
+    const id = mail.id || itemId(mail.subject + mail.date);
+    try { await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== id).concat([{ id: id, at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20)); } catch (e) {}
+    const links = acctLinks(mail), who = s(mail.from.name) || mail.from.email;
+    try { await require('./portal.js')._core.officeTodo('acctmail_' + itemId(mail.from.email + '|' + mail.subject), '🔑 Account e-mail to ' + (toLeads ? 'leads@' : 'bids@') + ' — ' + s(who).slice(0, 60) + ': ' + s(mail.subject).slice(0, 120),
+      'From ' + mail.from.email + '. A bid site / plan room account e-mail (sign-up confirmation, code or password) — finish it so their bid alerts keep coming.' + (links.length ? '\nLinks:\n' + links.join('\n') : '') + '\n\n' + s(mail.text).replace(/\s+\n/g, '\n').slice(0, 900)); } catch (e) {}
+    return { status: 200, body: { ok: true, notice: true, account: true } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
   if (toBids && !viaLeads) {   /* patch BIDSEND (+ LEADROUTE) */
