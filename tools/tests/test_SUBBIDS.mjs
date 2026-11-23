@@ -248,7 +248,7 @@ await t('portal-app.js: the card, the sheet and the form are there in English an
 const SPD = '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad';
 /* BIDONLY (owner 11/11: "only can see in it after we approve … whoever signs in can see plans tomorrow"): a sub approved on the bid site who
    is NOT in the CRM yet signs in to the portal with the e-mail + password they chose and sees the jobs to bid; unapproved → no portal */
-T.sp_rows.push(spRow('users', 'u_f1', { id: 'u_f1', role: 'sub', approved: true, email: 'fay@freshframing.test', name: 'Fay Fresh', company: 'Fresh Framing LLC', phone: '901-555-0177', trades: ['Framing'] }, { user_id: 'u_f1', email: 'fay@freshframing.test' }));
+T.sp_rows.push(spRow('users', 'u_f1', { id: 'u_f1', role: 'sub', approved: true, email: 'fay@freshframing.test', name: 'Fay Fresh', company: 'Fresh Framing LLC', phone: '901-555-0177', trades: ['Framing', 'Drywall'] /* TRADEVIS: a trade on j_open, so its public job shows */ }, { user_id: 'u_f1', email: 'fay@freshframing.test' }));
 T.sp_rows.push(spRow('users', 'u_g1', { id: 'u_g1', role: 'sub', approved: false, email: 'gus@notyet.test', name: 'Gus Notyet', company: 'Not Yet Co' }, { user_id: 'u_g1', email: 'gus@notyet.test' }));
 const pw = async (email, password) => { const r = await PA.handler({ httpMethod: 'POST', headers: { origin: 'https://portal.grayco-cs.com', 'x-nf-client-connection-ip': '10.9.0.' + (++ipN % 250) }, body: JSON.stringify({ action: 'signin-password', email, password }) }); let j = {}; try { j = JSON.parse(r.body); } catch (e) {} return { code: r.statusCode, j }; };
 await t('BIDONLY: approved on the bid site, not in the CRM → e-mail + password opens the portal (portal turned on automatically)', async () => {

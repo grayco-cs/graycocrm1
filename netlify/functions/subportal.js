@@ -406,6 +406,20 @@ function needSub(who, approvedOnly){
   if (approvedOnly && !who.approved) throw Fail(403, 'Your account is waiting for GrayCo to approve it.');
 }
 
+/* patch TRADEVIS (owner 11/23: "On the sub and bid portal only show jobs that have their trade requested or their trade in it … If there
+   is no electrical for a GC job then don't show to electrical companies etc. Anything they do on their profile show to them"):
+   a PUBLIC job shows to a sub only when one of the trades on their profile is among the job's trades (Trades we are bidding /
+   tradesSought + the trade scopes). Always shown: a job they were invited to, one they bid on, a job with no trades listed yet, and
+   every job to a sub whose profile has no trades yet. */
+const TRADE_SYN = [/\belectric/, /\b(hvac|mechanical|heating|air condition|a\/c)\b/, /\bplumb/, /\b(drywall|sheetrock|gypsum|metal stud)/, /\bpaint/, /\broof/, /\b(concrete|flatwork|foundation)/, /\b(masonry|brick|block|stone)/, /\b(fire (sprinkler|protection)|sprinkler)/, /\b(low voltage|data cabling|security|alarm)/, /\b(demo|demolition)/, /\binsulation/, /\b(glass|glazing|storefront)/, /\b(doors?|hardware)\b/, /\b(cabinet|millwork|casework)/, /\btile/, /\b(carpet|flooring|vinyl|lvt|lvp)/, /\b(framing|carpentry|framer)/, /\b(site ?work|excavat|grading|earthwork)/, /\b(landscap|irrigation)/, /\b(paving|asphalt)/, /\b(steel|welding|structural)/, /\bgutter/, /\bsiding/, /\b(ceiling|acoustic)/, /\b(abatement|asbestos|mold remediation)/, /\b(janitorial|final clean)/, /\belevator/, /\bfenc/, /\bsignage/];
+function tvList(v){ return (Array.isArray(v) ? v.map(function(x){ return x && typeof x === 'object' ? s(x.trade || x.name) : s(x); }) : s(v).split(/\s*[,;\n]\s*/)).map(function(x){ return low(x).replace(/[^a-z0-9/ ]+/g, ' ').replace(/\s+/g, ' ').trim(); }).filter(Boolean); }
+function jobTrades(j){ return tvList(j && j.tradesSought).concat(tvList((Array.isArray(j && j.tradeScopes) ? j.tradeScopes : []).map(function(t){ return t && t.trade; }))); }
+function tradeOne(a, b){ if (a === b || (a.length > 3 && b.indexOf(a) > -1) || (b.length > 3 && a.indexOf(b) > -1)) return true; return TRADE_SYN.some(function(rx){ return rx.test(a) && rx.test(b); }); }
+function tradeFit(j, profile){
+  const want = jobTrades(j); if (!want.length) return true;
+  const mine = tvList((Array.isArray(profile && profile.trades) ? profile.trades : []).concat([s(profile && profile.trade)]).filter(Boolean)); if (!mine.length) return true;
+  return want.some(function(w){ return mine.some(function(m){ return tradeOne(w, m); }); });
+}
 /* ── what a subcontractor may see ─────────────────────────────────────────── */
 async function subScope(who){
   if (who.isSupplier) return supplierScope(who);   /* patch SUPPLIER */
@@ -422,7 +436,7 @@ async function subScope(who){
     jobs.forEach(function(r){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;   /* patch SYS2: a deleted bid job is gone for every sub, even one who bid on it */
-      const canSee = (j.visibility || 'public') === 'public' || invited.has(r.id);
+      const canSee = ((j.visibility || 'public') === 'public' && tradeFit(j, who.profile)) || invited.has(r.id);   /* patch TRADEVIS */
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
       if (canSee && open && !j.biddingClosed) biddable[r.id] = true;   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids */
@@ -2429,6 +2443,7 @@ exports.handler = async function (event) {
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
 exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
+exports._hub.tradeFit = tradeFit; exports._hub.jobTrades = jobTrades;   /* patch TRADEVIS */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

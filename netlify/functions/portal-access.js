@@ -1099,7 +1099,7 @@ async function bidJobsFor(p, sub){
     const out = [];
     arr(all[0]).forEach(function(r){ const j = r.data || {}; const st = low(j.status);
       if (j.draft === true || st === 'draft' || H.isGone(j)) return;
-      const open = ['closed', 'won', 'lost'].indexOf(st) < 0, canSee = (j.visibility || 'public') === 'public' || inv.has(r.id), b = mine[r.id];
+      const open = ['closed', 'won', 'lost'].indexOf(st) < 0, canSee = ((j.visibility || 'public') === 'public' && (!H.tradeFit || H.tradeFit(j, p))) || inv.has(r.id), b = mine[r.id];   /* patch TRADEVIS */
       if (!(canSee && open) && !b) return;
       const bs = low(b && (b.status || b.result)) /*AWARDFLOW*/ + (b && b.accepted ? ' accepted' : b && b.rejected ? ' rejected' : ''), res = !b ? (inv.has(r.id) ? 'invited' : 'open') : /award|won|accept|select/.test(bs) && !/not|reject/.test(bs) ? 'awarded' : (/lost|declin|reject|not/.test(bs) || (!open && st !== 'closed')) ? 'not-selected' : 'sent';
       const parts = s(j.address).split(',').map(function(x){ return x.trim(); }).filter(Boolean);
