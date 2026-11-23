@@ -1,0 +1,17 @@
+# trimmed copy of www.a2hplanroom.com/robots.txt (11/2026)
+User-agent: *
+Content-Signal: ai-input=no, search=yes, ai-train=no
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: *
+Crawl-delay: 5
+Disallow: /viewer/
+Disallow: /preview/
+Disallow: /webviewer/
+Disallow: /register/check-username
+Disallow: /register/check-email

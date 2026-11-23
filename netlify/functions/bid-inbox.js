@@ -448,9 +448,10 @@ function ownOrAuto(mail){
 const BOARDS = [
   [/(^|\.)buildingconnected\.com$/, 'BuildingConnected'], [/(^|\.)planhub\.com$/, 'PlanHub'],
   [/(^|\.)aandbplanroom\.com$/, 'A&B Planroom'], [/(^|\.)rkaplanroom\.com$/, 'RKA Planroom'],
+  [/(^|\.)a2hplanroom\.com$/, 'A2H plan room'], [/(^|\.)wtplanroom\.com$/, 'WT plan room'],   /* PLANSCAN */
   [/(^|\.)(isqft|constructconnect|bidclerk|cmdgroup|dodge|construction)\.com$/, 'ConstructConnect/Dodge'],
   [/(^|\.)(procore|smartbidnet|pipelinesuite|bidmail|bidplanroom|e-builder|textura|plangrid|bluebeam|planswift)\.(com|net)$/, 'Bid platform'],
-  [/(^|\.)(ionwave\.net|bidnetdirect\.com|centralbidding\.com|demandstar\.com|bonfirehub\.com|opengov\.com|periscopeholdings\.com|bidsync\.com|questcdn\.com|arbuy\.arkansas\.gov|ms\.gov|tn\.gov|arkansas\.gov)$/, 'Government'],
+  [/(^|\.)(ionwave\.net|bidnetdirect\.com|centralbidding\.com|centralauctionhouse\.com|demandstar\.com|bonfirehub\.com|opengov\.com|periscopeholdings\.com|bidsync\.com|questcdn\.com|arbuy\.arkansas\.gov|ms\.gov|tn\.gov|arkansas\.gov)$/, 'Government'],
   [/(^|\.)(memphistn|shelbycountytn|shelbycountybids|scsk12|mlgw|flymemphis|desotocountyms|southaven|olivebranchms|cityofsouthaven|hernandoms)\.(gov|org|com)$/, 'Government']
 ];
 function boardOf(host){ host = low(host); for (const b of BOARDS) if (b[0].test(host)) return b[1]; if (/\.gov$|\.k12\.|\.us$/.test(host)) return 'Government'; return ''; }
