@@ -49,6 +49,85 @@ const t = fs.readFileSync(path.join(build, 'index.html'), 'utf8');
   ok(!/wjohnson|ngray|Wesley|Nick/i.test(blk), 'no names or e-mails in the block (roles decide)');
 }
 
+/* ── C. BIDAUTO (node: the real bid-hub / subportal / bid-portal over the in-memory Supabase of qaa_world.mjs) ── */
+if (fs.existsSync(path.join(build, 'tools/patch_BIDAUTO.py'))) {
+  console.log('C. node: BIDAUTO — a job is on the bid portal only when a person put it there');
+  const W = await import(pathToFileURL(path.join(path.dirname(new URL(import.meta.url).pathname), 'qaa_world.mjs')).href);
+  const { DB, putRow, rowData } = W;
+  W.install();
+  const F = W.fns(build), Hb = F.hub._test, BPX = require(path.join(build, 'netlify/functions/_lib/bid-portal.js'));
+  W.H.resetCloud();
+  W.H.cset('users', [{ id: 'u1', name: 'Owner One', email: 'wjohnson@grayco-cs.com', role: 'Admin' }]);
+  DB.sp_rows.length = 0;
+  const OWN = { ok: true, email: 'wjohnson@grayco-cs.com', name: 'Owner One', admin: true, estimator: false, canPublic: true, canInvite: true };
+  const AUTO = { status: 'open', draft: false, visibility: 'private', autoPrivate: true, openedBy: 'auto', openedPrivateAt: '2026-11-01T12:00:00Z', createdBy: 'lead-inbox' };
+  const job = (id, extra) => putRow('jobs', id, Object.assign({ id, title: 'Demo job ' + id, leadInbox: { id: 'LI-' + id } }, extra), { job_id: id });
+  job('J_auto', AUTO);
+  job('J_auto2', Object.assign({}, AUTO, { openedBy: 'someone@grayco-cs.com' }));   /* the old CRM sweep opened it under the signed-in person's name */
+  job('J_abid', AUTO); putRow('bids', 'b1', { id: 'b1', jobId: 'J_abid', userId: 'u_b', amount: 10 }, { job_id: 'J_abid', user_id: 'u_b' });
+  job('J_aq', AUTO); putRow('questions', 'q1', { id: 'q1', jobId: 'J_aq', userId: 'u_x', body: '?' }, { job_id: 'J_aq', user_id: 'u_x' });
+  job('J_ainv', AUTO); putRow('invites', 'i1', { id: 'i1', jobId: 'J_ainv', email: 'inv@demo.test' }, { job_id: 'J_ainv', email: 'inv@demo.test' });
+  job('J_apr', AUTO); putRow('planreqs', 'pr1', { id: 'pr1', jobId: 'J_apr', email: 'pr@demo.test', at: '2026-11-02T12:00:00Z' }, { job_id: 'J_apr' });
+  job('J_posted', { status: 'open', draft: false, visibility: 'private', postedAt: '2026-11-10T12:00:00Z', postedBy: 'wjohnson@grayco-cs.com', openedPrivateAt: '2026-11-10T12:00:00Z', openedBy: 'wjohnson@grayco-cs.com', crmLeadId: 'LX1' });
+  job('J_pub', Object.assign({}, AUTO, { visibility: 'public', publishedAt: '2026-11-03T12:00:00Z', publishedBy: 'wjohnson@grayco-cs.com' }));
+  job('J_draft', { status: 'draft', draft: true, visibility: 'private', createdBy: 'lead-inbox' });
+  ok(BPX.autoOpened({ autoPrivate: true, openedBy: 'auto', draft: false, status: 'open' }) && !BPX.autoOpened({ autoPrivate: true, draft: false, status: 'open', postedAt: 'x' }) && !BPX.autoOpened({ draft: true, autoPrivate: true })
+    && BPX.autoDraft({ openedBy: 'auto', draft: false }, {}) && !BPX.autoDraft({ openedBy: 'auto', draft: false }, { bids: 1 }), 'the rule (bid-portal.js): auto-opened = the old automatic opening and no person since; a sub\'s touch keeps it');
+  const list = await Hb.jobsList(), J = id => list.find(x => x.id === id) || {};
+  ok(['J_auto', 'J_auto2'].every(id => J(id).autoDraft && J(id).draft && J(id).visibility === 'draft'), 'the old automatic jobs nobody touched read as drafts (read time — the stored rows are unchanged)', ['J_auto', 'J_auto2'].map(id => [J(id).visibility, J(id).autoDraft]));
+  ok(rowData('jobs/J_auto').draft === false && rowData('jobs/J_auto').visibility === 'private' && rowData('jobs/J_auto').autoPrivate === true, '… nothing was written to the bid job itself');
+  ok(['J_abid', 'J_aq', 'J_ainv', 'J_apr'].every(id => J(id).autoOpenedTouched && !J(id).draft && J(id).visibility === 'private'), 'a job a sub already touched (a bid, a question, an invite, a plan request) is kept as it is', ['J_abid', 'J_aq', 'J_ainv', 'J_apr'].map(id => [id, J(id).visibility, J(id).subTouch]));
+  ok(J('J_posted').personOpened && !J('J_posted').draft && J('J_posted').visibility === 'private' && J('J_pub').visibility === 'public' && !J('J_pub').autoDraft, 'a job a person put on (📢 posted, published) is still listed as on the bid portal', [J('J_posted'), J('J_pub')].map(j => [j.id, j.visibility, j.personOpened]));
+  ok(J('J_draft').draft && !J('J_draft').autoDraft, 'a plain draft stays a draft');
+  const rep = JSON.parse((await F.hub.handler({ httpMethod: 'GET', headers: {}, queryStringParameters: { autoopen: '1' } })).body || '{}');
+  ok(rep && (rep.error || rep.ok), 'GET ?autoopen=1 answers (staff sign-in checked)', rep);
+  const sub = await (async () => { DB.gc_staff.length = 0; DB.gc_staff.push({ email: 'wjohnson@grayco-cs.com', name: 'Owner One', role: 'admin', active: true }); W.TOK['t-own'] = 'wjohnson@grayco-cs.com';
+    return JSON.parse((await F.hub.handler({ httpMethod: 'GET', headers: { authorization: 'Bearer t-own', origin: 'https://app.local' }, queryStringParameters: { autoopen: '1' } })).body || '{}'); })();
+  ok(sub.ok && sub.autoOpened === 6 && sub.nowDrafts === 2 && sub.subTouched.map(x => x.id).sort().join() === 'J_abid,J_ainv,J_apr,J_aq', 'the owner\'s list (?autoopen=1, admins): 6 opened by the old automatic way, 2 now drafts, 4 a sub touched — kept, listed', sub);
+  /* the subs' view */
+  putRow('users', 'u_a', { id: 'u_a', role: 'sub', approved: true, email: 'any@demo.test', name: 'Any Sub', company: 'Any Co', trades: [] }, { user_id: 'u_a', email: 'any@demo.test' });
+  putRow('users', 'u_i', { id: 'u_i', role: 'sub', approved: true, email: 'inv@demo.test', name: 'Invited Sub', company: 'Inv Co', trades: [] }, { user_id: 'u_i', email: 'inv@demo.test' });
+  putRow('users', 'u_b', { id: 'u_b', role: 'sub', approved: true, email: 'bid@demo.test', name: 'Bid Sub', company: 'Bid Co', trades: [] }, { user_id: 'u_b', email: 'bid@demo.test' });
+  Object.assign(W.TOK, { 't-a': 'any@demo.test', 't-i': 'inv@demo.test', 't-b': 'bid@demo.test' });
+  const seen = async tok => ((JSON.parse((await F.sp.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer ' + tok, origin: 'https://bids.test' }, body: JSON.stringify({ action: 'load', keys: ['jobs'] }) })).body).data || {}).jobs || []).map(j => j.id).sort();
+  const sa = await seen('t-a'), si = await seen('t-i'), sb2 = await seen('t-b');
+  ok(sa.join() === 'J_pub', 'a sub who was never invited sees only the job a person published — none of the old automatic ones', sa);
+  ok(si.includes('J_ainv') && !si.includes('J_auto') && sb2.includes('J_abid') && !sb2.includes('J_auto2'), 'the sub invited to an old automatic job, and the sub who bid on one, still see it', { si, sb2 });
+  /* nothing opens a job by itself */
+  process.env.BID_PORTAL_AUTO = '1';
+  const sw = await F.hub.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer t-own', origin: 'https://app.local' }, body: JSON.stringify({ op: 'sweep' }) });
+  const swb = JSON.parse(sw.body || '{}');
+  ok(swb.ok && swb.opened === 0 && rowData('jobs/J_draft').draft === true, 'bid-hub op sweep never opens a draft, even with BID_PORTAL_AUTO=1', swb);
+  const bp = BPX.make({ env: k => process.env[k] || '', s: v => (v == null ? '' : String(v)).trim(), low: v => (v == null ? '' : String(v)).trim().toLowerCase(), arr: v => Array.isArray(v) ? v : [], nowIso: () => new Date().toISOString(),
+    sbUrl: () => 'https://sb.test', svcH: h => Object.assign({ apikey: 'svc-test', Authorization: 'Bearer svc-test' }, h || {}), kvCas: async () => ({}), kvGet: async () => [] });
+  const it = { id: 'LI-newlead', title: 'Demo new bid lead', source: 'City of Demo', type: 'Government', bidDue: '2026-12-10', estimator: 'Demo Estimator' };
+  const r1 = await bp.setPortal(it, { mode: 'private', auto: true }, { email: 'auto' }), j1 = rowData('jobs/' + bp.jobIdFor(it));
+  ok(r1.ok && r1.state === 'draft' && j1 && j1.draft === true && j1.status === 'draft' && !j1.autoPrivate && !j1.openedPrivateAt, 'an automatic setPortal call leaves a NEW lead\'s job a hidden draft (never opened to subs)', { r1, j1: j1 && { d: j1.draft, s: j1.status, v: j1.visibility } });
+  const r2 = await bp.setPortal(it, { mode: 'private' }, { email: 'wjohnson@grayco-cs.com' }), j2 = rowData('jobs/' + bp.jobIdFor(it));
+  ok(r2.ok && r2.state === 'private' && j2.draft === false && j2.personOpenedBy === 'wjohnson@grayco-cs.com' && BPX.personOpened(j2) && !BPX.autoOpened(j2), 'a person\'s "private" puts it on (personOpened)', { r2, by: j2.personOpenedBy });
+  delete process.env.BID_PORTAL_AUTO;
+  const bi = fs.readFileSync(path.join(build, 'netlify/functions/bid-inbox.js'), 'utf8');
+  ok(!/setPortal\(it, \{ mode: 'private', auto: true \}/.test(bi) && /const auto = false;/.test(bi), 'bid-inbox: no automatic private opening of new leads (afterStore), the CRM\'s portal op never auto-opens');
+  /* a person opens an old automatic job → on */
+  const vr = await F.hub.handler({ httpMethod: 'POST', headers: { authorization: 'Bearer t-own', origin: 'https://app.local' }, body: JSON.stringify({ op: 'visibility', jobId: 'J_auto', mode: 'private' }) });
+  const ja = rowData('jobs/J_auto');
+  ok(vr.statusCode === 200 && ja.autoPrivate === false && ja.personOpenedBy === 'wjohnson@grayco-cs.com' && !(await Hb.jobsList()).find(x => x.id === 'J_auto').autoDraft, 'a person\'s 🔒 Private on an old automatic job puts it on the bid portal for real', { code: vr.statusCode, ja: { ap: ja.autoPrivate, by: ja.personOpenedBy } });
+  /* the badge text (the Lead Inbox Leads list) */
+  const seg = (a, b) => { const i = t.indexOf(a), j = t.indexOf(b, i); return i >= 0 && j > i ? t.slice(i, j) : ''; };
+  const code = seg('function lxOn(p){', 'function lxHay(l){');
+  const mk = (on) => new Function('window', 'isNew', "function s(v){ return v == null ? '' : String(v).trim(); }\n" + code + '\nreturn { lxStatus: lxStatus, lxOn: lxOn };')({ _gcBidPortalOn: () => on }, () => false);
+  const L0 = { id: 'L1', inboxId: 'LI-1' };
+  ok(code && mk('draft').lxStatus(L0, { jobId: 'j', state: 'published' }).t === 'Draft (not on portal)' && mk('on').lxStatus(L0, { jobId: 'j', state: 'published' }).t === 'On bid portal'
+    && mk('on').lxStatus(L0, { jobId: 'j', state: 'private' }).t === 'On bid portal' && mk('gone').lxStatus(L0, { jobId: 'j', state: 'published' }).t !== 'On bid portal', 'the Leads list badge: "On bid portal" only for a job a person put on; the old automatic one says "Draft (not on portal)"');
+  const pon = seg('W._gcBidPortalOn = function(p){', '\n};');
+  const PO = (jobsL) => new Function('W', 'JOBS', 'jobs', 'BA', "function s(v){ return v == null ? '' : String(v).trim(); } function arr(v){ return Array.isArray(v) ? v : []; }\n" + seg('function bidJobOf(id){', 'W._gcBidPortalOn = function(p){') + pon + '\n};\nreturn W._gcBidPortalOn;')({}, { at: jobsL ? 1 : 0, list: jobsL }, () => Promise.resolve([]), { asked: Date.now() });
+  const LST = (await Hb.jobsList());
+  const on = PO(LST);
+  ok(on({ jobId: 'J_abid', state: 'published' }) === 'on' && on({ jobId: 'J_auto2', state: 'published' }) === 'draft' && on({ jobId: 'J_posted', state: 'private' }) === 'on' && on({ jobId: 'J_draft', state: 'draft' }) === 'draft' && on(null) === '',
+    'window._gcBidPortalOn reads bid-hub\'s list: the person-opened and the sub-touched jobs are on, the untouched automatic one is a draft');
+  ok(PO(null)({ jobId: 'J_x', state: 'published' }) === 'draft' && PO(null)({ jobId: 'J_x', state: 'published', publishedBy: 'wjohnson@grayco-cs.com' }) === 'on', '… before the list is loaded only a person\'s Publish counts as on');
+}
+
 if (process.env.LEADFIX_NODE_ONLY === '1') { console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); }
 
 /* ── B. the CRM ── */

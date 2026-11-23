@@ -78,6 +78,9 @@ const CLOSED = ['closed', 'won', 'lost'];
    visibility "private", draft:true). A draft is for GrayCo staff only — never shown to a sub, invited or not,
    until an admin publishes it (CRM Lead Inbox "Publish to bid portal", or the same button on the job here). */
 function isDraft(j){ return !!j && (j.draft === true || low(j.status) === 'draft'); }
+/* patch BIDAUTO: a job the old automatic way opened (autoPrivate / openedBy 'auto') that no person put on the bid portal reads as a draft for
+   every sub — unless the sub was invited to it or already bid / quoted on it (a sub who touched it keeps it) */
+function autoOpened(j){ try { return require('./_lib/bid-portal.js').autoOpened(j); } catch (e) { return false; } }
 /* patch SYS2: deleted from the CRM's 🏗 Bid portal tab (a soft delete, restorable for 30 days) — no sub sees it any more */
 function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedAt); }
 /* patch SYS2: what a sub sees of a bid job — trade scopes of their own trades only (all of them when they gave no trade),
@@ -464,6 +467,7 @@ async function subScope(who){
     jobs.forEach(function(r){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;   /* patch SYS2: a deleted bid job is gone for every sub, even one who bid on it */
+      if (autoOpened(j) && !invited.has(r.id) && !bidOn.has(r.id)) return;   /* patch BIDAUTO */
       const canSee = ((j.visibility || 'public') === 'public' && tradeFit(j, who.profile)) || invited.has(r.id);   /* patch TRADEVIS */
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
@@ -495,6 +499,7 @@ async function supplierScope(who){
     jobs.forEach(function(r){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;
+      if (autoOpened(j) && !invited.has(r.id) && !quoted.has(r.id)) return;   /* patch BIDAUTO */
       const canSee = j.suppliersCanQuote === true && ((j.visibility || 'public') === 'public' || invited.has(r.id));
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (quoted.has(r.id) || (canSee && open)) visible[r.id] = r;
@@ -2394,8 +2399,8 @@ async function inviteSend(who, body){
     }
     rows.push(rowFor('invites', inv)); out.push(pick(inv, ['id', 'jobId', 'email', 'company', 'token', 'createdAt', 'createdBy', 'as', 'mailedAt', 'usedAt', 'usedBy']));
   }
-  if (isDraft(jr.data)) {   /* an invite opens a draft as PRIVATE (the CRM's invite does the same): only invited accounts see it */
-    await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);
+  if (isDraft(jr.data) || autoOpened(jr.data)) {   /* an invite opens a draft as PRIVATE (the CRM's invite does the same): only invited accounts see it (patch BIDAUTO: + a job the old automatic way opened — a person puts it on now) */
+    await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: isDraft(jr.data) ? 'open' : jr.data.status, openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, autoPrivate: false, personOpenedAt: jr.data.personOpenedAt || at, personOpenedBy: who.email, updatedAt: at }))], who.email);
   }
   await upsertRows(rows, who.email);
   return { ok: true, invites: out, mailed: mailed, mailOff: !sw.invite, skippedDnu: skippedDnu };
@@ -2784,7 +2789,7 @@ exports.handler = async function (event) {
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._sv = { svUnconfirmed, svConfirm, svResend, SV_MSG };   /* SIGNUPVERIFY: portal-access / sub-accounts / tests */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { autoOpened: autoOpened, crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 exports._hub.tradeFit = tradeFit; exports._hub.jobTrades = jobTrades;   /* patch TRADEVIS */
 Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */

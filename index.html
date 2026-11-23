@@ -135382,10 +135382,10 @@ function portalTag(l){
   var p = portalOf(l), st = S.portal || {};
   if (!l.inboxId) return '';
   if (p && p.jobId && typeof window._gcBidJobGone === 'function' && window._gcBidJobGone(p.jobId)) return '';   /* patch QAA: archived / deleted on the bid portal */
-  if (p && p.state === 'published') return '<span class="tg t-bp on">✓ On the bid portal</span>';
+  if (p && /^(published|public|private)$/.test(s(p.state)) && lxOn(p) === 'on') return '<span class="tg t-bp on">✓ On the bid portal</span>';   /* patch BIDAUTO */
   if (p && p.state === 'removed') return '<span class="tg t-bp">Bid-portal draft deleted</span>';
   if ((p && p.state === 'queued') || st.ready === false) return '<span class="tg t-bp" title="' + esc(st.why || (p && p.why) || '') + '">Bid-portal draft waiting (portal not set up)</span>';
-  if (p && p.jobId) return '<span class="tg t-bp">Draft in the bid portal</span>';
+  if (p && p.jobId) return '<span class="tg t-bp">Draft (not on the bid portal)</span>';   /* patch BIDAUTO */
   return '';
 }
 function rsCard(l){
@@ -135421,7 +135421,7 @@ function card(l){
     + '<div class="drop" data-drop="lead">Drop plan files here</div>'
     + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (window._gcBidRole ? window._gcBidRole.btn(l) : (l.pm ? 'Change PM' : 'Assign PM')) + '</button>' : '')   /* patch BIDROLE */
     + (l.pid ? '<button class="b pri" data-a="openjob">Open bid job</button>' : '<button class="b pri" data-a="job">Create bid job</button>')
-    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
+    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && (/removed/.test(portalOf(l).state) || lxOn(portalOf(l)) === 'on')) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
     + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
 }
 var LDI_DIRTY = true, LDI_DRAWN = false, LDI_FORCE = false, LDI_LIM = 40;   /* patch LEADFREEZE-2: 40 cards at a time; nothing drawn while another Leads tab is showing */
@@ -135486,12 +135486,14 @@ function lxWho(l){
   try { if (br && br.isBid(l)) { p = s(br.pmOf(l)); e = s(br.estOf(l)); } else p = s(l.pm); } catch (x) { p = s(l.pm); }
   return p ? { t: p, w: 'PM' } : e ? { t: e, w: 'Estimator' } : { t: '', w: '' };
 }
+function lxOn(p){ try { return window._gcBidPortalOn ? window._gcBidPortalOn(p) : (p && p.jobId && p.state === 'published' ? 'on' : ''); } catch (e) { return ''; } }   /* patch BIDAUTO */
 function lxStatus(l, p){
-  if (p && p.state === 'published') return { t: 'On bid portal', c: 'st-on' };
+  var on = lxOn(p);   /* patch BIDAUTO: "On bid portal" only when a person put it there */
+  if (p && /^(published|public|private)$/.test(s(p.state)) && on === 'on') return { t: 'On bid portal', c: 'st-on' };
   if (l.pid) return { t: 'Bid job', c: 'st-job' };
   if (isNew(l)) return { t: 'New', c: 'st-new' };
   if (p && p.state === 'queued') return { t: 'Draft (waiting)', c: 'st-dr' };
-  if ((p && p.jobId && p.state !== 'removed') || l.bidPortalJob) return { t: 'Draft', c: 'st-dr' };
+  if ((p && p.jobId && p.state !== 'removed' && on !== 'gone') || l.bidPortalJob) return { t: 'Draft (not on portal)', c: 'st-dr' };   /* patch BIDAUTO */
   return { t: 'Assigned', c: 'st-as' };
 }
 function lxHay(l){
@@ -179886,6 +179888,7 @@ function portalChip(l){
   var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
   if (typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) return '<span class="gcl-chip mute" title="Taken off the sub bid portal (🗄 Archived / deleted)">🏗 —</span>';   /* patch QAA: cleaned up → not "draft / private" any more */
   var st = s(p.state || p.visibility); var pub = /public|published/.test(st);
+  if (typeof W._gcBidPortalOn === 'function' && W._gcBidPortalOn(p) === 'draft') return '<span class="gcl-chip priv" title="Draft — not on the sub bid portal (staff only). 📢 Put on bid portal puts it there.">🏗 draft</span>';   /* patch BIDAUTO */
   return '<span class="gcl-chip ' + (pub ? 'pub' : 'priv') + '" title="Sub bid portal: ' + (pub ? 'public to all subs' : /private/.test(st) ? 'open to invited subs (private)' : 'private draft (staff only)') + '">🏗 ' + (pub ? 'public' : /private/.test(st) ? 'private' : 'draft') + '</span>';
 }
 function initials(n){ n = s(n).trim(); if (!n) return '?'; var p = n.split(/\s+/); return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
@@ -181194,7 +181197,8 @@ function drawerHtml0(l){
   arr(it.notes).slice(-5).forEach(function(n){ tl.push({ at: it.updatedAt || it.at, t: '📥 ' + s(n).slice(0, 160), by: 'Lead Inbox' }); });
   tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
   var ppl = people();
-  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
+  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';
+  if (pst && typeof W._gcBidPortalOn === 'function' && W._gcBidPortalOn(p) === 'draft') pst = 'draft';   /* patch BIDAUTO: the old automatic opening is a draft */   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
   return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + kindPick(l) /* patch LEADBULK */ + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
     /* overview */
     + '<section><h4>Overview</h4>'
@@ -181234,7 +181238,7 @@ function drawerHtml0(l){
     /* sub bid portal */
     + '<section><h4>🏗 Sub bid portal</h4>'
     + '<div class="kv"><span>Status:</span> ' + (pst ? (/public|published/.test(pst) ? '<span class="gcl-chip pub">Public — every approved sub can see it</span>' : /private/.test(pst) ? '<span class="gcl-chip priv">Private — invited subs only</span>' : '<span class="gcl-chip priv">Private draft — staff only</span>') : '<span class="gcl-chip mute">Not on the portal yet</span>') + '</div>'
-    + '<div class="note">Every lead goes on the sub bid portal as <b>private</b>. Only you make it public. GrayCo prices are never shown to subs.</div>'
+    + '<div class="note">Nothing goes on the sub bid portal by itself: it is there only when a person puts it there — <b>private</b> (invited subs) or public. GrayCo prices are never shown to subs.</div>'
     + '<div class="sm" role="tablist"><button type="button" class="b' + (SC.mode === 'claude' ? ' on' : '') + '" data-d="sm" data-m="claude">✨ Claude</button><button type="button" class="b' + (SC.mode === 'manual' ? ' on' : '') + '" data-d="sm" data-m="manual">✍️ Manual</button><button type="button" class="b' + (SC.mode === 'estimate' ? ' on' : '') + '" data-d="sm" data-m="estimate">📐 From estimate</button>' + (xactFor(l) ? '<button type="button" class="b' + (SC.mode === 'xactimate' ? ' on' : '') + '" data-d="sm" data-m="xactimate">🛡 From Xactimate</button>' : '') + '</div>'
     + (SC.mode === 'claude' ? '<div class="row"><button type="button" class="b" data-d="draftai"' + (SC.busy ? ' disabled' : '') + '>' + (SC.busy ? 'Writing…' : '✨ Draft the scope') + '</button><span class="note">From the lead, its notes and the inbox details. Edit it before you save.</span></div>' : '')
     + (SC.mode === 'estimate' ? '<div class="row">' + (est ? '<button type="button" class="b" data-d="fromest">📐 Use "' + esc(s(est.name || est.title || 'the estimate').slice(0, 40)) + '" (prices removed)</button>' : '<span class="note">No estimate is linked to this lead yet.</span>') + '</div>' : '')
@@ -235012,6 +235016,24 @@ W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
   var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
   var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
   return !!(hit && hit.deleted); };
+/* patch BIDAUTO (owner 11/23: "all these jobs shouldn't be on bid portal only if we put them on there"): is a lead's bid job ON the bid portal?
+   'on' = a person put it there (bid-hub: not a draft, not autoDraft) · 'draft' = a draft, or the old automatic opening that no person or sub
+   touched · 'gone' = archived / deleted · '' = no bid job. Before the list is here only a person's Publish (publishedBy) counts as on; the list
+   is fetched once and the Lead Inbox / Leads pages repaint. Read only. */
+var BA = { asked: 0 };
+function bidJobOf(id){
+  var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
+  var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });
+  return { hit: hit, known: lists.some(function(x){ return x.at > 0; }) };
+}
+W._gcBidPortalOn = function(p){
+  p = p && typeof p === 'object' ? p : null; var id = s(p && p.jobId); if (!id || s(p.state) === 'removed') return '';
+  var r = bidJobOf(id), j = r.hit;
+  if (j) return j.deleted ? 'gone' : (j.draft || j.autoDraft || s(j.visibility) === 'draft') ? 'draft' : 'on';
+  if (!r.known && !JOBS.busy && Date.now() - BA.asked > 60000) { BA.asked = Date.now();
+    jobs(false).then(function(){ try { if (W._gcLeadInbox && W._gcLeadInbox.repaint) W._gcLeadInbox.repaint(); } catch (e) {} try { if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {} }); }
+  return s(p.publishedBy) && /published|public/.test(s(p.state || p.visibility)) ? 'on' : 'draft';
+};
 /* patch LEADBP: 📢 from the Leads list — a row's 📢 button, and "📢 Put selected on bid portal" for selected leads (admins / estimators): each goes
    on as 🔒 private (invited subs only), its sub due date 1 day before our due date; trades / files are added on 📂 Manage afterwards */
 function bulkPost(ids){

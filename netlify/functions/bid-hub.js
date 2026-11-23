@@ -24,6 +24,7 @@
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const BI = require('./bid-inbox.js');
+const BPX = require('./_lib/bid-portal.js');   /* patch BIDAUTO: personOpened / autoOpened / autoDraft */
 const L = BI._lib, T = BI._test;
 const SP = require('./subportal.js')._hub;
 const SM = require('../../sub-match.js');   /* patch SUBSYNC: the one sub matcher (the CRM page loads the same file) */
@@ -69,20 +70,24 @@ function langOf(spUser, crmRaw){ return low((spUser && spUser.lang) || (crmRaw &
 
 /* ── the bid jobs ── */
 async function jobsList(){
-  const [jobs, invites, bids, plans, qs] = await Promise.all([
+  const [jobs, invites, bids, plans, qs, mq] = await Promise.all([
     SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []), SP.listRows([SP.eq('collection', 'bids')]).catch(() => []),
-    SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => [])]);
+    SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => []), SP.listRows([SP.eq('collection', 'mquotes')]).catch(() => [])]);
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
-  const reqN = {}, reqAt = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (SP.prOpen && SP.prOpen(r.data)) { reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; const a = s(r.data && r.data.at); if (a && (!reqAt[r.job_id] || a < reqAt[r.job_id])) reqAt[r.job_id] = a; } });   /* + the oldest open one (patch BPAPPR) */   /* patch PLANREQ: 📩 open plan / info requests */
+  const prAll = {}, mqN = {}; mq.forEach(r => { if (r && r.job_id) mqN[r.job_id] = (mqN[r.job_id] || 0) + 1; });   /* patch BIDAUTO: every plan / info request and material quote a sub ever sent */
+  const reqN = {}, reqAt = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (r && r.job_id) prAll[r.job_id] = (prAll[r.job_id] || 0) + 1; if (SP.prOpen && SP.prOpen(r.data)) { reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; const a = s(r.data && r.data.at); if (a && (!reqAt[r.job_id] || a < reqAt[r.job_id])) reqAt[r.job_id] = a; } });   /* + the oldest open one (patch BPAPPR) */   /* patch PLANREQ: 📩 open plan / info requests */
   const c = counts(invites, bids, mail, plans, qs);
   const ps = await SP.poSync(jobs.map(r => r.data || {}), { by: 'bidpo-sync' }).catch(() => ({ jobs: jobs.map(r => r.data || {}) }));   /* patch BIDPO: the CRM's PO on every bid job */
   return ps.jobs.filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
     const k = c(j.id);
+    /* patch BIDAUTO: opened by the old automatic way, never touched by a person or a sub → a draft (hidden from subs, not "on the bid portal") */
+    const ao = !GONE.test(s(j.status)) && BPX.autoOpened(j), touch = { invites: k.invites, bids: k.bids, questions: k.questions, planreqs: prAll[s(j.id)] || 0, mquotes: mqN[s(j.id)] || 0 }, ad = ao && !BPX.subTouched(touch);
     return {
+    autoDraft: ad, autoOpenedTouched: ao && !ad, subTouch: ao ? touch : undefined, personOpened: BPX.personOpened(j),
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
     archived: GONE.test(s(j.status)) && /^(auto|taken off)$/.test(s(j.archivedReason)), archivedReason: s(j.archivedReason),   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
-    id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
-    visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
+    id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft' || ad,
+    visibility: j.draft === true || low(j.status) === 'draft' || ad ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
     invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, reqSince: reqAt[s(j.id)] || '', leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
     biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), ourDue: validDay(j.ourDue), ourDueTime: s(j.ourDueTime), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
@@ -111,7 +116,7 @@ function counts(invites, bids, mail, plans, qs){
 }
 function postedOnPurpose(j){
   const person = v => !!s(v) && s(v) !== 'auto' && s(v) !== 'lead-inbox';
-  return !!(s(j.postedAt) || (s(j.publishedAt) && person(j.publishedBy)) || (s(j.openedPrivateAt) && !j.autoPrivate && person(j.openedBy)));
+  return !!(s(j.postedAt) || s(j.personOpenedAt) /* patch BIDAUTO */ || (s(j.publishedAt) && person(j.publishedBy)) || (s(j.openedPrivateAt) && !j.autoPrivate && person(j.openedBy)));
 }
 /* patch QAA (owner 11/12: "start fresh — bid portal empty"): a plan / spec file the Lead Inbox copied in from the bid-board e-mail
    (fromLead, or its staff/lead-inbox/ path) was put there by the old automatic sync, not by a person — it does not make an auto-added
@@ -419,8 +424,8 @@ async function invite(who, b){
   if (!b.resend) targets = targets.filter(x => !x.invited);
   targets = targets.slice(0, 300);
   if (!targets.length) return { ok: true, invited: 0, mailed: 0, skipped: 'everyone picked is already invited (or there was no one in those trades)' };
-  if (job.draft === true || low(job.status) === 'draft') {   /* an invite opens a draft as PRIVATE: only invited subs see it */
-    Object.assign(job, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email, updatedAt: nowIso() });
+  if (job.draft === true || low(job.status) === 'draft' || BPX.autoOpened(job)) {   /* an invite opens a draft as PRIVATE: only invited subs see it (patch BIDAUTO: + a job the old automatic way opened — a person puts it on now) */
+    Object.assign(job, { draft: false, visibility: 'private', status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email, autoPrivate: false, personOpenedAt: job.personOpenedAt || nowIso(), personOpenedBy: who.email, updatedAt: nowIso() });
     await SP.upsertRows([SP.rowFor('jobs', job)], who.email);
   }
   const have = await SP.listRows([SP.eq('collection', 'invites'), SP.eq('job_id', jobId)]).catch(() => []);
@@ -457,7 +462,7 @@ async function visibility(who, b){
   if (mode === 'public') {
     if (!s(job.bidDueDate)) return { code: 400, error: 'Add a bid due date first — a public bid job needs one.' };
     Object.assign(job, { status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', visibility: 'public', draft: false, publishedAt: job.publishedAt || nowIso(), publishedBy: who.email, madePublicAt: nowIso() });
-  } else Object.assign(job, { status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email });
+  } else Object.assign(job, { autoPrivate: false, personOpenedAt: job.personOpenedAt || nowIso(), personOpenedBy: who.email }, { status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email });
   job.updatedAt = nowIso();
   await SP.upsertRows([SP.rowFor('jobs', job)], who.email);
   return { ok: true, jobId: job.id, visibility: job.visibility };
@@ -610,23 +615,11 @@ async function award(who, b){
   return out;
 }
 
-/* the backfill: every estimator lead's DRAFT bid job → PRIVATE (a public job is never touched) */
+/* the old backfill (every estimator lead's DRAFT bid job → PRIVATE, openedBy 'auto') — patch BIDAUTO (owner 11/23: "all these jobs shouldn't
+   be on bid portal only if we put them on there"): gone for good; nothing goes on the bid portal by itself, whatever BID_PORTAL_AUTO says.
+   The op answers so an old page that still calls it gets "nothing opened". */
 async function sweep(who){
-  if (!(who.admin || who.estimator)) return { ok: true, opened: 0 };
-  if (process.env.BID_PORTAL_AUTO !== '1') return { ok: true, opened: 0, off: true };   /* patch BIDPOST: nothing goes on the bid portal by itself */
-  const jobs = await SP.listRows([SP.eq('collection', 'jobs')]);
-  const items = arr(await L.kvGet(L.KV).catch(() => [])); const byId = {}; items.forEach(x => { if (x && x.id) byId[x.id] = x; });
-  const todo = jobs.map(r => r.data || {}).filter(j => (j.draft === true || low(j.status) === 'draft') && j.leadInbox && s(j.leadInbox.id)).filter(j => {
-    const it = byId[s(j.leadInbox.id)];
-    if (it && /^(dismissed|merged)$/.test(s(it.status))) return false;
-    return L.isCommercial({ type: j.leadInbox.type, source: j.leadInbox.source, origin: it && it.origin }) || !!(it && (it.estimatorEmail || it.estimator));
-  }).slice(0, 50);
-  const at = nowIso();
-  todo.forEach(j => Object.assign(j, { draft: false, visibility: 'private', status: 'open', autoPrivate: true, openedPrivateAt: j.openedPrivateAt || at, openedBy: 'auto', updatedAt: at }));
-  if (todo.length) await SP.upsertRows(todo.map(j => SP.rowFor('jobs', j)), 'bid-hub');
-  const marks = {}; todo.forEach(j => { marks[s(j.leadInbox.id)] = { jobId: j.id, state: 'private', visibility: 'private', at }; });
-  if (todo.length) { try { await L.kvCas(L.KV, v => { const l = arr(v); let ch = false; l.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? l : undefined; }); } catch (e) {} }
-  return { ok: true, opened: todo.length };
+  return { ok: true, opened: 0, off: true, why: 'nothing goes on the bid portal by itself — a person puts a job on it' };
 }
 
 /* ═══ patch SYS2 ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -1156,6 +1149,11 @@ exports.handler = async function(event){
   const who = await whoIs(event); if (!who.ok) return J(who.code || 401, { error: who.error }, C);
   try {
     if (event.httpMethod === 'GET') {
+      if (q.autoopen) {   /* patch BIDAUTO: what the old automatic opening put on the bid portal (admins; read only, nothing changes) */
+        if (!who.admin) return J(403, { error: 'Only an admin sees this.' }, C);
+        const all = (await jobsList()).filter(j => !j.deleted && (j.autoDraft || j.autoOpenedTouched));
+        return J(200, { ok: true, autoOpened: all.length, nowDrafts: all.filter(j => j.autoDraft).length, subTouched: all.filter(j => j.autoOpenedTouched).map(j => ({ id: j.id, title: j.title, po: j.po, visibility: j.visibility, touch: j.subTouch })) }, C);
+      }
       if (q.jobs) return J(200, { ok: true, jobs: await jobsList(), me: { email: who.email, admin: who.admin, estimator: who.estimator, office: who.office, canInvite: who.canInvite, canPublic: who.canPublic } }, C);
       if (q.subbids || q.lead) {
         const jobId = s(q.subbids) || L.portalApi().jobIdFor({ id: s(q.lead) });
