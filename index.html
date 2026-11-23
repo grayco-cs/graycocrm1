@@ -135383,10 +135383,10 @@ function portalTag(l){
   var p = portalOf(l), st = S.portal || {};
   if (!l.inboxId) return '';
   if (p && p.jobId && typeof window._gcBidJobGone === 'function' && window._gcBidJobGone(p.jobId)) return '';   /* patch QAA: archived / deleted on the bid portal */
-  if (p && p.state === 'published') return '<span class="tg t-bp on">✓ On the bid portal</span>';
+  if (p && /^(published|public|private)$/.test(s(p.state)) && lxOn(p) === 'on') return '<span class="tg t-bp on">✓ On the bid portal</span>';   /* patch BIDAUTO */
   if (p && p.state === 'removed') return '<span class="tg t-bp">Bid-portal draft deleted</span>';
   if ((p && p.state === 'queued') || st.ready === false) return '<span class="tg t-bp" title="' + esc(st.why || (p && p.why) || '') + '">Bid-portal draft waiting (portal not set up)</span>';
-  if (p && p.jobId) return '<span class="tg t-bp">Draft in the bid portal</span>';
+  if (p && p.jobId) return '<span class="tg t-bp">Draft (not on the bid portal)</span>';   /* patch BIDAUTO */
   return '';
 }
 function rsCard(l){
@@ -135422,7 +135422,7 @@ function card(l){
     + '<div class="drop" data-drop="lead">Drop plan files here</div>'
     + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (window._gcBidRole ? window._gcBidRole.btn(l) : (l.pm ? 'Change PM' : 'Assign PM')) + '</button>' : '')   /* patch BIDROLE */
     + (l.pid ? '<button class="b pri" data-a="openjob">Open bid job</button>' : '<button class="b pri" data-a="job">Create bid job</button>')
-    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
+    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && (/removed/.test(portalOf(l).state) || lxOn(portalOf(l)) === 'on')) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
     + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
 }
 var LDI_DIRTY = true, LDI_DRAWN = false, LDI_FORCE = false, LDI_LIM = 40;   /* patch LEADFREEZE-2: 40 cards at a time; nothing drawn while another Leads tab is showing */
@@ -135487,12 +135487,14 @@ function lxWho(l){
   try { if (br && br.isBid(l)) { p = s(br.pmOf(l)); e = s(br.estOf(l)); } else p = s(l.pm); } catch (x) { p = s(l.pm); }
   return p ? { t: p, w: 'PM' } : e ? { t: e, w: 'Estimator' } : { t: '', w: '' };
 }
+function lxOn(p){ try { return window._gcBidPortalOn ? window._gcBidPortalOn(p) : (p && p.jobId && p.state === 'published' ? 'on' : ''); } catch (e) { return ''; } }   /* patch BIDAUTO */
 function lxStatus(l, p){
-  if (p && p.state === 'published') return { t: 'On bid portal', c: 'st-on' };
+  var on = lxOn(p);   /* patch BIDAUTO: "On bid portal" only when a person put it there */
+  if (p && /^(published|public|private)$/.test(s(p.state)) && on === 'on') return { t: 'On bid portal', c: 'st-on' };
   if (l.pid) return { t: 'Bid job', c: 'st-job' };
   if (isNew(l)) return { t: 'New', c: 'st-new' };
   if (p && p.state === 'queued') return { t: 'Draft (waiting)', c: 'st-dr' };
-  if ((p && p.jobId && p.state !== 'removed') || l.bidPortalJob) return { t: 'Draft', c: 'st-dr' };
+  if ((p && p.jobId && p.state !== 'removed' && on !== 'gone') || l.bidPortalJob) return { t: 'Draft (not on portal)', c: 'st-dr' };   /* patch BIDAUTO */
   return { t: 'Assigned', c: 'st-as' };
 }
 function lxHay(l){
@@ -179887,6 +179889,7 @@ function portalChip(l){
   var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
   if (typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) return '<span class="gcl-chip mute" title="Taken off the sub bid portal (🗄 Archived / deleted)">🏗 —</span>';   /* patch QAA: cleaned up → not "draft / private" any more */
   var st = s(p.state || p.visibility); var pub = /public|published/.test(st);
+  if (typeof W._gcBidPortalOn === 'function' && W._gcBidPortalOn(p) === 'draft') return '<span class="gcl-chip priv" title="Draft — not on the sub bid portal (staff only). 📢 Put on bid portal puts it there.">🏗 draft</span>';   /* patch BIDAUTO */
   return '<span class="gcl-chip ' + (pub ? 'pub' : 'priv') + '" title="Sub bid portal: ' + (pub ? 'public to all subs' : /private/.test(st) ? 'open to invited subs (private)' : 'private draft (staff only)') + '">🏗 ' + (pub ? 'public' : /private/.test(st) ? 'private' : 'draft') + '</span>';
 }
 function initials(n){ n = s(n).trim(); if (!n) return '?'; var p = n.split(/\s+/); return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
@@ -181195,7 +181198,8 @@ function drawerHtml0(l){
   arr(it.notes).slice(-5).forEach(function(n){ tl.push({ at: it.updatedAt || it.at, t: '📥 ' + s(n).slice(0, 160), by: 'Lead Inbox' }); });
   tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
   var ppl = people();
-  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
+  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';
+  if (pst && typeof W._gcBidPortalOn === 'function' && W._gcBidPortalOn(p) === 'draft') pst = 'draft';   /* patch BIDAUTO: the old automatic opening is a draft */   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
   return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + kindPick(l) /* patch LEADBULK */ + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
     /* overview */
     + '<section><h4>Overview</h4>'
@@ -181235,7 +181239,7 @@ function drawerHtml0(l){
     /* sub bid portal */
     + '<section><h4>🏗 Sub bid portal</h4>'
     + '<div class="kv"><span>Status:</span> ' + (pst ? (/public|published/.test(pst) ? '<span class="gcl-chip pub">Public — every approved sub can see it</span>' : /private/.test(pst) ? '<span class="gcl-chip priv">Private — invited subs only</span>' : '<span class="gcl-chip priv">Private draft — staff only</span>') : '<span class="gcl-chip mute">Not on the portal yet</span>') + '</div>'
-    + '<div class="note">Every lead goes on the sub bid portal as <b>private</b>. Only you make it public. GrayCo prices are never shown to subs.</div>'
+    + '<div class="note">Nothing goes on the sub bid portal by itself: it is there only when a person puts it there — <b>private</b> (invited subs) or public. GrayCo prices are never shown to subs.</div>'
     + '<div class="sm" role="tablist"><button type="button" class="b' + (SC.mode === 'claude' ? ' on' : '') + '" data-d="sm" data-m="claude">✨ Claude</button><button type="button" class="b' + (SC.mode === 'manual' ? ' on' : '') + '" data-d="sm" data-m="manual">✍️ Manual</button><button type="button" class="b' + (SC.mode === 'estimate' ? ' on' : '') + '" data-d="sm" data-m="estimate">📐 From estimate</button>' + (xactFor(l) ? '<button type="button" class="b' + (SC.mode === 'xactimate' ? ' on' : '') + '" data-d="sm" data-m="xactimate">🛡 From Xactimate</button>' : '') + '</div>'
     + (SC.mode === 'claude' ? '<div class="row"><button type="button" class="b" data-d="draftai"' + (SC.busy ? ' disabled' : '') + '>' + (SC.busy ? 'Writing…' : '✨ Draft the scope') + '</button><span class="note">From the lead, its notes and the inbox details. Edit it before you save.</span></div>' : '')
     + (SC.mode === 'estimate' ? '<div class="row">' + (est ? '<button type="button" class="b" data-d="fromest">📐 Use "' + esc(s(est.name || est.title || 'the estimate').slice(0, 40)) + '" (prices removed)</button>' : '<span class="note">No estimate is linked to this lead yet.</span>') + '</div>' : '')
@@ -181664,7 +181668,7 @@ W._gcLeadsHubKit = { all: function(){ return rawLeads().filter(function(l){ retu
   setLeads: function(mut){ return setLeads(function(list){ var n = mut(list); if (Array.isArray(n)) { LEADS_NOW = n; LEADS_SIG = ''; } return n; }); },   /* as patchLead: the hub's own copy follows at once (a later full-list push never carries the old list) */
   imported: importedL, archived: archivedL, shut: shut, stageOf: stageOf, value: value, isAdmin: isAdmin,
   me: function(){ return myName() || myEmail(); }, receivedMs: function(l){ return receivedMs(l) || born(l); }, typeOf: typeOf };   /* patch LCLEAN */
-W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, assign: assign,   /* patch ASSIGNFIX B */ filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
+W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, markContacted: markContacted, patchLead: patchLead, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, assign: assign,   /* patch ASSIGNFIX B */ filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
 var n0 = 0;
 function tick(){ try { if (D.hidden) return; css(); mount(); luTick(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
 /* patch HOT2: the head-estimator backfill keeps its own 3-second timeout loop — the interval governors hold tick()
@@ -235036,6 +235040,24 @@ W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
   var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
   var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
   return !!(hit && hit.deleted); };
+/* patch BIDAUTO (owner 11/23: "all these jobs shouldn't be on bid portal only if we put them on there"): is a lead's bid job ON the bid portal?
+   'on' = a person put it there (bid-hub: not a draft, not autoDraft) · 'draft' = a draft, or the old automatic opening that no person or sub
+   touched · 'gone' = archived / deleted · '' = no bid job. Before the list is here only a person's Publish (publishedBy) counts as on; the list
+   is fetched once and the Lead Inbox / Leads pages repaint. Read only. */
+var BA = { asked: 0 };
+function bidJobOf(id){
+  var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
+  var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });
+  return { hit: hit, known: lists.some(function(x){ return x.at > 0; }) };
+}
+W._gcBidPortalOn = function(p){
+  p = p && typeof p === 'object' ? p : null; var id = s(p && p.jobId); if (!id || s(p.state) === 'removed') return '';
+  var r = bidJobOf(id), j = r.hit;
+  if (j) return j.deleted ? 'gone' : (j.draft || j.autoDraft || s(j.visibility) === 'draft') ? 'draft' : 'on';
+  if (!r.known && !JOBS.busy && Date.now() - BA.asked > 60000) { BA.asked = Date.now();
+    jobs(false).then(function(){ try { if (W._gcLeadInbox && W._gcLeadInbox.repaint) W._gcLeadInbox.repaint(); } catch (e) {} try { if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {} }); }
+  return s(p.publishedBy) && /published|public/.test(s(p.state || p.visibility)) ? 'on' : 'draft';
+};
 /* patch LEADBP: 📢 from the Leads list — a row's 📢 button, and "📢 Put selected on bid portal" for selected leads (admins / estimators): each goes
    on as 🔒 private (invited subs only), its sub due date 1 day before our due date; trades / files are added on 📂 Manage afterwards */
 function bulkPost(ids){
@@ -254434,10 +254456,14 @@ try { console.log('[GC] 📑 papers: older jobs keep the basics · suggested · 
         no PM 4 hours after it came in            → 'nopm'   (the owners are texted to assign it; the 5 PM default assign follows)
         no PM 24 hours after it came in           → 'nopm24' (the owners again)
         a PM, not contacted 24 h after assignment → 'pm24'   (the PM's reminder)
-        a PM, not contacted 48 h after assignment → 'pm48'   (the owners are told)
+        a PM, not contacted 48 h after assignment → 'pm48'   (the card only: the owners' 48 h text is OFF for good — QUIETSAT, owner 11/22)
       "Contacted" = the stage moved past New Lead, ✅ Contacted (contactedAt), a call / follow-up / comment a person logged, or
       on a Google LSA lead the PM's own 👍 GOOD / 👎 BAD (an owner's GOOD when assigning is not the PM's call).
    3. The card lists the open customer leads past those times from the last CARD_DAYS days.
+   4. patch LEADRISK (owner 11/23, "be able to clear this"): an owner's ✕ Clear on the card (l.lwClear = { at, by, byEmail, sig },
+      every clear kept in l.lwClearLog) takes the lead off the clock for good — the card, the To-Do, the speed-to-lead texts and the
+      PM-reply ladder — UNLESS something new happens on the lead (clearSig changes: a new PM / assignment, the stage or status moved,
+      it came in again, a call / follow-up / comment was logged). The lead itself is never deleted or closed.
    Pure: no I/O, no names, no e-mails. Nothing here contacts anyone.
    ========================================================================== */
 (function(root){
@@ -254556,6 +254582,7 @@ function contacted(l){
 function risk(l, now, o){
   o = o || {};
   if (!l || closed(l) || !isCustomer(l)) return null;
+  if (!o.withCleared && cleared(l)) return null;   /* patch LEADRISK */
   var t = typeof now === 'number' ? now : Date.now(), born = bornAt(l);
   if (!isFinite(born)) return null;
   if (o.maxDays && t - born > o.maxDays * 864e5) return null;
@@ -254571,6 +254598,15 @@ function risk(l, now, o){
   if (b >= PM_H) return { k: 'pm24', h: Math.floor(b), since: from, label: assignee(l) + ' has not contacted them — assigned ' + ago(b) + ' ago' };
   return null;
 }
+/* patch LEADRISK: what "something new on the lead" is — the fingerprint kept with an owner's ✕ Clear (never the clear itself, never
+   updatedAt or the CRM's own activity lines) */
+function clearSig(l){
+  l = l || {}; var ex = obj(l.leadExtra), a = asgAt(l), b = bornAt(l);
+  return [low(assignee(l)), isFinite(a) ? a : '', low(l.stage), low(l.status), low(l.inboxState), isFinite(b) ? b : '', s(l.reopenedAt || ex.reopenedAt), s(l.lastInboundAt || ex.lastInboundAt),
+    arr(l.calls).length, arr(l.followUps).length, arr(l.comments).length, arr(l.contactLog).length, l.archived ? 1 : 0, l.deleted ? 1 : 0].join('|');
+}
+/* an owner cleared it and nothing new happened since */
+function cleared(l){ var c = obj(l && l.lwClear); return !!(s(c.at) && s(c.sig) && c.sig === clearSig(l)); }
 function ago(h){ h = Math.floor(h); return h >= 48 ? Math.floor(h / 24) + ' days' : h + ' h'; }
 /* the CRM leads + the Lead Inbox items not on the CRM list yet → the leads at risk, worst first */
 function atRisk(leads, items, now, o){
@@ -254606,7 +254642,7 @@ function defaultDue(items, crmLeads, now, holdUntil){
 
 var API = { V: 1, NOPM_H: NOPM_H, NOPM2_H: NOPM2_H, PM_H: PM_H, OWNER_H: OWNER_H, CARD_DAYS: CARD_DAYS, LABEL: LABEL,
   kindOf: kindOf, subWhy: subWhy, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
-  contacted: contacted, risk: risk, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
+  contacted: contacted, risk: risk, clearSig: clearSig, cleared: cleared, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else root._gcLeadWatchCore = API;
 })(typeof window !== 'undefined' ? window : this);
@@ -254639,10 +254675,26 @@ function leads(){ return arr(W._crm && W._crm.leads).filter(function(l){ return 
 var LAST = { at: 0, list: [] };
 function list(){
   var t = now(); if (LAST.at && Math.abs(t - LAST.at) < 3000 && LAST.n === arr(W._crm && W._crm.leads).length) return LAST.list;
-  var L = C.atRisk(leads(), [], t); LAST = { at: t, n: arr(W._crm && W._crm.leads).length, list: L }; return L;
+  var L = C.atRisk(leads(), [], t).filter(function(z){ var id = s(z.l.id); return !LR.done[id] && !(LR.clr[id] && LR.clr[id] === C.clearSig(z.l)); });   /* patch LEADRISK: what was just ✓ / ✕ here, before the synced copy has it */
+  LAST = { at: t, n: arr(W._crm && W._crm.leads).length, list: L }; return L;
 }
 function riskOf(l){ try { return C.risk(l, now(), { maxDays: C.CARD_DAYS }); } catch (e) { return null; } }
 var KC = { nopm: ['👤', '#9a3412', '#ffedd5'], nopm24: ['👤', '#991b1b', '#fee2e2'], pm24: ['⏰', '#92400e', '#fef3c7'], pm48: ['⚠️', '#991b1b', '#fee2e2'] };
+/* patch LEADRISK (owner 11/23, "be able to clear this"): ✓ Contacted (the lead's own ✅ Contacted: contactedAt / contactedBy, stage →
+   Contacted) and ✕ Clear (off the card for good — lwClear { at, by, byEmail, sig } on the lead, every clear kept in lwClearLog; it comes back
+   only when something new happens on the lead: core clearSig). Saved on the lead, so every computer and every owner sees it; the lead is
+   never deleted. "Clear all" asks inline (no pop-up). Owners / admins only (the card is theirs). */
+var LR = { done: {}, clr: {}, ask: 0, last: null };
+var LRB = 'min-height:36px;padding:0 12px;border-radius:9px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;';
+function actsHtml(l){ var id = esc(l.id);
+  return '<button type="button" data-lw-done="' + id + '" title="I reached out to them: marks the lead contacted (the same as ✅ Contacted on the lead)" style="' + LRB + 'border:1px solid #16a34a;background:#f0fdf4;color:#166534">✓ Contacted</button>'
+    + '<button type="button" data-lw-clear="' + id + '" title="Take it off this card for good. It comes back only if something new happens on the lead. The lead itself is kept." style="' + LRB + 'border:1px solid #cbd5e1;background:#fff;color:#475569">✕ Clear</button>'; }
+function clearAllHtml(L){
+  if (LR.ask > Date.now()) return '<span data-lw-confirm="1" style="margin-left:auto;display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;font:600 12.5px Inter,Arial,sans-serif;color:#7f1d1d">Clear all ' + L.length + '?'
+    + '<button type="button" data-lw-clearall="yes" style="' + LRB + 'min-height:32px;border:1px solid #b91c1c;background:#dc2626;color:#fff">Yes, clear all</button>'
+    + '<button type="button" data-lw-clearall="no" style="' + LRB + 'min-height:32px;border:1px solid #cbd5e1;background:#fff;color:#334155">Cancel</button></span>';
+  return '<button type="button" data-lw-clearall="ask" title="Take every lead on this card off it (each comes back only if something new happens on it)" style="' + LRB + 'margin-left:auto;min-height:32px;border:1px solid #fca5a5;background:#fff;color:#991b1b;font-size:12.5px">Clear all</button>';
+}
 function rowHtml(z){
   var l = z.l, r = z.r, c = obj(l.contact), k = KC[r.k] || KC.nopm, ph = tidy(c.phone || l.phone), nm = s(c.name || l.contactName) || s(l.name) || 'Lead';
   var what = r.k === 'nopm' || r.k === 'nopm24' ? 'No PM — came in ' + C.ago(r.h) + ' ago' : 'Not contacted — ' + esc(s(l.pm || l.estimator || l.apm)) + ' has had it ' + C.ago(r.h);
@@ -254650,12 +254702,12 @@ function rowHtml(z){
     + '<span style="flex:1 1 220px;min-width:0"><b>' + esc(nm) + '</b>' + (s(l.name) && s(l.name) !== nm ? ' <span style="color:#475569">· ' + esc(s(l.name).slice(0, 60)) + '</span>' : '')
     + '<span style="display:block;font-size:12.5px;color:#475569">' + esc(C.LABEL[C.kindOf(l)] || 'Lead') + ' · <span style="display:inline-block;border-radius:999px;padding:0 7px;font-weight:800;color:' + k[1] + ';background:' + k[2] + '">' + k[0] + ' ' + what + '</span></span></span>'
     + (ph ? '<a href="tel:' + esc(ph.replace(/\D/g, '')) + '" style="color:#1d4ed8;font-weight:800;text-decoration:none;min-height:36px;display:inline-flex;align-items:center">📞 ' + esc(ph) + '</a>' : '')
-    + '<button type="button" data-lw-open="' + esc(l.id) + '" style="min-height:36px;padding:0 12px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#241968;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Open</button></div>';
+    + '<button type="button" data-lw-open="' + esc(l.id) + '" style="min-height:36px;padding:0 12px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#241968;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Open</button>' + actsHtml(l) + '</div>';
 }
 function cardHtml(L, kind){
   var more = L.length > 8 ? '<div style="font-size:12.5px;color:#7f1d1d;padding-top:6px">+ ' + (L.length - 8) + ' more</div>' : '';
-  return '<div style="font:800 15px Inter,Arial,sans-serif;color:#7f1d1d;display:flex;align-items:center;gap:8px">🚨 Leads at risk <span style="display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:#dc2626;color:#fff;font-size:12px;line-height:20px;text-align:center">' + L.length + '</span></div>'
-    + '<div style="font-size:12.5px;color:#7f1d1d;margin:2px 0 4px">No PM ' + C.NOPM_H + ' h after it came in, or not marked contacted ' + C.PM_H + ' h after it was assigned (the owners are texted at ' + C.OWNER_H + ' h). Every company\'s leads.</div>'
+  return '<div style="font:800 15px Inter,Arial,sans-serif;color:#7f1d1d;display:flex;align-items:center;gap:8px">🚨 Leads at risk <span style="display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:#dc2626;color:#fff;font-size:12px;line-height:20px;text-align:center">' + L.length + '</span>' + clearAllHtml(L) + '</div>'
+    + '<div style="font-size:12.5px;color:#7f1d1d;margin:2px 0 4px">No PM ' + C.NOPM_H + ' h after it came in, or not marked contacted ' + C.PM_H + ' h after it was assigned. Every company\'s leads. ✕ Clear takes one off for good (it comes back if something new happens on it).</div>'
     + L.slice(0, 8).map(rowHtml).join('') + more;
 }
 var BOX = 'margin:0 0 10px;padding:10px 12px;border-radius:12px;border:2px solid #fca5a5;background:#fef2f2;font:14px Inter,Arial,sans-serif;color:#0f172a;box-sizing:border-box;max-width:100%';
@@ -254686,6 +254738,49 @@ D.addEventListener('click', function(e){
   e.preventDefault(); var id = b.getAttribute('data-lw-open');
   try { if (W._setView) W._setView('leads'); } catch (x) {}
   ST.call(W, function(){ try { W._gcLeadsHub.open(id); } catch (x) {} }, 300);
+}, true);
+
+/* patch LEADRISK: the clicks (owners / admins only) */
+function lrRepaint(){ LAST.at = 0; paint(); ST.call(W, function(){ LAST.at = 0; paint(); }, 450); }   /* again once the Leads page has redrawn */
+function lrSave(id, rec){
+  var f = function(x){ x.lwClear = rec; x.lwClearLog = arr(x.lwClearLog).concat([rec]).slice(-30); };
+  try { if (W._gcLeadsHub && typeof W._gcLeadsHub.patchLead === 'function') return Promise.resolve(W._gcLeadsHub.patchLead(id, f)); } catch (e) {}
+  return new Promise(function(res){ try { if (typeof W._setLeads !== 'function') return res(false);
+    W._setLeads(function(list){ return arr(list).map(function(l){ if (!l || s(l.id) !== s(id)) return l; var y = Object.assign({}, l); f(y); y.updatedAt = new Date().toISOString(); return y; }); }); res(true); } catch (e) { res(false); } });
+}
+function lrClear(ids, all){
+  if (!admin()) return Promise.resolve({ cleared: [] });
+  var byId = {}; leads().forEach(function(l){ byId[s(l.id)] = l; });
+  var todo = arr(ids).map(function(id){ return byId[s(id)]; }).filter(Boolean), at = new Date().toISOString(), out = [];
+  todo.forEach(function(l){ LR.clr[s(l.id)] = C.clearSig(l); });
+  lrRepaint();
+  return todo.reduce(function(p, l){ return p.then(function(){
+    var r = riskOf(l), rec = { at: at, by: myName() || myEmail() || 'owner', byEmail: myEmail(), sig: C.clearSig(l), k: r ? r.k : '', all: !!all };
+    return lrSave(l.id, rec).then(function(ok){ if (ok === false) delete LR.clr[s(l.id)]; else out.push(s(l.id)); }, function(){ delete LR.clr[s(l.id)]; });
+  }); }, Promise.resolve()).then(function(){ LR.last = { at: at, all: !!all, cleared: out }; lrRepaint(); return LR.last; });
+}
+function lrDone(id, b){
+  if (!admin()) return Promise.resolve(false);
+  id = s(id); if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  var H = W._gcLeadsHub, p;
+  try { p = H && typeof H.markContacted === 'function' ? H.markContacted(id) : W._gcSTL && typeof W._gcSTL.mark === 'function' ? W._gcSTL.mark(id) : false; } catch (e) { p = false; }
+  return Promise.resolve(p).then(function(ok){
+    var l = leads().filter(function(x){ return s(x.id) === id; })[0];
+    if (ok || (l && C.contacted(l))) LR.done[id] = 1; else if (b) { b.disabled = false; b.textContent = '✓ Contacted'; }
+    lrRepaint(); return !!ok;
+  }, function(){ if (b) { b.disabled = false; b.textContent = '✓ Contacted'; } return false; });
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-lw-done],[data-lw-clear],[data-lw-clearall]') : null; if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  if (!admin()) return;
+  if (t.hasAttribute('data-lw-done')) { lrDone(t.getAttribute('data-lw-done'), t); return; }
+  if (t.hasAttribute('data-lw-clear')) { lrClear([t.getAttribute('data-lw-clear')], false); return; }
+  var v = t.getAttribute('data-lw-clearall');
+  if (v === 'ask') { LR.ask = Date.now() + 15000; lrRepaint(); ST.call(W, lrRepaint, 15100); return; }
+  LR.ask = 0;
+  if (v === 'yes') { lrClear(list().map(function(z){ return z.l.id; }), true); return; }
+  lrRepaint();
 }, true);
 
 /* ── the company filter never hides a lead at risk ── */
@@ -254954,7 +255049,7 @@ SI.call(W, function(){ try { subSweep(); } catch (e) {} }, 9000);
 
 SI.call(W, paint, 2000);
 ST.call(W, paint, 800);
-W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, subSweep: subSweep, subPlan: subPlan, subState: function(){ return SUBQ; }, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
+W._gcLeadWatch = { core: C, list: list, clear: lrClear, contacted: lrDone, clearState: function(){ return { ask: LR.ask > Date.now(), local: Object.keys(LR.clr), done: Object.keys(LR.done), last: LR.last }; },   /* patch LEADRISK */ jobSweep: jobSweep, subSweep: subSweep, subPlan: subPlan, subState: function(){ return SUBQ; }, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
   state: function(){ return { atRisk: list().map(function(z){ return { id: z.l.id, k: z.r.k, h: z.r.h, kind: C.kindOf(z.l) }; }), hidden: OLD.n, by: OLD.why, cut: cut(), admin: admin(), office: office() }; } };
 try { console.log('[GC] 🚨 leads at risk + To-Do only from now on (patch LEADWATCH) — _gcLeadWatch'); } catch (e) {}
 })(window);

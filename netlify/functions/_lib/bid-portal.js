@@ -34,6 +34,28 @@
 'use strict';
 const crypto = require('crypto');
 
+/* ── patch BIDAUTO (owner 11/23: "all these jobs shouldn't be on bid portal only if we put them on there, what are those") ──
+   A bid job is ON the bid portal only when a PERSON put it there: 📢 Put on bid portal (postedAt), Publish / Make public by a person
+   (publishedBy), Open to invited subs by a person (openedBy, not the old automatic private opening), an invite a person sent. The old
+   automatic opening (bid-inbox's "every estimator lead → a private bid job" and bid-hub's draft → private sweep: autoPrivate / openedBy
+   'auto') no longer happens, and a job it opened that no person and no sub ever touched READS AS A DRAFT everywhere (hidden from subs,
+   no "On bid portal"), at read time — nothing stored is changed. A job a sub already touched (a bid, a question, a plan / info request,
+   an invite) stays as it is (listed for the owner: bid-hub ?autoopen=1). Pure: no I/O. */
+function bs(v){ return v == null ? '' : String(v).trim(); }
+function personBy(v){ return !!bs(v) && !/^(auto|lead-inbox|bid-hub)$/i.test(bs(v)); }
+function personOpened(j){
+  j = j || {};
+  if (bs(j.postedAt) || bs(j.personOpenedAt)) return true;
+  if (bs(j.publishedAt) && personBy(j.publishedBy)) return true;
+  if (bs(j.openedPrivateAt) && j.autoPrivate !== true && personBy(j.openedBy)) return true;
+  return false;
+}
+/* opened (not a draft) by the old automatic way, and no person since */
+function autoOpened(j){ return !!j && j.draft !== true && bs(j.status).toLowerCase() !== 'draft' && (j.autoPrivate === true || bs(j.openedBy) === 'auto') && !personOpened(j); }
+/* k: { invites, bids, questions, planreqs, mquotes } (counts) */
+function subTouched(k){ k = k || {}; return ['invites', 'bids', 'questions', 'planreqs', 'mquotes'].some(x => +k[x] > 0); }
+function autoDraft(j, k){ return autoOpened(j) && !subTouched(k); }
+
 const BUCKET = 'subportal-files', SRC_BUCKET = 'crm-files', KQ = 'gc_bidportal_queue';
 const MAX_COPY = 50 * 1024 * 1024;
 
@@ -229,10 +251,12 @@ function make(d){
     if (mode === 'public') {
       if (!job.bidDueDate) return { ok: false, code: 400, error: 'Add a bid due date first — a public bid job needs one.' };
       Object.assign(job, { status: 'open', visibility: 'public', draft: false, publishedAt: job.publishedAt || nowIso(), publishedBy: s(who && who.email) || 'staff', madePublicAt: nowIso() });
+    } else if (o.auto) {
+      /* patch BIDAUTO: an automatic call never opens a job to subs — it stays a hidden draft until a person puts it on the bid portal */
     } else if (mode === 'private' && o.auto && job.draft === false) {
       /* patch SYS: the automatic "every lead → a private bid job" never touches a job a person already opened or made public */
     } else if (mode === 'private') {
-      if (o.auto) job.autoPrivate = true;
+      Object.assign(job, { autoPrivate: false, personOpenedAt: job.personOpenedAt || nowIso(), personOpenedBy: s(who && who.email) || 'staff' });   /* patch BIDAUTO: a person opened it */
       Object.assign(job, { status: CLOSEDRE.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: s(who && who.email) || 'staff' });
     }
     if (!job.notesEditedAt) job.notes = notesFor(item, job.draft === false) + (arr(job.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + job.crmNotes.map(n => '• ' + n).join('\n') : '');
@@ -244,4 +268,4 @@ function make(d){
 
   return { status, draft, publish, flush, setPortal, jobIdFor, _copyFile: copyFile, _noPrices: noPrices, KQ };
 }
-module.exports = { make, BUCKET, KQ };
+module.exports = { make, BUCKET, KQ, personOpened, autoOpened, subTouched, autoDraft };
