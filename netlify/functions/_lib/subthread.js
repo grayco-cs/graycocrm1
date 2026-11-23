@@ -37,6 +37,8 @@ async function after(d, o){
       const subj = (es ? 'Nuevo mensaje de GrayCo' : 'New message from GrayCo') + (tag ? ' — ' + tag : '');
       const body = clip(o.text, 300) || (es ? 'GrayCo le envió un archivo.' : 'GrayCo sent you a file.');
       if (d.okEmail(s(sub.email))) { const r = await d.sendMail(s(sub.email), subj, d.mailHtml(subj, body, '', { href: url, label: es ? 'Abrir el trabajo en mi portal' : 'Open the job in my portal' })); out.notified = !!(r && r.ok); out.mail = r; }
+      if (d.teamCc) { try { const cc = (await d.teamCc(s(o.subId))).filter(e => e !== String(sub.email || '').toLowerCase()); const home = (d.portalBase ? d.portalBase() : '') + '/';   /* patch PORTALTEAM: coworkers who turned "Notify me" on (a sign-in link, never the company's link code) */
+        for (const e of cc) await d.sendMail(e, subj, d.mailHtml(subj, body, '', { href: home, label: es ? 'Abrir mi portal' : 'Open my portal' })); out.team = cc.length; } catch (e) {} }
       if (d.textReady() && d.phone10(sub.phone)) { const t = await d.sendText(d.phone10(sub.phone), 'GrayCo' + (tag ? ' — ' + tag : '') + ': ' + clip(o.text, 120) + ' ' + url); out.texted = !!(t && t.ok); }
     } catch (e) { out.notifyError = s(e && e.message); }
   }

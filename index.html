@@ -232336,7 +232336,7 @@ function officeHere(){ try { return !!(W._gcIsOfficeFull && W._gcIsOfficeFull())
 
 var STAT = { pending: ['⏳', 'Pending approval', 'p'], approved: ['✅', 'Approved', 'a'], denied: ['⛔', 'Denied / revoked', 'd'], disabled: ['🔒', 'Sign-in off', 'x'], orphan: ['⚠', 'Sign-in without a profile', 'o'] };
 var PAPERN = { w9: 'W-9', insurance_general: 'GL insurance', insurance_workers_comp: 'Workers\' comp', license: 'License', other: 'Other paper' };
-var FILT = [['all', 'All'], ['pending', '⏳ Pending'], ['approved', '✅ Approved'], ['disabled', '🔒 Off'], ['denied', '⛔ Denied'], ['unlinked', 'Not in CRM'], ['orphan', '⚠ No profile']];
+var FILT = [['all', 'All'], ['pending', '⏳ Pending'], ['approved', '✅ Approved'], ['disabled', '🔒 Off'], ['denied', '⛔ Denied'], ['unlinked', 'Not in CRM'], ['orphan', '⚠ No profile'], ['joinreq', '👥 Wants to join']];   /* PORTALTEAM: + a free-mail sign-up asking to join a company */
 var UI = { box: null, list: null, total: 0, counts: {}, page: 1, per: 50, q: '', f: 'all', err: '', busy: false, canEdit: false, log: null, seq: 0 };
 var SH = { id: '', g: null, err: '', busy: '', temp: null, crmSubs: null, del: false };
 
@@ -232378,7 +232378,7 @@ function paint(){
   else {
     h += '<div class="tbl"><table><thead><tr><th>Company</th><th>Contact</th><th>E-mail (login)</th><th class="hide-s">Phone</th><th class="hide-s">Trades</th><th>Status</th><th>CRM sub</th><th class="hide-s">Portal link</th><th>Last sign-in</th><th class="hide-s">Created</th><th class="hide-s">Papers</th></tr></thead><tbody>'
       + UI.list.map(function(r){
-        return '<tr data-sa-row="' + esc(r.id) + '" tabindex="0"><td><b>' + esc(r.company || '—') + '</b>' + (r.mustChange ? '<div class="w">asked to change password</div>' : '') + '</td><td>' + esc(r.name || '—') + '</td><td>' + esc(r.email) + '</td><td class="hide-s">' + esc(r.phone || '—') + '</td>'
+        return '<tr data-sa-row="' + esc(r.id) + '" tabindex="0"><td><b>' + esc(r.company || '—') + '</b>' + (r.mustChange ? '<div class="w">asked to change password</div>' : '') + teamTag(r) + '</td><td>' + esc(r.name || '—') + '</td><td>' + esc(r.email) + '</td><td class="hide-s">' + esc(r.phone || '—') + '</td>'
           + '<td class="hide-s">' + esc(arr(r.trades).slice(0, 3).join(', ') || '—') + '</td><td>' + chip(r.status) + '</td><td>' + (r.crm ? esc(r.crm.name) : '<span class="w">not in CRM</span>') + '</td>'
           + '<td class="hide-s">' + (r.link && r.link.on ? '🟢 on' + (r.link.viewed ? '<div class="w">opened ' + when(r.link.viewed) + '</div>' : '') : '<span class="w">off</span>') + '</td>'
           + '<td>' + (r.lastSignInAt ? when(r.lastSignInAt, true) : '<span class="w">never</span>') + '</td><td class="hide-s">' + when(r.createdAt) + '</td><td class="hide-s">' + esc(papersTxt(r.papers)) + '</td></tr>';
@@ -232440,6 +232440,34 @@ function matchHint(g){
     return '<div class="w" data-sa-suggest>Looks like: ' + cand.slice(0, 3).map(function(c){ return '<a href="#" data-sa-act="pick" data-crm="' + esc(c.rec.id) + '">' + esc(c.rec.name) + '</a>' + (c.why ? ' (' + esc(arr(c.why).join ? arr(c.why).join(', ') : c.why) + ')' : ''); }).join(' · ') + '</div>';
   } catch (e) { warn(e); return ''; }
 }
+/* PORTALTEAM: the team section */
+function teamTag(r){ var t = r && r.team; if (!t || (!t.active && !t.requested)) return ''; return '<div class="w" data-sa-teamtag>👥 ' + (t.active + 1) + ' on the team' + (t.requested ? ' · <b>' + t.requested + ' wants to join</b>' : '') + '</div>'; }
+function teamSection(g){
+  var T = g.team || {}, L = arr(T.list), ed = !!g.teamEdit, busy = !!SH.busy;
+  var dis = function(){ return (busy || !ed) ? ' disabled' : ''; };
+  var who = function(a){ return a ? esc(a.name || a.email) + (a.role === 'staff' ? ' (GrayCo)' : '') : ''; };
+  var h = '<h4>👥 Team</h4><div class="box" data-sa-team><div class="w" style="margin-bottom:6px">Everyone here signs in with their own e-mail / phone and sees this company\'s jobs, bids, papers, pay and messages (bid site and GrayCo Portal). Removing keeps the record and ends their sign-in.</div>';
+  if (T.error) h += '<div class="err">' + esc(T.error) + '</div>';
+  if (T.wantsJoin && T.wantsJoin.company) h += '<div class="note" data-sa-wants>This sign-up asked to join <b>' + esc(T.wantsJoin.company) + '</b> (a free-mail address, so it was not joined by itself). Open that company\'s account to approve it.</div>';
+  L.forEach(function(x){
+    var st = x.status === 'active' ? '🟢 active' : x.status === 'requested' ? '⏳ wants to join' : x.status === 'denied' ? '⛔ not this company' : '⏸ removed';
+    var meta = [x.primary ? 'main contact' : (x.via === 'domain' ? 'joined by company e-mail' : x.via === 'request' ? 'asked to join' : x.addedBy ? 'added by ' + who(x.addedBy) + ' ' + when(x.addedAt, true) : ''),
+      x.status === 'removed' && x.removedBy ? 'removed by ' + who(x.removedBy) + ' ' + when(x.removedAt, true) : '', x.decidedBy ? 'decided by ' + who(x.decidedBy) + ' ' + when(x.decidedAt, true) : '',
+      x.invitedAt ? 'invited ' + when(x.invitedAt, true) : '', x.notify ? '🔔 notices on' : ''].filter(Boolean).join(' · ');
+    var acts = '';
+    if (ed) {
+      if (x.status === 'requested') acts += '<button type="button" data-sa-act="team" data-op="approve" data-m="' + esc(x.id) + '"' + dis() + '>✅ Approve join</button><button type="button" class="r" data-sa-act="team" data-op="deny" data-m="' + esc(x.id) + '"' + dis() + '>✕ Not this company</button>';
+      if (x.status === 'active' && !x.primary) acts += '<button type="button" class="g" data-sa-act="team" data-op="invite" data-m="' + esc(x.id) + '"' + dis() + '>✉️ Send invite</button>';
+      if (x.status === 'active') acts += '<button type="button" class="g" data-sa-act="team" data-op="remove" data-m="' + esc(x.id) + '"' + dis() + '>Remove</button>';
+      if (x.status === 'removed') acts += '<button type="button" class="g" data-sa-act="team" data-op="restore" data-m="' + esc(x.id) + '"' + dis() + '>Restore</button>';
+    }
+    h += '<div data-sa-member="' + esc(x.id) + '" style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;border-top:1px solid #e2e8f0;padding:7px 0"><div style="min-width:0;flex:1 1 240px;overflow-wrap:anywhere"><b>' + esc(x.name || x.email || x.phone) + '</b> <span class="w">' + esc([x.email, x.phone].filter(Boolean).join(' · ')) + '</span><div class="w">' + st + (meta ? ' · ' + meta : '') + '</div></div>'
+      + (acts ? '<div class="acts">' + acts + '</div>' : '') + '</div>';
+  });
+  if (ed) h += '<div class="grid" style="margin-top:8px"><div><label for="gc-sa-tm-name">Name</label><input type="text" id="gc-sa-tm-name" data-sa-tm="name" maxlength="80"></div><div><label for="gc-sa-tm-email">E-mail</label><input type="text" id="gc-sa-tm-email" data-sa-tm="email" maxlength="200" inputmode="email"></div><div><label for="gc-sa-tm-phone">Mobile</label><input type="text" id="gc-sa-tm-phone" data-sa-tm="phone" maxlength="40" inputmode="tel"></div></div>'
+    + '<div class="acts" style="margin-top:6px"><button type="button" data-sa-act="team" data-op="add"' + dis() + '>＋ Add to the team</button></div><div class="w">An invite goes only when someone taps ✉️ Send invite (customer quiet hours and data-entry mode apply).</div>';
+  return h + '</div>';
+}
 function paintSheet(){
   var m = sheetEl(); if (!m) return;
   var g = SH.g, r = g && g.account, p = (g && g.profile) || {}, au = (g && g.auth) || null, ed = !!(g && g.canEdit), busy = !!SH.busy;
@@ -232472,6 +232500,7 @@ function paintSheet(){
     + '<div><label for="gc-sa-f-lang">Language</label><select id="gc-sa-f-lang" data-sa-f="lang"' + (ed ? '' : ' disabled') + '><option value="en"' + (p.lang !== 'es' ? ' selected' : '') + '>English</option><option value="es"' + (p.lang === 'es' ? ' selected' : '') + '>Español</option></select></div></div>'
     + '<div class="w" style="margin-top:4px">' + esc([p.dbaName ? 'DBA ' + p.dbaName : '', p.licenseNumbers ? 'License ' + p.licenseNumbers : '', p.serviceArea ? 'Area ' + p.serviceArea : '', p.numEmployees ? 'Crew ' + p.numEmployees : '', p.website].filter(Boolean).join(' · ')) + '</div>'
     + (ed ? '<div class="acts" style="margin-top:8px"><button type="button" data-sa-act="save"' + dis() + '>💾 Save profile</button></div>' : '');
+  h += teamSection(g);   /* PORTALTEAM: owners and the office */
   if (ed) {
     h += '<h4>🔑 Password</h4><div class="box"><div class="acts"><button type="button" data-sa-act="resetlink"' + dis(!r.email) + '>✉️ E-mail a reset link</button><button type="button" class="g" data-sa-act="genpw"' + dis(!r.hasLogin) + '>🎲 Make a temporary password</button></div>'
       + '<label for="gc-sa-pw">…or type one (8+ characters, letters and a number)</label><div class="acts"><input type="password" id="gc-sa-pw" data-sa-pw-in autocomplete="new-password" style="max-width:260px"><button type="button" class="g" data-sa-act="setpw"' + dis(!r.hasLogin) + '>Set this password</button></div>'
@@ -232512,6 +232541,11 @@ function sheetClick(ev){
   if (a === 'close') return closeSheet();
   if (a === 'copypw') return copy(SH.temp || '').then(function(ok){ toast(ok ? 'Password copied — give it to them by phone or text' : 'Select the password and copy it', !ok); });
   if (a === 'hidepw') { SH.temp = null; return paintSheet(); }
+  if (a === 'team') {   /* PORTALTEAM: add / invite / remove / restore / approve / deny */
+    var op = b.getAttribute('data-op'), mid = b.getAttribute('data-m') || '', body = { op: op, memberId: mid };
+    if (op === 'add') { body.name = val('[data-sa-tm=name]'); body.email = val('[data-sa-tm=email]'); body.phone = val('[data-sa-tm=phone]'); if (!s(body.name) || (!s(body.email) && !s(body.phone))) { toast('Type a name and an e-mail or mobile number', true); return; } }
+    return run(op === 'invite' ? 'Sending the invite…' : 'Saving…', 'team-set', body, function(j){ var iv = j.invite; toast(op === 'invite' ? (iv && iv.ok ? (iv.held ? '✉️ Invite will go at 7:00 AM' : '✉️ Invite sent') : 'Invite not sent' + (iv && iv.why ? ' — ' + iv.why : '')) : '✓ Team updated', op === 'invite' && !(iv && iv.ok)); });
+  }
   if (a === 'save') {
     var set = {}; Array.prototype.forEach.call(m.querySelectorAll('[data-sa-f]'), function(el){ set[el.getAttribute('data-sa-f')] = el.value; });
     set.trades = s(set.trades).split(',').map(s).filter(Boolean);

@@ -1069,8 +1069,94 @@ function papersTab(){
   var p = HOME.papers || {};
   var langBox = h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn' + (LANG === 'en' ? ' navy' : ''), 'aria-pressed': LANG === 'en' ? 'true' : 'false', disabled: LANG === 'en', text: 'English', on: { click: function(){ setLang('en', true); } } }), h('button', { type: 'button', class: 'btn' + (LANG === 'es' ? ' navy' : ''), 'aria-pressed': LANG === 'es' ? 'true' : 'false', disabled: LANG === 'es', text: 'Español', on: { click: function(){ setLang('es', true); } } })]);
   return [card(t('papers'), [paperRow('w9', t('w9'), p.w9 || {}), paperRow('coi', t('coi'), p.coi || {}, true), paperRow('wc', t('wcP'), p.wc || {}, true), paperRow('license', t('licP'), p.license || {}, true), paperRow('agreement', t('agreement'), p.agreement || {}), paperRow('lien', t('lienW'), { onFile: false, sent: (p.lien || {}).sent })]),
-    card(t('language'), [langBox]), scoreCard()];
+    teamCard(), card(t('language'), [langBox]), scoreCard()];   /* patch PORTALTEAM: + 👥 My team */
 }
+
+/* ═══ patch PORTALTEAM (owner 11/23: "everyone that signs up the entire company can check out the portal") — 👥 My team, in Papers.
+   Everyone on the team sees what the company sees. Any active member adds a coworker (name + e-mail or mobile): they have the company's
+   access at once; "Send invite" (your click) e-mails them how to sign in — or, with only a mobile, opens a ready text on YOUR phone.
+   Remove keeps the record (who / when) and ends their sign-in; Restore brings them back. "Notify me" = GrayCo's notices to you too.
+   Inline (no pop-up); phone and desk. Server: portal-access.js p-team* (_lib/portalteam.js). */
+var TEAMW = {
+  en: { title: '👥 My team', intro: 'Everyone here can sign in and see your company\'s jobs, bids, papers, pay and messages.', main: 'Main contact', you: 'You',
+    removed: 'Removed', removedBy: 'by {n} on {d}', asking: 'Asking to join', add: '＋ Add a coworker', name: 'Name', email: 'E-mail', mobile: 'Mobile (if no e-mail)',
+    save: 'Add to my team', cancel: 'Cancel', invite: '✉️ Send invite', reinvite: '✉️ Invite again', invited: 'Invited {d}', remove: 'Remove', restore: 'Restore', confirmRm: 'Tap again to remove {n}',
+    notifyOn: '🔔 Notify me too', notifyOff: '🔕 Stop notifying me', notifyHint: 'The main contact always gets GrayCo\'s e-mails. Turn this on to get them too.', notifyIsOn: 'You get GrayCo\'s notices.',
+    sent: 'Invite sent to {to}', held: 'Invite will go out at 7:00 AM', paused: 'Not sent — GrayCo has sending paused. They can already sign in at portal.grayco-cs.com with their e-mail.', textIt: '📱 Text the invite from my phone',
+    added: '{n} is on your team now — send the invite so they know.', needName: 'Type their name.', needWay: 'Type their e-mail or mobile number.', load: 'Loading your team…' },
+  es: { title: '👥 Mi equipo', intro: 'Todos aquí pueden entrar y ver los trabajos, licitaciones, papeles, pagos y mensajes de su compañía.', main: 'Contacto principal', you: 'Usted',
+    removed: 'Quitado', removedBy: 'por {n} el {d}', asking: 'Pide unirse', add: '＋ Agregar un compañero', name: 'Nombre', email: 'Correo', mobile: 'Celular (si no tiene correo)',
+    save: 'Agregar a mi equipo', cancel: 'Cancelar', invite: '✉️ Enviar invitación', reinvite: '✉️ Invitar otra vez', invited: 'Invitado {d}', remove: 'Quitar', restore: 'Restaurar', confirmRm: 'Toque otra vez para quitar a {n}',
+    notifyOn: '🔔 Avisarme también', notifyOff: '🔕 Dejar de avisarme', notifyHint: 'El contacto principal siempre recibe los correos de GrayCo. Actívelo para recibirlos también.', notifyIsOn: 'Usted recibe los avisos de GrayCo.',
+    sent: 'Invitación enviada a {to}', held: 'La invitación saldrá a las 7:00 AM', paused: 'No se envió — GrayCo tiene los envíos en pausa. Ya puede entrar en portal.grayco-cs.com con su correo.', textIt: '📱 Enviar la invitación por texto desde mi teléfono',
+    added: '{n} ya está en su equipo — envíele la invitación para que sepa.', needName: 'Escriba su nombre.', needWay: 'Escriba su correo o celular.', load: 'Cargando su equipo…' }
+};
+function tw(k, v){ var s = (TEAMW[LANG] || TEAMW.en)[k] || TEAMW.en[k] || k; if (v) Object.keys(v).forEach(function(x){ s = s.split('{' + x + '}').join(v[x]); }); return s; }
+var TEAM = null, TEAM_ERR = '', TEAM_ADD = false, TEAM_RM = '', TEAM_NOTE = null;
+function teamCss(){
+  if (document.getElementById('gc-team-css')) return;
+  var st = document.createElement('style'); st.id = 'gc-team-css';
+  st.textContent = '#teamCard .tm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:10px 0;border-top:1px solid #EFEAE0}#teamCard .tm-row:first-of-type{border-top:0}'
+    + '#teamCard .tm-who{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}#teamCard .tm-who b{display:block}#teamCard .tm-acts{display:flex;flex-wrap:wrap;gap:6px}#teamCard .tm-acts .btn{min-height:40px}'
+    + '#teamCard .tm-off{opacity:.6}#teamCard .tm-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}#teamCard .tm-form input{width:100%;box-sizing:border-box;min-height:44px;font-size:16px}'
+    + '#teamCard .tm-note{background:#E3F5EC;color:#1F5E33;border-radius:10px;padding:8px 10px;margin:8px 0;overflow-wrap:anywhere}#teamCard .tm-note.bad{background:#FDECEC;color:#8a1c1c}';
+  document.head.appendChild(st);
+}
+function teamLoad(){ return api('p-team', {}).then(function(j){ TEAM = j; TEAM_ERR = ''; teamPaint(); }, function(e){ TEAM_ERR = e.message; teamPaint(); }); }
+function teamDo(action, body, btn){
+  busy(btn, true);
+  return api(action, body || {}).then(function(j){ busy(btn, false); TEAM = j; TEAM_ERR = ''; TEAM_RM = ''; return j; }, function(e){ busy(btn, false); TEAM_NOTE = { text: e.message, bad: true }; teamPaint(); throw e; });
+}
+function teamRow(x){
+  var me = TEAM || {}, off = x.status === 'removed', who = [x.email, x.phone].filter(Boolean).join(' · ');
+  var tags = [x.primary ? tw('main') : '', x.mine ? tw('you') : '', x.status === 'requested' ? tw('asking') : '', off ? tw('removed') + (x.removedBy && x.removedBy.name ? ' — ' + tw('removedBy', { n: x.removedBy.name, d: dt(x.removedAt) }) : '') : '',
+    !off && !x.primary && x.invitedAt ? tw('invited', { d: dt(x.invitedAt) }) : ''].filter(Boolean).join(' · ');
+  var acts = [];
+  if (me.canManage && !off && !x.primary && x.status === 'active' && !x.mine) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-invite': x.id, text: x.invitedAt ? tw('reinvite') : tw('invite'), on: { click: function(ev){ teamInvite(x, ev.currentTarget); } } }));
+  if (me.canManage && !off && (x.status === 'active' || x.status === 'requested')) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-remove': x.id, text: TEAM_RM === x.id ? tw('confirmRm', { n: x.name }) : tw('remove'),
+    on: { click: function(ev){ if (TEAM_RM !== x.id) { TEAM_RM = x.id; teamPaint(); return; } teamDo('p-team-remove', { id: x.id }, ev.currentTarget).then(function(j){ if (j.self) { ENDED = true; H.ended(); return; } teamPaint(); }, function(){}); } } }));
+  if (me.canManage && off) acts.push(h('button', { type: 'button', class: 'btn sm', 'data-tm-restore': x.id, text: tw('restore'), on: { click: function(ev){ teamDo('p-team-restore', { id: x.id }, ev.currentTarget).then(teamPaint, function(){}); } } }));
+  return h('div', { class: 'tm-row' + (off ? ' tm-off' : ''), 'data-tm': x.id }, [h('div', { class: 'tm-who' }, [h('b', { text: x.name || who }), who ? h('div', { class: 'muted', text: who }) : null, tags ? h('div', { class: 'muted', text: tags }) : null]), acts.length ? h('div', { class: 'tm-acts' }, acts) : null]);
+}
+function teamInvite(x, btn){
+  teamDo('p-team-invite', { id: x.id }, btn).then(function(j){
+    var inv = j.invite || {};
+    TEAM_NOTE = inv.paused ? { text: tw('paused'), bad: true, sms: inv.sms } : inv.held ? { text: tw('held') } : inv.how === 'sms' ? { text: '', sms: inv.sms } : inv.ok ? { text: tw('sent', { to: inv.to || x.email }) } : { text: inv.why || t('failed'), bad: true, sms: inv.sms };
+    teamPaint();
+  }, function(){});
+}
+function teamPaint(){
+  var c = document.getElementById('teamCard'); if (!c) return;
+  c.innerHTML = '';
+  c.appendChild(h('h2', { text: tw('title') }));
+  if (TEAM_ERR) { c.appendChild(h('div', { class: 'err', text: TEAM_ERR })); return; }
+  if (!TEAM) { c.appendChild(h('div', { class: 'muted', text: tw('load') })); return; }
+  c.appendChild(h('p', { class: 'muted', text: tw('intro') }));
+  if (TEAM_NOTE) { var n = TEAM_NOTE; c.appendChild(h('div', { class: 'tm-note' + (n.bad ? ' bad' : ''), role: 'status', 'data-tm-note': '1' }, [n.text ? h('div', { text: n.text }) : null, n.sms ? h('a', { class: 'btn sm', href: n.sms, 'data-tm-sms': '1', text: tw('textIt') }) : null])); }
+  (TEAM.team || []).forEach(function(x){ c.appendChild(teamRow(x)); });
+  if (TEAM.me && TEAM.me !== 'primary') c.appendChild(h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn', id: 'tmNotify', 'aria-pressed': TEAM.notify ? 'true' : 'false', text: TEAM.notify ? tw('notifyOff') : tw('notifyOn'),
+    on: { click: function(ev){ teamDo('p-team-notify', { on: !TEAM.notify }, ev.currentTarget).then(teamPaint, function(){}); } } }), h('span', { class: 'muted', text: TEAM.notify ? tw('notifyIsOn') : tw('notifyHint') })]));
+  if (!TEAM.canManage) return;
+  if (!TEAM_ADD) { c.appendChild(h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn navy', id: 'tmAdd', text: tw('add'), on: { click: function(){ TEAM_ADD = true; TEAM_NOTE = null; teamPaint(); try { document.getElementById('tmName').focus(); } catch (e) {} } } })])); return; }
+  var nm = h('input', { id: 'tmName', type: 'text', maxlength: '80', autocomplete: 'off' }), em = h('input', { id: 'tmEmail', type: 'email', maxlength: '200', autocomplete: 'off', inputmode: 'email' }), ph = h('input', { id: 'tmPhone', type: 'tel', maxlength: '40', autocomplete: 'off', inputmode: 'tel' });
+  var err = h('div', { class: 'err', role: 'alert' });
+  var go = h('button', { type: 'button', class: 'btn navy', id: 'tmSave', text: tw('save'), on: { click: function(){
+    err.textContent = '';
+    if (!nm.value.trim()) { err.textContent = tw('needName'); nm.focus(); return; }
+    if (!em.value.trim() && !ph.value.trim()) { err.textContent = tw('needWay'); em.focus(); return; }
+    teamDo('p-team-add', { name: nm.value.trim(), email: em.value.trim(), phone: ph.value.trim() }, go).then(function(j){ TEAM_ADD = false; TEAM_NOTE = { text: tw('added', { n: (j.added && j.added.name) || nm.value.trim() }) }; teamPaint(); }, function(e){ TEAM_NOTE = null; teamPaint(); });
+  } } });
+  c.appendChild(h('div', { class: 'tm-form' }, [field(tw('name'), nm), field(tw('email'), em), field(tw('mobile'), ph)]));
+  c.appendChild(err);
+  c.appendChild(h('div', { class: 'btns' }, [go, h('button', { type: 'button', class: 'btn', id: 'tmCancel', text: tw('cancel'), on: { click: function(){ TEAM_ADD = false; teamPaint(); } } })]));
+}
+function teamCard(){
+  teamCss();
+  var c = h('section', { class: 'card', id: 'teamCard' });
+  setTimeout(function(){ if (TEAM) teamPaint(); else { teamPaint(); teamLoad(); } }, 0);
+  return c;
+}
+/* ═══ end patch PORTALTEAM ═══ */
 
 /* patch AUTO7: the scorecard — in Papers (the settings page), closed until they open it; only their own numbers */
 var SCORE = null, scoreOpen = false;

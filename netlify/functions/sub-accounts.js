@@ -32,6 +32,9 @@
 //                                          company). Deletes the Supabase sign-in + the profile row (+ their My Documents row
 //                                          when asked). The CRM Subs record, its files, and their bids stay.
 //   log       {}                         → the audit list (who did what, when — never a password)
+//   team-set  { id, op: add|remove|restore|approve|deny|invite, memberId?, name?, email?, phone? }   (patch PORTALTEAM — owners AND the
+//                                          office: 👥 the company's team; approve / deny = a free-mail "wants to join <Company>";
+//                                          staff may remove the last active person; nothing is ever deleted)
 // Passwords are never readable: Supabase keeps only a hash. Nothing here returns a hash, a token or a reset link.
 // Every change is written to the audit list gc_kv "gc_sub_acct_log" (newest first, last 500).
 'use strict';
@@ -68,6 +71,7 @@ function cors(event){
 function SP(){ return require('./subportal.js')._hub; }
 function PA(){ return require('./portal-access.js')._acct; }
 function SR(){ return require('./_lib/staff-role.js'); }
+function TEAM(){ return require('./_lib/portalteam.js'); }   /* patch PORTALTEAM */
 
 /* ── who is asking: a CRM sign-in on the GrayCo staff list (the same check as portal-access.js gcStaffAuth) ── */
 async function staffAuth(event){
@@ -196,13 +200,16 @@ async function linksActive(){
   return by;
 }
 async function everything(){
-  const [profs, auths, data, links, papers, off, staff] = await Promise.all([profiles(), authUsers(), PA().crmData(true), linksActive(), papersAll(), kvGet(OFF_KEY).catch(function(){ return null; }), staffEmails()]);
+  const [profs, auths, data, links, papers, off, staff, team] = await Promise.all([profiles(), authUsers(), PA().crmData(true), linksActive(), papersAll(), kvGet(OFF_KEY).catch(function(){ return null; }), staffEmails(), TEAM().all().catch(function(){ return []; })]);
   const om = offMap(off), byAuthId = {}, byEmail = {};
   auths.forEach(function(a){ if (a.id) byAuthId[a.id] = a; if (a.email) byEmail[a.email] = a; });
   const used = {};
   const rows = profs.map(function(p){
     const a = (s(p.authUserId) && byAuthId[s(p.authUserId)]) || byEmail[low(p.email)] || null; if (a) used[a.id] = 1;
-    return rowOut(p, a, data, links, papers[s(p.id)], !!om.ids[s(p.id)]);
+    const r = rowOut(p, a, data, links, papers[s(p.id)], !!om.ids[s(p.id)]);
+    const tr = team.filter(function(m){ return m.company === TEAM().keySub(p.id) && m.primary !== true; });   /* patch PORTALTEAM */
+    r.team = { active: tr.filter(function(m){ return m.status === 'active'; }).length, requested: tr.filter(function(m){ return m.status === 'requested'; }).length };
+    return r;
   });
   /* a sub sign-in with no profile (a sign-up that broke half way) — listed so it can be deleted */
   auths.filter(function(a){ return !used[a.id] && a.portal === 'sub' && staff.indexOf(a.email) < 0; }).forEach(function(a){
@@ -219,7 +226,8 @@ function matches(r, q){
 const FILTERS = {
   all: function(){ return true; }, pending: function(r){ return r.status === 'pending'; }, approved: function(r){ return r.status === 'approved'; },
   denied: function(r){ return r.status === 'denied'; }, disabled: function(r){ return r.status === 'disabled'; }, unlinked: function(r){ return r.status !== 'orphan' && !r.crm; },
-  orphan: function(r){ return r.status === 'orphan'; }
+  orphan: function(r){ return r.status === 'orphan'; },
+  joinreq: function(r){ return !!(r.team && r.team.requested); }   /* patch PORTALTEAM: 👥 someone wants to join this company */
 };
 
 /* ── the actions ── */
@@ -285,6 +293,46 @@ async function resetLink(prof){
   return true;
 }
 
+/* ═══ patch PORTALTEAM: 👥 the company's team (owners and the office) — _lib/portalteam.js ═══ */
+function teamKeys(data, prof){ const c = crmOf(data, prof); return [TEAM().keySub(prof.id)].concat(c && c.id ? [TEAM().keyCrm(c.id)] : []); }
+async function teamOf(data, prof){
+  try {
+    const p = await profileOf(prof.id), keys = teamKeys(data, p), rows = await TEAM().ofCompany(keys);
+    const list = TEAM().teamOut({ name: p.name, email: p.email, phone: p.phone }, rows, '');
+    const full = {}; rows.forEach(function(m){ full[m.primary ? 'primary' : m.id] = m; });
+    list.forEach(function(x){ const m = full[x.id]; if (m) { x.log = (Array.isArray(m.log) ? m.log : []).slice(-12); x.decidedAt = s(m.decidedAt); x.decidedBy = m.decidedBy || null; x.restoredAt = s(m.restoredAt); } });
+    /* the denied requests stay on record too */
+    rows.filter(function(m){ return m.status === 'denied'; }).forEach(function(m){ list.push(Object.assign(TEAM().view(m), { decidedAt: s(m.decidedAt), decidedBy: m.decidedBy || null })); });
+    return { list: list, wantsJoin: p.wantsJoin || null };
+  } catch (e) { return { list: [], error: s(e && e.message) }; }
+}
+async function teamSet(body, who){
+  if (!who.admin && !who.office) throw Fail(403, 'Only an owner or the office changes a company\'s team.');
+  const prof = await profileOf(body.id), data = await PA().crmData(false), keys = teamKeys(data, prof), op = s(body.op);
+  const actor = { email: who.email, name: who.name || who.email, role: 'staff' }, crm = crmOf(data, prof);
+  const primary = { name: prof.name, email: prof.email, phone: prof.phone };
+  let res = {};
+  if (op === 'add') {
+    const m = await TEAM().add(keys, { name: body.name, email: body.email, phone: body.phone }, actor, { kind: 'sub', companyName: prof.company, via: 'staff', primary: primary });
+    await audit(who, 'team add', prof, s(m.name) + ' ' + s(m.email || m.phone));
+  } else if (op === 'remove' || op === 'restore' || op === 'approve' || op === 'deny') {
+    const id = s(body.memberId) || '';
+    const r = await TEAM().setStatus(keys, id, op, actor, { staff: true, primary: primary, kind: 'sub', companyName: prof.company, crmSubId: crm && crm.id });
+    if (op === 'remove' && !r.unchanged) {   /* their signed-in devices end now */
+      const ids = TEAM().identOfMember(r.member).map(function(k){ return PAcore().hmac(k); });
+      if (ids.length) { try { await fetch(sbUrl() + '/rest/v1/gc_portal_session?revoked=eq.false&ident=in.(' + ids.map(function(x){ return '"' + x + '"'; }).join(',') + ')', { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ revoked: true }) }); } catch (e) {} }
+    }
+    await audit(who, 'team ' + op, prof, s(r.member && r.member.name) + ' ' + s(r.member && (r.member.email || r.member.phone)));
+  } else if (op === 'invite') {
+    const m = await TEAM().getOne(keys, s(body.memberId));
+    res.invite = await TEAM().invite(m, actor, { url: PAcore().portalBase() + '/', company: prof.company, byName: 'GrayCo', es: s(prof.lang) === 'es' });
+    await audit(who, 'team invite', prof, s(m.name) + ' ' + (res.invite.ok ? 'sent' : 'not sent'));
+  } else throw Fail(400, 'Pick what to do.');
+  return Object.assign({ ok: true, team: await teamOf(data, prof) }, res);
+}
+function PAcore(){ return require('./portal-access.js')._core; }
+/* ═══ end patch PORTALTEAM ═══ */
+
 async function act(action, body, who, event){
   if (action === 'list') {
     const all = await everything();
@@ -313,7 +361,8 @@ async function act(action, body, who, event){
     await audit(who, 'delete', { id: 'auth:' + a.id, email: a.email }, 'sign-in without a profile deleted');
     return { ok: true, deleted: true };
   }
-  if (action === 'get') { const g = await getOne(body.id); delete g.data; return Object.assign({ ok: true, account: g.row, canEdit: !!who.admin }, { profile: g.profile, auth: g.auth, sessions: g.sessions, portalLastSeen: g.portalLastSeen, papers: g.papers }); }
+  if (action === 'get') { const g = await getOne(body.id); const tm = await teamOf(g.data, g.profile); delete g.data; return Object.assign({ ok: true, account: g.row, canEdit: !!who.admin }, { profile: g.profile, auth: g.auth, sessions: g.sessions, portalLastSeen: g.portalLastSeen, papers: g.papers, team: tm, teamEdit: !!(who.admin || who.office) }); }   /* patch PORTALTEAM: + team */
+  if (action === 'team-set') return teamSet(body, who);   /* patch PORTALTEAM */
 
   needAdmin(who);
   const prof = await profileOf(body.id);

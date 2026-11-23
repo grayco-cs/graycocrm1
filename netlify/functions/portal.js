@@ -1922,6 +1922,8 @@ async function aqSend(item, now){
   const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: subj, html: html };
   if (item.jobId) { try { const dj = await crmData(false), pj = findProject(dj, item.jobId), CB = require('./_lib/cobrand.js'); CB.apply(payload, CB.info(pj, dj.gc_companies)); } catch (e) {} }   /* patch COTRAIN: a Mitigation / Environmental job's e-mail is that company's (sender, subject, logo, "check made out to") */
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
+  if (item.jobId) { try { const dj = await crmData(false), pj = findProject(dj, item.jobId), TM = require('./_lib/portalteam.js');   /* patch PORTALTEAM: the customer's coworkers / household who turned "Notify me" on */
+    if (pj && TM.custKeys(pj, TM.custOf(pj, dj.customers)).some(function(k){ return k === 'cu:e:' + low(item.to); })) { const cc = (await TM.notifyList(TM.custKeys(pj, TM.custOf(pj, dj.customers)))).filter(function(e){ return e !== low(item.to); }); if (cc.length) payload.cc = (payload.cc || []).concat(cc).slice(0, 10); } } catch (e) {} }
   /* patch AP2: the invoice PDF, made fresh from the CRM's record, goes with the e-mail */
   const pdfs = (item.attachments || []).filter(function(a){ return a && a.kind === 'pdf' && a.invoiceId; });
   if (pdfs.length) {
