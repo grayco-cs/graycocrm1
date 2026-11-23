@@ -1573,7 +1573,10 @@ async function partnerAction(action, body, ctx){
     if (!text && !files.length) throw Fail(400, 'Type a message.');
     const tmA = await teamMemberBySession(ctx.sess, 'sub');   /* patch PORTALTEAM: a coworker writes under their own name */
     const m = await msgInsert(p.id, 's:' + sub.id, 'them', tmA ? s(tmA.name) : s(sub.contact || sub.name), text, files);
-    return { ok: true, id: m };
+    /* patch SUBFLOW: the job's PM hears it at once (a phone push + staff text, the job-message rules: 🌙 quiet hours, 🏖 Away, one per 5
+       minutes per thread; no PM → the owners) — it was only a 🔔 For you line in the CRM; ↩ Reply in the job's 💬 Messages answers here */
+    let pmTold = false; try { const nr = await CMN.run({ email: 'sub@portal.invalid', name: s(sub.name) }, { pid: s(p.id), msgId: 'SPM_' + m, text: '💬 ' + s(sub.name) + ' (sub portal): ' + (text || '📎 ' + files.length + ' file(s)').slice(0, 1800), head: s(sub.name) + ' (sub portal) on ' + (s(p.name) || 'a job') }); pmTold = !!(nr && nr.ok && arr(nr.to).length); } catch (e) {}
+    return { ok: true, id: m, pmTold: pmTold };
   }
   if (action === 'p-late') {   /* patch SUBTXT: "Can't make it / running late" → the job's PM at once (push, 🔴 To-Do, e-mail) + this thread */
     const p = jobOf(ctx, body.projectId);
@@ -1605,6 +1608,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-receipt') return pReceipt(ctx, body);         /* patch POGUARD: 🧾 Send a receipt / expense — with its PO (or "I don't know" → the No-PO alert) */
   if (action === 'p-receipt-po') return pReceiptPo(ctx, body);   /* patch POGUARD: ✏️ Add / fix the PO on their own receipt until it is approved */
   if (action === 'p-sched') return SSCH().partner(ctx, body, schedDeps(ctx.data));   /* patch SUBSCHED: 📅 My schedule for this job (list / save / cancel) */
+  if (action === 'p-bid-zip') return pBidZip(sub, body);   /* patch SUBFLOW: ⬇ All plans (ZIP) */
   if (action === 'p-bid-request') return pBidRequest(sub, body);   /* patch PLANREQ: 📩 Request plans / more info */           /* patch BIDPOST: ❓ Ask a question about a job */         /* patch SUBBIDS: send / update their bid (papers first) */
   throw Fail(400, 'Bad request');
 }
@@ -1815,10 +1819,20 @@ async function pBidJobs(sub){
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'questions'), HUB().inList('job_id', ids)])).forEach(function(r){ const q = r.data || {};
     if (s(q.userId) !== s(c.profile.id) && !(q.visibility === 'public' && s(q.answer))) return;
     (qs[s(q.jobId)] = qs[s(q.jobId)] || []).push({ id: s(q.id), body: clip(q.body, 4000), at: s(q.at), answer: clip(q.answer, 8000), answeredAt: s(q.answeredAt), mine: s(q.userId) === s(c.profile.id), shared: q.visibility === 'public' }); }); } catch (e) {} }
+  /* patch SUBFLOW: the messages between GrayCo and this sub on each bid job — the bid site's, and the CRM job's sub thread when the bid job is
+     linked to one (a ↩ Reply from the CRM / GrayCo Field lands in one of the two) — so an answer shows here as on the bid site */
+  const msgs = {};
+  if (ids.length) {
+    try { (await HUB().listRows([HUB().eq('collection', 'messages'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ const m = r.data || {}; if (ids.indexOf(s(m.jobId)) < 0) return;
+      (msgs[s(m.jobId)] = msgs[s(m.jobId)] || []).push({ mine: s(m.senderRole) === 'sub', by: s(m.senderRole) === 'sub' ? '' : clip(m.senderName, 80) || 'GrayCo', text: clip(m.body, 4000), at: s(m.at) }); }); } catch (e) {}
+    const byPid = {}; ids.forEach(function(id){ const cp = s((sc.jobs[id].data || {}).crmProjectId); if (cp) (byPid[cp] = byPid[cp] || []).push(id); });   /* one CRM job can have several bid jobs: the thread shows on each */
+    if (Object.keys(byPid).length) { try { (await dbGet('gc_portal_msg', 'select=project_id,side,author,text,created_at&party=eq.' + encodeURIComponent('s:' + s(sub.id)) + '&project_id=' + inq(Object.keys(byPid)) + '&order=created_at.asc&limit=500')).forEach(function(m){
+      (byPid[s(m.project_id)] || []).forEach(function(id){ (msgs[id] = msgs[id] || []).push({ mine: m.side !== 'gc', by: m.side === 'gc' ? clip(m.author, 80) || 'GrayCo' : '', text: clip(m.text, 4000), at: s(m.created_at) }); }); }); } catch (e) {} }
+  }
   const signQ = [];   /* patch PLANREQ-C: trade scope files to sign */
   const reqs = {};   /* patch PLANREQ: their own 📩 requests only */
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'planreqs'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ reqs[s(r.job_id)] = HUB().subReqView(r.data); }); } catch (e) {} }
-  const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); });
+  const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); if (arr(views[id].addenda).length) signQ.push(views[id].addenda); });   /* patch SUBFLOW: + the published addenda's files */
   if (signQ.length) { try { await HUB().signAll(signQ); } catch (e) {} }   /* patch PLANREQ-C: their trades' scope files, as 8-hour links */
   const jobs = ids.map(function(id){
     const j = views[id], b = mine[id] || null, open = !!sc.biddable[id];
@@ -1827,7 +1841,10 @@ async function pBidJobs(sub){
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
       details: detailsOut(j), biddingClosed: !!j.biddingClosed,   /* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details (never internal notes / the RSVP list) */
-      questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null };
+      questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null,
+      addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30),
+        files: arr(a.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Addendum', url: f.dataUrl } : null; }).filter(Boolean) }; }),   /* patch SUBFLOW: 📎 Addenda (as on the bid site) */
+      messages: (msgs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), pastDue: !!j.pastDue || (!open && !j.biddingClosed && !!HUB().dueOver(sc.jobs[id].data || {})) };   /* patch SUBFLOW */
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
   return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email), trades: (Array.isArray(c.profile.trades) ? c.profile.trades : []).map(function(x){ return clip(x, 60); }).slice(0, 20) } };   /* patch PLANREQ: the request form shows who it is from; PLANREQ-T: their trades ("Your trade") */
@@ -1857,10 +1874,19 @@ async function pBidAsk(sub, body){   /* patch BIDPOST: a sub's question → the 
   if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
   if (!c.sc.jobs[jobId]) throw Fail(403, 'That job is not open to you.');
   const id = 'q_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
-  await HUB().saveCollection(c.who, 'questions', [{ id: id, jobId: jobId, body: text, attachments: [] }], [], { scope: c.sc });
+  await HUB().saveCollection(c.who, 'questions', [{ id: id, jobId: jobId, body: text, attachments: [], via: 'portal' }], [], { scope: c.sc });   /* patch SUBFLOW: + via */
   const after = await HUB().getRow('questions', id);
   if (!after) throw Fail(502, 'The question could not be sent. Try again.');
   return { ok: true, id: id };
+}
+async function pBidZip(sub, body){   /* patch SUBFLOW: every plan file of a bid job this sub may open, in one ZIP (subportal.js plansZip) */
+  const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
+  const c = await bidCtx(sub);
+  if (!c.linked) throw Fail(403, 'Join GrayCo bids first (📋 Jobs to bid on Home).');
+  if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
+  if (!c.sc.jobs[jobId]) throw Fail(403, 'That job is not open to you.');
+  const r = await HUB().plansZip(c.who, { jobId: jobId }, { scope: c.sc });
+  return { ok: true, url: r.url, name: r.name, files: r.files };
 }
 async function pBidRequest(sub, body){   /* patch PLANREQ: the bid site's request (one open per sub per job; the PM + estimator hear) */
   const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
@@ -1910,7 +1936,7 @@ async function pBidSave(sub, body){
   const docs = await bidPapers(me, c.profile);
   if (!docs.ok) throw papersFail(docs);
   const rec = prev ? { id: s(prev.id), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: s(prev.scope), docs: arr(prev.docs), submittedAt: prev.submittedAt }
-                   : { id: 'b_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex'), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: '', docs: [] };
+                   : { id: 'b_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex'), jobId: jobId, amount: amount, notes: clip(body.notes, 4000), scope: '', docs: [], via: 'portal' };   /* patch SUBFLOW: + via */
   /* patch BIDMULTI: the trade they bid (one of the job's trades, else theirs), what is included / not included, their files */
   { const job = sc.jobs[jobId] && sc.jobs[jobId].data || {}, sought = (Array.isArray(job.tradesSought) ? job.tradesSought : s(job.tradesSought).split(/\s*,\s*/)).map(function(x){ return s(x && typeof x === 'object' ? x.trade : x); }).filter(Boolean), mineT = Array.isArray(c.profile.trades) ? c.profile.trades.map(s) : [];
     const want = clip(body.trade, 80), pick = sought.concat(mineT).find(function(x){ return low(x) === low(want); });
@@ -1939,7 +1965,7 @@ async function msgInsert(pid, party, side, author, text, files, opt){
   await dbPost('gc_portal_msg', { id: id, project_id: s(pid), party: party, side: side, author: clip(author, 80), text: clip(text, 4000),
     files: (files || []).map(function(f){ return { ref: s(f.ref), name: clip(f.name, 120), type: s(f.type) }; }).filter(function(f){ return refPath(f.ref); }) });
   /* patch SUBTHREAD: a sub's thread → the job's 💬 Messages (tagged with the sub) + a notice to the sub when GrayCo wrote */
-  if (/^s:/.test(s(party))) { try { await require('./_lib/subthread.js').after(subThreadDeps(), { id: id, pid: s(pid), subId: s(party).slice(2), side: side, author: author, text: text, files: (files || []).map(function(f){ return { name: clip(f && f.name, 120) }; }), notify: !(opt && opt.notify === false) }); } catch (e) {} }
+  if (/^s:/.test(s(party))) { try { await require('./_lib/subthread.js').after(subThreadDeps(), { id: id, pid: s(pid), subId: s(party).slice(2), side: side, author: author, text: text, files: (files || []).map(function(f){ return { name: clip(f && f.name, 120) }; }), notify: !(opt && opt.notify === false), tell: opt && Array.isArray(opt.tell) ? opt.tell.slice(0, 10) : undefined }); } catch (e) {} }   /* patch SUBFLOW: + tell (who the 💬 post names) */
   return id;
 }
 function subThreadDeps(){ return { teamCc: teamCcSub, portalBase: portalBase, core: function(){ return require('./portal.js')._core; }, crmData: crmData, subById: subById, jobTagOf: jobTagOf, subLinkCreate: subLinkCreate, linkFor: linkFor, sendMail: sendMail, sendText: sendText, textReady: textReady, mailHtml: mailHtml, dbGet: dbGet, okEmail: okEmail, phone10: phone10 }; }

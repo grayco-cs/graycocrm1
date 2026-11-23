@@ -346,6 +346,9 @@ Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse
   papersOpen: 'Abrir Mis Documentos', papersBlocked: 'El formulario de oferta se abre cuando sus papeles estén en archivo.', pW9: 'W-9', pGL: 'Responsabilidad general (GL)', pWC: 'Compensación al trabajador (WC)', bidsSite: 'Abrir bids.grayco-cs.com' });
 /* patch PLANREQ (owner 11/12): 📩 Request plans / more info on a job — what they need + a note; the job's PM + estimator get an e-mail,
    a CRM message and a To-Do (portal-access p-bid-request → subportal.js). A big button when the job has no plans, a small link otherwise. */
+/* patch SUBFLOW: ⬇ All plans (ZIP) · 💬 Messages with GrayCo on a bid job · past due */
+Object.assign(L.en, { sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
+Object.assign(L.es, { sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
 Object.assign(L.en, { prBtn: '📩 Request plans / more info', prSmall: '📩 Request more info', prNoPlans: 'No plans posted yet. Ask GrayCo for them — the job’s PM / estimator gets your request right away.', prWhat: 'What do you need?',
   prPlans: 'Plans', prSpecs: 'Specs', prSitewalk: 'Site walk / access', prOther: 'Other', prNote: 'Note (optional)', prNotePh: 'e.g. which sheets, your trade, best time for a walk', prFrom: 'From (your profile)',
   prSend: 'Send request', prPickOne: 'Tick what you need.', prOtherNote: 'Write what you need.', prSent: 'Request sent — the job’s PM / estimator will get back to you.', prOpen: 'Request sent {d}',
@@ -448,6 +451,16 @@ function papersBox(docs, url){
   return h('div', { class: 'bidpapers bad', 'data-bidpapers': 'missing', role: 'note' }, [h('b', { text: '⚠️ ' + t('papersNeed') }), h('ul', null, li), h('span', { text: t('papersHow') }),
     h('div', { class: 'btns' }, [url ? h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener', text: '📄 ' + t('papersOpen') }) : null, h('button', { type: 'button', class: 'btn', text: t('papers'), on: { click: function(){ var s = document.querySelector('.sheet .x'); if (s) s.click(); goTab('papers'); } } })])]);
 }
+/* patch SUBFLOW: every plan file of the job in one ZIP (a phone opened only the first of several) — the server builds it, a link back */
+function zipBtn(j){
+  if ((j.plans || []).length < 2) return null;
+  var b = h('button', { type: 'button', class: 'btn sm', 'data-bidzip': j.id, text: t('sfZip'), on: { click: function(){
+    var w = null; try { w = window.open('', '_blank'); } catch (e) {}
+    busy(b, true); b.textContent = t('sfZipBusy');
+    api('p-bid-zip', { jobId: j.id }).then(function(r){ busy(b, false); b.textContent = t('sfZip'); if (w) { try { w.location = r.url; return; } catch (e) {} } var a = h('a', { href: r.url, target: '_blank', rel: 'noopener' }); document.body.appendChild(a); a.click(); a.remove(); },
+      function(e){ busy(b, false); b.textContent = t('sfZip'); if (w) try { w.close(); } catch (x2) {} toast(e.message, true); }); } } });
+  return h('div', { class: 'row', style: 'justify-content:flex-start;margin:6px 0' }, [b]);
+}
 function planLinks(j){
   var a = (j.plansLinks || []).map(function(l){ return h('a', { href: l.url, target: '_blank', rel: 'noopener', 'data-planlink': '1', title: l.url, text: '🔗 ' + l.label }); });
   return a.length ? h('div', { class: 'bidlinks' }, a) : null;
@@ -492,8 +505,10 @@ function bidSheet(j){
   (j.tradeScopes || []).forEach(function(x){ kids.push(h('div', { class: 'box', 'data-tradescope': x.trade || '' }, [h('b', { text: t('yourTradeScope') + (x.trade ? ' — ' + x.trade : '') }), x.scope ? h('p', { class: 'pre', text: x.scope }) : null].concat((x.files || []).map(function(f){   /* patch PLANREQ-C: the trade's scope files */
     return h('div', { class: 'doc', 'data-scopefile': f.name }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : /sheet|excel|csv/.test(f.type) ? '📊' : /word/.test(f.type) ? '📝' : '📎' }), h('span', { class: 'grow' }, [h('span', { class: 'n', text: f.name })]), h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]); })))); });
   [['scopeLbl', j.scope], ['specsLbl', j.specifications], ['notesLbl', j.notes]].forEach(function(r){ if (r[1]) kids.push(h('div', { class: 'box' }, [h('b', { text: t(r[0]) }), h('p', { class: 'pre', text: r[1] })])); });
-  if ((j.plansLinks || []).length || (j.plans || []).length) kids.push(h('div', { class: 'box', 'data-bidplans': '1' }, [h('b', { text: t('plansLbl') }), planLinks(j)].concat((j.plans || []).map(function(f){
+  if ((j.plansLinks || []).length || (j.plans || []).length) kids.push(h('div', { class: 'box', 'data-bidplans': '1' }, [h('b', { text: t('plansLbl') }), planLinks(j), zipBtn(j)].concat((j.plans || []).map(function(f){
     return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow' }, [h('span', { class: 'n', text: f.name }), f.category ? h('span', { class: 'muted', text: f.category }) : null]), h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]); }))));
+  if ((j.addenda || []).length) kids.push(h('div', { class: 'box', 'data-bidaddenda': j.id }, [h('b', { text: '📎 ' + t('sfAddenda') })].concat(j.addenda.map(function(a){   /* patch SUBFLOW: the job's addenda, as on the bid site */
+    return h('div', { class: 'doc', 'data-addendum': a.num, style: 'flex-direction:column;align-items:flex-start' }, [h('b', { text: t('sfAddN') + a.num + (a.title ? ' — ' + a.title : '') + (a.date ? ' · ' + dt(a.date) : '') }), a.dueTo ? h('span', { class: 'muted', text: '⏰ ' + t('sfDueTo') + ' ' + a.dueTo }) : null, a.text ? h('p', { class: 'pre', text: a.text }) : null].concat(a.files.map(function(f){ return h('a', { class: 'btn sm', href: f.url, target: '_blank', rel: 'noopener', text: '📄 ' + f.name }); }))); }))));
   var prb = planReqBox(j); if (prb) kids.push(prb);   /* patch PLANREQ */
   var sec = [h('div', { class: 'row' }, [h('h2', { text: t('yourBid') }), bidPill(j)])];
   if (b) sec.push(h('div', { class: 'mybid' }, [h('b', { text: usd(b.amount) }), h('span', { class: 'muted', text: t('bidSentOn', { d: dt(b.submittedAt) }) + (b.updatedAt && b.updatedAt.slice(0, 16) !== String(b.submittedAt || '').slice(0, 16) ? ' · ' + t('bidUpdOn', { d: dt(b.updatedAt) }) : '') })]));
@@ -510,7 +525,7 @@ function bidSheet(j){
   }
   if (b && b.status === 'rejected') sec.push(h('div', { class: 'how', 'data-bidthanks': '1', text: t('bidThanks') }));   /* patch BIDMULTI: polite, no prices */
   else if (decided) sec.push(h('div', { class: 'how', text: t('bidDecided') }));
-  else if (!j.canBid) sec.push(h('div', { class: 'how', text: t('bidClosedNote') }));
+  else if (!j.canBid) sec.push(h('div', { class: 'how', 'data-bidpastdue': j.pastDue ? '1' : null, text: j.pastDue ? t('sfPastDue') : t('bidClosedNote') }));   /* patch SUBFLOW: past due says so */
   else {
     sec.push(papersBox(docs, D.url));
     var blocked = !docs.ok;
@@ -559,6 +574,9 @@ function bidSheet(j){
   });
   qa.push(field(t('qaLbl'), qt), qerr, qgo);
   kids.push(h('section', { class: 'card', 'data-bidqa': j.id }, qa));
+  /* patch SUBFLOW: what GrayCo wrote to them about this bid job (a ↩ Reply from the CRM / GrayCo Field lands here and on the bid site) */
+  if ((j.messages || []).length) kids.push(h('section', { class: 'card', 'data-bidmsgs': j.id }, [h('h2', { text: '💬 ' + t('sfMsgs') })].concat(j.messages.map(function(m){
+    return h('div', { class: 'box', 'data-bidmsg': m.mine ? 'mine' : 'gc' }, [h('b', { text: (m.mine ? t('sfYou') : (m.by || 'GrayCo')) + ' · ' + dt(m.at) }), h('p', { class: 'pre', text: m.text })]); }))));
   var sh = sheet(j.title, [h('div', { class: 'bidsheet', 'data-bidsheet': j.id, style: 'display:flex;flex-direction:column;gap:12px' }, kids)]);
   return sh;
 }

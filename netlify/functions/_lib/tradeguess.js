@@ -31,7 +31,8 @@ const EXT = { pdf: 1, png: 1, jpg: 1, jpeg: 1, gif: 1, webp: 1, tif: 1, tiff: 1,
 const TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff', heic: 'image/heic', heif: 'image/heif', bmp: 'image/bmp',
   doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12', csv: 'text/csv', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  txt: 'text/plain', rtf: 'application/rtf', dwg: 'application/acad', dxf: 'image/vnd.dxf', dwf: 'model/vnd.dwf', zip: 'application/zip' };
+  txt: 'text/plain', rtf: 'application/rtf', dwg: 'application/acad', dxf: 'image/vnd.dxf', dwf: 'model/vnd.dwf', zip: 'application/zip',
+  msg: 'application/vnd.ms-outlook', eml: 'message/rfc822', odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', pages: 'application/vnd.apple.pages' };   /* patch SUBFLOW: an addendum is often an e-mail (.msg / .eml) or an Open / Apple document */
 const KINDS = ['plans', 'specs', 'scope'];
 
 function words(t){ return s(t).replace(/[_.]+/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim(); }

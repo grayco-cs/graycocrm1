@@ -164,7 +164,7 @@ await t('p-bid-save: a new bid = the bid site\'s record (same shape), then an up
   eq([r.j.created, r.j.bid.amount, r.j.bid.status], [true, 18450.5, 'pending']);
   const rows = bidsOf('j_open', 'u_a1'); eq(rows.length, 1);
   const b = rows[0].data;
-  eq(Object.keys(b).sort(), ['amount', 'docs', 'exclusions', 'id', 'inclusions', 'jobId', 'notes', 'notesOwn', 'scope', 'submittedAt', 'trade', 'updatedAt', 'userCompany', 'userEmail', 'userId', 'userName', 'userPhone', 'read'].sort());   /* patch SUBSIMPLE: + read (GrayCo's reader; here the PDF cannot be opened → status failed) */   /* patch BIDMULTI: + trade / inclusions / exclusions / notesOwn */
+  eq(Object.keys(b).sort(), ['amount', 'docs', 'exclusions', 'id', 'inclusions', 'jobId', 'notes', 'notesOwn', 'scope', 'submittedAt', 'trade', 'updatedAt', 'userCompany', 'userEmail', 'userId', 'userName', 'userPhone', 'read', 'via'].sort());   /* patch SUBFLOW: + via 'portal' (the CRM's 📨 Bids shows it came from the sub portal) */   /* patch SUBSIMPLE: + read (GrayCo's reader; here the PDF cannot be opened → status failed) */   /* patch BIDMULTI: + trade / inclusions / exclusions / notesOwn */
   eq(b.trade, 'Drywall', 'BIDMULTI: the job trade that is theirs');
   eq([b.jobId, b.userId, b.userName, b.userCompany, b.userEmail, b.userPhone, b.amount], ['j_open', 'u_a1', 'Sam Sample', 'Sample Drywall LLC', SUBS.A.email, '901-555-0141', 18450.5]);
   yes(/^b_[a-z0-9]+$/.test(b.id), b.id); eq([rows[0].key, rows[0].job_id, rows[0].user_id], ['bids/' + b.id, 'j_open', 'u_a1']);

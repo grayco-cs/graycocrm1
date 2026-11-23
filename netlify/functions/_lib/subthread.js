@@ -20,6 +20,8 @@ async function after(d, o){
   try {
     const msg = { id: 'SPM_' + s(o.id), pid: s(o.pid), authorId: o.side === 'gc' ? '' : 'sub:' + s(o.subId), authorName: o.side === 'gc' ? s(o.author || 'GrayCo') + ' → 🔨 ' + name + ' (sub portal)' : '🔨 ' + name + (s(o.author) && s(o.author) !== name ? ' — ' + s(o.author) : '') + ' (sub portal)',
       text: s(o.text).slice(0, 4000) + ((o.files || []).length ? '\n📎 ' + o.files.map(f => s(f && f.name)).filter(Boolean).join(', ') : ''), tags: [], at, source: 'subportal', channel: 'subportal', subId: s(o.subId), subName: name, dir: o.side === 'gc' ? 'out' : 'in', portalMsgId: s(o.id) };
+    /* patch SUBFLOW: a sub's message from the bid site names the job's PM + estimator (→ 🔔 For you for both; the CRM's own rule is the PM only) */
+    if (o.side !== 'gc' && Array.isArray(o.tell) && o.tell.length) { msg.notify = o.tell.filter(x => x && (x.e || x.id)).slice(0, 10); msg.tags = msg.notify.map(x => s(x.id || x.e)); msg.mentions = msg.notify.map(x => ({ id: x.id, e: x.e, n: x.n })); }
     const has = l => l.some(x => x && x.id === msg.id);
     const w = await d.core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has });
     out.mirrored = !!(w && w.ok !== false);

@@ -808,7 +808,8 @@ async function addendum(who, b){
   if (!text && !title && !arr(b.files).length) return { code: 400, error: 'Write what the addendum changes, or attach its files.' };
   const files = arr(b.files).filter(f => f && /^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(s(f.fileRef)) && s(f.fileRef).indexOf('..') < 0)
     .slice(0, 20).map(f => ({ name: s(f.name).slice(0, 200) || 'addendum.pdf', size: Number(f.size) || 0, type: s(f.type).slice(0, 80), fileRef: s(f.fileRef) }));
-  const num = Math.max(0, ...arr(job.addenda).map(a => Number(a && a.num) || 0)) + 1;
+  const used = arr(job.addenda).map(a => Number(a && a.num) || 0), want = parseInt(b.num, 10);
+  const num = want >= 1 && want <= 99 && used.indexOf(want) < 0 ? want : Math.max(0, ...used) + 1;   /* patch SUBFLOW: the number the file says (Addendum #2), else the next */
   const a = { num, date: s(b.date).slice(0, 10) || nowIso().slice(0, 10), title, text, files, publishedAt: nowIso(), by: who.email };
   const nd = s(b.newDue).slice(0, 10);
   if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd) && nd !== s(job.bidDueDate)) { a.dueFrom = s(job.bidDueDate) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); job.bidDueDate = nd; if (s(b.newDueTime)) job.bidDueTime = s(b.newDueTime).slice(0, 5); a.dueTo = nd + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
@@ -997,10 +998,63 @@ async function duplicate(who, b){   /* 📋 a copy as a new private job: the det
   const src = await jobRow(job.id); if (src) { logTo(src, who, '📋 Copied to a new job "' + copy.title + '"'); await saveJob(src, who); }
   return { ok: true, jobId: id, title: copy.title };
 }
+
+/* ── patch SUBFLOW (owner 11/23: "when a sub requests anything or messages on bid or sub portal directed towards PM or estimator they should
+   get notification and be able to answer on their app or CRM"): ↩ Reply from the job's 💬 Messages (desk and GrayCo Field) — the post the
+   bid site / sub portal wrote (m.sf, a plan request's m.planReqId, a sub portal thread's subId) answers the sub where they asked:
+     question → the bid-site Q&A (privately, or to all bidders: its e-mail still waits on ✅ Approvals)   · planreq → ↩ Reply (op planreq)
+     message  → the CRM job's sub thread when the sub is linked to a CRM sub and the job to a CRM job (both sites show it), else a bid-site
+                message to that sub (the bid site, and the sub portal's 📋 Jobs to bid)
+     portal   → that sub's thread on the CRM job (portal.grayco-cs.com; s-send)
+   The team sees "↩ <name> answered <sub>: …" in the same thread (nobody is notified by it). Who may: an admin, an estimator, the office,
+   the job's PM / poster, or a person the item was sent to (a sub portal thread: any GrayCo staff, as 🔨 Subs → 💬 Messages). */
+async function canAnswer(who, job){
+  if (who.canInvite || (await posterRole(who, {}, job || {}))) return true;
+  if (!job) return false;
+  try { return (await SP.planReqContacts(job)).some(c => c.email === low(who.email)); } catch (e) { return false; }
+}
+function PAXC(){ return require('./portal-access.js')._core; }
+async function subReply(who, b){
+  const kind = s(b.kind), id = s(b.id), text = s(b.text).slice(0, 4000), pid = s(b.pid).slice(0, 120);
+  if (!text) return { code: 400, error: 'Write the answer.' };
+  const me = s(who.name) || who.email;
+  let r = null, sub = s(b.company), note = '';
+  if (kind === 'question') {
+    r = await answer(who, { id, answer: text, publish: b.publish === true }); if (r.code) return r;
+    const q = r.question || {}; sub = s(q.userCompany) || sub; note = b.publish === true ? ' (to all bidders)' : ' (privately)';
+  } else if (kind === 'planreq') {
+    try { r = await planreq(who, { id, act: 'reply', text }); } catch (e) { return { code: e.status || 500, error: e.message }; }
+    if (r.code) return r; sub = s(r.request && r.request.company) || sub;
+  } else if (kind === 'message') {
+    const mr = await SP.getRow('messages', id); if (!mr) return { code: 404, error: 'No such message.' };
+    const m = mr.data || {}, job = await jobRow(m.jobId); if (!job) return { code: 404, error: 'No such bid job.' };
+    if (!(await canAnswer(who, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers a sub on a bid job.' };
+    const ur = await SP.getRow('users', s(m.senderId)), prof = ur && ur.data; if (!prof) return { code: 404, error: 'That sub has no bid-site account any more.' };
+    sub = s(m.senderCompany) || s(prof.company);
+    const crmSub = s(job.crmProjectId) ? await SP.crmSubFor(prof) : null;
+    if (crmSub) await PAXC().msgInsert(s(job.crmProjectId), 's:' + s(crmSub.id), 'gc', me, text, []);   /* both sites show the CRM sub thread */
+    else await SP.saveCollection({ isAdmin: true, email: who.email, profile: { name: me } }, 'messages', [{ id: 'm_' + crypto.randomBytes(6).toString('hex'), jobId: s(m.jobId), recipientSubId: s(m.senderId),
+      senderId: 'st_' + who.email.split('@')[0].replace(/[^a-z0-9]+/g, '_').slice(0, 40), senderName: me, senderCompany: 'GrayCo Construction Services', senderRole: 'admin', body: text, at: nowIso(), readBy: [], replyTo: id }], [], {});
+    r = { ok: true, via: crmSub ? 'crm-thread' : 'bid-site' };
+  } else if (kind === 'portal') {
+    const subId = s(b.subId); if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(subId) || !/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return { code: 400, error: 'Bad request.' };
+    await PAXC().msgInsert(pid, 's:' + subId, 'gc', me, text, []);
+    r = { ok: true, via: 'portal' };
+  } else return { code: 400, error: 'This one is answered in 🏗 Bid portal (📨 Bids) or ✅ Approvals.' };
+  if (pid && /^[A-Za-z0-9_.:-]{1,120}$/.test(pid)) {   /* the team sees the answer in the same thread (nobody is told) */
+    const id2 = 'M_SFR_' + crypto.randomBytes(6).toString('hex');
+    let d = {}; try { d = await crmLists(); } catch (e) {}
+    const u = arr(d.users).find(x => x && low(x.email) === low(who.email));
+    const post = { id: id2, pid, authorId: s(u && u.id) || who.email, authorName: s(u && u.name) || me, authorEmail: low(who.email), text: '↩ Answered ' + (sub || 'the sub') + note + ': ' + text, tags: [], mentions: [], notify: [], at: nowIso(), source: 'bidsite-reply', sfReplyTo: s(b.msgId) };
+    try { await SP.kvListUpd('gc_job_messages', l => l.some(x => x && x.id === id2) ? null : { list: l.concat([post]), check: l2 => l2.some(x => x && x.id === id2) }); } catch (e) {}
+    r.posted = id2; r.post = post;
+  }
+  return r;
+}
 /* a sub's question: answer privately, or publish the answer to every bidder (its e-mail waits on approval, as before) */
 async function answer(who, b){
   const q = await SP.getRow('questions', s(b.id)); if (!q) return { code: 404, error: 'No such question.' };
-  if (!who.canInvite && !(await posterRole(who, {}, await jobRow(q.data.jobId)))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers bid questions.' };   /* patch BIDPOST: + the poster / PM */
+  if (!(await canAnswer(who, await jobRow(q.data.jobId)))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers bid questions.' };   /* patch BIDPOST: + the poster / PM · patch SUBFLOW: + whoever it was sent to */
   const pub = b.publish === true;
   const r = await SP.saveCollection({ isAdmin: true, email: who.email, profile: { name: s(who.name) || who.email } }, 'questions',
     [{ id: q.data.id, answer: s(b.answer).slice(0, 8000), visibility: pub ? 'public' : 'private' }], [], {});
@@ -1013,7 +1067,7 @@ async function answer(who, b){
 async function planreq(who, b){
   const q = await SP.getRow('planreqs', s(b.id)); if (!q) return { code: 404, error: 'No such request.' };
   const job = await jobRow(q.data.jobId);
-  if (!who.canInvite && !(await posterRole(who, {}, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers plan requests.' };
+  if (!(await canAnswer(who, job))) return { code: 403, error: 'Only an admin, an estimator, the office or the job\'s PM answers plan requests.' };   /* patch SUBFLOW: + whoever it was sent to */
   const r = await SP.planReqAct(who, { id: s(b.id), act: s(b.act), text: s(b.text) });
   if (job) { logTo(job, who, (s(b.act) === 'reply' ? '↩ Replied to ' : '✅ Marked sent: ') + s(q.data.company) + '\'s request (' + arr(q.data.needs).join(', ') + ')'); await saveJob(job, who); }
   return r;
@@ -1081,6 +1135,7 @@ exports.handler = async function(event){
     else if (b.op === 'answer') r = await answer(who, b);
     else if (b.op === 'notice') r = await noticeAgain(who, b);
     else if (b.op === 'planreq') r = await planreq(who, b);   /* patch PLANREQ */
+    else if (b.op === 'subreply') r = await subReply(who, b);   /* patch SUBFLOW: ↩ Reply from the job's 💬 Messages */
     else if (b.op === 'details') r = await details(who, b);   /* patch PLANREQ-T/D: ✏️ trades, ✏️ bid due */
     else if (b.op === 'bidding') r = await bidding(who, b);
     else if (b.op === 'resort') r = await resort(who, b);   /* patch PLANREQ-I */   /* patch PLANREQ-E: ⏸ Close bidding / ▶ Reopen */
@@ -1091,7 +1146,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
+exports._test = { addendum, subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

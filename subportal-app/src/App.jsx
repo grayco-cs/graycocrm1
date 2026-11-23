@@ -22,6 +22,7 @@ import MeasureTool, { MeasureFromPortal, canMeasure } from './Measure.jsx';   //
    ============================================================ */
 const T = {
   en: {
+    addPost: 'Post addendum', addAsk: 'looks like an addendum — post it under Addenda (not with the plans):', addNum: 'Addendum #', addTitle: 'Title', addDate: 'Date', addText: 'What changed', addFiles: 'Files', addPick: '📎 Add files', addNewDue: 'New bid due date (optional)', addNotify: 'E-mail the subs who can see this job (it waits on ✅ Approvals; held in data-entry mode)', addSend: '📎 Post addendum #', addCancel: 'Cancel', addPlain: 'No — it is a plan sheet, put it with the plans', addNeed: 'Write what the addendum changes, or attach its files.', addDone: 'Addendum #{n} posted', addHeld: ' — e-mail held (data-entry mode)', addWaits: ' — e-mail waits on ✅ Approvals', badType: 'can not go on a bid job — use PDF, pictures, Word / Excel / PowerPoint, Outlook e-mail (.msg / .eml), text, DWG / DXF or a ZIP', tooBig: 'is over 50 MB — add a 🔗 plan link (Drive / Dropbox) for it instead',   /* patch SUBFLOW */
     addenda: 'Addenda', addendumN: 'Addendum #', acknowledge: 'Acknowledge addendum #', acknowledged: 'Acknowledged', dueChangedTo: 'Bid due date changed to', wasDue: 'was',
     ackBy: 'Acknowledged by', notAckYet: 'Not acknowledged yet', updatesFromGrayCo: 'Updates from GrayCo', currentSet: 'CURRENT', versionL: 'Version', docPlans: 'Plans', docSpecs: 'Specs', docRoom: 'Plan room', bidDocs: 'Bid documents', planLinks: 'Plan room links', openLink: 'Open link',
     questions: 'Questions', askQuestion: 'Ask GrayCo a question', questionsDue: 'Questions due by', yourQuestion: 'Your question', answerFromGrayCo: "GrayCo's answer", sendQuestion: 'Send question',
@@ -54,7 +55,7 @@ const T = {
     projectTitle: 'Project Title', address: 'Project Address',
     bidDueDate: 'Bid Due Date', scope: 'Scope of Work',
     specifications: 'Specifications', notes: 'Notes',
-    plans: 'Plans & Documents', uploadPlans: 'Upload Plans (PDF)',
+    plans: 'Plans & Documents', uploadPlans: 'Upload Plans (PDF)', zipAll: '⬇ All plans (ZIP)', zipBusy: 'Making the ZIP…', pastDueClosed: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.',   /* patch SUBFLOW */
     analyzeWithAI: 'Auto-Fill from Plans (AI)',
     analyzing: 'Analyzing plans with AI…',
     downloadPlans: 'Download Plans',
@@ -345,6 +346,7 @@ const T = {
     daysUntilExp: 'days until expiration',
   },
   es: {
+    addPost: 'Publicar adenda', addAsk: 'parece una adenda — publíquela en Adendas (no con los planos):', addNum: 'Adenda #', addTitle: 'Título', addDate: 'Fecha', addText: 'Qué cambió', addFiles: 'Archivos', addPick: '📎 Agregar archivos', addNewDue: 'Nueva fecha límite (opcional)', addNotify: 'Enviar correo a los subcontratistas que ven este trabajo (espera en ✅ Aprobaciones)', addSend: '📎 Publicar adenda #', addCancel: 'Cancelar', addPlain: 'No — es una hoja de planos, póngala con los planos', addNeed: 'Escriba qué cambia la adenda o adjunte sus archivos.', addDone: 'Adenda #{n} publicada', addHeld: ' — correo retenido (modo de captura)', addWaits: ' — el correo espera en ✅ Aprobaciones', badType: 'no se puede subir a un trabajo — use PDF, fotos, Word / Excel / PowerPoint, correo de Outlook (.msg / .eml), texto, DWG / DXF o un ZIP', tooBig: 'pesa más de 50 MB — agregue un 🔗 enlace (Drive / Dropbox)',   /* patch SUBFLOW */
     addenda: 'Adendas', addendumN: 'Adenda #', acknowledge: 'Acuso recibo de la adenda #', acknowledged: 'Recibo confirmado', dueChangedTo: 'La fecha límite cambió a', wasDue: 'antes',
     ackBy: 'Recibo confirmado por', notAckYet: 'Sin confirmar todavía', updatesFromGrayCo: 'Novedades de GrayCo', currentSet: 'VIGENTE', versionL: 'Versión', docPlans: 'Planos', docSpecs: 'Especificaciones', docRoom: 'Sala de planos', bidDocs: 'Documentos de licitación', planLinks: 'Enlaces a planos', openLink: 'Abrir enlace',
     questions: 'Preguntas', askQuestion: 'Hágale una pregunta a GrayCo', questionsDue: 'Preguntas hasta el', yourQuestion: 'Su pregunta', answerFromGrayCo: 'Respuesta de GrayCo', sendQuestion: 'Enviar pregunta',
@@ -375,7 +377,7 @@ const T = {
     projectTitle: 'Título del Proyecto', address: 'Dirección del Proyecto',
     bidDueDate: 'Fecha Límite de Oferta', scope: 'Alcance del Trabajo',
     specifications: 'Especificaciones', notes: 'Notas',
-    plans: 'Planos y Documentos', uploadPlans: 'Subir Planos (PDF)',
+    plans: 'Planos y Documentos', uploadPlans: 'Subir Planos (PDF)', zipAll: '⬇ Todos los planos (ZIP)', zipBusy: 'Preparando el ZIP…', pastDueClosed: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.',   /* patch SUBFLOW */
     analyzeWithAI: 'Auto-Llenar desde los Planos (IA)',
     analyzing: 'Analizando los planos con IA…',
     downloadPlans: 'Descargar Planos',
@@ -818,8 +820,10 @@ function TradeChips({ picked, onChange }) {
 }
 const ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
 /* patch PLANREQ-B (owner 11/12: "make sure I can add all types of files"): every common type on a bid job — 50 MB each, bigger → a 🔗 link */
-const ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip,application/pdf,image/*';
-const ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip)$/i;
+const ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip,.msg,.eml,.odt,.ods,.pages,application/pdf,image/*';   /* patch SUBFLOW: + .msg / .eml / .odt / .ods / .pages (an addendum is often an e-mail) */
+const ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip|msg|eml|odt|ods|pages)$/i;
+/* patch SUBFLOW: "Addendum 2.pdf" / "ADD-01 …" / "Addendum #3" → its number (0: an addendum, no number); null: not an addendum (the server's addendumNum) */
+function addendumNum(n) { const w = String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/_+/g, ' '); const m = /\baddend(?:um|a)\b\s*(?:no\.?|number|#)?\s*0*(\d{1,2})\b/i.exec(w) || /(?:^|[^A-Za-z])add\s*[-#.]?\s*0*(\d{1,2})(?:\b|[^0-9])/i.exec(w); if (m) return parseInt(m[1], 10); return /\baddend(?:um|a)\b/i.test(w) ? 0 : null; }
 function SignupPapers({ t, papers, setPapers, w9Only }) {
   const pick = async (key, e, i) => {
     const f = e.target.files && e.target.files[0];
@@ -2622,7 +2626,85 @@ function PlanLinkBox({ t, job, showToast, onLink }) {
    request-plans). One open request per sub per job. A big button on a job with no plans (no files, no 🔗 link); a small link otherwise. */
 const PR_KEYS = ['plans', 'specs', 'sitewalk', 'other'];
 function prLabel(t, k){ return { plans: t.prPlans, specs: t.prSpecs, sitewalk: t.prSitewalk, other: t.prOther }[k] || k; }
-function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
+/* patch SUBFLOW (owner 11/23: "trying to put addendum here it won't let me … when I put an addendum it should put it under Addendums on the
+   bid portal"): 📎 Post addendum — the CRM's 📎 Addenda tab on the bid site (the same server code, bid-hub op addendum): the next number (or the
+   one the file says), title, date, what changed, files, a new bid due date, and "e-mail the subs who can see this job" (it waits on ✅ Approvals;
+   held in data-entry mode). Published at once — subs see it under Addenda and acknowledge it. */
+function AddendumPost({ t, job, showToast, prefill, onClose, setJobs, onPlain }) {
+  const nextNum = Math.max(0, ...(job.addenda || []).map(a => Number(a && a.num) || 0)) + 1;
+  const [open, setOpen] = useState(false);
+  const [num, setNum] = useState(nextNum);
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState([]);
+  const [due, setDue] = useState('');
+  const [notify, setNotify] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const ref = useRef(null);
+  const used = (job.addenda || []).map(a => Number(a && a.num) || 0);
+  useEffect(() => {
+    if (!prefill) return;
+    const n = prefill.num && used.indexOf(prefill.num) < 0 ? prefill.num : nextNum;
+    setNum(n); setFiles(prefill.files.map(f => ({ name: f.name, size: f.size, type: f.type, fileRef: f.fileRef })));
+    setTitle(prefill.files.length === 1 ? prefill.files[0].name.replace(/\.[A-Za-z0-9]{1,5}$/, '') : ''); setOpen(true); setErr('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill && prefill.at]);
+  async function pick(list) {
+    setBusy(true); setErr('');
+    try {
+      const out = [];
+      for (const f of list) {
+        if (!ALL_RE.test(f.name)) { setErr(f.name + ' ' + t.badType); continue; }
+        if (f.size > 50 * 1024 * 1024) { setErr(f.name + ' ' + t.tooBig); continue; }
+        out.push({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', fileRef: await uploadBlob(f, f.name) });
+      }
+      setFiles(fs => fs.concat(out));
+    } catch (e) { setErr(e.message); }
+    setBusy(false); if (ref.current) ref.current.value = '';
+  }
+  function close() { setOpen(false); setFiles([]); setTitle(''); setText(''); setDue(''); setErr(''); if (onClose) onClose(); }
+  async function post() {
+    if (!text.trim() && !title.trim() && !files.length) { setErr(t.addNeed); return; }
+    setBusy(true); setErr('');
+    try {
+      const r = await api('addendum-post', { op: 'addendum', jobId: job.id, num, title, date, text, files, newDue: due, notify });
+      const { data } = await api('load', { keys: ['jobs'] });
+      const fresh = ((data && data.jobs) || []).find(x => x.id === job.id);   /* the server's copy (never save a stale one over it) */
+      if (fresh) setJobs(js => js.map(j => j.id === job.id ? { ...j, ...fresh } : j));
+      showToast(t.addDone.replace('{n}', r.num) + (r.notice && r.notice.status === 'held' ? t.addHeld : r.notice && r.notice.status === 'waiting' ? t.addWaits : ''));
+      close();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  const inp = { width: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 6, border: `1px solid ${styles.border}`, fontFamily: 'inherit', fontSize: 15 };
+  if (!open) return <div style={{ marginBottom: 10 }}><Btn size="sm" data-addpost="open" onClick={() => { setNum(nextNum); setOpen(true); }}>📎 {t.addPost}</Btn></div>;
+  return (
+    <div data-addpost="form" style={{ marginBottom: 14, padding: 12, borderRadius: 8, background: '#FFFBEB', border: `1px solid ${styles.accent}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {prefill && <div data-addpost="ask" style={{ fontWeight: 700 }}>📎 {prefill.files.map(f => f.name).join(', ')} {t.addAsk}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <label style={{ flex: '0 0 110px' }}>{t.addNum}<input data-addpost="num" type="number" min="1" max="99" value={num} onChange={e => setNum(parseInt(e.target.value, 10) || nextNum)} style={inp} /></label>
+        <label style={{ flex: '1 1 160px' }}>{t.addDate}<input data-addpost="date" type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} /></label>
+      </div>
+      <label>{t.addTitle}<input data-addpost="title" value={title} maxLength={200} onChange={e => setTitle(e.target.value)} style={inp} /></label>
+      <label>{t.addText}<textarea data-addpost="text" rows={3} value={text} maxLength={8000} onChange={e => setText(e.target.value)} style={inp} /></label>
+      <div>{t.addFiles}: {files.length ? files.map((f, i) => <span key={i} data-addpost="file" style={{ display: 'inline-flex', gap: 4, alignItems: 'center', margin: '2px 6px 2px 0', padding: '2px 8px', borderRadius: 999, background: '#fff', border: `1px solid ${styles.border}`, fontSize: 13 }}>📄 {f.name}<button type="button" aria-label="remove" onClick={() => setFiles(files.filter((x, j) => j !== i))} style={{ border: 0, background: 'none', cursor: 'pointer' }}>✕</button></span>) : '—'}
+        <input ref={ref} type="file" multiple accept={ACCEPT_ALL} style={{ display: 'none' }} data-addpost="pick" onChange={e => pick(Array.from(e.target.files || []))} />
+        <Btn size="sm" variant="ghost" disabled={busy} onClick={() => ref.current && ref.current.click()}>{t.addPick}</Btn></div>
+      <label>{t.addNewDue}<input data-addpost="due" type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} /></label>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13 }}><input data-addpost="notify" type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} style={{ marginTop: 3 }} />{t.addNotify}</label>
+      {err && <div role="alert" data-addpost="err" style={{ color: '#B91C1C', fontSize: 13 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn data-addpost="send" disabled={busy} onClick={post}>{t.addSend}{num}</Btn>
+        <Btn variant="ghost" disabled={busy} onClick={close}>{t.addCancel}</Btn>
+        {prefill && onPlain && <Btn variant="ghost" size="sm" data-addpost="plain" disabled={busy} onClick={async () => { const fs = files.slice(); close(); for (const f of fs) await onPlain(f); }}>{t.addPlain}</Btn>}
+      </div>
+    </div>
+  );
+}
+
+function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink, onAddendum }) {
   const [reqs, setReqs] = useState(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2650,15 +2732,18 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink }) {
     if (!files || !files.length) return;
     setBusy(true);
     try {
-      let added = [], scoped = [], skipped = [], told = 0;
+      let added = [], scoped = [], skipped = [], told = 0, adds = [];
       for (const f of files) {
-        if (!ALL_RE.test(f.name)) { skipped.push(f.name); continue; }
-        if (f.size > 50 * 1024 * 1024) { skipped.push(f.name + ' (over 50 MB)'); continue; }
+        if (!ALL_RE.test(f.name)) { skipped.push(f.name + ' ' + t.badType); continue; }   /* patch SUBFLOW: say why (was only the name) */
+        if (f.size > 50 * 1024 * 1024) { skipped.push(f.name + ' ' + t.tooBig); continue; }
         const path = await uploadBlob(f, f.name);
         const r = await api('plans-import', { jobId: job.id, fileRef: path, name: f.name, size: f.size });
+        adds = adds.concat(r.addenda || []);   /* patch SUBFLOW: a file named as an addendum is not filed with the plans — the 📎 Post addendum box opens with it */
         added = added.concat(r.added || []); scoped = scoped.concat(r.scoped || []); skipped = skipped.concat((r.skipped || []).map(x => x.name + ' (' + x.why + ')')); told += r.notified || 0;
       }
       if (added.length || scoped.length) onAdded(added, scoped);
+      if (adds.length && onAddendum) onAddendum(adds);
+      if (adds.length && !added.length && !scoped.length && !skipped.length) { setBusy(false); if (fileRef.current) fileRef.current.value = ''; return; }
       const where = added.concat(scoped).filter(x => (x.trades || []).length || x.kind !== 'plans').slice(0, 4).map(x => x.name + ' → ' + (x.kind === 'scope' ? (x.trades || []).join(', ') + ' ' + t.scopeWord : x.kind === 'specs' ? t.specsWord + ((x.trades || []).length ? ' (' + x.trades.join(', ') + ')' : '') : t.plans + ' (' + (x.trades || []).join(', ') + ')'));
       showToast(t.plansUploaded.replace('{n}', added.length + scoped.length) + (where.length ? ' · ' + where.join(' · ') : '') + (told ? ' ' + t.plansTold.replace('{n}', told) : '') + (skipped.length ? ' — ' + t.plansSkipped + ': ' + skipped.slice(0, 4).join(', ') : ''), skipped.length && !added.length ? 'error' : undefined);
       if (added.length) api('load', { keys: ['planreqs'] }).then(r => setReqs(((r && r.data && r.data.planreqs) || []).filter(q => q.jobId === job.id))).catch(() => {});
@@ -2788,6 +2873,20 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       }
     })();
   }, [job.id]);
+
+  /* patch SUBFLOW: ⬇ All plans (ZIP) · the 📎 Post addendum box (prefilled by an addendum-named upload) */
+  const [zipBusy, setZipBusy] = useState(false);
+  const [addPrefill, setAddPrefill] = useState(null);
+  async function zipAll() {
+    let w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
+    setZipBusy(true);
+    try {
+      const r = await api('plans-zip', { jobId: job.id });
+      if (w) { try { w.location = r.url; } catch (e) { openFile(r.url, r.name); } } else openFile(r.url, r.name);
+      logDownload('All plans (ZIP)');
+    } catch (e) { if (w) { try { w.close(); } catch (x) {} } showToast((e && e.message) || 'Could not make the ZIP', 'error'); }
+    setZipBusy(false);
+  }
 
   async function downloadPlan(plan) {
     // Find the hydrated plan (with dataUrl) by filename match
@@ -3553,11 +3652,13 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           )}
 
           {/* patch SYS2: numbered addenda — a sub acknowledges each one; GrayCo sees who did */}
-          {job.addenda && job.addenda.filter(a => a.publishedAt).length > 0 && (
+          {(isAdmin || (job.addenda && job.addenda.filter(a => a.publishedAt).length > 0)) && (
             <Card style={{ marginBottom: 16 }} >
               <h3 style={sectionTitleStyle} id="bid-addenda"><ClipboardList size={18} /> {t.addenda}</h3>
+              {isAdmin && <AddendumPost t={t} job={job} showToast={showToast} prefill={addPrefill} onClose={() => setAddPrefill(null)} setJobs={setJobs}
+                onPlain={async f => { try { const r = await api('plans-import', { jobId: job.id, fileRef: f.fileRef, name: f.name, size: f.size, asPlan: true }); if ((r.added || []).length) setJobs(js => js.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...r.added] } : j)); showToast(t.plansUploaded.replace('{n}', (r.added || []).length)); } catch (e) { showToast(e.message, 'error'); } }} />}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {job.addenda.filter(a => a.publishedAt).slice().sort((a, b) => b.num - a.num).map(a => {
+                {(job.addenda || []).filter(a => a.publishedAt).slice().sort((a, b) => b.num - a.num).map(a => {
                   const mineAck = (acks || []).find(k => k.jobId === job.id && Number(k.num) === Number(a.num) && k.userId === user.id);
                   const allAcks = (acks || []).filter(k => k.jobId === job.id && Number(k.num) === Number(a.num));
                   return (
@@ -3622,7 +3723,13 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           {/* PLANS */}
           <Card style={{ marginBottom: 16 }}>
             <h3 style={sectionTitleStyle}><FileText size={18} /> {t.plans}</h3>
-            <PlansRequests t={t} job={job} user={user} isAdmin={isAdmin} showToast={showToast}
+            {/* patch SUBFLOW: every plan file in one ZIP (the server builds it) — a phone opened only the first of several files */}
+            {(job.plans || []).length > 1 && (
+              <div style={{ margin: '0 0 10px' }}>
+                <Btn size="sm" icon={Download} data-zip="1" disabled={zipBusy} onClick={zipAll}>{zipBusy ? t.zipBusy : t.zipAll}</Btn>
+              </div>
+            )}
+            <PlansRequests t={t} job={job} user={user} isAdmin={isAdmin} showToast={showToast} onAddendum={files => { setAddPrefill({ files, num: (files.find(f => f.num) || {}).num || 0, at: Date.now() }); setTimeout(() => { const el = document.getElementById('bid-addenda'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); }}
               onAdded={(added, scoped) => { loadPlansFor(job.id).then(setFullPlans).catch(() => {});
                 /* patch PLANREQ-C: files sorted into a trade's scope changed the job on the server — take the server's copy (never save a stale one over it) */
                 if ((scoped || []).length) api('load', { keys: ['jobs'] }).then(r => { const fresh = ((r && r.data && r.data.jobs) || []).find(x => x.id === job.id); if (fresh) setJobs(js => js.map(j => j.id === job.id ? { ...j, ...fresh } : j)); }).catch(() => {});
@@ -3825,7 +3932,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             <SupplierQuoteForm t={t} job={job} user={user} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           ) : !isAdmin ? (
             <>
-            {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" style={{ fontWeight: 700 }}>⏸ {t.biddingClosed}</div></Card>}
+            {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" data-pastdue={job.pastDue ? '1' : undefined} style={{ fontWeight: 700 }}>⏸ {job.pastDue ? t.pastDueClosed : t.biddingClosed}</div></Card>}
             {!job.biddingClosed && <Card>
               <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>
                 <Send size={18} /> {myBid ? `${t.yourBid}` : t.enterBid}
