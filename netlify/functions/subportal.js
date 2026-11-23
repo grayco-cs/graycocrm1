@@ -21,6 +21,7 @@
 //   POST {action:'upload', name, type, size}        → a one-time upload link into the private bucket
 //   POST {action:'my-work'}                         → (sub) jobs, pay and 1099 / insurance info from the CRM
 //   POST {action:'crm-subs'}                        → (staff) the CRM's subcontractor list, for linking
+//   POST {action:'invite-groups', op, …}            → (staff) patch INVGROUPS: saved invite groups (get / save / archive)
 //   POST {action:'po-link', jobId, projectId}       → (staff) patch BIDPO: link the bid job to a CRM job (its PO); '__none' = own PO, '' = match again
 //   POST {action:'po-cands', jobId, q}              → (staff) the CRM jobs to pick from
 //   POST {action:'ai-plans', fileRef}               → (staff) read a plan PDF with Claude → title / scope …
@@ -2062,6 +2063,12 @@ async function inviteSend(who, body){
   if (!jr || isGone(jr.data)) throw Fail(404, 'No such bid job.');
   const emails = Array.from(new Set(arr([]).concat(Array.isArray(body.emails) ? body.emails : [body.email]).map(low).filter(okEmail))).slice(0, 100);
   if (!emails.length) throw Fail(400, 'Enter an e-mail address.');
+  let skippedDnu = 0;
+  if (body.skipDnu) {   /* patch INVGROUPS: a bulk invite never reaches a ⛔ Do-not-use sub (a saved group could still hold one) */
+    let dnu = {}; try { (await crmSubs()).forEach(function(c){ if (c.flag === 'dnu' && c.email) dnu[c.email] = 1; }); } catch (e) { dnu = {}; }
+    const keep = emails.filter(function(e){ return !dnu[e]; }); skippedDnu = emails.length - keep.length; emails.length = 0; keep.forEach(function(e){ emails.push(e); });
+    if (!emails.length) return { ok: true, invites: [], mailed: 0, skippedDnu: skippedDnu, mailOff: false };
+  }
   const asSup = s(body.as) === 'supplier';
   const coName = emails.length === 1 ? s(body.company).slice(0, 120) : '';   /* patch INVCO: the company name typed / picked on Invite subs */
   const BM = require('./_lib/bidmail.js'), sw = await BM.cfg();
@@ -2084,7 +2091,7 @@ async function inviteSend(who, body){
     await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);
   }
   await upsertRows(rows, who.email);
-  return { ok: true, invites: out, mailed: mailed, mailOff: !sw.invite };
+  return { ok: true, invites: out, mailed: mailed, mailOff: !sw.invite, skippedDnu: skippedDnu };
 }
 /* C. Admin → 📧 Bid site e-mails: the switches */
 async function bidmailCfg(who, body){
@@ -2092,6 +2099,39 @@ async function bidmailCfg(who, body){
   const BM = require('./_lib/bidmail.js');
   if (s(body.op) === 'set') return { ok: true, switches: await BM.save(body.switches, who.email), list: BM.LIST };
   return { ok: true, switches: await BM.cfg(), list: BM.LIST };
+}
+/* ═══ patch INVGROUPS (owner 11/23 "invite all subs, or recent invitees too, or if I have a special group of who I usually invite let them be
+   group 1"): the admin's saved invite groups on the bid site's ✉️ Invite Subs — one settings row (sp_rows "settings/invite_groups", like
+   settings/bidmail) so every admin and device sees the same groups. Members by e-mail (+ name / company). Deleting ARCHIVES a group (kept
+   with archivedAt/archivedBy, never purged). Nothing is sent from here: the invites still go only through invite-send on the admin's click. */
+const IG_ROW = 'invite_groups', IG_MAX = 60, IG_MAX_MEMBERS = 600;
+function igMember(m){ m = m || {}; const e = low(m.email); if (!okEmail(e)) return null; return { email: e, name: s(m.name).slice(0, 120), company: s(m.company).slice(0, 120) }; }
+function igView(g){ return pick(g, ['id', 'name', 'members', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy', 'archivedAt', 'archivedBy']); }
+async function igRead(){ const r = await getRow('settings', IG_ROW); const d = (r && r.data) || {}; return Array.isArray(d.groups) ? d.groups.filter(function(g){ return g && s(g.id); }) : []; }
+async function inviteGroups(who, body){
+  if (!who.isAdmin) throw Fail(403, 'GrayCo staff only.');
+  const op = s(body.op) || 'get';
+  let groups = await igRead();
+  const out = function(){ return { ok: true, groups: groups.filter(function(g){ return !g.archivedAt; }).map(igView), archived: groups.filter(function(g){ return g.archivedAt; }).length }; };
+  if (op === 'get') return out();
+  const at = new Date().toISOString();
+  if (op === 'save') {
+    const g = body.group || {}, id = s(g.id);
+    const seen = {}, members = (Array.isArray(g.members) ? g.members : []).map(igMember).filter(function(m){ return m && !seen[m.email] && (seen[m.email] = 1); }).slice(0, IG_MAX_MEMBERS);
+    const name = s(g.name).replace(/\s+/g, ' ').slice(0, 60);
+    if (!name) throw Fail(400, 'Give the group a name.');
+    const old = id ? groups.filter(function(x){ return x.id === id && !x.archivedAt; })[0] : null;
+    if (id && !old) throw Fail(404, 'That group was deleted.');
+    if (!old && groups.filter(function(x){ return !x.archivedAt; }).length >= IG_MAX) throw Fail(400, 'Too many groups — delete one first.');
+    const rec = old ? Object.assign({}, old, { name: name, members: members, updatedAt: at, updatedBy: who.email })
+      : { id: 'g_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), name: name, members: members, createdAt: at, createdBy: who.email, updatedAt: at, updatedBy: who.email };
+    groups = old ? groups.map(function(x){ return x.id === old.id ? rec : x; }) : groups.concat([rec]);
+  } else if (op === 'archive') {
+    const id = s(body.id); if (!groups.some(function(x){ return x.id === id && !x.archivedAt; })) throw Fail(404, 'No such group.');
+    groups = groups.map(function(x){ return x.id === id ? Object.assign({}, x, { archivedAt: at, archivedBy: who.email }) : x; });
+  } else throw Fail(400, 'Unknown op.');
+  await upsertRows([{ collection: 'settings', id: IG_ROW, data: { id: IG_ROW, groups: groups, updatedAt: at, updatedBy: who.email } }], who.email);
+  return out();
 }
 /* F. "Request more materials" (a sub on a job they bid on / may bid on, or an awarded job): item, quantity, reason → an approval card for
    the job's PM in the CRM (✅ Approvals, bid-hub ?matreqs). Approve → a line on the job's supplier PO draft (gc_supplier_pos, never sent
@@ -2362,6 +2402,7 @@ exports.handler = async function (event) {
     if (action === 'takeoffs') return J(200, await takeoffsAct(who, body));   /* patch MEASURE */
     if (action === 'invite-send') return J(200, await inviteSend(who, body));   /* patch BIDSITE3 B: Invite → the e-mail at once */
     if (action === 'bidmail-cfg') return J(200, await bidmailCfg(who, body));   /* patch BIDSITE3 C: Admin → 📧 Bid site e-mails */
+    if (action === 'invite-groups') return J(200, await inviteGroups(who, body));   /* patch INVGROUPS: saved invite groups (admin) */
     if (action === 'matreq') return J(200, await matReq(who, body, ctx));       /* patch BIDSITE3 F: "Request more materials" */
     if (action === 'po-link') return J(200, await poLink(who, body));   /* patch BIDPO: 🔗 Link to CRM job / Change link */
     if (action === 'po-cands') return J(200, await poCands(who, body));
