@@ -229268,6 +229268,9 @@ function popHtml(){
   [{ id: 'all', icon: '🏢', short: 'All companies', legal: 'Everything — every company\'s jobs, leads and money', color: '#334155' }].concat(C.list().filter(function(c){ return !mine || mine.indexOf(c.id) > -1; })).forEach(function(c){ var on = f === c.id;
     h += '<button type="button" role="menuitemradio" aria-checked="' + on + '" data-co-f="' + esc(c.id) + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-left:4px solid ' + esc(c.color) + ';background:' + (on ? '#f1f5f9' : '#fff') + ';padding:9px 12px;margin:2px 0;border-radius:8px;cursor:pointer;font:14px Inter,Arial,sans-serif;color:#0f172a"><span style="font-size:18px">' + esc(c.icon) + '</span><span><b>' + esc(c.short) + '</b>' + (on ? ' ✓' : '') + '<br><span style="font-size:12px;color:#64748b">' + esc(c.legal) + '</span></span></button>'; });
   if (admin()) h += '<button type="button" data-co-set style="width:100%;text-align:left;border:0;border-top:1px solid #e2e8f0;background:#fff;padding:9px 12px;margin-top:4px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">⚙ Company settings — names, EINs, licenses</button>';
+  /* TABSEDIT: the tabs editor and the old ⚙ Settings panel, for everyone (each person's own tabs) */
+  if (W.gcNavSettings && typeof W.gcNavSettings.open === 'function') h += '<button type="button" data-co-tabs style="width:100%;text-align:left;border:0;border-top:1px solid #e2e8f0;background:#fff;padding:9px 12px;margin-top:4px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">🗂 Edit my tabs — show, hide, order</button>';
+  if (W.gcSettings && typeof W.gcSettings.open === 'function') h += '<button type="button" data-co-gear style="width:100%;text-align:left;border:0;background:#fff;padding:9px 12px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">⚙ Settings</button>';
   return h;
 }
 function closePop(){ var p = D.getElementById('gc-co-pop'); if (p) p.remove(); }
@@ -229326,12 +229329,14 @@ function openSettings(){
   ov.addEventListener('keydown', function(e){ e.stopPropagation(); });
 }
 D.addEventListener('click', function(e){
-  var t = e.target && e.target.closest ? e.target.closest('[data-co-menu],[data-gc-co-brand],[data-co-f],[data-co-set],[data-co-x],[data-co-save]') : null;
+  var t = e.target && e.target.closest ? e.target.closest('[data-co-menu],[data-gc-co-brand],[data-co-f],[data-co-set],[data-co-tabs],[data-co-gear],[data-co-x],[data-co-save]') : null;
   if (!t) { if (D.getElementById('gc-co-pop') && !(e.target.closest && e.target.closest('#gc-co-pop'))) closePop(); return; }
   if ((t.hasAttribute('data-co-menu') || t.hasAttribute('data-gc-co-brand')) && !C.canSwitch()) { closePop(); return; }   /* patch COLEAK2: locked to their own company */
   if (t.hasAttribute('data-co-menu') || t.hasAttribute('data-gc-co-brand')) { e.preventDefault(); e.stopPropagation(); if (D.getElementById('gc-co-pop')) closePop(); else openPop(t); paint(); return; }
   if (t.hasAttribute('data-co-f')) { e.preventDefault(); e.stopPropagation(); closePop(); C.setFilter(t.getAttribute('data-co-f')); return; }
   if (t.hasAttribute('data-co-set')) { e.preventDefault(); e.stopPropagation(); closePop(); openSettings(); return; }
+  if (t.hasAttribute('data-co-tabs')) { e.preventDefault(); e.stopPropagation(); closePop(); try { W.gcNavSettings.open(); } catch (x) {} return; }   /* TABSEDIT */
+  if (t.hasAttribute('data-co-gear')) { e.preventDefault(); e.stopPropagation(); closePop(); try { W.gcSettings.open(); } catch (x) {} return; }   /* TABSEDIT */
   var ov = D.getElementById('gc-co-modal'); if (!ov) return;
   if (t.hasAttribute('data-co-x') || t === ov) { ov.remove(); return; }
   if (t.hasAttribute('data-co-save')) {
