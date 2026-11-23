@@ -452,6 +452,13 @@
   status = 200
   force = true
 
+# patch PORTALTEAM: portal.html loads portal-team.js (👥 My team / Household on the customer portal) — before the catch-all below
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-team.js"
+  to = "/portal-team.js"
+  status = 200
+  force = true
+
 # patch SUBPORTAL3: portal.html loads /gc-address.js and the legal pages show /img/grayco-logo-white.png — without these rules the
 # catch-all below answered both with the portal page (a script error on every portal open, a broken logo on the legal pages)
 # patch CUSTPORTAL: portal.html's FIRST script is /gc-address.js — the catch-all answered it with the page itself, so every portal

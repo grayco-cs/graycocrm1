@@ -390,6 +390,7 @@ async function whoAmI(event){
     }
     return { email: t.email, uid: t.uid, staff: staff, profile: profile, isAdmin: true, isSub: false, approved: true };
   }
+  { const tw = await teamWho(t, profile); if (tw) return tw; }   /* patch PORTALTEAM: a team member signs in as their company */
   if (!profile || (profile.role !== 'sub' && profile.role !== 'supplier')) return { email: t.email, uid: t.uid, staff: null, profile: null, isAdmin: false, isSub: false, approved: false };
   subAcctCheck(profile, t);   /* patch SUBACCT: turned off / signed out everywhere by an owner */
   if (profile.authUserId !== t.uid) {
@@ -399,6 +400,31 @@ async function whoAmI(event){
   /* patch SUPPLIER: a supplier signs in the same way (isSub: the same account paths); isSupplier keeps the sub-only parts (labour bids,
      COI papers) away from them and gives them material quotes + their POs / bills */
   return { email: t.email, uid: t.uid, staff: null, profile: profile, isAdmin: false, isSub: true, isSupplier: profile.role === 'supplier', approved: profile.approved === true };
+}
+/* patch PORTALTEAM (owner 11/23: "let their sign up be for everyone in their companies"): an ACTIVE team member of a bid-site company
+   (_lib/portalteam.js, company 'sp:<profile id>') is that company here — its jobs, bids, papers, messages — with their own sign-in
+   (updated_by = their e-mail). The company's own off / signed-out-everywhere switches apply to them too. A removed member is refused;
+   a primary contact a teammate (or staff) removed is refused on their own e-mail. Never writes the company's profile. */
+function TEAM(){ return require('./_lib/portalteam.js'); }
+async function teamWho(t, own){
+  const TM = TEAM();
+  let rows = [];
+  try { rows = await TM.find({ kind: 'email', value: t.email }); } catch (e) { if (own) return null; throw e; }
+  rows = rows.filter(function(m){ return /^sp:/.test(s(m.company)); });
+  const pri = own ? rows.find(function(m){ return m.primary === true && m.company === TM.keySub(own.id); }) : null;
+  if (pri && pri.status === 'removed') throw Fail(401, 'You were taken off your company\'s GrayCo portal team. Ask a coworker to add you back, or call GrayCo ' + OFFICE_PHONE + '.');
+  const m = rows.filter(function(x){ return x.primary !== true && TM.active(x); }).sort(function(a, b){ return s(a.addedAt).localeCompare(s(b.addedAt)); })[0];
+  if (!m) {
+    if (!own && rows.some(function(x){ return x.primary !== true && x.status === 'verify'; })) throw Fail(403, TEAM_VERIFY_MSG);   /* SECURITY: not confirmed = no access */
+    if (!own && rows.some(function(x){ return x.primary !== true && x.status === 'removed'; })) throw Fail(401, 'You were taken off your company\'s GrayCo portal team. Ask a coworker to add you back, or call GrayCo ' + OFFICE_PHONE + '.');
+    return null;
+  }
+  const row = await getRow('users', s(m.company).slice(3)), comp = row && row.data;
+  if (!comp || (comp.role !== 'sub' && comp.role !== 'supplier')) return null;
+  if (comp.signinDisabled === true) throw Fail(401, 'This account is turned off. Please call GrayCo ' + OFFICE_PHONE + '.');
+  const out = Date.parse(s(m.signedOutAt)); if (out && t.at && t.at < out - 2000) throw Fail(401, 'Please sign in again.');
+  return { email: t.email, uid: t.uid, staff: null, profile: comp, isAdmin: false, isSub: true, isSupplier: comp.role === 'supplier', approved: comp.approved === true,
+    member: { id: s(m.id), name: s(m.name), email: low(m.email), company: s(m.company) } };
 }
 function needSub(who, approvedOnly){
   if (who.isAdmin) return;
@@ -1023,6 +1049,17 @@ async function register(body){
   if (await staffByEmail(email)) throw Fail(409, 'That is a GrayCo staff e-mail. Sign in with your CRM password instead.');
   const users = await listRows([eq('collection', 'users')]);
   if (users.some(function(r){ return low(r.email) === email; })) throw Fail(409, 'That e-mail already has a portal account. Sign in, or use "Forgot password".');
+  /* patch PORTALTEAM: a business e-mail on an approved company's domain joins that company at once (its access, its jobs); a free-mail
+     sign-up naming an approved company asks to join it (the office decides in 🔐 Sub portal accounts) and keeps its own sign-up meanwhile */
+  let teamRows = []; try { teamRows = await TEAM().all(); } catch (e) { teamRows = []; }
+  { const vr = teamRows.find(function(m){ return low(m.email) === email && m.primary !== true && m.status === 'verify'; });   /* SECURITY: signed up on the domain, not confirmed yet → a fresh 24-hour link to that mailbox */
+    if (vr) { const nv = await TEAM().reVerify(vr, email); await teamConfirmMail(nv.member, nv.token); return { ok: true, approved: false, verify: true, joined: s(vr.companyName), message: TEAM_VERIFY_MSG }; } }
+  if (teamRows.some(function(m){ return low(m.email) === email && m.primary !== true && (m.status === 'active' || m.status === 'requested'); })) throw Fail(409, 'That e-mail is already on a company\'s portal team. Sign in, or use "Forgot password".');
+  const roleWanted = p.acctType === 'supplier' ? 'supplier' : 'sub';
+  /* a sign-up GrayCo invited (link or an open invite to this e-mail) keeps its own invited account, as before */
+  const invitedFirst = !!body.invite || (await listRows([eq('collection', 'invites'), eq('email', email)])).some(function(r){ return !(r.data || {}).usedAt; });
+  const tmatch = invitedFirst ? {} : TEAM().signupMatch(email, p.company, users.map(function(r){ return r.data || {}; }).filter(function(u){ return u.role === roleWanted; }), sameCompany, teamRows);
+  if (tmatch.join) return teamJoin(email, pw, p, tmatch.join);
   if (!body.force) {
     // Possible duplicates: only the company name and why it matched go back — no contact details.
     const digits = function(v){ return s(v).replace(/\D/g, ''); };
@@ -1077,8 +1114,10 @@ async function register(body){
     papersClaimed: (function(c){ c = c && typeof c === 'object' ? c : {}; return { w9: c.w9 === true, gl: c.gl === true, wc: c.wc === true, wcExempt: c.wcExempt === true, at: new Date().toISOString() }; })(p.papersClaimed),
     createdAt: new Date().toISOString()
   };
+  if (tmatch.ask) profile.wantsJoin = { companyId: s(tmatch.ask.id), company: clip(tmatch.ask.company, 120), at: profile.createdAt };   /* patch PORTALTEAM */
   try { await upsertRows([rowFor('users', profile)], email); }
   catch (e) { if (profile.authUserId) await deleteAuthUser(profile.authUserId); throw e; }
+  if (tmatch.ask) { try { await TEAM().add(TEAM().keySub(tmatch.ask.id), { name: p.name, email: email, phone: p.phone }, { email: email, name: s(p.name), role: 'signup' }, { kind: 'sub', companyName: tmatch.ask.company, status: 'requested', via: 'request', primary: { email: tmatch.ask.email, phone: tmatch.ask.phone } }); } catch (e) { console.warn('[subportal] join request', e.message); } }
   if (invited) await upsertRows([rowFor('invites', Object.assign({}, inv.data, { usedAt: new Date().toISOString(), usedBy: profile.id }))], email);
   try { await notify({ kind: 'registered', user: profile }); } catch (e) { console.warn('[subportal] mail', e.message); }
   return { ok: true, approved: profile.approved, paperToken: paperToken(profile.id) };   /* patch SIGNUPPAPERS: upload the papers right after signing up */
@@ -1088,6 +1127,46 @@ async function register(body){
    2-hour token for THIS new profile only: signup-upload (a signed upload into u/<id>/, the same 50 MB limit as every portal
    upload) and signup-papers (saved as the profile's subdocs — w9, insurance_general, insurance_workers_comp, license — the same
    record My Documents and the bid-papers check use). The bid site's own sign-up signs in and saves them the normal way. */
+/* patch PORTALTEAM: the sign-up joins company `comp` (same business e-mail domain): its own Supabase sign-in + an active team row — no
+   profile of its own (the company's approval, papers and jobs are theirs at once) */
+async function teamJoin(email, pw, p, comp){
+  const cr = await fetch(sbUrl() + '/auth/v1/admin/users', { method: 'POST', headers: H(),
+    body: JSON.stringify({ email: email, password: pw, email_confirm: true, user_metadata: { name: s(p.name).slice(0, 80), portal: 'team' } }) });
+  if (!cr.ok) {
+    const t = await cr.text();
+    if (/already|registered|exists/i.test(t)) throw Fail(409, 'That e-mail already has a sign-in. Sign in, or use "Forgot password".');
+    if (/password/i.test(t)) throw Fail(400, 'That password is too weak. Use at least 8 characters with letters and numbers.');
+    throw Fail(502, 'The sign-in could not be created (' + cr.status + '). Call GrayCo ' + OFFICE_PHONE + '.');
+  }
+  const au = await cr.json().catch(function(){ return {}; });
+  let m;
+  /* SECURITY: status 'verify' — no access until the one-time link e-mailed to THIS address is used (24 h). Anyone can type
+     bob@<company domain>; only the owner of that mailbox can finish joining. */
+  try { m = await TEAM().add(TEAM().keySub(comp.id), { name: p.name, email: email, phone: p.phone }, { email: email, name: s(p.name), role: 'signup' }, { kind: 'sub', companyName: comp.company, via: 'domain', status: 'verify', primary: { email: comp.email, phone: comp.phone } }); }
+  catch (e) { const id = s(au.id || (au.user && au.user.id)); if (id) await deleteAuthUser(id); throw e; }
+  const sent = await teamConfirmMail(m, m.verifyToken);
+  try { await sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE], '👥 ' + s(p.name) + ' is joining ' + s(comp.company) + ' on the portal', mailHtml('New team member (confirming their e-mail)', [
+    '<b>' + esc(p.name) + '</b> (' + esc(email) + ') signed up with the same company e-mail domain as <b>' + esc(comp.company) + '</b>. They join that company\'s portal team once they tap the confirm link sent to that address (24 hours).',
+    'See or remove them in the CRM: Admin → 🔐 Sub portal accounts → ' + esc(comp.company) + ' → 👥 Team.'], { href: crmUrl(), label: 'Open the CRM' })); } catch (e) {}
+  return { ok: true, approved: false, verify: true, sent: !!sent, joined: s(comp.company), memberId: s(m && m.id), message: TEAM_VERIFY_MSG };
+}
+const TEAM_VERIFY_MSG = 'Check your e-mail: tap the confirm link we sent to finish joining your company on the GrayCo portal (the link works for 24 hours).';
+function teamConfirmUrl(token){ return PORTAL_ORIGIN + '/.netlify/functions/subportal?team-confirm=' + encodeURIComponent(token); }
+/* the confirm e-mail — tagged 'trade' (a sub sign-up's own mail: data-entry mode lets it go, like the other sub invites) */
+async function teamConfirmMail(m, token){
+  if (!m || !token || !okEmail(low(m.email))) return false;
+  const html = mailHtml('Confirm your e-mail', ['Hi ' + esc(s(m.name).split(' ')[0] || 'there') + ',', 'You signed up for the GrayCo portal with ' + esc(m.email) + '. Tap the button to confirm it is your e-mail and join <b>' + esc(m.companyName) + '</b>\'s team.',
+    'The link works once, for 24 hours. If you did not sign up, ignore this e-mail — nothing happens.'], { href: teamConfirmUrl(token), label: 'Confirm my e-mail' });
+  try { return await require('./_lib/custquiet.js').run('trade', function(){ return sendMail(low(m.email), 'Confirm your e-mail to join ' + s(m.companyName) + ' on GrayCo', html); }); } catch (e) { return false; }
+}
+/* the link's page: one button that POSTs the code (a mail scanner opening the link confirms nothing) */
+function teamConfirmPage(token){
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>GrayCo — confirm your e-mail</title>'
+    + '<style>body{margin:0;background:#F6F3EC;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#14202E}main{max-width:520px;margin:0 auto;padding:28px 16px}.c{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.06)}'
+    + 'button{margin-top:14px;width:100%;min-height:50px;border:none;border-radius:10px;background:#D4A017;color:#14202E;font:700 17px inherit;cursor:pointer}a{color:#14202E}</style></head><body><main><div class="c" id="c"><h1 style="font-size:22px;margin:0 0 10px">Confirm your e-mail</h1>'
+    + '<p>Tap the button to finish joining your company\'s team on the GrayCo portal.</p><button id="b" type="button">Confirm my e-mail</button></div></main>'
+    + '<script>(function(){var b=document.getElementById("b");b.onclick=function(){b.disabled=true;b.textContent="Confirming…";fetch(location.pathname,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"team-confirm",token:' + JSON.stringify(token) + '})}).then(function(r){return r.json();}).then(function(j){document.getElementById("c").innerHTML=j.ok?"<h1>✅ Confirmed</h1><p>You are on "+String(j.company||"your company").replace(/[<>&]/g,"")+"\'s team. Sign in at <a href=\"' + CUSTOMER_PORTAL_ORIGIN + '/\">' + CUSTOMER_PORTAL_ORIGIN.replace(/^https:\/\//, '') + '</a> or ' + PORTAL_ORIGIN.replace(/^https:\/\//, '') + ' with your e-mail and password.</p>":"<h1>Hmm</h1><p>"+String(j.error||"That did not work.").replace(/[<>&]/g,"")+"</p>";},function(){b.disabled=false;b.textContent="Try again";});};})();</script></body></html>';
+}
 const BASE_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Ceilings', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning', 'Mitigation', 'Abatement'];
 let tradeCache = null;
 async function tradeList(){
@@ -1718,7 +1797,8 @@ async function notify(n){
   if (n.kind === 'message-to-sub') {
     const sub = await getRow('users', s(n.msg.recipientSubId));
     if (!sub || sub.data.role !== 'sub') return false;
-    return sendMail(sub.email, 'New message from GrayCo', mailHtml('You have a new message from GrayCo',
+    const teamCc = await TEAM().notifyList(TEAM().keySub(sub.id));   /* patch PORTALTEAM: + the coworkers who turned "Notify me" on */
+    return sendMail([sub.email].concat(teamCc), 'New message from GrayCo', mailHtml('You have a new message from GrayCo',
       [esc(s(n.msg.senderName)) + ' wrote:', esc(s(n.msg.body).slice(0, 1500)).replace(/\n/g, '<br>')], { href: portalLink(), label: 'Read and reply' }));
   }
   return false;
@@ -2323,6 +2403,8 @@ exports.handler = async function (event) {
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
+  { const tc = event.httpMethod === 'GET' && event.queryStringParameters ? s(event.queryStringParameters['team-confirm']) : '';   /* patch PORTALTEAM: the confirm link's page */
+    if (tc) return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' }, body: teamConfirmPage(tc) }; }
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' });
   if (!svcKey()) return J(500, { error: 'SUPABASE_SERVICE_KEY is not set on Netlify.' });
   let body;
@@ -2333,6 +2415,11 @@ exports.handler = async function (event) {
     if (action === 'register') {
       if (limited(ipOf(event), 12)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
       return J(200, await register(body));
+    }
+    if (action === 'team-confirm') {   /* patch PORTALTEAM (security): the domain sign-up's e-mail confirm → access */
+      if (limited(ipOf(event), 20)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
+      const m = await TEAM().confirm(body.token);
+      return J(200, { ok: true, company: s(m.companyName) });
     }
     if (action === 'reset-password') {   /* patch RESETMAIL */
       if (limited(ipOf(event), 20)) return J(429, { error: 'Please wait a minute before asking for another e-mail.' });
@@ -2363,7 +2450,7 @@ exports.handler = async function (event) {
     const ctx = {};
     if (action === 'me') {
       if (!who.profile) return J(200, { user: null, error: 'This sign-in has no subcontractor portal account. Register first, or call GrayCo ' + OFFICE_PHONE + '.' });
-      return J(200, { user: who.profile, role: who.isAdmin ? 'admin' : (who.isSupplier ? 'supplier' : 'sub') });
+      return J(200, { user: who.profile, role: who.isAdmin ? 'admin' : (who.isSupplier ? 'supplier' : 'sub'), team: who.member ? { member: who.member.name, email: who.member.email } : undefined });   /* patch PORTALTEAM */
     }
     needSub(who, false);
     if (action === 'load') {

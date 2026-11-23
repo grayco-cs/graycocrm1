@@ -578,12 +578,12 @@ async function sessionOf(token){
     const live = await dbGet('gc_sub_link', 'select=token,sub_id&revoked=eq.false&token=' + inq(links));
     if (!live.some(function(x){ return s(x.sub_id) === s(row.sub_id); })) return null;
     touchSession(row);
-    return { kind: 'partner', sub_id: s(row.sub_id), id: row.id };
+    return { kind: 'partner', sub_id: s(row.sub_id), id: row.id, ident: row.ident || null };   /* patch PORTALTEAM: ident = who signed in (team) */
   }
   const live = await dbGet('gc_portal', 'select=token,project_id&revoked=eq.false&token=' + inq(links));
   if (!live.length) return null;
   touchSession(row);
-  return { kind: 'customer', pids: live.map(function(x){ return s(x.project_id); }), id: row.id };
+  return { kind: 'customer', pids: live.map(function(x){ return s(x.project_id); }), id: row.id, ident: row.ident || null };   /* patch PORTALTEAM */
 }
 function touchSession(row){
   if (row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 15 * 60e3) return;
@@ -602,7 +602,7 @@ function identOf(who){
   return null;
 }
 /* customers: a job whose customer e-mail / phone matches AND that has an active link */
-async function customerMatch(data, id){
+async function customerMatch(data, id, noTeam){
   const custs = arr(data.customers);
   const pids = [];
   liveProjects(data).forEach(function(p){
@@ -611,9 +611,10 @@ async function customerMatch(data, id){
     const phones = [p.clientPhone, p.phone, c.phone].map(phone10).filter(Boolean);
     if ((id.kind === 'email' && emails.indexOf(id.value) > -1) || (id.kind === 'phone' && phones.indexOf(id.value) > -1)) pids.push(s(p.id));
   });
-  if (!pids.length) return null;
+  if (!pids.length) return noTeam ? null : teamCustMatch(data, id);   /* patch PORTALTEAM: a household / company member */
   const live = await dbGet('gc_portal', 'select=token,project_id&revoked=eq.false&project_id=' + inq(pids));
   if (!live.length) return null;
+  if (!noTeam && await teamPrimaryOff(id, function(m){ return /^cu:/.test(s(m.company)); })) return teamCustMatch(data, id);   /* patch PORTALTEAM: the account holder was taken off the team */
   const p0 = arr(data.projects).find(function(p){ return s(p.id) === s(live[0].project_id); }) || {};
   const c0 = custs.find(function(x){ return low(x.name || x.company) === low(p0.client); }) || {};
   return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: low(p0.clientEmail || p0.email || c0.email), lang: 'en' };
@@ -622,10 +623,11 @@ async function partnerMatch(data, id){
   const subs = crmSubs(data).filter(function(r){ return id.kind === 'email' ? [r.email].concat(arr(r.altEmails)).map(low).indexOf(id.value) > -1 : [r.phone].concat(arr(r.altPhones)).map(phone10).indexOf(id.value) > -1; });   /* patch SUBSYNC: + the e-mail / phone their bid-site account brought (merged in as altEmails / altPhones) */
   for (const sub of subs) {
     if (subOff(data, [sub.id])) continue;   /* patch SUBACCT: turned off — no code is sent */
+    if (await teamPrimaryOff(id, function(m){ return s(m.crmSubId) === s(sub.id) || s(m.company) === 'crm:' + s(sub.id); })) continue;   /* patch PORTALTEAM: taken off the team */
     const link = await subLinkActive(sub.id);
     if (link) return { kind: 'partner', sub: sub, links: [link.token], email: low(sub.email), lang: lang(sub.lang) };
   }
-  return null;
+  return teamPartnerMatch(data, id);   /* patch PORTALTEAM: a coworker on the company's team */
 }
 const SAME = { ok: true, sent: true };
 async function signinStart(body, ip){
@@ -752,6 +754,7 @@ const BADLOGIN = "That e-mail and password don't match. Try again, or tap \"Forg
 async function customerLogin(data, id){
   const m = await customerMatch(data, id);
   if (!m) return null;
+  if (m.member) { const rows = await dbGet('gc_portal_login', 'select=login,pw_hash,changed&login=' + eq(id.key)); return { links: m.links, starters: [], row: rows[0] || null, member: true }; }   /* patch PORTALTEAM: a member signs in with a code, then picks their own password */
   const live = new Set((await dbGet('gc_portal', 'select=token,project_id&revoked=eq.false&token=' + inq(m.links))).map(function(x){ return s(x.project_id); }));
   const names = [];
   const custs = arr(data.customers);
@@ -795,7 +798,7 @@ async function passwordSignin(body, ip){
     }
   }
   if (email) {   /* patch SUBPEND: the sub's own (bid-site) password is checked too when the e-mail is also a customer's with a saved password (was skipped → "don't match") */
-    const sp = await subPasswordLogin(data, email, String(body.password || ''));
+    const sp = await subPasswordLogin(data, email, String(body.password || ''));   /* patch PORTALTEAM: a team member → their company's portal; a removed one → 403 */
     if (sp && sp.noPortal) {
       const pend = await pendStart(sp.prof, id, keys);   /* patch SUBPEND: signed up, not approved / not linked yet → the limited "waiting for approval" session (was 403) */
       if (pend) return pend;
@@ -822,6 +825,10 @@ async function customerPassword(event, body){
     [p.clientEmail, p.email, c.email].map(low).filter(okEmail).forEach(function(e){ if (keys.indexOf('e:' + e) < 0) keys.push('e:' + e); });
     [p.clientPhone, p.phone, c.phone].map(phone10).filter(Boolean).forEach(function(x){ if (keys.indexOf('p:' + x) < 0) keys.push('p:' + x); });
   });
+  if (!keys.some(function(k){ return hmac(k) === (rows[0] || {}).ident; })) {   /* patch PORTALTEAM: a team member's own e-mail / mobile */
+    const tm = await teamMemberBySession(sess, 'customer');
+    keys.length = 0; if (tm) TEAM().identOfMember(tm).forEach(function(k){ keys.push(k); });
+  }
   if (!keys.some(function(k){ return hmac(k) === (rows[0] || {}).ident; })) throw Fail(400, 'Sign in with your e-mail (or mobile number) and password first.');
   const now = new Date().toISOString(), hash = pwHash(pw);
   await dbPost('gc_portal_login?on_conflict=login', keys.map(function(k){ return { login: k, pw_hash: hash, changed: true, updated_at: now }; }), 'resolution=merge-duplicates,return=minimal');
@@ -881,9 +888,14 @@ async function pendUpgrade(row, prof){
 async function subPortalAfterPassword(data, email){
   let crmId = '', prof = null;
   try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
+  { const tm = await teamPartnerMatch(data, { kind: 'email', value: low(email), key: 'e:' + low(email) }); if (tm) return { sub: tm.sub, links: tm.links }; }   /* patch PORTALTEAM: a team member → their company */
+  if (prof && prof.role === 'sub' && await teamPrimaryOff({ kind: 'email', value: low(email) }, function(m){ return s(m.company) === 'sp:' + s(prof.id); })) throw Fail(403, TEAM_OFF);   /* patch PORTALTEAM */
   let sub = (crmId ? subById(data, crmId) : null) || crmSubOf(data, prof) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;   /* patch SUBSYNC: + the merged / matched CRM sub */
   const approved = !!bidOnlySub(prof);
   if (!sub && approved) sub = bidOnlySub(prof);   /* BIDONLY: approved on the bid site, not in the CRM yet */
+  if (!sub && !prof) { try { const tr = await TEAM().find({ kind: 'email', value: low(email) });   /* patch PORTALTEAM */
+    if (tr.some(function(m){ return m.kind === 'sub' && m.primary !== true && m.status === 'verify'; })) throw Fail(403, TEAM_VERIFY);   /* SECURITY: not confirmed = no access */
+    if (tr.some(function(m){ return m.kind === 'sub' && m.status === 'removed'; })) throw Fail(403, TEAM_OFF); } catch (e) { if (e && e.status === 403) throw e; } }
   if (!sub) return { noPortal: true, prof: prof };   /* not approved yet → the caller opens the pending session */
   let link = await subLinkActive(sub.id);
   if (!link && approved) { try { link = await subLinkCreate(sub.id, sub.name, 'bid site approval (automatic)'); } catch (e) { link = null; } }   /* BIDONLY: approval turns their portal on */
@@ -1427,6 +1439,7 @@ function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) ==
 async function partnerAction(action, body, ctx){
   const sub = ctx.sub;
   if (action === 'p-home') return pHome(ctx);
+  if (/^p-team/.test(action)) return pTeam(ctx, action, body);   /* patch PORTALTEAM: 👥 My team */
   if (action === 'p-score') return pScore(ctx);
   if (action === 'p-avail' || action === 'p-avail-set') return pAvail(ctx, body, action);   /* patch X10: my schedule + the days I can't work */
   if (action === 'p-codes') return pCodes(ctx, body.projectId);   /* patch X10: the job's access codes — only on my scheduled days, every look logged */   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
@@ -1531,7 +1544,8 @@ async function partnerAction(action, body, ctx){
     const files = await uploadsOf(sub, body.uploadIds, p.id);
     const text = clip(body.text, 4000);
     if (!text && !files.length) throw Fail(400, 'Type a message.');
-    const m = await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), text, files);
+    const tmA = await teamMemberBySession(ctx.sess, 'sub');   /* patch PORTALTEAM: a coworker writes under their own name */
+    const m = await msgInsert(p.id, 's:' + sub.id, 'them', tmA ? s(tmA.name) : s(sub.contact || sub.name), text, files);
     return { ok: true, id: m };
   }
   if (action === 'p-late') {   /* patch SUBTXT: "Can't make it / running late" → the job's PM at once (push, 🔴 To-Do, e-mail) + this thread */
@@ -1901,7 +1915,7 @@ async function msgInsert(pid, party, side, author, text, files, opt){
   if (/^s:/.test(s(party))) { try { await require('./_lib/subthread.js').after(subThreadDeps(), { id: id, pid: s(pid), subId: s(party).slice(2), side: side, author: author, text: text, files: (files || []).map(function(f){ return { name: clip(f && f.name, 120) }; }), notify: !(opt && opt.notify === false) }); } catch (e) {} }
   return id;
 }
-function subThreadDeps(){ return { core: function(){ return require('./portal.js')._core; }, crmData: crmData, subById: subById, jobTagOf: jobTagOf, subLinkCreate: subLinkCreate, linkFor: linkFor, sendMail: sendMail, sendText: sendText, textReady: textReady, mailHtml: mailHtml, dbGet: dbGet, okEmail: okEmail, phone10: phone10 }; }
+function subThreadDeps(){ return { teamCc: teamCcSub, portalBase: portalBase, core: function(){ return require('./portal.js')._core; }, crmData: crmData, subById: subById, jobTagOf: jobTagOf, subLinkCreate: subLinkCreate, linkFor: linkFor, sendMail: sendMail, sendText: sendText, textReady: textReady, mailHtml: mailHtml, dbGet: dbGet, okEmail: okEmail, phone10: phone10 }; }
 /* reader = 'them' (customer / sub reading GrayCo's messages) or 'gc' (GrayCo reading theirs) */
 async function threadOut(pid, party, reader, noMark){
   const rows = await dbGet('gc_portal_msg', 'select=*&project_id=' + eq(pid) + '&party=eq.' + encodeURIComponent(party) + '&order=created_at.asc&limit=500');
@@ -1922,7 +1936,7 @@ async function customerPids(event){
   const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
   return sess && sess.kind === 'customer' ? sess.pids : null;
 }
-async function customerAction(action, body, pids){
+async function customerAction(action, body, pids, event){
   const data = await crmData(false);
   const projects = liveProjects(data).filter(function(p){ return pids.indexOf(s(p.id)) > -1; });
   if (action === 'c-jobs') {
@@ -1938,7 +1952,8 @@ async function customerAction(action, body, pids){
   if (action === 'c-send') {
     if (body.preview === true) throw Fail(400, 'This is a preview — messages are sent from the customer\'s own portal.');
     const text = clip(body.text, 4000); if (!text) throw Fail(400, 'Type a message.');
-    const cid = await msgInsert(p.id, 'c', 'them', s(p.client).split(/\s+/)[0] || 'Customer', text, []);
+    let tmA = null; try { const ss = event && !TOKEN_RE.test(s(gcHeader(event, 'x-portal-token'))) ? await sessionOf(gcHeader(event, 'x-portal-session')) : null; tmA = await teamMemberBySession(ss, 'customer'); } catch (e) { tmA = null; }   /* patch PORTALTEAM */
+    const cid = await msgInsert(p.id, 'c', 'them', tmA ? s(tmA.name) : (s(p.client).split(/\s+/)[0] || 'Customer'), text, []);
     /* patch PORTALPOL (owner 11/19: "questions are answered in the portal"): the customer's answer / message tells the job's PM (a STAFF
        notification: phone push + staff text alert, _lib/jobmsgnotify.js; no PM → the owners). Nothing goes to the customer. */
     let notified = null; try { notified = await custMsgNotify(p, cid, text); } catch (e) { notified = { ok: false }; }
@@ -2162,6 +2177,140 @@ async function staffAction(action, body, who){
   throw Fail(400, 'Bad request');
 }
 
+
+/* ═══ patch PORTALTEAM (owner 11/23: "The portal should be for the company … let their sign up be for everyone in their companies") ═══
+   The team of a sub company (portal.grayco-cs.com, the partner portal) and of a customer (household / GC-commercial company):
+   _lib/portalteam.js holds the rules and the rows. Here: who is signing in, the 👥 My team actions, and the sign-in doors.
+     sub:      p-team · p-team-add {name, email, phone} · p-team-invite {id} · p-team-remove {id} · p-team-restore {id} · p-team-notify {on}
+     customer: c-team · c-team-add · c-team-invite · c-team-remove · c-team-restore · c-team-notify  (residential: the account holder
+               manages the household; GC / commercial: any member). The customer's words never mention the sub portal, and back.
+   A member's sign-in (code or password) opens exactly the company's portal: the same CRM sub (partner) or the holder's job links
+   (customer). Removing someone ends their signed-in devices at once and refuses their next sign-in; the record stays. */
+const TEAM_OFF = 'You were taken off your company\'s GrayCo portal team. Ask a coworker to add you back, or call GrayCo ' + OFFICE_PHONE + '.';
+const TEAM_VERIFY = 'Check your e-mail: tap the confirm link we sent to finish joining your company on the GrayCo portal (it works for 24 hours). Signing up again sends a new one.';
+function TEAM(){ return require('./_lib/portalteam.js'); }
+async function teamPrimaryOff(id, match){ try { return (await TEAM().find(id)).some(function(m){ return m.primary === true && m.status === 'removed' && match(m); }); } catch (e) { return false; } }
+async function bidProfById(pid){ try { const r = (await dbGet('sp_rows', 'select=data&collection=eq.users&id=' + eq(pid)))[0]; return r && r.data || null; } catch (e) { return null; } }
+/* the bid-site profile behind a CRM sub (the same links crmSubOf honors), or null */
+async function bidProfOfSub(data, sub){
+  if (sub && sub.bidOnly) { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(low(sub.email))); return (rows[0] && rows[0].data) || null; }
+  let rows = []; try { rows = await dbGet('sp_rows', 'select=data&collection=eq.users&limit=5000'); } catch (e) { return null; }
+  const list = rows.map(function(r){ return r.data || {}; }).filter(function(u){ return u.role === 'sub' && s(u.id); });
+  return list.find(function(u){ const c = crmSubOf(data, u); return c && s(c.id) === s(sub.id); }) || null;
+}
+/* a team row's company → the CRM sub (or bid-only sub) whose portal it opens */
+async function teamSubOf(data, m){
+  const k = s(m.company);
+  if (/^crm:/.test(k)) return subById(data, k.slice(4));
+  if (/^sp:/.test(k)) { const prof = await bidProfById(k.slice(3)); if (!prof || prof.role !== 'sub' || prof.signinDisabled === true) return null; return crmSubOf(data, prof) || bidOnlySub(prof); }
+  return null;
+}
+async function teamPartnerMatch(data, id){
+  const m = await TEAM().activeFor(id, 'sub'); if (!m) return null;
+  const sub = await teamSubOf(data, m); if (!sub || subOff(data, [sub.id])) return null;
+  let link = await subLinkActive(sub.id);
+  if (!link && sub.bidOnly) { try { link = await subLinkCreate(sub.id, sub.name, 'team member sign-in (company approved)'); } catch (e) { link = null; } }
+  if (!link) return null;
+  return { kind: 'partner', sub: sub, links: [link.token], email: low(m.email), lang: lang(sub.lang), member: m };
+}
+async function teamCustMatch(data, id){
+  const m = await TEAM().activeFor(id, 'customer'); if (!m) return null;
+  const hid = TEAM().custIdent(m.company); if (!hid) return null;
+  const r = await customerMatch(data, hid, true); if (!r) return null;
+  return Object.assign({}, r, { email: low(m.email), member: m });
+}
+async function teamMemberBySession(sess, kind){
+  if (!sess || !sess.ident) return null;
+  try { return (await TEAM().all()).find(function(m){ return m.primary !== true && m.kind === kind && TEAM().active(m) && TEAM().identOfMember(m).some(function(k){ return hmac(k) === sess.ident; }); }) || null; } catch (e) { return null; }
+}
+async function teamRevoke(m){
+  const ids = TEAM().identOfMember(m).map(hmac); if (!ids.length) return;
+  try { await dbPatch('gc_portal_session', 'revoked=eq.false&ident=' + inq(ids), { revoked: true }); } catch (e) {}
+}
+async function teamCcSub(subId){
+  try { const data = await crmData(false), sub = subById(data, subId) || null; const prof = sub ? await bidProfOfSub(data, sub) : null;
+    return await TEAM().notifyList([TEAM().keyCrm(subId)].concat(prof ? [TEAM().keySub(prof.id)] : [])); } catch (e) { return []; }
+}
+/* who is this session, for the team: { meId: 'primary' | <member id>, actor, member } */
+function teamActor(rows, primary, ident, primaryKeys){
+  const TM = TEAM();
+  if (ident) {
+    const m = TM.members(rows).find(function(x){ return TM.active(x) && TM.identOfMember(x).some(function(k){ return hmac(k) === ident; }); });
+    if (m) return { meId: m.id, member: m, actor: { email: low(m.email), name: s(m.name), role: 'member' } };
+    if (primaryKeys && primaryKeys.length && !primaryKeys.some(function(k){ return hmac(k) === ident; })) return { meId: '', actor: null };
+  }
+  return { meId: 'primary', actor: { email: low(primary.email), name: s(primary.name) || 'Main contact', role: 'primary' } };
+}
+/* a Supabase sign-in for a sub coworker (so the bid site's password works) + a one-time "choose your password" link — a person's click only */
+async function teamSetPw(email, name){
+  try { await fetch(sbUrl() + '/auth/v1/admin/users', { method: 'POST', headers: H(), body: JSON.stringify({ email: email, password: crypto.randomBytes(24).toString('base64url') + 'a1', email_confirm: true, user_metadata: { name: clip(name, 80), portal: 'team' } }) }); } catch (e) {}
+  try { const r = await fetch(sbUrl() + '/auth/v1/admin/generate_link', { method: 'POST', headers: H(), body: JSON.stringify({ type: 'recovery', email: email, redirect_to: portalBase() + '/' }) });
+    const j = await r.json().catch(function(){ return {}; }); return s(j.action_link || (j.properties && j.properties.action_link)); } catch (e) { return ''; }
+}
+async function teamTaken(email){
+  if (!email) return '';
+  try { const st = await dbGet('gc_staff', 'select=email&email=' + eq(email)); if (st.length) return 'That is a GrayCo staff e-mail.'; } catch (e) {}
+  try { const u = await dbGet('sp_rows', 'select=id&collection=eq.users&email=' + eq(email)); if (u.length) return 'That e-mail already has its own GrayCo portal account. Call GrayCo ' + OFFICE_PHONE + ' to move it to your team.'; } catch (e) {}
+  return '';
+}
+async function teamAct(T, action, body){
+  /* T = { keys, primary, me, canManage, kind, companyName, es, crmSubId, setPw } */
+  const TM = TEAM(), op = action.replace(/^[pc]-team-?/, '') || 'list';
+  const out = function(rows){ return { ok: true, kind: T.kind, company: T.companyName, me: T.me.meId, canManage: T.canManage, notify: T.me.member ? T.me.member.notify === true : true,
+    team: TM.teamOut(T.primary, rows, T.me.meId), household: T.household === true }; };
+  if (!T.me.actor) throw Fail(403, 'Sign in with your own e-mail or mobile number to see your team.');
+  if (op === 'list') return out(await TM.ofCompany(T.keys));
+  if (op === 'notify') {
+    if (!T.me.member) return Object.assign(out(await TM.ofCompany(T.keys)), { note: 'The main contact always gets GrayCo\'s notices.' });
+    await TM.setNotify(T.keys, T.me.member.id, body.on === true, T.me.actor);
+    return out(await TM.ofCompany(T.keys));
+  }
+  if (!T.canManage) throw Fail(403, T.kind === 'customer' ? 'Only the account holder adds or removes people.' : 'You cannot change this team.');
+  if (op === 'add') {
+    const m = await TM.add(T.keys, { name: body.name, email: body.email, phone: body.phone }, T.me.actor, { kind: T.kind, companyName: T.companyName, primary: T.primary, taken: teamTaken });
+    const r = out(await TM.ofCompany(T.keys)); r.added = TM.view(m); return r;
+  }
+  if (op === 'invite') {
+    const m = await TM.getOne(T.keys, s(body.id));
+    const inv = await TM.invite(m, T.me.actor, { url: portalBase() + '/', company: T.companyName, byName: T.me.actor.name, es: T.es, setPw: T.setPw && okEmail(m.email) ? function(e){ return T.setPw(e, m.name); } : null });
+    return Object.assign(out(await TM.ofCompany(T.keys)), { invite: inv });
+  }
+  if (op === 'remove' || op === 'restore') {
+    const r = await TM.setStatus(T.keys, s(body.id), op, T.me.actor, { primary: T.primary, kind: T.kind, companyName: T.companyName, crmSubId: T.crmSubId });
+    if (op === 'remove' && !r.unchanged) await teamRevoke(r.member);
+    return Object.assign(out(await TM.ofCompany(T.keys)), { self: op === 'remove' && r.member && (r.member.id === T.me.meId || (r.member.primary && T.me.meId === 'primary')) });
+  }
+  throw Fail(400, 'Bad request');
+}
+async function pTeam(ctx, action, body){
+  const TM = TEAM(), sub = ctx.sub;
+  const prof = await bidProfOfSub(ctx.data, sub);
+  const keys = prof ? [TM.keySub(prof.id), TM.keyCrm(sub.id)] : [TM.keyCrm(sub.id)];
+  const primary = prof ? { name: s(prof.name), email: low(prof.email), phone: s(prof.phone) } : { name: s(sub.contact || sub.name), email: low(sub.email), phone: s(sub.phone) };
+  const rows = await TM.ofCompany(keys);
+  const me = teamActor(rows, primary, ctx.sess && ctx.sess.ident, null);   /* a link / code sign-in of the sub's own e-mail or phone = the main contact */
+  return teamAct({ keys: keys, primary: primary, me: me, canManage: true, kind: 'sub', companyName: s(sub.company || sub.name), es: lang(sub.lang) === 'es', crmSubId: s(sub.id),
+    setPw: prof ? teamSetPw : null }, action, body);
+}
+async function cTeam(event, action, body, pids){
+  const TM = TEAM(), data = await crmData(false), custs = arr(data.customers);
+  const projects = liveProjects(data).filter(function(p){ return pids.indexOf(s(p.id)) > -1; }).sort(function(a, b){ return s(a.id).localeCompare(s(b.id)); });
+  if (!projects.length) throw Fail(404, NOT_ACTIVE);
+  const p0 = projects[0], c0 = TM.custOf(p0, custs);
+  let keys = []; projects.forEach(function(p){ TM.custKeys(p, TM.custOf(p, custs)).forEach(function(k){ if (keys.indexOf(k) < 0) keys.push(k); }); });
+  const first = TM.custKeys(p0, c0); keys = first.concat(keys.filter(function(k){ return first.indexOf(k) < 0; }));
+  if (!keys.length) throw Fail(400, 'GrayCo needs your e-mail or mobile number on file first. Call ' + OFFICE_PHONE + '.');
+  const primary = { name: s(p0.client) || s(c0.name), email: low(p0.clientEmail || p0.email || c0.email), phone: s(p0.clientPhone || p0.phone || c0.phone) };
+  const rows = await TM.ofCompany(keys);
+  const tok = s(gcHeader(event, 'x-portal-token'));
+  let ident = null;
+  if (!TOKEN_RE.test(tok)) { const sess = await sessionOf(gcHeader(event, 'x-portal-session')); ident = sess && sess.ident || null; }
+  const me = teamActor(rows, primary, ident, keys.map(function(k){ return k.slice(3); }));
+  const com = projects.some(function(p){ return TM.commercial(p, TM.custOf(p, custs)); });
+  if (body.preview === true && action !== 'c-team') throw Fail(400, 'This is a preview — only the customer changes their team.');
+  return teamAct({ keys: keys, primary: primary, me: me, canManage: com ? !!me.actor : me.meId === 'primary', kind: 'customer', household: !com, companyName: s(c0.company || c0.name || p0.client), es: low(body.lang) === 'es', crmSubId: '' }, action, body);
+}
+/* ═══ end patch PORTALTEAM (server) ═══ */
 /* ── the door ──────────────────────────────────────────────────────────────── */
 async function notActive(headers, t0){
   const wait = MIN_FAIL_MS + Math.floor(Math.random() * 60) - (Date.now() - t0);
@@ -2234,7 +2383,8 @@ exports.handler = async function (event) {
     if (/^c-/.test(action)) {
       const pids = await customerPids(event);
       if (!pids) { noteBad(ip, 'pub'); return notActive(headers, t0); }
-      return reply(200, await customerAction(action, body, pids));
+      if (/^c-team/.test(action)) return reply(200, await cTeam(event, action, body, pids));   /* patch PORTALTEAM: 👥 Household / My team */
+      return reply(200, await customerAction(action, body, pids, event));   /* patch PORTALTEAM: + event (who is writing) */
     }
     if (action === 'p-bid-request' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many requests sent from here. Wait a few minutes.' });   /* patch PLANREQ */
     if (action === 'p-bid-ask' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many questions sent from here. Wait a few minutes.' });   /* patch BIDPOST */
@@ -2246,7 +2396,7 @@ exports.handler = async function (event) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
       if (!sess && await pendRow(event)) return reply(403, { ok: false, pending: true, error: 'Your account is waiting for GrayCo to approve it. Call GrayCo ' + OFFICE_PHONE + '.' });   /* patch SUBPEND: a pending session never opens the partner portal */
       if (!sess || sess.kind !== 'partner') { noteBad(ip, 'app'); return notActive(headers, t0); }
-      { const ctx = await partnerCtx(sess); ctx.ip = ipOf(event); ctx.ua = clip(gcHeader(event, 'user-agent'), 200); return reply(200, await partnerAction(action, body, ctx)); }
+      { const ctx = await partnerCtx(sess); ctx.sess = sess; ctx.ip = ipOf(event); ctx.ua = clip(gcHeader(event, 'user-agent'), 200); return reply(200, await partnerAction(action, body, ctx)); }
     }
     return reply(400, { ok: false, error: 'Bad request' });
   } catch (e) {
@@ -2263,7 +2413,7 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 exports._portalpol = { CMN: CMN, questionsFor: questionsFor, custMsgNotify: custMsgNotify };   /* patch PORTALPOL: tests */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut, bidHasPdf: bidHasPdf, readAfterSave: function(){ return bidReadAfterSave.apply(null, arguments); } };   /* patch BIDSCOPE: tests */
-exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch };   /* patch SUBSYNC: tests */
+exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch, customerMatch: customerMatch };   /* patch SUBSYNC: tests */
 /* patch SUBACCT: Admin → 🔐 Sub portal accounts (netlify/functions/sub-accounts.js) uses the same links, matcher and records */
 exports._acct = { crmData: function(f){ return crmData(f); }, crmSubs: crmSubs, subById: subById, crmSubOf: crmSubOf, bidSubId: bidSubId, linkFor: linkFor,
   subLinkActive: function(){ return subLinkActive.apply(null, arguments); }, subLinkCreate: function(){ return subLinkCreate.apply(null, arguments); }, subLinkRevoke: function(){ return subLinkRevoke.apply(null, arguments); }, subOff: subOff };
