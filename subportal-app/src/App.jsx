@@ -42,6 +42,7 @@ const T = {
     confirm: 'Confirm', back: 'Back', view: 'View', close: 'Close',
     needAccount: "Don't have an account?", haveAccount: 'Already have an account?',
     accountPending: 'Your account is pending approval. A GrayCo team member will review your request.',
+    svTitle: 'Check your e-mail to confirm', svCheck: 'We sent you a link — tap it to confirm your e-mail (it works for 24 hours). Then log in here; GrayCo reviews your account.', svResend: 'Resend link', svResent: 'Sent — check your e-mail (and the spam folder).',
     invalidLogin: 'That e-mail and password do not match. Tap the eye to check the password, or use "Forgot password?" below.',
     pwTip: 'Tap the eye to check it. You will sign in with this password.',
     sendReset: 'E-mail me a reset link',
@@ -366,6 +367,7 @@ const T = {
     confirm: 'Confirmar', back: 'Atrás', view: 'Ver', close: 'Cerrar',
     needAccount: '¿No tiene cuenta?', haveAccount: '¿Ya tiene cuenta?',
     accountPending: 'Su cuenta está pendiente de aprobación. Un miembro del equipo de GrayCo revisará su solicitud.',
+    svTitle: 'Revise su correo para confirmar', svCheck: 'Le enviamos un enlace — tóquelo para confirmar su correo (sirve por 24 horas). Luego entre aquí; GrayCo revisa su cuenta.', svResend: 'Reenviar el enlace', svResent: 'Enviado — revise su correo (y la carpeta de spam).',
     invalidLogin: 'El correo y la contraseña no coinciden. Toque el ojo para revisar la contraseña, o use "¿Olvidó su contraseña?" abajo.',
     pwTip: 'Toque el ojo para revisarla. Iniciará sesión con esta contraseña.',
     sendReset: 'Envíenme un enlace para cambiarla',
@@ -1822,6 +1824,8 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
   const [papers, setPapers] = useState({ w9c: '', w9: null, glc: '', gl: null, glExp: '', wcc: '', wc: null, wcExp: '', lics: [{ state: '', type: '', number: '', exp: '', file: null }] });   /* patch SIGNUPPAPERS */
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
+  const [verifyNote, setVerifyNote] = useState(null);   /* patch PORTALTAPS: "check your e-mail to confirm" after Request Access */
+  const [verifyResent, setVerifyResent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [badPw, setBadPw] = useState(false);   /* patch SELFRESET: a wrong password offers "E-mail me a reset link" right there */
 
@@ -1887,6 +1891,13 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
       return;
     }
     setDuplicateWarning(null);
+    /* patch PORTALTAPS (SIGNUPVERIFY on the bid site): the server holds a self sign-up until its e-mail is confirmed — say so
+       plainly (it used to try to sign in and say "Account created! You can bid on public jobs immediately") */
+    if (result.verify) {
+      setVerifyNote({ email: form.email, msg: result.message || t.svCheck });
+      setMode('login'); setForm({ ...form, username: form.email, password: '' });
+      return;
+    }
     // Signed up: sign straight in
     const login = await authSignIn(form.email, form.password);
     if (login.user && papersDocs.docs.length) {   /* patch SIGNUPPAPERS: saved as their My Documents (the bid-papers check reads these) */
@@ -2048,6 +2059,14 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
             </>
           )}
 
+          {verifyNote && (
+            <div data-verify-note="1" role="status" style={{ background: '#ECFDF5', color: '#065F46', padding: '12px 14px', borderRadius: 6, fontSize: 13, marginBottom: 16, lineHeight: 1.45, fontWeight: 500 }}>
+              <div style={{ fontWeight: 800, marginBottom: 4 }}>✉️ {t.svTitle}</div>
+              <div>{verifyNote.msg}</div>
+              <button type="button" data-verify-resend="1" disabled={verifyResent} onClick={async () => { setVerifyResent(true); try { await api('signup-resend', { email: verifyNote.email }, { anonymous: true }); } catch (e) { /* the same answer either way */ } showToast(t.svResent); setTimeout(() => setVerifyResent(false), 60000); }}
+                style={{ marginTop: 8, padding: '8px 12px', borderRadius: 6, border: '1px solid #065F46', background: '#fff', color: '#065F46', fontWeight: 700, cursor: 'pointer', fontFamily: styles.fontBody }}>{t.svResend}</button>
+            </div>
+          )}
           {error && (
             <div style={{
               background: '#FEE2E2', color: styles.red, padding: '10px 14px',

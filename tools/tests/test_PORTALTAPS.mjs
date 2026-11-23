@@ -581,6 +581,7 @@ async function portalApp(){
   async function seedPending(){
     const email = 'nina@samplenewtile.test', pw = 'Nina-Pass-22';
     const r = await call('subportal', { action: 'register', email, password: pw, profile: { name: 'Nina Sample', company: 'Sample New Tile LLC', phone: '901-555-0123', trades: ['Tile'], lang: 'en', businessCity: 'Memphis', businessState: 'TN' } });
+    const tok = confirmToken(email); if (tok) await call('subportal', { action: 'signup-confirm', token: tok });   /* SIGNUPVERIFY: the e-mail is confirmed first */
     const s1 = await call('portal-access', { action: 'signin-password', email, password: pw });
     if (!s1.data.session) throw new Error('no pending session: ' + JSON.stringify([r.data, s1.data]).slice(0, 300));
     return s1.data.session;
@@ -610,6 +611,8 @@ async function portalApp(){
     const sub = seedSub(); W.resetCaches(); try { PA()._core._reset(); } catch (e) {}
     return sub;
   }
+  /* SIGNUPVERIFY: the confirm link in the (fake) mail box for an address */
+  const confirmToken = email => { for (let i = W.RESEND.length - 1; i >= 0; i--) { const m = W.RESEND[i]; if (JSON.stringify(m.to || '').includes(email)) { const t = /signup-confirm=([A-Za-z0-9_-]{30,80})/.exec(String(m.html || '') + String(m.text || '')); if (t) return t[1]; } } return ''; };
   /* the sign-in page's flows, step by step (each step a row) */
   async function portalFlows(kind){
     const out = [], ctx = await newContext('')(kind), pg = await ctx.newPage(), errs = [];
@@ -625,7 +628,19 @@ async function portalApp(){
       const v = { company: 'Sample New Roof LLC', name: 'Otis Sample', email, phone: '901-555-0188', city: 'Memphis', state: 'TN', pw, pw2: pw };
       for (const k of Object.keys(v)) if (await pg.$('#su_' + k)) await pg.fill('#su_' + k, v[k]);
       await tap('[data-su-trade="Roofing"]'); if (await pg.$('#pp_w9_later')) await pg.check('#pp_w9_later'); await pg.check('#su_agree'); await tap('#suGo');
-      await pg.waitForSelector('#pendBox', { timeout: 20000 }); return 'signed straight in: "' + (await pg.innerText('#pendBox')).replace(/\s+/g, ' ').slice(0, 90) + '"'; });
+      await pg.waitForSelector('#svCheck, #pendBox', { timeout: 20000 });
+      if (await pg.$('#pendBox')) return 'signed straight in (no e-mail check)';
+      return 'SIGNUPVERIFY: "' + (await pg.innerText('#svCheck')).replace(/\s+/g, ' ').slice(0, 80) + '"'; });
+    await step('sign up', 'the confirm e-mail → its link → Confirm my e-mail → confirmed', async () => {
+      if (!(await pg.$('#svCheck'))) return 'not needed';
+      for (let i = 0; i < 20 && !confirmToken(email); i++) await sleep(250); const tok = confirmToken(email); if (!tok) throw new Error('no confirm e-mail');
+      await pg.goto(ORIGIN + '/.netlify/functions/subportal?signup-confirm=' + tok); await tap('#b');
+      await pg.waitForFunction(() => /confirmed|confirmado/i.test(document.body.innerText), null, { timeout: 15000 });
+      return 'the page says: "' + (await pg.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').slice(0, 90))) + '"'; });
+    await step('sign up', 'sign in with the new password → the waiting-for-approval page', async () => {
+      if (await pg.$('#pendBox')) return 'already there';
+      await pg.goto(ORIGIN + '/'); await pg.waitForSelector('#siEmail', { timeout: 15000 }); await pg.fill('#siEmail', email); await pg.fill('#siPw', pw); await tap('#siLogin');
+      await pg.waitForSelector('#pendBox', { timeout: 20000 }); return '"' + (await pg.innerText('#pendBox')).replace(/\s+/g, ' ').slice(0, 90) + '"'; });
     await step('sign up', 'the account is on the bid site, not approved (an owner approves it in the CRM)', async () => { const r = (W.TABLES.sp_rows || []).find(x => x.collection === 'users' && x.email === email); return !!(r && r.data.approved === false && r.data.role === 'sub') && 'profile ' + r.id + ' approved:false'; });
     await step('sign up', 'the CRM sees the new sign-up to approve (s-sync bids)', async () => { const r = await call('portal-access', { action: 's-sync' }, { authorization: 'Bearer good-admin' }); return (r.data.bids || []).some(b => b.email === email) && 'in the ✅ Approvals list'; });
     await step('sign up', 'Sign out → the sign-in page', async () => { await tap('#signOut'); await pg.waitForSelector('#siEmail', { timeout: 15000 }); });
@@ -811,9 +826,17 @@ async function bidsApp(){
       for (const cb of await pg.$$('input[type=checkbox]')) { const lab = await cb.evaluate(e => (e.closest('label') || e.parentElement).innerText); if (/agree|acuerdo|terms|later|después/i.test(lab)) await cb.check().catch(() => {}); }
       const c0 = n0(); await tapLast('button:has-text("Request Access")');
       await pg.waitForFunction(() => !document.querySelector('[data-su="company"]'), null, { timeout: 20000 });
-      await pg.waitForFunction(() => /approv|aprob/i.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
+      await pg.waitForFunction(() => /approv|aprob|confirm/i.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
       const prof = W.rowsOf('users').find(r => r.data.email === v.email); const txt = await pg.evaluate(() => document.body.innerText);
-      return !!prof && prof.data.approved !== true && /approv/i.test(txt) && 'account made (approved: ' + prof.data.approved + ') · ' + W.CALLS.slice(c0).filter(c => /register|signup/.test(c)).join(' ') + ' · the page says it waits for approval'; });
+      pg.__v = v; pg.__verify = !!(await pg.$('[data-verify-note]'));
+      return !!prof && prof.data.approved !== true && /approv|confirm/i.test(txt) && 'account made (approved: ' + prof.data.approved + ') · ' + W.CALLS.slice(c0).filter(c => /register|signup/.test(c)).join(' ') + (pg.__verify ? ' · "' + (await pg.innerText('[data-verify-note]')).replace(/\s+/g, ' ').slice(0, 70) + '"' : ' · the page says it waits for approval'); });
+    await step('sign up', 'the confirm e-mail\'s link → confirmed → Log In → waiting for approval', async () => {
+      if (!pg.__verify) return 'no e-mail check';
+      const m = [...MAILS].reverse().find(x => JSON.stringify(x.to || '').includes(pg.__v.email)); const tok = m && (/signup-confirm=([A-Za-z0-9_-]{30,80})/.exec(String(m.html || '')) || [])[1]; if (!tok) throw new Error('no confirm e-mail');
+      const r = await F.sp.handler({ httpMethod: 'POST', headers: { origin: 'https://bids.test' }, body: JSON.stringify({ action: 'signup-confirm', token: tok }) }); if (r.statusCode !== 200) throw new Error('confirm ' + r.statusCode + ' ' + r.body);
+      await pg.fill('input[type=email]', pg.__v.email); await pg.fill('input[type=password]', pg.__v.pw); await tapLast('button:has-text("Log In")');
+      await pg.waitForFunction(() => /approv|aprob/i.test(document.body.innerText) && !document.querySelector('input[type=password]'), null, { timeout: 20000 });
+      return 'confirmed → signed in: the waiting-for-approval page'; });
     await ctx.close();
     return out;
   }
