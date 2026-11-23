@@ -536,6 +536,7 @@ function make(d){
     try { out.lsa25 = await require('./smsalert.js').lsaAgeCheck(); } catch (e) { out.lsa25 = { error: s(e && e.message) }; }
     try { out.lsaEsc = await require('./smsalert.js').lsaEscTick(); } catch (e) { out.lsaEsc = { error: s(e && e.message) }; }   /* LEADWATCH: the BAD-lead dispute ladder, 1 hour a step */   /* LSAFLOW2: a Google LSA lead 25 days old and not qualified → the owners + the office, once */
     try { out.emq = await require('./smsalert.js').emqDue(); } catch (e) { out.emq = { error: s(e && e.message) }; }   /* EMQ: emergency questions 15 min after we answered */   /* OVERNIGHT: overnight lead texts go out when the office opens (this run is every 10 minutes) */
+    try { out.subs = await subMove(src); } catch (e) { out.subs = { error: s(e && e.message) }; }   /* patch SUBSEEK: before the clock */
     try { out.speed = await speedToLead(src, t); } catch (e) { out.speed = { error: s(e && e.message) }; }
     try { out.results = await resultsAsk(src, t); } catch (e) { out.results = { error: s(e && e.message) }; }
     return out;
@@ -816,6 +817,46 @@ function make(d){
     const from = isFinite(x.asgAt) ? x.asgAt : x.born, a = (t - from) / H;
     return a >= STL_SECOND_H ? ['pm24', 'pm4'] : a >= STL_FIRST_H ? ['pm4'] : [];   /* QUIETSAT (owner 11/22: "I don't want that notification at all ever"): the 48 h "<PM> has not contacted …" alert to the owners is gone (text and e-mail) */
   }
+  /* patch SUBSEEK (owner 11/19: "he is a sub trying to find work, we like that … That message can go in somewhere else"): an OPEN lead —
+     the CRM's list or the Lead Inbox, any source (website form, Google LSA, text, call, e-mail, a lead source), however old — that is a sub /
+     supplier looking for work (lead-watch.js subWhy: the salesguard words) is moved, once, to Leads → 🤝 Subs & suppliers (the Sales &
+     spam store, status 'sub', with the reason); its Lead Inbox item is dismissed ("Sales & spam filter" — kept, never deleted, "Actually a
+     customer lead" brings it back), its office "👤 Assign a PM" To-Do is closed and its PM reply ladder stopped. The CRM page archives its
+     copy of the lead (leadwatch_block.html subSweep). The clock (speedToLead), the 5 PM assign and the lead texts already skip it
+     (kindOf 'sub'). Nothing is sent to anyone. */
+  async function subMove(src){
+    const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    if (off()) return { moved: 0, off: true };
+    src = src || {};
+    const st0 = loadState(await kvGet(KA)), done = obj(st0.subMoved), cand = [], seen = {};
+    const tomb = id => !!(src.tombs && src.tombs['leads:' + id]);
+    arr(src.leads).forEach(l => {
+      if (!l || !l.id || tomb(l.id) || l.deleted || l._deleted || s(l.mergedInto)) return;
+      const lw = Object.assign({}, l.leadExtra || {}, l), why = LW().subWhy(lw);
+      if (l.inboxId) seen[s(l.inboxId)] = 1;
+      if (!why || done[s(l.id)] || l.archived || /^subs?$/i.test(s(l.sgKind))) return;
+      cand.push({ key: s(l.id), inboxId: s(l.inboxId), why, l });
+    });
+    arr(src.items).forEach(it => {
+      if (!it || !it.id || it.stub || seen[s(it.id)] || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
+      const key = 'LEADIN-' + s(it.id).replace(/^LI-/, ''), why = LW().subWhy(Object.assign({}, it.leadExtra || {}, it));
+      if (!why || done[key] || tomb(key)) return;
+      cand.push({ key, inboxId: s(it.id), why, l: Object.assign({}, it.leadExtra || {}, it, { id: key, inboxId: s(it.id) }) });
+    });
+    if (!cand.length) return { moved: 0 };
+    const G = require('./salesguard.js'), SGm = G.make({ kvGet, kvCas, now }), out = { moved: 0, list: [] };
+    for (const c of cand) {
+      const l = c.l, who = G.senderOf(l), tag = 'sub / supplier: ' + c.why, at = nowIso();
+      try { await SGm.hold({ via: 'lead', kind: 'sub', why: c.why, phone: who.phone, email: who.email, name: who.name || s(l.contactName), company: who.company || s(l.company), text: G.ownText(l), leadId: c.inboxId || c.key }); } catch (e) {}
+      if (c.inboxId) { try { await kvCas('gc_lead_inbox', v => { const list = arr(v), x = list.find(y => y && s(y.id) === c.inboxId); if (!x || x.status === 'dismissed') return undefined;
+        x.status = 'dismissed'; x.dismissedBy = 'Sales & spam filter'; x.dismissReason = tag.slice(0, 200); x.leadExtra = Object.assign({}, x.leadExtra, { sgKind: 'sub' }); x.updatedAt = at; return list; }); } catch (e) {} }
+      try { await require('./smsalert.js')._D.tasksDone(['LWASG_' + c.key], 'a sub / supplier — moved to 🤝 Subs & suppliers'); } catch (e) {}
+      try { const SA = require('./smsalert.js'); if (typeof SA.escClose === 'function') for (const k of ['reply', 'bad', 'good']) await SA.escClose(c.inboxId || c.key, k); } catch (e) {}
+      await kvCas(KA, v => { const st = loadState(v); st.subMoved = obj(st.subMoved); st.subMoved[c.key] = at; return st; }).catch(() => {});
+      out.moved++; out.list.push({ key: c.key, why: c.why });
+    }
+    return out;
+  }
   function stlKey(x, k){ return 'stl|' + k + '|' + x.key + (/^pm/.test(k) ? '|' + x.assigneeEmail : ''); }
   async function speedToLead(src, t){
     if (off() || env('SPEED_TO_LEAD_OFF') === '1') return { sent: 0, off: true };
@@ -898,7 +939,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifySooner, _mailSooner: mailSooner, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifySooner, _mailSooner: mailSooner, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, subMove, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }

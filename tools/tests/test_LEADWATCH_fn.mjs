@@ -289,6 +289,38 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   ok(!SMS.some(x => /GOOD lead: Gus Good/.test(x.Body)), 'marked → the GOOD ladder stops', SMS.map(x => x.Body));
   ok(/qb_bcc_merge/.test(require('fs').readFileSync(path.join(WT, 'index.html'), 'utf8')) && /Bcc new invoices to invoices@grayco-cs\.com, and merge EAH Holdings into EAN Holdings/.test(require('fs').readFileSync(path.join(WT, 'index.html'), 'utf8')), 'Owner setup: the optional QuickBooks Bcc / merge item (a manual Done tick)');
 
+  console.log('10. patch SUBSEEK: a sub looking for work (a website "Commercial bid inquiry", 11/21) is no customer lead — open ones are moved');
+  world(); T = THU10;
+  const SWISS = "Following up on the note we sent through your website last month. If you have any steel jobs coming up, we'd be glad to help with:\n- Structural and misc. steel shop drawings\nThanks,\nDave Drafter\nExample Drafting\nProject location: Brooklyn";
+  const SUBI = { id: 'LI-sub1', status: 'new', title: 'Commercial bid inquiry — Example Drafting — Brooklyn', type: 'commercial', source: 'Website (grayco-cs.com)', receivedAt: iso(T - 50 * H),
+    contact: { name: 'Dave Drafter', phone: '(323) 555-0872', email: 'dave@example-drafting.test' }, leadExtra: { said: { message: SWISS, company: 'Example Drafting' }, websiteLead: true, websiteForm: 'Commercial bid inquiry' },
+    estimator: 'Eddie Est', estimatorEmail: EM.est };
+  const SUBL = web('LEADIN-sub1', 3, { inboxId: 'LI-sub1', name: SUBI.title, leadKind: 'Commercial', type: 'Commercial Reno', websiteForm: 'Commercial bid inquiry', websiteType: 'commercial', company: 'Example Drafting',
+    contactName: 'Dave Drafter', said: { message: SWISS, company: 'Example Drafting', service: 'A project (general contractor)' }, scope: SWISS, createdAt: iso(T - 50 * H), estimator: 'Eddie Est', estimatorEmail: EM.est,
+    assignedAt: iso(T - 48 * H), hold: { k: 'bid', state: 'auto', field: 'estimator', name: 'Eddie Est', email: EM.est, doneAt: iso(T - 48 * H) } });
+  ok(LW.kindOf(SUBL) === 'sub' && !LW.isCustomer(SUBL) && LW.risk(SUBL, T) === null && !LW.atRisk([SUBL], [SUBI], T).length, 'the rule: a sub / supplier is no customer lead (not on the clock, not on the 🚨 card) — before: "pm48"', LW.kindOf(SUBL));
+  ok(!LW.defaultDue([SUBI], [], T + 60 * H, () => iso(T)).length, 'the 5 PM default assign skips it');
+  setKv('gc_lead_inbox', [SUBI]);
+  const ASB = BI._lib.alertsApi(); await ASB.loadPeople(USERS);
+  const WSB = web('LEADIN-w5', 4, { createdAt: iso(T - 50 * H), pm: 'Pat Miller', pmEmail: EM.pat, assignedAt: iso(T - 48 * H) });
+  await ASB.speedToLead({ leads: [SUBL, WSB], items: [SUBI] }, T - 60 * H);   /* the first run takes note */
+  SMS.length = 0; MAIL.length = 0;
+  const sp = await ASB.speedToLead({ leads: [SUBL, WSB], items: [SUBI] }, T + 60e3);
+  ok(!SMS.some(x => /Dave Drafter|Example Drafting|LEADIN-sub1/.test(x.Body)) && !MAIL.some(m => /Example Drafting|Dave Drafter/.test(JSON.stringify(m))), 'speed to lead: no "reach out" / "has not contacted" for the sub (text or e-mail)', { sms: SMS.map(x => x.Body), sp });
+  ok(sp.list && sp.list.some(x => x.key === 'LEADIN-w5'), '… a real customer lead on the same run still is', sp);
+  SMS.length = 0;
+  const mv = await ASB.subMove({ leads: [SUBL], items: [SUBI], tombs: {} });
+  const sst = require(path.join(SRC, '_lib/salesguard.js')).cleanStore(getKv('gc_sales_spam')), ii = (getKv('gc_lead_inbox') || [])[0] || {};
+  ok(mv.moved === 1 && sst.list.some(x => x.kind === 'sub' && x.status === 'sub' && x.leadId === 'LI-sub1' && /jobs coming up/.test(x.why)), 'the open lead is moved to 🤝 Subs & suppliers (with the reason)', { mv, list: sst.list });
+  ok(ii.status === 'dismissed' && ii.dismissedBy === 'Sales & spam filter' && (ii.leadExtra || {}).sgKind === 'sub' && (getKv('gc_lead_inbox') || []).length === 1, 'its Lead Inbox item is dismissed (kept, not deleted)', ii);
+  const mv2 = await ASB.subMove({ leads: [SUBL], items: [getKv('gc_lead_inbox')[0]], tombs: {} });
+  ok(mv2.moved === 0 && require(path.join(SRC, '_lib/salesguard.js')).cleanStore(getKv('gc_sales_spam')).list.length === 1, 'once (the next run moves nothing)', mv2);
+  const IN2 = { id: 'LI-sub2', status: 'new', title: 'Google LSA call', source: 'Google LSA', receivedAt: iso(T), contact: { name: 'Sam Sub', phone: '(901) 555-7019' }, leadExtra: { leadSource: 'Google LSA', lsaCheck: 'pending', callerSaid: 'Hi, we are a licensed drywall and framing subcontractor. Please add us to your bid list.' } };
+  setKv('gc_lead_inbox', [IN2]);
+  const mv3 = await ASB.subMove({ leads: [], items: [IN2], tombs: {} });
+  ok(mv3.moved === 1 && getKv('gc_lead_inbox')[0].status === 'dismissed', 'a Google LSA call from a sub (not on the CRM yet) is moved the same way', mv3);
+  ok(!SMS.length, 'nothing is texted by the move');
+
   console.log('6. nobody outside GrayCo');
   ok(!custOther().length, 'no other text to a customer, a GC or anyone outside the staff list (only the qualify ask / "a PM will reach out")', custOther());
   console.log((fail ? 'FAILED' : 'ALL PASSED') + ' — ' + pass + ' passed, ' + fail + ' failed');

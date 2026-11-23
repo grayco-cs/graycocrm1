@@ -655,7 +655,7 @@ async function leads(list, raw, isEm){
        ("GrayCo PRIME BID <code>: <project> for <owner> …", GOOD / BAD by code); a bid where GrayCo would be a SUB (a GC's invitation on
        BuildingConnected / PlanHub …) or not marked → the CRM only, no texts. The existing Prime / Sub mark decides (bid-role.js). */
     const bidRole = bidInv ? (/^(prime|sub)$/.test(low(r.bidRole || x.bidRole || obj(r.leadExtra).bidRole)) ? low(r.bidRole || x.bidRole || obj(r.leadExtra).bidRole) : (() => { try { return require('./bid-role.js').role(lwL); } catch (e) { return ''; } })()) : '';
-    const only = !em && (bidInv || (!cust && isSubBid(r, x))) ? (bidRole === 'prime' ? lsaAdmins() : []) : null;   /* patch SUBALERT → LEADWATCH: sub bids: no text */
+    const only = lwK === 'sub' ? [] : !em && (bidInv || (!cust && isSubBid(r, x))) ? (bidRole === 'prime' ? lsaAdmins() : []) : null;   /* patch SUBALERT → LEADWATCH: sub bids: no text · patch SUBSEEK: a sub / supplier looking for work: the CRM only (🤝 Subs & suppliers), never a text */
     /* LEADTEXT (owner 11/10: "website leads say GrayCo website lead and do the same structure … all leads do this structure" · "all leads for
        the entire company should go through this GrayCo text"): every customer lead (not a bid invite — those stay with the estimator — and not an
        emergency that is not LSA — that still pages on call) goes to the owners' cells in the LSA shape with the same replies */
@@ -667,7 +667,7 @@ async function leads(list, raw, isEm){
        send to admin to assign PM, or send to PM directly"): the office gets "📞 Google call — fill in the lead" (an office To-Do + a phone
        push) at the same moment; nothing waits on it. After hours the text waits for 7:00 AM (notify: LSAHOLD). */
     if (lsaL) { try { out.push({ intake: await _D.intakeTodo({ leadId: s(x.id), code: lsaCode(x.id), name: clip(name, 60), phone: callPh, said: clip(s(msg).replace(/\s+/g, ' '), 200), em: !!em }) }); } catch (e) { out.push({ intakeError: s(e && e.message) }); } }
-    if (lsaL || (!em && !only && (cust || !bidLike(r, x)))) {   /* LSATEXT: owner 11/10 — Google LSA leads to the owners' cells; they text back GOOD or BAD */
+    if (lwK !== 'sub' && (lsaL || (!em && !only && (cust || !bidLike(r, x))))) {   /* SUBSEEK: never a sub / supplier · LSATEXT: owner 11/10 — Google LSA leads to the owners' cells; they text back GOOD or BAD */
       const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
       const det = lsaL ? lsaDetails(r, x) : '';   /* LSAREC: Google's call length + job type (Google Ads API), when known */
@@ -698,6 +698,7 @@ async function leads(list, raw, isEm){
         lsa: { leadId: s(x.id), code: bcode, name: clip(s(x.title || r.title), 60), phone: '', link: '', said: '', em: false, isLsa: false, label: 'prime bid', codeOnly: true, adminsOnly: true } }), { bid: true, role: 'prime' })); } catch (e) { out.push({ error: s(e && e.message) }); }
       continue;
     }
+    if (lwK === 'sub') { out.push({ sub: true, crmOnly: true }); continue; }   /* patch SUBSEEK: 🤝 Subs & suppliers (the CRM only), never a text */
     const code = only ? '' : lsaCode(x.id), adm = lsaAdmins();
     const hintFor = g => (code && (!g || !g.email || adm.indexOf(low(g.email)) >= 0)) ? lsaHint(code) : '';
     const body = (more, g) => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, tail + hintFor(g));
@@ -1319,6 +1320,7 @@ function lwWho(l){ l = obj(l); const c = obj(l.contact), ex = obj(l.leadExtra); 
   return { nm, ph, line: nm + (ph.length === 10 ? ' 📞 ' + tidy(ph) : '') }; }
 async function pmLeadText(pm, lead, o){
   pm = pm || {}; o = o || {}; const em = low(pm.email), l = obj(lead), leadId = s(l.id); if (!em || !leadId) return { skipped: 'no PM' };
+  if (LWc().kindOf(Object.assign({}, obj(l.leadExtra), l)) === 'sub') return { skipped: 'a sub / supplier looking for work (🤝 Subs & suppliers)' };   /* patch SUBSEEK */
   const ex = obj(l.leadExtra), w = lwWho(l), code = lsaCode(s(l.inboxId) || leadId), label = leadLabel(l, l);
   let msg = ''; try { msg = require('./leadmsg.js').collect(Object.assign({}, l, { leadExtra: Object.assign({ said: obj(l.said) }, ex) })).message; } catch (e) {}   /* a CRM lead keeps "said" on itself */
   const job = clip(s(ex.service || l.service || l.websiteForm || ex.websiteForm), 34), addr = clip(s(l.address), 50), emg = !!(l.emergency || ex.emergency);
@@ -1836,5 +1838,5 @@ async function lsaAgeCheck(){
   return out;
 }
 
-module.exports = { custFrom, sendC, jobReady, lsaQualifiedG, goodLadder, escStart, pmAppt, LSA_DISPUTE_WINDOW_H, LSA_WARN_LEFT_H, lsaEscTick, goodCust, pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, textable, system,
+module.exports = { escClose, custFrom, sendC, jobReady, lsaQualifiedG, goodLadder, escStart, pmAppt, LSA_DISPUTE_WINDOW_H, LSA_WARN_LEFT_H, lsaEscTick, goodCust, pmLeadText, speedText, bidDueText, pmAssignText, lsaBad, lsaDisputed, lsaMark, lsaMine, lsaAgeCheck, _lsaQualified: lsaQualified, loadOwners, lsaAdmins, lsaFollowUp, lsaIntake, lsaAssign, lsaPms, lsaDefaultPm, lsaSetDefaultPm, lsaList, sevenOk, bundleTexts, lsaCallBits, HOLD_KEY, emqArm, emqSend, emqOnCustomer, emqDue, _emqText: emqText, lsaCustOf, webAsk, _findJob: findJob, apptText, lsaVetted, jobNote, lsaAsk, lsaCustomer, lsaPmText, _lsaCode: lsaCode, _lsaParseMulti: lsaParseMulti, _isLsaLead: isLsaLead, _lsaReply: lsaReply, _D: _D, _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, textable, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

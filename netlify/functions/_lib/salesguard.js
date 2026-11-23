@@ -342,8 +342,13 @@ function make(d){
       if (allowed(await blockList(), who)) continue;
       /* patch SPAMGIB: a bot's random letters (any kind of lead, a "Commercial bid inquiry" too) */
       const bot = sgBotWhy({ name: who.name, message: ownText(it), location: [it.address, it.city, it.state].map(s).filter(Boolean).join(', '), company: who.company, email: who.email });
-      if (!bot && (BID_KIND.test(s(it.type || it.leadKind)) || /bids@|bid\s*board|planhub|buildingconnected|isqft/i.test(s(it.source)))) continue;   /* a bid invitation is never a pitch */
+      const le2 = obj(it.leadExtra), board = /bids@|bid\s*board|planhub|buildingconnected|isqft/i.test(s(it.source)) || !!(s(it.gc) || s(it.bidRole || le2.bidRole) || s(it.bidDue) || s(it.origin) === 'watch');
+      if (!bot && board) continue;   /* a bid invitation is never a pitch */
       const c = bot ? { kind: 'bot', why: bot } : sgClass(ownText(it), who), w = c.why;   /* patch SUBPITCH: a sub / supplier → 🤝 Subs & suppliers */
+      /* patch SUBSEEK (owner 11/19: a drafting sub's "if you have any steel jobs coming up, we'd be glad to help" sent as the website's
+         "Commercial bid inquiry" went to the estimator and his speed-to-lead texts): a commercial / government inquiry is no sales pitch,
+         but a sub / supplier looking for work is still one, whichever form or source it came through */
+      if (!bot && BID_KIND.test(s(it.type || it.leadKind)) && c.kind !== 'sub') continue;
       if (!w) continue;
       const tag = bot ? bot : (c.kind === 'sub' ? 'sub / supplier: ' : 'sales: ') + w;
       await hold({ via: 'lead', phone: who.phone, email: who.email, name: who.name, company: who.company, text: ownText(it), leadId: s(it.id), why: w, kind: c.kind });
