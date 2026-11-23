@@ -8,6 +8,7 @@
 //   feed {items}              (admin) the CRM-only approvals waiting on admins (_lib/apprping.js)
 //   audit {rec}               one approval decision, from this device (who = the sign-in, never the page)
 //   week                      (admin) 📊 Approvals this week
+//   history {before?, limit?}  (admin / PM / office — APPRHIST) 📜 every approval decision, live + archive, newest first, a page
 //   ping                      (admin) run the approval pings now
 //   callout {kind: sick | late | cant, day, minutes, note, jobs: [job ids]}   an employee calling out (patch TIMEOFF's 🤒 / ⏰):
 //                             the admins + the PM of each job that day (the superintendent on a commercial job), at once
@@ -88,6 +89,12 @@ async function act(body, who){
     return { status: 200, out: await PG().audit(rec) };
   }
   if (op === 'week') { if (!admin) return { status: 403, out: { ok: false, error: 'Admins only.' } }; return { status: 200, out: await PG().week() }; }
+  if (op === 'history') {   /* APPRHIST: 📜 All approvals history — who sees ✅ Approvals (admins, PMs, the office), by role */
+    let ok = admin || /office/i.test(s(who.role));
+    if (!ok) { try { const d = await portal._core.crmData(true); const u = arr(d.users).filter(function(x){ return x && low(x.email) === low(who.email) && x.active !== false; })[0]; ok = !!(u && /office|project manager|^admin$/i.test(s(u.role))); } catch (e) {} }   /* the CRM role */
+    if (!ok) return { status: 403, out: { ok: false, error: 'Approvals history is for admins, project managers and the office.' } };
+    return { status: 200, out: await PG().history({ before: body.before, limit: body.limit }) };
+  }
   if (op === 'callout') {
     const kind = /^(sick|late|cant)$/.test(s(body.kind)) ? s(body.kind) : '';
     if (!kind) return { status: 400, out: { ok: false, error: 'Bad request' } };

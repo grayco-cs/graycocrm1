@@ -159,7 +159,7 @@ try {
   await sleep(1500); await A.ev(() => window._gcTimeOff.pull()); await sleep(1200);
   await A.ev(() => { window._gcApprovalSetFresh && window._gcApprovalSetFresh(); window._setView('dashboard'); }); await sleep(800);
   await A.ev(() => window._setView('approvals')); await sleep(2500);
-  const clicked = await A.ev(() => { const cards = [...document.querySelectorAll('#gc-apx-mount *')].filter(e => /Time off: Zedd Demo/.test(e.textContent || '') && [...e.querySelectorAll('button')].some(b => /Deny/.test(b.textContent))); const c = cards[cards.length - 1]; if (!c) return false; [...c.querySelectorAll('button')].find(b => /Deny/.test(b.textContent)).click(); return true; });
+  const clicked = await A.ev(() => { const cards = [...document.querySelectorAll('#gc-apx-mount .apx-row')].filter(e => /Time off: Zedd Demo/.test(e.textContent || '') && [...e.querySelectorAll('button')].some(b => /Deny/.test(b.textContent)));   /* the card itself (not the 🕘 Recently approved list, which names the first request too) */ const c = cards[cards.length - 1]; if (!c) return false; [...c.querySelectorAll('button')].find(b => /Deny/.test(b.textContent)).click(); return true; });
   await sleep(700);
   const went = await A.ev(() => {   /* the deny bar ("✕ Denied — … Why? · Send back · ↩ Undo"), or the older in-card box */
     const w = document.querySelector('[data-apx-dwhy]');
