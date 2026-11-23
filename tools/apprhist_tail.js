@@ -74,7 +74,7 @@ function kindL(rec){
 
 /* ── 3. this computer's own decisions (until the server has them) ── */
 function mine(){ try { var v = JSON.parse(lsGet(LSK) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-function saveMine(l){ l = l.filter(function(x){ return x && (!x.sent || Date.now() - tms(x.at) < 3 * DAY); }).slice(-300); lsSet(LSK, JSON.stringify(l)); }
+function saveMine(l){ l = l.filter(function(x){ return x && ((!x.sent && !x.local) || Date.now() - tms(x.at) < 3 * DAY); }).slice(-300); lsSet(LSK, JSON.stringify(l)); }   /* sent (or patch AWAY's, sent by AWAY): kept 3 days, then the server's copy is the one */
 var SENDING = {};
 function send(x){
   if (!x || x.sent || x.local || SENDING[x.lid] || !signedIn() || typeof W.fetch !== 'function') return;
