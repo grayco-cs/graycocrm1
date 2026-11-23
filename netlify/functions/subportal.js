@@ -767,6 +767,14 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (!okEmail(rec.email)) continue;
         if (!old && (rec.role === 'admin' || staff.has(rec.email))) continue;   // GrayCo people come from Team access in the CRM
         rec.role = staff.has(rec.email) ? 'admin' : (old && old.role === 'admin' ? 'former' : ((old ? old.role : rec.role) === 'supplier' ? 'supplier' : 'sub'));   /* patch SUPPLIER: a supplier stays one */
+        /* patch MOVESUP (owner 11/23: "be able to move people to a supplier if I click their profile"): an admin's explicit move between
+           sub and supplier (rec._moveTo) — the only way the role changes; who / when kept in roleHistory (never cleared) */
+        const mv = s(rec0._moveTo); delete rec._moveTo;
+        if (old && (mv === 'supplier' || mv === 'sub') && (old.role === 'sub' || old.role === 'supplier') && old.role !== mv) {
+          rec.role = mv;
+          rec.roleHistory = arr(old.roleHistory).concat([{ from: old.role, to: mv, at: new Date().toISOString(), by: who.email }]).slice(-50);
+          if (mv === 'supplier' && old.approved === true) rec.approved = true;
+        } else if (old) rec.roleHistory = old.roleHistory;
         if (old) { rec.authUserId = old.authUserId; rec.createdAt = old.createdAt || rec.createdAt; }
         if (old) ['signinDisabled', 'signinDisabledAt', 'signinDisabledBy', 'signedOutAt', 'signedOutBy', 'tempPasswordAt', 'tempPasswordBy'].forEach(function(k){ if (old[k] !== undefined) rec[k] = old[k]; else delete rec[k]; });   /* patch SUBACCT: only Admin → 🔐 Sub portal accounts sets these */
         if ((rec.role === 'sub' || rec.role === 'supplier') && rec.approved === true && old && old.approved !== true) notes.push({ kind: 'approved', user: rec });

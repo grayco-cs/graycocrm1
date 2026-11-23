@@ -5071,6 +5071,44 @@ function SupplierWork({ t, user, asAdmin = false }) {
     </div>
   );
 }
+/* patch MOVESUP (owner 11/23: "be able to move people to a supplier if I click their profile, also have their profile with phone number etc
+   up top where that docs button is and be able to move them to supplier there"): 👤 Profile on each approved sub / supplier card — the
+   contact, phone, e-mail, company, address, trades, license, website, when they joined — and ↔ Move to supplier / back to subs (asked
+   inline first; the server keeps who / when). */
+function ProfileBox({ u, users, setUsers, showToast, to }) {
+  const [open, setOpen] = useState(false), [ask, setAsk] = useState(false);
+  const tel = String(u.phone || '').replace(/[^\d+]/g, '');
+  const addr = [u.businessAddress, [u.businessCity, u.businessState].filter(Boolean).join(', '), u.businessZip].filter(Boolean).join(' ');
+  const row = (k, v) => v ? <div style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0' }}><span style={{ color: styles.text2, minWidth: 92 }}>{k}</span><span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{v}</span></div> : null;
+  function move() {
+    setUsers(users.map(x => x.id === u.id ? { ...x, role: to, _moveTo: to } : x));
+    setAsk(false); setOpen(false);
+    showToast(to === 'supplier' ? (u.company || u.name) + ' moved to Suppliers.' : (u.company || u.name) + ' moved to Subcontractors.');
+  }
+  return (
+    <div data-profile={u.id} style={{ marginBottom: 8 }}>
+      <Btn size="sm" variant="secondary" data-profile-open={u.id} onClick={() => setOpen(!open)}>👤 {open ? 'Hide profile' : 'Profile'}</Btn>
+      {open && <div data-profile-box={u.id} style={{ marginTop: 8, padding: 10, border: `1px solid ${styles.border}`, borderRadius: 8, background: styles.cream }}>
+        {row('Contact', [u.name, u.contactTitle].filter(Boolean).join(' · '))}
+        {row('Phone', tel ? <a href={'tel:' + tel} style={{ color: styles.accentDk, fontWeight: 700 }}>{u.phone}</a> : '')}
+        {row('E-mail', u.email ? <a href={'mailto:' + u.email} style={{ color: styles.accentDk }}>{u.email}</a> : '')}
+        {row('Company', [u.company, u.dbaName && 'DBA ' + u.dbaName].filter(Boolean).join(' · '))}
+        {row('Address', addr)}
+        {row('Trades', (u.trades || []).join(', '))}
+        {row('License', u.licenseNumbers || u.license)}
+        {row('Website', u.website)}
+        {row('Joined', u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '')}
+        <div style={{ marginTop: 8 }}>
+          {!ask ? <Btn size="sm" variant="ghost" data-move={to} onClick={() => setAsk(true)}>{to === 'supplier' ? '🧱 Move to supplier' : '🔨 Move to subcontractor'}</Btn>
+            : <div data-move-ask={to} style={{ fontSize: 13 }}>
+                {to === 'supplier' ? 'Move ' + (u.company || u.name) + ' to Suppliers? They will see the jobs open for material quotes and send quotes, not labour bids.' : 'Move ' + (u.company || u.name) + ' back to Subcontractors? They will see jobs to bid on for their trades.'}
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}><Btn size="sm" data-move-yes={to} onClick={move}>Yes, move</Btn><Btn size="sm" variant="ghost" onClick={() => setAsk(false)}>Cancel</Btn></div>
+              </div>}
+        </div>
+      </div>}
+    </div>
+  );
+}
 function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
   const list = users.filter(u => u.role === 'supplier' && u.approved);
   const [vendors, setVendors] = useState(null), [work, setWork] = useState(null);
@@ -5094,7 +5132,8 @@ function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
                 <Badge color={w9 ? styles.green : styles.text2}>{w9 ? '✓ W-9' : 'No W-9'}</Badge>
               </div>
               <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
-              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6, marginBottom: 8 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="sub" />
               {u.trades?.length > 0 && <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>{u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}</div>}
               <Field label={t.crmVendor}>
                 <select style={{ ...inputStyle, marginTop: 4 }} data-crm-vendor={u.id} value={u.crmVendorId || ''} onChange={e => link(u.id, e.target.value)}>
@@ -5329,7 +5368,8 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
                   : <Badge color={styles.red}>! Docs</Badge>}
               </div>
               <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
-              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6 }}>{u.email}</div>
+              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6, marginBottom: 8 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="supplier" />
               {u.trades?.length > 0 && (
                 <div style={{ marginTop: 10, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   {u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}
