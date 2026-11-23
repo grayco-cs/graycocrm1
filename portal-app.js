@@ -1680,6 +1680,7 @@ function signup(opts){
         return;
       }
       if (r.status !== 200 || !d.ok) { err.textContent = d.error || t('failed'); return; }
+      if (d.verify) return svCheckMail(body.email, d.message);   /* SIGNUPVERIFY: confirm the e-mail first — nothing else until then */
       if (picked.items.length && d.paperToken) {
         busy(go, true); err.textContent = t('ppUp');
         return uploadPapers(d.paperToken, picked).then(function(u){ pendAfterSignup(opts, body.email, body.password, keep, function(){ busy(go, false); done(!!d.approved, body.email, u); }); });   /* patch SUBPEND */
@@ -1828,6 +1829,19 @@ Object.assign(L.es, { pdIn: '✅ Ya entró a su cuenta.', pdWhy: 'GrayCo está r
   pdContactT: 'Sus datos de contacto', pdEdit: '✏️ Cambiar', pdSave: 'Guardar', pdSavedC: 'Guardado', pdSince: 'Registrado el {d}', pdLoadFail: 'No se pudo cargar. Revise su señal e intente otra vez.' });
 /* right after sign-up: sign in with the password they just made (portal-access signin-password → the pending session, or the full
    portal when an invite already approved them). Anything else → fallback() (the old "Account created → Sign in" screen). */
+/* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): after a sign-up — "Check your e-mail" + Resend link (one a minute) */
+function svCheckMail(email, msg){
+  var main = document.getElementById('main'); if (!main) return;
+  var es = LANG === 'es', note = h('p', { class: 'muted', id: 'svNote' });
+  var b = h('button', { type: 'button', class: 'btn gold', id: 'svResend', text: es ? 'Reenviar el enlace' : 'Resend link', on: { click: function(){
+    b.disabled = true; fetch('/.netlify/functions/subportal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify({ action: 'signup-resend', email: email }) })
+      .then(function(){ note.textContent = es ? '✓ Enviado — revise su correo (y la carpeta de spam).' : '✓ Sent — check your e-mail (and the spam folder).'; setTimeout(function(){ b.disabled = false; }, 60000); }, function(){ b.disabled = false; note.textContent = t('loadFail'); });
+  } } });
+  main.innerHTML = '';
+  main.appendChild(h('section', { class: 'card signin signup', id: 'svCheck' }, [h('div', { class: 'big', text: es ? '✉️ Revise su correo' : '✉️ Check your e-mail to confirm' }),
+    h('p', { text: es ? 'Le enviamos un enlace a ' + email + '. Tóquelo para confirmar su correo (sirve por 24 horas). Después GrayCo revisa su cuenta; podrá subir sus documentos al entrar.' : (msg || 'We sent a link to ' + email + '. Tap it to confirm your e-mail (it works for 24 hours).') + ' After that, GrayCo reviews your account; you can add your papers when you sign in.' }),
+    h('div', { class: 'muted', text: email }), h('div', { class: 'btns' }, [b]), note]));
+}
 function pendAfterSignup(opts, email, pw, keep, fallback){
   if (!opts || !opts.signedIn) return fallback();
   fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify({ action: 'signin-password', email: email, password: pw }) })

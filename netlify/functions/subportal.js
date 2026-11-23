@@ -392,6 +392,7 @@ async function whoAmI(event){
   }
   { const tw = await teamWho(t, profile); if (tw) return tw; }   /* patch PORTALTEAM: a team member signs in as their company */
   if (!profile || (profile.role !== 'sub' && profile.role !== 'supplier')) return { email: t.email, uid: t.uid, staff: null, profile: null, isAdmin: false, isSub: false, approved: false };
+  if (svUnconfirmed(profile)) throw Fail(403, SV_MSG);   /* SIGNUPVERIFY: nothing until the e-mail is confirmed */
   subAcctCheck(profile, t);   /* patch SUBACCT: turned off / signed out everywhere by an owner */
   if (profile.authUserId !== t.uid) {
     profile = Object.assign({}, profile, { authUserId: t.uid });
@@ -568,7 +569,7 @@ async function staffUsers(){
   });
   if (add.length) { await upsertRows(add.map(function(u){ return rowFor('users', u); }), 'subportal'); }
   const active = new Set(staff.map(function(x){ return x.email; }));
-  return rows.map(function(r){ return r.data; }).concat(add).map(function(u){
+  return rows.map(function(r){ return r.data; }).filter(function(u){ return !svUnconfirmed(u); }).concat(add).map(function(u){   /* SIGNUPVERIFY: an unconfirmed sign-up is no one's card yet */
     // someone taken off the staff list stops showing as a GrayCo contact
     if (u.role === 'admin' && !active.has(low(u.email))) return Object.assign({}, u, { role: 'former' });
     return u;
@@ -1048,7 +1049,9 @@ async function register(body){
   if (!s(p.name) || !s(p.company)) throw Fail(400, 'Please fill all required fields (marked with *).');
   if (await staffByEmail(email)) throw Fail(409, 'That is a GrayCo staff e-mail. Sign in with your CRM password instead.');
   const users = await listRows([eq('collection', 'users')]);
-  if (users.some(function(r){ return low(r.email) === email; })) throw Fail(409, 'That e-mail already has a portal account. Sign in, or use "Forgot password".');
+  { const ux = users.find(function(r){ return low(r.email) === email; });
+    if (ux && svUnconfirmed(ux.data)) return svResend(email);   /* SIGNUPVERIFY: not confirmed yet → a fresh link to that mailbox (same answer) */
+    if (ux) throw Fail(409, 'That e-mail already has a portal account. Sign in, or use "Forgot password".'); }
   /* patch PORTALTEAM: a business e-mail on an approved company's domain joins that company at once (its access, its jobs); a free-mail
      sign-up naming an approved company asks to join it (the office decides in 🔐 Sub portal accounts) and keeps its own sign-up meanwhile */
   let teamRows = []; try { teamRows = await TEAM().all(); } catch (e) { teamRows = []; }
@@ -1115,13 +1118,77 @@ async function register(body){
     createdAt: new Date().toISOString()
   };
   if (tmatch.ask) profile.wantsJoin = { companyId: s(tmatch.ask.id), company: clip(tmatch.ask.company, 120), at: profile.createdAt };   /* patch PORTALTEAM */
+  /* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): only the invite link e-mailed to THIS address proves the mailbox;
+     every other sign-up is held — no approval, no invited job, no papers token, no office card — until the confirm link is used */
+  const svProven = !!(body.invite && invited && inv && low(inv.data && inv.data.email) === email);
+  const svTok = svProven ? '' : svHold(profile, invited ? inv : null);
+  if (svProven) { profile.emailVerifiedAt = profile.createdAt; profile.emailVerifiedVia = 'invite-link'; }
   try { await upsertRows([rowFor('users', profile)], email); }
   catch (e) { if (profile.authUserId) await deleteAuthUser(profile.authUserId); throw e; }
+  if (svTok) { const sent = await svMail(profile, svTok); return { ok: true, approved: false, verify: true, sent: !!sent, message: SV_MSG }; }   /* SIGNUPVERIFY */
   if (tmatch.ask) { try { await TEAM().add(TEAM().keySub(tmatch.ask.id), { name: p.name, email: email, phone: p.phone }, { email: email, name: s(p.name), role: 'signup' }, { kind: 'sub', companyName: tmatch.ask.company, status: 'requested', via: 'request', primary: { email: tmatch.ask.email, phone: tmatch.ask.phone } }); } catch (e) { console.warn('[subportal] join request', e.message); } }
   if (invited) await upsertRows([rowFor('invites', Object.assign({}, inv.data, { usedAt: new Date().toISOString(), usedBy: profile.id }))], email);
   try { await notify({ kind: 'registered', user: profile }); } catch (e) { console.warn('[subportal] mail', e.message); }
   return { ok: true, approved: profile.approved, paperToken: paperToken(profile.id) };   /* patch SIGNUPPAPERS: upload the papers right after signing up */
 }
+/* ═══ SIGNUPVERIFY — a self sign-up confirms its mailbox (one-time link, only its SHA-256 kept, 24 h, POST to confirm) ═══
+   Grandfathered at read time: only a profile made by register() after this change carries emailUnverified; every older account
+   has no flag and is confirmed. Until confirmed the account gets nothing (bid site, portal, pending page, papers, office card). */
+const SV_MSG = 'Check your e-mail to confirm it — tap the link we sent (it works for 24 hours). No e-mail? Tap "Resend link", or sign up again with the same e-mail.';
+function svUnconfirmed(u){ return !!u && u.emailUnverified === true && !s(u.emailVerifiedAt); }
+function svHold(profile, inv){
+  profile.onConfirm = { approved: profile.approved === true, approvedAuto: profile.approvedAuto, invitedJobId: profile.invitedJobId, vetPending: profile.vetPending, inviteId: inv ? s(inv.id) : '' };
+  profile.approved = false; delete profile.approvedAuto; delete profile.invitedJobId; delete profile.vetPending;
+  const v = TEAM().verifyToken(); profile.emailUnverified = true; profile.emailVerify = { hash: v.hash, exp: v.exp };
+  return v.token;
+}
+function svUrl(token){ return PORTAL_ORIGIN + '/.netlify/functions/subportal?signup-confirm=' + encodeURIComponent(token); }
+async function svMail(prof, token){   /* tagged 'trade': a sub's own sign-up mail — data-entry mode lets it go */
+  const es = prof.lang === 'es';
+  const html = mailHtml(es ? 'Confirme su correo' : 'Confirm your e-mail', es
+    ? ['Hola ' + esc(s(prof.name).split(' ')[0]) + ',', 'Usted creó una cuenta de GrayCo con ' + esc(prof.email) + '. Toque el botón para confirmar que es su correo.', 'El enlace sirve una vez, por 24 horas. Si usted no se registró, ignore este correo.']
+    : ['Hi ' + esc(s(prof.name).split(' ')[0] || 'there') + ',', 'You signed up for GrayCo with ' + esc(prof.email) + '. Tap the button to confirm it is your e-mail.', 'The link works once, for 24 hours. If you did not sign up, ignore this e-mail — nothing happens.'],
+    { href: svUrl(token), label: es ? 'Confirmar mi correo' : 'Confirm my e-mail' });
+  try { return await require('./_lib/custquiet.js').run('trade', function(){ return sendMail(low(prof.email), es ? 'Confirme su correo para GrayCo' : 'Confirm your e-mail for GrayCo', html); }); } catch (e) { return false; }
+}
+const SV_SEEN = new Map();
+async function svResend(email){
+  email = low(email); const same = { ok: true, approved: false, verify: true, message: SV_MSG };
+  if (!okEmail(email)) return same;
+  const last = SV_SEEN.get(email) || 0; if (Date.now() - last < 60e3) return same;   /* one link a minute per address */
+  SV_SEEN.set(email, Date.now()); if (SV_SEEN.size > 2000) SV_SEEN.clear();
+  const row = (await listRows([eq('collection', 'users'), eq('email', email)]))[0], prof = row && row.data;
+  if (!svUnconfirmed(prof)) return same;
+  const v = TEAM().verifyToken(), next = Object.assign({}, prof, { emailVerify: { hash: v.hash, exp: v.exp } });
+  await upsertRows([rowFor('users', next)], email);
+  await svMail(next, v.token);
+  return same;
+}
+async function svConfirm(token){
+  token = s(token); if (!/^[A-Za-z0-9_-]{30,80}$/.test(token)) throw Fail(400, 'That confirm link is not right. Tap "Resend link" to get a new one.');
+  const h = crypto.createHash('sha256').update(token).digest('hex');
+  const row = (await listRows([eq('collection', 'users')])).find(function(r){ const v = r.data && r.data.emailVerify; return v && s(v.hash).length === 64 && crypto.timingSafeEqual(Buffer.from(s(v.hash)), Buffer.from(h)); });
+  if (!row || !svUnconfirmed(row.data)) throw Fail(400, 'That confirm link was already used or is not right. Sign in, or tap "Resend link".');
+  const u = row.data;
+  if (Date.parse(s(u.emailVerify.exp)) < Date.now()) throw Fail(410, 'That confirm link has run out (24 hours). Tap "Resend link" to get a new one.');
+  const oc = u.onConfirm || {}, now = new Date().toISOString();
+  const prof = Object.assign({}, u, { emailVerifiedAt: now, emailVerifiedVia: 'link' });
+  delete prof.emailVerify; delete prof.onConfirm;
+  if (oc.approved === true) { prof.approved = true; ['approvedAuto', 'invitedJobId', 'vetPending'].forEach(function(k){ if (oc[k] !== undefined) prof[k] = oc[k]; }); }
+  await upsertRows([rowFor('users', prof)], low(prof.email));
+  if (oc.inviteId) { try { const ir = await getRow('invites', oc.inviteId); if (ir && ir.data && !ir.data.usedAt) await upsertRows([rowFor('invites', Object.assign({}, ir.data, { usedAt: now, usedBy: prof.id }))], low(prof.email)); } catch (e) {} }
+  if (prof.wantsJoin && prof.wantsJoin.companyId) { try { const c = await getRow('users', prof.wantsJoin.companyId); if (c && c.data) await TEAM().add(TEAM().keySub(c.data.id), { name: prof.name, email: prof.email, phone: prof.phone }, { email: prof.email, name: s(prof.name), role: 'signup' }, { kind: 'sub', companyName: c.data.company, status: 'requested', via: 'request', primary: { email: c.data.email, phone: c.data.phone } }); } catch (e) {} }
+  try { await notify({ kind: 'registered', user: prof }); } catch (e) { console.warn('[subportal] mail', e.message); }   /* the office's card / e-mail only now */
+  return prof;
+}
+function svPage(token){
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>GrayCo — confirm your e-mail</title>'
+    + '<style>body{margin:0;background:#F6F3EC;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#14202E}main{max-width:520px;margin:0 auto;padding:28px 16px}.c{background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.06)}'
+    + 'button{margin-top:14px;width:100%;min-height:50px;border:none;border-radius:10px;background:#D4A017;color:#14202E;font:700 17px inherit;cursor:pointer}a{color:#14202E}</style></head><body><main><div class="c" id="c"><h1 style="font-size:22px;margin:0 0 10px">Confirm your e-mail</h1>'
+    + '<p>Tap the button to confirm your e-mail and finish your GrayCo sign-up.</p><button id="b" type="button">Confirm my e-mail</button></div></main>'
+    + '<script>(function(){var b=document.getElementById("b");b.onclick=function(){b.disabled=true;b.textContent="Confirming…";fetch(location.pathname,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"signup-confirm",token:' + JSON.stringify(token) + '})}).then(function(r){return r.json();}).then(function(j){document.getElementById("c").innerHTML=j.ok?"<h1>✅ Confirmed</h1><p>"+(j.approved?"You can sign in now":"GrayCo reviews new accounts (usually the same day) and e-mails you when you are approved. Then sign in")+" at <a href=\"' + CUSTOMER_PORTAL_ORIGIN + '/\">' + CUSTOMER_PORTAL_ORIGIN.replace(/^https:\/\//, '') + '</a> or ' + PORTAL_ORIGIN.replace(/^https:\/\//, '') + '.</p>":"<h1>Hmm</h1><p>"+String(j.error||"That did not work.").replace(/[<>&]/g,"")+"</p>";},function(){b.disabled=false;b.textContent="Try again";});};})();</script></body></html>';
+}
+/* ═══ end SIGNUPVERIFY ═══ */
 /* ── patch SIGNUPPAPERS (owner 11/12: "for expedited approval to our bid portal see if they can enter COI and workman's comp and
    licenses when they sign up") ─ the sub portal's sign-up (portal-app.js) has no bid-site sign-in yet, so register hands back a
    2-hour token for THIS new profile only: signup-upload (a signed upload into u/<id>/, the same 50 MB limit as every portal
@@ -2403,6 +2470,8 @@ exports.handler = async function (event) {
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
+  { const sc = event.httpMethod === 'GET' && event.queryStringParameters ? s(event.queryStringParameters['signup-confirm']) : '';   /* SIGNUPVERIFY: the confirm link's page */
+    if (sc) return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' }, body: svPage(sc) }; }
   { const tc = event.httpMethod === 'GET' && event.queryStringParameters ? s(event.queryStringParameters['team-confirm']) : '';   /* patch PORTALTEAM: the confirm link's page */
     if (tc) return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' }, body: teamConfirmPage(tc) }; }
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' });
@@ -2415,6 +2484,15 @@ exports.handler = async function (event) {
     if (action === 'register') {
       if (limited(ipOf(event), 12)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
       return J(200, await register(body));
+    }
+    if (action === 'signup-confirm') {   /* SIGNUPVERIFY */
+      if (limited(ipOf(event), 20)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
+      const pf = await svConfirm(body.token);
+      return J(200, { ok: true, approved: pf.approved === true });
+    }
+    if (action === 'signup-resend') {   /* SIGNUPVERIFY: "Resend link" (the same answer whether or not the address is waiting) */
+      if (limited(ipOf(event), 8)) return J(429, { error: 'Please wait a minute before asking for another e-mail.' });
+      return J(200, await svResend(body.email));
     }
     if (action === 'team-confirm') {   /* patch PORTALTEAM (security): the domain sign-up's e-mail confirm → access */
       if (limited(ipOf(event), 20)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
@@ -2527,6 +2605,7 @@ exports.handler = async function (event) {
   }
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
+exports._sv = { svUnconfirmed, svConfirm, svResend, SV_MSG };   /* SIGNUPVERIFY: portal-access / sub-accounts / tests */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
 exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */

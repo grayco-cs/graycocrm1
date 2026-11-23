@@ -119,6 +119,8 @@ const codeSignin = async (who) => {
 };
 const leaks = j => /sub ?portal|subcontract|bids\.|bid site|\bsub\b/i.test(JSON.stringify(j));
 
+/* SIGNUPVERIFY: a self sign-up taps the link in its confirm e-mail */
+const svConfirm = async (email) => { const mm = MAIL.filter(x => (x.to || []).includes(email) && /signup-confirm=/.test(x.html)).slice(-1)[0]; return call(SPF, { action: 'signup-confirm', token: mm ? decodeURIComponent(/signup-confirm=([A-Za-z0-9_%-]+)/.exec(mm.html)[1]) : '' }); };
 /* ═══ 1. existing single accounts keep working, as one-member companies ═══ */
 let bossS = '';
 {
@@ -227,6 +229,7 @@ let coreyS = '', coreyId = '';
   const ec2 = await call(SPF, { action: 'team-confirm', token: etok2 }), es2 = await pwSignin('eve@acmedrywall.test', 'Eve-Pass-1111');
   ok('4 SECURITY: the office removes the unconfirmed sign-up → its link no longer works and sign-in stays refused (record kept)', rmv.st === 200 && ec2.st === 400 && es2.st === 403 && team().find(m => m.email === 'eve@acmedrywall.test').status === 'removed', { rmv: rmv.st, ec2, es2 });
   const od = await call(SPF, { action: 'register', email: 'odd@acmedrywall.test', password: 'Odd-Pass-1111', profile: { name: 'Odd Name', company: 'Zebra Framing' } });
+  await svConfirm('odd@acmedrywall.test');   /* SIGNUPVERIFY: a self sign-up confirms its e-mail first */
   ok('4 the same domain under a DIFFERENT company name is not joined by itself — its own pending sign-up + "wants to join" for the office',
     od.st === 200 && !od.b.joined && team().some(m => m.email === 'odd@acmedrywall.test' && m.status === 'requested') && T.sp_rows.some(x => x.collection === 'users' && x.email === 'odd@acmedrywall.test' && x.data.approved === false), od.b);
   T.sp_rows.find(x => x.key === 'team/' + team().find(m => m.email === 'odd@acmedrywall.test').id).data.status = 'denied';   /* (decided "not this company" — keeps section 5's count at 1) */
@@ -243,7 +246,9 @@ let fredProf = null;
   ok('5 a gmail sign-up for an unrelated company: nothing joins (gmail never matches a domain)', g.st === 200 && !g.b.joined && !team().some(m => m.email === 'gina.other@gmail.com'), g.b);
   const d = await call(SPF, { action: 'register', email: FRED, password: 'Fred-Pass-111', profile: { name: 'Fred Freemail', company: 'Acme Drywall LLC', phone: '901-555-0112' } });
   ok('5 a free-mail sign-up naming Acme first gets the usual "possible duplicate" check', d.st === 200 && Array.isArray(d.b.duplicates) && d.b.duplicates.length >= 1, d.b);
-  const r = await call(SPF, { action: 'register', email: FRED, password: 'Fred-Pass-111', force: true, profile: { name: 'Fred Freemail', company: 'Acme Drywall LLC', phone: '901-555-0112' } });
+  const r0 = await call(SPF, { action: 'register', email: FRED, password: 'Fred-Pass-111', force: true, profile: { name: 'Fred Freemail', company: 'Acme Drywall LLC', phone: '901-555-0112' } });
+  ok('5 SIGNUPVERIFY: before the e-mail confirm there is no "wants to join" yet', r0.st === 200 && r0.b.verify === true && !team().some(m => m.email === FRED), r0.b);
+  const r = await svConfirm(FRED);   /* SIGNUPVERIFY */
   fredProf = (T.sp_rows.find(x => x.collection === 'users' && x.email === FRED) || {}).data;
   const row = team().find(m => m.email === FRED);
   ok('5 … continuing → NOT joined by itself: their own pending sign-up + "wants to join Acme Drywall LLC" (status requested)', r.st === 200 && !r.b.joined && fredProf && fredProf.approved === false && fredProf.wantsJoin && fredProf.wantsJoin.company === 'Acme Drywall LLC' && row && row.status === 'requested' && row.company === 'sp:' + P1.id, { r: r.b, fredProf, row });

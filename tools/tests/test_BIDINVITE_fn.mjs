@@ -56,10 +56,15 @@ r = await call('tk-owner', { action: 'invite-send', jobId: 'J2', emails: ['have@
 const m3 = to('have@sub.test')[0] || {};
 ok('4 a sub with an account already → the sign-in link (no token)', r.b.mailed === 1 && !/invite=/.test(m3.html || '') && /Sign in/.test(m3.html || ''));
 
+/* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): a held sign-up confirms its e-mail first — the test plays the
+   mailbox (a known code's SHA-256 is put on the in-memory profile, then the real signup-confirm runs) */
+const svConfirm = async (email) => { const C = require('crypto'), row = rowsOf('users').find(x => x.email === email), tok = C.randomBytes(32).toString('base64url');
+  row.data.emailVerify = { hash: C.createHash('sha256').update(tok).digest('hex'), exp: new Date(Date.now() + 864e5).toISOString() }; return call('', { action: 'signup-confirm', token: tok }); };
 /* ═══ sign-up: invited → approved ═══ */
 r = await call('', { action: 'register', email: 'new@sub.test', password: 'Sub-Pass-111', profile: { name: 'Nina New', company: 'Newco Paint', acctType: 'sub' } });
+const c5 = await svConfirm('new@sub.test');   /* SIGNUPVERIFY: an e-mail-only invite confirms first */
 let u = (rowsOf('users').find(x => x.email === 'new@sub.test') || {}).data || {};
-ok('5 the invited sub signs up (same e-mail, even without the link) → approved at once, linked to the job', r.b.approved === true && u.approved === true && u.invitedJobId === 'J1' && u.approvedAuto === 'invited', u);
+ok('5 the invited sub signs up (same e-mail, without the link) → once the e-mail is confirmed (SIGNUPVERIFY): approved, linked to the job', r.b.verify === true && c5.b.approved === true && u.approved === true && u.invitedJobId === 'J1' && u.approvedAuto === 'invited', u);
 r = await call('', { action: 'register', email: 'sup@supply.test', password: 'Sup-Pass-222', invite: rowsOf('invites').find(x => x.email === 'sup@supply.test').data.token, job: 'J2', profile: { name: 'Sue Supply', company: 'Supply Co', acctType: 'supplier' } });
 ok('6 …with the link (token) → approved', r.b.approved === true);
 r = await call('', { action: 'register', email: 'self@sub.test', password: 'Sub-Pass-333', profile: { name: 'Sam Self', company: 'Selfco', acctType: 'sub' } });

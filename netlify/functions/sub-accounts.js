@@ -72,6 +72,7 @@ function SP(){ return require('./subportal.js')._hub; }
 function PA(){ return require('./portal-access.js')._acct; }
 function SR(){ return require('./_lib/staff-role.js'); }
 function TEAM(){ return require('./_lib/portalteam.js'); }   /* patch PORTALTEAM */
+function SP_SV(){ return require('./subportal.js')._sv; }   /* SIGNUPVERIFY */
 
 /* ── who is asking: a CRM sign-in on the GrayCo staff list (the same check as portal-access.js gcStaffAuth) ── */
 async function staffAuth(event){
@@ -192,7 +193,8 @@ function rowOut(prof, auth, data, links, papers, off){
   return { id: s(prof.id), authUserId: s(prof.authUserId || (auth && auth.id)), email: low(prof.email), name: s(prof.name), company: s(prof.company), phone: s(prof.phone),
     trades: (Array.isArray(prof.trades) ? prof.trades : []).map(s).filter(Boolean).slice(0, 12), status: statusOf(prof, auth, off), crm: crm, portalId: pid,
     link: { on: !!ln, viewed: ln ? s(ln.last_viewed_at) : '', created: ln ? s(ln.created_at) : '' }, lastSignInAt: auth ? auth.lastSignInAt : '', createdAt: s(prof.createdAt) || (auth ? auth.createdAt : ''),
-    hasLogin: !!auth, papers: papersOut(papers), mustChange: prof.suggestPasswordChange === true, lang: s(prof.lang) === 'es' ? 'es' : 'en' };
+    hasLogin: !!auth, papers: papersOut(papers), mustChange: prof.suggestPasswordChange === true, lang: s(prof.lang) === 'es' ? 'es' : 'en',
+    emailUnconfirmed: SP_SV().svUnconfirmed(prof) };   /* SIGNUPVERIFY: "e-mail not confirmed yet" */
 }
 async function linksActive(){
   const by = {};
@@ -227,7 +229,8 @@ const FILTERS = {
   all: function(){ return true; }, pending: function(r){ return r.status === 'pending'; }, approved: function(r){ return r.status === 'approved'; },
   denied: function(r){ return r.status === 'denied'; }, disabled: function(r){ return r.status === 'disabled'; }, unlinked: function(r){ return r.status !== 'orphan' && !r.crm; },
   orphan: function(r){ return r.status === 'orphan'; },
-  joinreq: function(r){ return !!(r.team && r.team.requested); }   /* patch PORTALTEAM: 👥 someone wants to join this company */
+  joinreq: function(r){ return !!(r.team && r.team.requested); },
+  unconfirmed: function(r){ return r.emailUnconfirmed === true; }   /* SIGNUPVERIFY */   /* patch PORTALTEAM: 👥 someone wants to join this company */
 };
 
 /* ── the actions ── */
@@ -363,6 +366,13 @@ async function act(action, body, who, event){
   }
   if (action === 'get') { const g = await getOne(body.id); const tm = await teamOf(g.data, g.profile); delete g.data; return Object.assign({ ok: true, account: g.row, canEdit: !!who.admin }, { profile: g.profile, auth: g.auth, sessions: g.sessions, portalLastSeen: g.portalLastSeen, papers: g.papers, team: tm, teamEdit: !!(who.admin || who.office) }); }   /* patch PORTALTEAM: + team */
   if (action === 'team-set') return teamSet(body, who);   /* patch PORTALTEAM */
+  if (action === 'verify-resend') {   /* SIGNUPVERIFY: owners and the office re-send the confirm link (it goes only to the sign-up's own e-mail) */
+    const prof = await profileOf(body.id);
+    if (!SP_SV().svUnconfirmed(prof)) return { ok: true, already: true };
+    await SP_SV().svResend(prof.email);
+    await audit(who, 'confirm link re-sent', prof, '');
+    return { ok: true, sent: true };
+  }
 
   needAdmin(who);
   const prof = await profileOf(body.id);

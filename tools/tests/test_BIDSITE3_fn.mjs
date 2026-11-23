@@ -81,22 +81,29 @@ await call('tk-owner', { action: 'bidmail-cfg', op: 'set', switches: sw0 });
 r = await call('tk-a', { action: 'invite-send', jobId: 'J_PRIV', emails: ['x@y.test'] });
 ok('B5 a sub cannot send invites (403)', r.code === 403);
 
+/* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): a held sign-up confirms its e-mail first — the test plays the
+   mailbox (a known code's SHA-256 is put on the in-memory profile, then the real signup-confirm runs) */
+const svConfirm = async (email) => { const C = require('crypto'), row = rowsOf('users').find(x => x.email === email), tok = C.randomBytes(32).toString('base64url');
+  row.data.emailVerify = { hash: C.createHash('sha256').update(tok).digest('hex'), exp: new Date(Date.now() + 864e5).toISOString() }; return call('', { action: 'signup-confirm', token: tok }); };
 /* ═══ A. sign-up approval ═══ */
 r = await call('', { action: 'register', email: 'new@sub.test', password: 'Sub-Pass-111', profile: { name: 'Nina New', company: 'Newco Drywall', acctType: 'sub', trades: ['Drywall'] } });
+const c1 = await svConfirm('new@sub.test');   /* SIGNUPVERIFY: an e-mail-only invite confirms first */
 const nu = (rowsOf('users').find(x => x.email === 'new@sub.test') || {}).data || {};
-ok('A1 a sub we invited signs up WITHOUT the link (same e-mail) → approved at once, linked to that job, still a ✅ Approvals check card (vetPending)', r.code === 200 && r.b.approved === true && nu.approved === true && nu.invitedJobId === 'J_PRIV' && nu.vetPending === true && nu.approvedAuto === 'invited', { r: r.b, nu });
+ok('A1 a sub we invited signs up WITHOUT the link (same e-mail) → once the e-mail is confirmed (SIGNUPVERIFY): approved, linked to that job, still a ✅ Approvals check card (vetPending)', r.code === 200 && r.b.verify === true && c1.b.approved === true && nu.approved === true && nu.invitedJobId === 'J_PRIV' && nu.vetPending === true && nu.approvedAuto === 'invited', { r: r.b, nu });
 TOK['tk-new'] = 'new@sub.test'; ACC['new@sub.test'].id = nu.authUserId;
 r = await call('tk-new', { action: 'load', keys: ['jobs'] });
 const nj = (r.b.data && r.b.data.jobs || []).map(j => j.id).sort();
 ok('A2 they see the PUBLIC jobs + the private job they were invited to (not another private one)', nj.includes('J_PRIV') && nj.includes('J_PUB') && !nj.includes('J_PRIV2'), nj);
 r = await call('', { action: 'register', email: 'self@sub.test', password: 'Sub-Pass-222', profile: { name: 'Sam Self', company: 'Selfco Paint', acctType: 'sub' } });
+await svConfirm('self@sub.test');   /* SIGNUPVERIFY */
 const su = (rowsOf('users').find(x => x.email === 'self@sub.test') || {}).data || {};
 TOK['tk-self'] = 'self@sub.test'; ACC['self@sub.test'].id = su.authUserId;
 const sj = await call('tk-self', { action: 'load', keys: ['jobs'] });
 ok('A3 a sub who signs up on their own still waits for an admin (approved false, no jobs)', r.b.approved === false && su.approved === false && sj.b.data.jobs.length === 0, { r: r.b, n: sj.b.data.jobs.length });
 r = await call('', { action: 'register', email: 'own@supply.test', password: 'Sup-Pass-333', profile: { name: 'Sue Supply', company: 'Own Supply Co', acctType: 'supplier' } });
+const c4 = await svConfirm('own@supply.test');   /* SIGNUPVERIFY */
 const sp = (rowsOf('users').find(x => x.email === 'own@supply.test') || {}).data || {};
-ok('A4 a SUPPLIER sign-up is approved at once (role supplier, no check card)', r.b.approved === true && sp.role === 'supplier' && sp.approved === true && sp.approvedAuto === 'supplier' && !sp.vetPending, sp);
+ok('A4 a SUPPLIER sign-up is approved at once once its e-mail is confirmed (role supplier, no check card)', r.b.verify === true && c4.b.approved === true && sp.role === 'supplier' && sp.approved === true && sp.approvedAuto === 'supplier' && !sp.vetPending, sp);
 TOK['tk-own'] = 'own@supply.test'; ACC['own@supply.test'].id = sp.authUserId;
 r = await call('tk-own', { action: 'load', keys: ['jobs'] });
 ok('A5 the new supplier sees the public jobs open for material quotes (not the private ones)', r.b.data.jobs.map(j => j.id).sort().join() === 'J_PUB,J_WON', r.b.data.jobs.map(j => j.id));

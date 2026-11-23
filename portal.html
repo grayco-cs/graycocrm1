@@ -411,12 +411,20 @@ function signin(step, who){
       enter.disabled = true;
       post(ACC, { action: 'signin-password', email: em.value.trim(), password: pw.value, app: APPMODE || undefined }).then(function(r){
         enter.disabled = false;
-        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); resetOffer(); return; }
+        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); if (r.data.unconfirmed) svOffer(); else resetOffer(); return; }   /* SIGNUPVERIFY: not confirmed → "Resend link" */
         session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
         if (APPMODE && r.data.kind === 'customer') store('gc_portal_app', session);   /* patch PORTALAPP: the app remembers this phone */
         store('gc_portal_starter', r.data.starter ? '1' : '');
         route(r.data.kind);
       }, function(){ enter.disabled = false; err.textContent = tr('loadFail'); });
+    }
+    /* SIGNUPVERIFY: a sign-up that has not confirmed its e-mail yet — "Resend link" (the server limits it to one a minute) */
+    function svOffer(){
+      var w = em.value.trim(); if (!w || $('siResendLink')) return;
+      var b = h('button', { type: 'button', class: 'btn gold', id: 'siResendLink', text: (document.documentElement.lang === 'es' ? 'Reenviar el enlace' : 'Resend link'), on: { click: function(){
+        b.disabled = true; post('/.netlify/functions/subportal', { action: 'signup-resend', email: w }).then(function(){ b.textContent = (document.documentElement.lang === 'es' ? '✓ Enviado — revise su correo' : '✓ Sent — check your e-mail'); }, function(){ b.disabled = false; err.textContent = tr('loadFail'); });
+      } } });
+      err.parentNode.insertBefore(b, err.nextSibling);
     }
     /* patch SELFRESET (owner 11/20: "let them send their own reset links if password doesn't work"): a wrong password offers the reset at once */
     function resetOffer(){

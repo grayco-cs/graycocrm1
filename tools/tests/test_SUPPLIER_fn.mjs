@@ -47,9 +47,14 @@ ACC['owner@grayco-cs.com'] = { pw: 'x', id: 'auth-owner' }; ACC['sub@demo.test']
 const call = async (tok, body) => { const r = await F.sp.handler({ httpMethod: 'POST', headers: { origin: 'https://bids.test', authorization: tok ? 'Bearer ' + tok : '', 'x-nf-client-connection-ip': '10.9.' + Math.floor(Math.random() * 200) + '.1' }, body: JSON.stringify(body) }); return { code: r.statusCode, b: JSON.parse(r.body) }; };
 
 /* ═══ sign-up ═══ */
+/* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): a held sign-up confirms its e-mail first — the test plays the
+   mailbox (a known code's SHA-256 is put on the in-memory profile, then the real signup-confirm runs) */
+const svConfirm = async (email) => { const C = require('crypto'), row = rowsOf('users').find(x => x.email === email), tok = C.randomBytes(32).toString('base64url');
+  row.data.emailVerify = { hash: C.createHash('sha256').update(tok).digest('hex'), exp: new Date(Date.now() + 864e5).toISOString() }; return call('', { action: 'signup-confirm', token: tok }); };
 let r = await call('', { action: 'register', email: 'sales@supply.test', password: 'Supply-Pass-1', profile: { name: 'Sam Supply', company: 'Demo Supply Co', phone: '901-555-0199', businessCity: 'Memphis', businessState: 'TN', trades: ['HVAC equipment'], einLast4: '6789', acctType: 'supplier' } });
+const cS = await svConfirm('sales@supply.test');   /* SIGNUPVERIFY: the supplier confirms the e-mail first */
 const supRow = rowsOf('users').find(x => x.email === 'sales@supply.test');
-ok('1 sign-up as a supplier → role supplier, approved at once (BIDSITE3, owner 11/20: supplier sign-ups need no approval)', r.code === 200 && supRow && supRow.data.role === 'supplier' && supRow.data.approved === true, { r, d: supRow && supRow.data });
+ok('1 sign-up as a supplier → role supplier, approved at once (BIDSITE3, owner 11/20: supplier sign-ups need no approval)', r.code === 200 && r.b.verify === true && cS.b.approved === true && supRow && supRow.data.role === 'supplier' && supRow.data.approved === true, { r, d: supRow && supRow.data });
 ACC['sales@supply.test'].id = supRow.data.authUserId;
 const SID = supRow.data.id;
 r = await call('tk-sup', { action: 'me' });

@@ -97,7 +97,13 @@ const reset = () => { try { PA._core._reset(); } catch (e) {} };
 let IPN = 0;
 const ipNext = () => '10.' + (1 + (IPN >> 8) % 200) + '.' + (IPN++ % 250) + '.1';
 const pa = async (action, body, headers) => { const r = await PA.handler({ httpMethod: 'POST', headers: Object.assign({ origin: 'https://portal.test', 'x-nf-client-connection-ip': ipNext() }, headers || {}), body: JSON.stringify(Object.assign({ action }, body || {})) }); let j = {}; try { j = JSON.parse(r.body); } catch (e) {} return { status: r.statusCode, data: j, raw: r.body }; };
-const spf = async (action, body) => { const r = await SPF.handler({ httpMethod: 'POST', headers: { origin: 'https://portal.test', 'x-nf-client-connection-ip': ipNext() }, body: JSON.stringify(Object.assign({ action }, body || {})) }); return { status: r.statusCode, data: JSON.parse(r.body || '{}') }; };
+const spf0 = async (action, body) => { const r = await SPF.handler({ httpMethod: 'POST', headers: { origin: 'https://portal.test', 'x-nf-client-connection-ip': ipNext() }, body: JSON.stringify(Object.assign({ action }, body || {})) }); return { status: r.statusCode, data: JSON.parse(r.body || '{}') }; };
+/* SIGNUPVERIFY (owner 11/23): a sign-up made through the server here confirms its e-mail right away — the test plays the mailbox
+   (a known code's hash on the in-memory profile, then the real signup-confirm); step 1 walks the held page in the browser */
+const spf = async (action, body) => { const r = await spf0(action, body);
+  if (action === 'register' && r.data && r.data.verify) { const row = T.sp_rows.find(x => x.collection === 'users' && x.email === String(body.email).toLowerCase()), tk = crypto.randomBytes(32).toString('base64url');
+    row.data.emailVerify = { hash: sha(tk), exp: new Date(Date.now() + 864e5).toISOString() }; await spf0('signup-confirm', { token: tk }); }
+  return r; };
 const profOf = e => (T.sp_rows.find(r => r.collection === 'users' && r.email === e) || {}).data;
 const sessRow = tok => T.gc_portal_session.find(x => x.id === sha(tok));
 const approve = (id, yes) => pa('s-bids-approve', { id, approve: yes }, { authorization: 'Bearer staff-owner' });
@@ -153,10 +159,22 @@ let pendTok = '';
   for (const k of Object.keys(v)) await P.fill('#su_' + k, v[k]);
   await P.click('[data-su-trade="Paint"]'); await P.check('#pp_w9_later'); await P.check('#su_agree');
   await P.click('#suGo');
+  /* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): first "✉️ Check your e-mail to confirm" + Resend link — nothing else */
+  const held = await P.waitForSelector('#svCheck', { timeout: 20000 }).catch(() => null);
+  const p0 = profOf(EMAIL);
+  ok('1 SIGNUPVERIFY: sign-up → "✉️ Check your e-mail to confirm" with a Resend link; no session, no waiting page yet', !!held && /Check your e-mail to confirm/.test(await txt(P, '#svCheck')) && !!(await P.$('#svResend')) && !(await stored(P)) && !(await P.$('#pendBox')) && p0 && p0.emailUnverified === true, await txt(P, '#main'));
+  await P.click('#svResend');
+  ok('1 SIGNUPVERIFY: Resend link → "Sent — check your e-mail"', !!(await waitFor(async () => /Sent/.test(await txt(P, '#svNote')))), await txt(P, '#svNote'));
+  await signinPw(P, EMAIL, PW);
+  ok('1 SIGNUPVERIFY: signing in before the confirm → "Check your e-mail to confirm" + Resend link (no waiting page)', !!(await waitFor(async () => /Check your e-mail to confirm/.test(await txt(P, '#siErr')) && !!(await P.$('#siResendLink')))) && !(await stored(P)), await txt(P, '#siErr'));
+  { const row = T.sp_rows.find(r => r.collection === 'users' && r.email === EMAIL), tk = crypto.randomBytes(32).toString('base64url');   /* the test plays the mailbox */
+    row.data.emailVerify = { hash: sha(tk), exp: new Date(Date.now() + 864e5).toISOString() };
+    const c = await spf('signup-confirm', { token: tk }); ok('1 SIGNUPVERIFY: the confirm link → confirmed', c.status === 200 && c.data.ok, c); }
+  await signinPw(P, EMAIL, PW);
   const box = await P.waitForSelector('#pendBox', { timeout: 20000 }).catch(() => null);
   const prof = profOf(EMAIL); pendTok = await stored(P);
   ok('1 sign-up → the account is made (Supabase sign-in + profile, approved: false)', !!ACC[EMAIL] && ACC[EMAIL].pw === PW && prof && prof.approved === false && prof.role === 'sub', prof);
-  ok('1 … and they are signed STRAIGHT in to the waiting page (no second password, no "Account created → Sign in")', !!box && !(await P.$('#signupDone')) && !(await P.$('#signinBox')), await txt(P, '#main'));
+  ok('1 … and once confirmed, their password opens the waiting page', !!box && !(await P.$('#signupDone')) && !(await P.$('#signinBox')), await txt(P, '#main'));
   const row = sessRow(pendTok);
   ok('1 … a pending session (kind pending, tied to their profile id, no portal links)', row && row.kind === 'pending' && row.sub_id === prof.id && Array.isArray(row.links) && row.links.length === 0 && !row.revoked, row);
   const t1 = await txt(P, '#pendBox');
