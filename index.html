@@ -184992,7 +184992,7 @@ function onClick(ev){
   if (a === 'answer' || a === 'answerall') { var id = t.getAttribute('data-id'); return post({ op: 'answer', id: id, answer: val('qa_' + id), publish: a === 'answerall' }, t, function(){ toast(a === 'answerall' ? '📣 Answer published to all bidders (its e-mail waits on approval)' : '↩ Answered privately'); }); }
   if (a === 'prreply' || a === 'prsent') { var pid = t.getAttribute('data-id'), txt = val('pr_' + pid);   /* patch PLANREQ */
     if (a === 'prreply' && !txt) return toast('Write the reply first.', true);
-    return post({ op: 'planreq', id: pid, act: a === 'prreply' ? 'reply' : 'sent', text: txt }, t, function(r){ toast(a === 'prreply' ? '↩ Reply sent to the sub' + (r.mail === 'held' ? ' (e-mail held — data-entry mode; they see it on the bid site)' : '') : '✅ Marked sent — the To-Do is cleared'); }); }
+    return post({ op: 'planreq', id: pid, act: a === 'prreply' ? 'reply' : 'sent', text: txt }, t, function(r){ try { if (W._gcBpAppr && W._gcBpAppr.answered) W._gcBpAppr.answered(M.jobId); } catch (e) {} /* PRQUICK */ toast(a === 'prreply' ? '↩ Reply sent to the sub' + (r.mail === 'held' ? ' (e-mail held — data-entry mode; they see it on the bid site)' : '') : '✅ Marked sent — the To-Do is cleared'); }); }
   if (a === 'vis') { var to = t.getAttribute('data-to'); if (W._gcSys && W._gcSys.bp && W._gcSys.bp.vis) { var pr = W._gcSys.bp.vis(M.jobId, to, to !== 'public'); if (pr && pr.then) pr.then(function(){ load(); }); } return; }   /* patch PLANREQ-A */
   if (a === 'resend') return post({ op: 'notice', what: t.getAttribute('data-w'), ref: t.getAttribute('data-ref') }, t, function(r){ toast(r.notice && r.notice.status === 'waiting' ? '✉️ The e-mail waits on ✅ Approvals' : 'Still held'); });
 }
@@ -238209,7 +238209,10 @@ wrapSet(); (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, wrapSet, 3000)
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ if (!D.hidden) refresh(false); }, 60000);
 (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ refresh(true); }, 4000);
-W._gcBpAppr = { rows: function(){ return rows({ kind: 'admin' }, Date.now()); }, refresh: function(){ refresh(true); }, sheet: sheet, sameSheet: sameSheet, jobs: function(){ return JOBS.slice(); } };
+W._gcBpAppr = { rows: function(){ return rows({ kind: 'admin' }, Date.now()); }, refresh: function(){ refresh(true); },
+  answered: function(jid){ arr(JOBS).forEach(function(j){ if (j && s(j.id) === s(jid) && j.openReq > 0) j.openReq--; });   /* PRQUICK: the card goes at once */
+    try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {} try { if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {}
+    setTimeout(function(){ refresh(true); }, 1500); }, sheet: sheet, sameSheet: sameSheet, jobs: function(){ return JOBS.slice(); } };
 try { console.log('[GC] patch BPAPPR: 🏗 Bid portal items in ✅ Approvals — _gcBpAppr.rows()'); } catch (e) {}
 })(window, document);
 </script>
