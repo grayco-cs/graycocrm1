@@ -255481,9 +255481,10 @@ function wrapCols(t){   /* mark the cells of the columns that may wrap at spaces
 function apply(t){
   wrapCols(t);
   var po = poMin(t), k = tkey(t), saved = load()[k] || {}, sig = k + JSON.stringify(saved) + ':' + ths(t).filter(function(th){ return th.offsetWidth; }).length + ':' + t.className + (t.getAttribute('data-gcfit-sig') || '') + (t.getAttribute('data-gcrz-sig') || '') + po;   /* re-measure when DESKFIT / the 33.x sizer lay it out again */
-  ths(t).forEach(function(th){
-    if (th.querySelector(':scope>.gccw-h')) return;
-    if (W.getComputedStyle(th).position === 'static') th.style.position = 'relative';
+  var need = ths(t).filter(function(th){ return !th.querySelector(':scope>.gccw-h'); });   /* COLWBATCH: all reads, then all writes */
+  var stat = need.map(function(th){ return W.getComputedStyle(th).position === 'static'; });
+  need.forEach(function(th, i){
+    if (stat[i]) th.style.position = 'relative';
     var h = D.createElement('div'); h.className = 'gccw-h'; h.title = 'Drag to resize · double-click to reset'; th.appendChild(h);
   });
   if (!Object.keys(saved).length) { if (t.hasAttribute('data-gccw')) { t.removeAttribute('data-gccw'); t.removeAttribute('data-gccw-sig'); } return; }
