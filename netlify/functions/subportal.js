@@ -279,6 +279,7 @@ function rowFor(collection, rec){
   else if (collection === 'questions') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
   else if (collection === 'acks' || collection === 'mquotes') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }   /* patch SUPPLIER: + mquotes */
   else if (collection === 'planreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.email); }   /* patch PLANREQ */
+  else if (collection === 'intents' || collection === 'duenotes') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.userEmail || rec.email); }   /* patch BIDREMIND2 */
   else if (collection === 'matreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.userEmail); }   /* patch BIDSITE3: a sub's "Request more materials" */
   return r;
 }
@@ -820,7 +821,7 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (key === 'jobs') {   /* patch LD2: a draft stays a draft until "Publish to bid portal" */
           const old = existing[rec.id] && existing[rec.id].data;
           const publish = rec._publish === true; delete rec._publish;
-          if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt', 'resultMailed', 'dueReminderAt'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });   /* + patch BIDSITE3: the e-mail stamps */
+          if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt', 'resultMailed', 'dueReminderAt', 'dueSetAt', 'dueSetBy'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });   /* + patch BIDSITE3: the e-mail stamps */
           if (rec.showSupplierMaterials !== undefined) rec.showSupplierMaterials = rec.showSupplierMaterials === true;
           /* patch BIDSITE3 C: marked WON / LOST → the result e-mails (each once per job; their switches decide) */
           if (old && !isDraft(old) && low(rec.status) !== low(old.status) && /^(won|lost)$/i.test(s(rec.status))) {
@@ -853,6 +854,7 @@ async function saveCollection(who, key, upsert, del, ctx){
             Object.assign(rec, { status: 'draft', visibility: 'private', draft: true });
           }
           if (old && arr(rec.plansLinks).length > arr(old.plansLinks).length) notes.push({ kind: 'plans-added', jobId: rec.id });
+          if (old && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime))) { rec.dueSetAt = new Date().toISOString(); rec.dueSetBy = who.email; }   /* patch BIDREMIND2: a person set it — the Lead Inbox re-sync keeps it (_lib/bid-portal.js) */
           if (old && !isDraft(old) && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime)))   /* patch PLANREQ-D: the bid due date changed on the bid site */
             notes.push({ kind: 'due-changed', jobId: rec.id, from: s(old.bidDueDate).slice(0, 10) ? s(old.bidDueDate).slice(0, 10) + (s(old.bidDueTime) ? ' ' + s(old.bidDueTime) : '') : 'no due date', who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
         }
@@ -2716,6 +2718,16 @@ exports.handler = async function (event) {
       return J(200, await plansImport(who, body));
     }
     if (action === 'request-plans') return J(200, await requestPlans(who, body, ctx));
+    /* patch BIDREMIND2: ✋ I'm bidding / 🚫 Not bidding, and the sub's own bid-due reminders (🔔) */
+    if (action === 'bid-intent' || action === 'my-bidstate' || action === 'notes-read') {
+      if (who.isAdmin) return J(200, { ok: true, notes: [], intents: {} });
+      if (!who.profile || !who.approved) return J(403, { error: 'Your account is waiting for GrayCo to approve it.' });
+      const BI = require('./_lib/bidintent.js');
+      if (action === 'notes-read') return J(200, await BI.markRead(who.profile.id, body.ids));
+      const sc = await subScope(who);
+      if (action === 'bid-intent') { try { return J(200, await BI.setIntent(who, sc, s(body.jobId), body.intent, 'bidsite')); } catch (e) { return J(e.status || 500, { error: e.message }); } }
+      return J(200, Object.assign({ ok: true }, await BI.stateOf(who.profile.id, Object.keys(sc.jobs))));
+    }
     if (action === 'plans-zip') return J(200, await plansZip(who, body, ctx));   /* patch SUBFLOW: ⬇ All plans (ZIP) */
     if (action === 'addendum-post') {   /* patch SUBFLOW: 📎 Post addendum on the bid site — the CRM's own rule and code (bid-hub op addendum: who may, the number, the e-mail on ✅ Approvals / held in ⏸) */
       if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });

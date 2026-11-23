@@ -2,7 +2,7 @@
 // in-memory Supabase; made-up data only; offline; e-mail captured at the Resend call, nothing leaves the machine).
 //   A  sign-up approval: invited (link or e-mail) → approved; self sign-up waits; supplier → approved at once; public jobs / invited private jobs
 //   B  Invite → the e-mail at once ("GrayCo invited you to bid: <project>", sign-up / sign-in link, ?as=supplier), in data-entry mode too
-//   C  the switches (invite / accepted / wonNotUsed ON, lost / addendum / dueReminder OFF); accepted, won-not-used, lost (only when on), addendum,
+//   C  the switches (invite / accepted / wonNotUsed ON, lost / addendum OFF; dueSoon ON since BIDREMIND2); accepted, won-not-used, lost (only when on), addendum,
 //      the CRM's 🏆 Award follows the "accepted" switch
 //   D  a supplier quote keeps its files and a spec per line
 //   E  never GrayCo pricing on a sub's job; supplier materials (no price, no supplier) once WON or with the per-job toggle
@@ -57,7 +57,7 @@ const settle = () => new Promise(r => setTimeout(r, 30));
 /* ═══ C. the switches ═══ */
 let r = await call('tk-owner', { action: 'bidmail-cfg', op: 'get' });
 const sw0 = r.b.switches || {};
-ok('C1 the switches: invite / accepted / won-not-used ON; we-lost, addendum, bid-due reminder OFF; one row each in the panel', r.code === 200 && sw0.invite === true && sw0.accepted === true && sw0.wonNotUsed === true && sw0.lost === false && sw0.addendum === false && sw0.dueReminder === false && (r.b.list || []).length === 6, r.b);
+ok('C1 the switches: invite / accepted / won-not-used / bid-due reminders (BIDREMIND2) ON; we-lost, addendum OFF; one row each in the panel', r.code === 200 && sw0.invite === true && sw0.accepted === true && sw0.wonNotUsed === true && sw0.lost === false && sw0.addendum === false && sw0.dueSoon === true && (r.b.list || []).length === 6, r.b);
 r = await call('tk-a', { action: 'bidmail-cfg', op: 'get' });
 ok('C2 a sub cannot read / change them (403)', r.code === 403, r);
 

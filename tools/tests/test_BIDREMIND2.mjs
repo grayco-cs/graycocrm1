@@ -5,6 +5,11 @@
 //      title / date / what changed / files +/− / the bid due date; the history (who, when, old text, a removed file kept); subs who acknowledged
 //      are asked again ("Updated <date>"); the optional e-mail waits on ✅ Approvals (held in ⏸ data-entry mode); who may; the sub portal; the
 //      bid site and the CRM screens.
+//   R. bid-due reminders (BIDREMIND2, owner 11/23): who (✋ bidding / opened / asked for plans; never bid / 🚫 not bidding), when (3 days
+//      before + the due day, mornings Central), once per step per person per job, a moved due date starts over, never draft / closed /
+//      bidding-closed / deleted, the switch, data-entry mode, the 🔔 notice on the bid site and the sub portal, ✋ / 🚫 on both sites.
+//   S. the bid due date stays in sync (Edit Job Details / Manage → Details / addendum → job, list, sub portal, CRM, reminders; a Lead
+//      Inbox re-sync keeps a person's date; subs are told on a date change, the e-mail on ✅ Approvals).
 import path from 'path'; import fs from 'fs'; import crypto from 'crypto'; import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const W = await import('./qaa_world.mjs');
@@ -174,5 +179,136 @@ if (!NOB) {
     ok('C5 no page errors (CRM)', !C.errs.length, C.errs.slice(0, 5));
   } finally { for (const c of OPEN) await c.close().catch(() => {}); await browser.close(); }
 }
-ok('Z nothing left the machine; no e-mail sent', OUT.length === 0 && MAIL.length === 0, { OUT, MAIL: MAIL.map(x => x.subject) });
+
+/* ═══════════════════ R. bid-due reminders ═══════════════════ */
+console.log('\nR. bid-due reminders (3 days before + the due day)');
+const BM = require(path.join(BUILD, 'netlify/functions/_lib/bidmail.js'));
+const BA = require(path.join(BUILD, 'netlify/functions/bid-alerts.js'));   /* installs the ⏸ data-entry guard, as in production */
+const TODAY = BM.chiDay(Date.now()), D3 = BM.addDays(TODAY, 3);
+const mk = (id, role, extra) => { const e = id + '@subs.test'; putRow('users', id, Object.assign({ id, role, approved: true, email: e, name: 'Name ' + id, company: 'Co ' + id, trades: ['Drywall'], authUserId: 'auth-' + id }, extra || {}), { user_id: id, email: e }); ACC[e] = { pw: 'Pw-' + id, id: 'auth-' + id }; TOK['tok-' + e] = e; return e; };
+const E = { yes: mk('u_yes', 'sub'), view: mk('u_view', 'sub'), plans: mk('u_plans', 'sub'), bid: mk('u_bid', 'sub'), no: mk('u_no', 'sub'), none: mk('u_none', 'sub'), sup: mk('u_sup', 'supplier', { trades: [] }), es: mk('u_es', 'sub', { lang: 'es' }) };
+job('JR3', { title: 'Reminder Three Day Demo', bidDueDate: D3, bidDueTime: '14:00', suppliersCanQuote: true });
+job('JR0', { title: 'Reminder Due Today Demo', bidDueDate: TODAY, bidDueTime: '23:59' });
+job('JR5', { title: 'Reminder Five Day Demo', bidDueDate: BM.addDays(TODAY, 5) });
+job('JRD', { title: 'Reminder Draft Demo', bidDueDate: D3, status: 'draft', draft: true, visibility: 'private' });
+job('JRC', { title: 'Reminder Closed Bidding Demo', bidDueDate: D3, biddingClosed: true });
+job('JRX', { title: 'Reminder Closed Job Demo', bidDueDate: D3, status: 'closed' });
+job('JRG', { title: 'Reminder Deleted Demo', bidDueDate: D3, status: 'archived', archivedAt: now });
+const view = async (email, jobId) => (await bid(email, 'save', { key: 'activity', upsert: [{ id: 'a_' + crypto.randomBytes(4).toString('hex'), jobId, kind: 'view' }] })).code;
+let rr = await bid(E.yes, 'bid-intent', { jobId: 'JR3', intent: 'yes' });
+ok('R1 bid site ✋ I\'m bidding is saved (intents row)', rr.code === 200 && (rowData('intents/JR3__u_yes') || {}).intent === 'yes', rr.raw);
+const vc = [await view(E.view, 'JR3'), await view(E.view, 'JR0'), await view(E.es, 'JR3'), await view(E.no, 'JR3'), await view(E.bid, 'JR3')];
+await bid(E.no, 'bid-intent', { jobId: 'JR3', intent: 'no' });
+await bid(E.bid, 'bid-intent', { jobId: 'JR3', intent: 'yes' });
+putRow('bids', 'b_rb', { id: 'b_rb', jobId: 'JR3', userId: 'u_bid', userEmail: E.bid, amount: 5000 }, { job_id: 'JR3', user_id: 'u_bid' });
+putRow('planreqs', 'JR3__u_plans', { id: 'JR3__u_plans', jobId: 'JR3', userId: 'u_plans', email: E.plans, at: now, status: 'open' }, { job_id: 'JR3', user_id: 'u_plans', email: E.plans });
+putRow('activity', 'a_sup', { id: 'a_sup', jobId: 'JR3', userId: 'u_sup', kind: 'view', at: now }, { job_id: 'JR3', user_id: 'u_sup' });
+for (const j of ['JRD', 'JRC', 'JRX', 'JRG', 'JR5']) { putRow('intents', j + '__u_yes', { id: j + '__u_yes', jobId: j, userId: 'u_yes', intent: 'yes' }, { job_id: j, user_id: 'u_yes' }); putRow('activity', 'a_v_' + j, { id: 'a_v_' + j, jobId: j, userId: 'u_view', kind: 'view', at: now }, { job_id: j, user_id: 'u_view' }); }
+ok('R2 bid-site views are logged for the subs who opened the jobs', vc.every(c => c === 200) && rowsOf('activity').filter(r => r.job_id === 'JR3' && r.data.kind === 'view').length >= 4, vc);
+MAIL.length = 0;
+W.H.cset('gc_automation_pause', { on: true, why: 'data entry (test)' });   /* trade e-mails go in data-entry mode too */
+let dr = await BM.dueReminders({ today: TODAY });
+const to = e => MAIL.filter(m => [].concat(m.to).includes(e));
+ok('R3 3 days before: ✋ bidding, opened, asked for plans, the supplier who opened it (quotes open) and the Spanish sub get "Bid due in 3 days" — in data-entry mode too', [E.yes, E.view, E.plans, E.sup].every(e => to(e).some(m => m.subject === 'Bid due in 3 days: Reminder Three Day Demo')) && to(E.es).some(m => /vence en 3 días: Reminder Three Day Demo/.test(m.subject)), { dr, mails: MAIL.map(m => [m.to, m.subject]) });
+ok('R4 never the sub who already bid, the one who said 🚫 Not bidding, or one who never showed interest', !to(E.bid).length && !to(E.no).length && !to(E.none).length, MAIL.map(m => [m.to, m.subject]));
+const m3 = to(E.yes)[0] || { html: '' };
+ok('R5 the e-mail has the due date + time and a link straight to the job', m3.html.includes(D3 + ' 14:00') && /\?open=JR3/.test(m3.html), m3.html.slice(0, 400));
+ok('R6 the due day: "Bid due today" to the sub who opened JR0', to(E.view).some(m => m.subject === 'Bid due today: Reminder Due Today Demo'), to(E.view).map(m => m.subject));
+ok('R7 nothing for a draft, ⏸ bidding-closed, closed or deleted job, or one due in 5 days', !MAIL.some(m => /Draft Demo|Closed Bidding|Closed Job|Deleted Demo|Five Day/.test(m.subject)), MAIL.map(m => m.subject));
+const nNotes = rowsOf('duenotes').length, nMail = MAIL.length;
+dr = await BM.dueReminders({ today: TODAY });
+ok('R8 once: the second run the same day sends nothing new', MAIL.length === nMail && rowsOf('duenotes').length === nNotes && dr.notes === 0, dr);
+W.H.cset('gc_automation_pause', { on: false });
+/* the notice on both sites */
+let st = await bid(E.yes, 'my-bidstate', {});
+const nt = (st.j.notes || []).find(n => n.jobId === 'JR3');
+ok('R9 bid site 🔔: the reminder is the sub\'s notice (title, due), and their ✋ answer', st.code === 200 && nt && nt.title === 'Bid due in 3 days: Reminder Three Day Demo' && /14:00/.test(nt.body) && !nt.readAt && st.j.intents.JR3 === 'yes', st.raw.slice(0, 500));
+T.gc_portal_session.push({ id: sha('Y'.repeat(43)), kind: 'partner', sub_id: 'SY', links: ['y'.repeat(43)], expires_at: new Date(Date.now() + 864e5).toISOString(), last_seen_at: now });
+T.gc_sub_link.push({ token: 'y'.repeat(43), sub_id: 'SY', revoked: false });
+W.H.cset('vendors', [{ id: 'SA', name: 'Alpha Drywall LLC', company: 'Alpha Drywall LLC', email: 'al@alpha.test', isSub: true, trade: 'Drywall' }, { id: 'SY', name: 'Co u_yes', company: 'Co u_yes', email: E.yes, isSub: true, trade: 'Drywall' }]);
+const portalAs = async (sess, action, body) => { const r = await PA.handler({ httpMethod: 'POST', headers: { origin: 'https://portal.grayco-cs.com', 'x-portal-session': sess, 'x-nf-client-connection-ip': ip() }, body: JSON.stringify(Object.assign({ action }, body || {})) }); let j = {}; try { j = JSON.parse(r.body); } catch (e) {} return { code: r.statusCode, j, raw: r.body }; };
+let pp = await portalAs('Y'.repeat(43), 'p-bidjobs');
+const pj3 = pp.j.jobs && pp.j.jobs.find(x => x.id === 'JR3');
+ok('R10 sub portal 📋 Jobs to bid: the 🔔 reminder on top and on the job, ✋ "bidding", the due date and time', pp.code === 200 && (pp.j.reminders || []).some(n => n.jobId === 'JR3') && pj3 && pj3.reminder && pj3.reminder.jobId === 'JR3' && pj3.intent === 'yes' && pj3.bidDueDate === D3 && pj3.bidDueTime === '14:00', pp.raw.slice(0, 600));
+rr = await portalAs('Y'.repeat(43), 'p-bid-note-read', { ids: [nt.id] });
+st = await bid(E.yes, 'my-bidstate', {});
+ok('R11 dismissed in the sub portal → read on the bid site too (one notice, both sites)', rr.code === 200 && rr.j.read === 1 && st.j.notes.find(n => n.id === nt.id).readAt, rr.raw);
+rr = await portalAs('Y'.repeat(43), 'p-bid-view', { jobId: 'JR5' });
+const rr2 = await portalAs('Y'.repeat(43), 'p-bid-intent', { jobId: 'JR5', intent: 'no' });
+const rr3 = await portalAs('Y'.repeat(43), 'p-bid-intent', { jobId: 'JRD', intent: 'yes' });
+ok('R12 sub portal: opening a job logs a view; 🚫 Not bidding is saved; a job they cannot see is refused', rr.code === 200 && rowsOf('activity').some(r => r.job_id === 'JR5' && r.user_id === 'u_yes' && r.data.via === 'portal') && rr2.code === 200 && rowData('intents/JR5__u_yes').intent === 'no' && rr3.code === 403, [rr.raw, rr2.raw, rr3.raw]);
+/* a moved due date starts over */
+putRow('jobs', 'JR3', Object.assign({}, rowData('jobs/JR3'), { bidDueDate: BM.addDays(TODAY, 4) }), { job_id: 'JR3' });
+const n0 = MAIL.length; await BM.dueReminders({ today: TODAY });
+ok('R13 due date moved to 4 days out: nothing today', MAIL.length === n0);
+await BM.dueReminders({ today: BM.addDays(TODAY, 1) });
+ok('R14 the next morning (3 days before the NEW date): "Bid due in 3 days" again to the same people (the step follows the date)', to(E.yes).filter(m => /Three Day Demo/.test(m.subject)).length === 2 && to(E.view).filter(m => /Three Day Demo/.test(m.subject)).length === 2 && !to(E.bid).length, MAIL.slice(n0).map(m => [m.to, m.subject]));
+/* the switch */
+let sw = await bid(OWN, 'bidmail-cfg', { op: 'get' });
+ok('R15 📧 Bid site e-mails: "Bid due reminders" is a switch, ON by default', sw.code === 200 && sw.j.switches.dueSoon === true && (sw.j.list || []).some(x => x.k === 'dueSoon'), sw.raw.slice(0, 400));
+await bid(OWN, 'bidmail-cfg', { op: 'set', switches: Object.assign({}, sw.j.switches, { dueSoon: false }) });
+putRow('jobs', 'JR0b', { id: 'JR0b', title: 'Reminder Switch Demo', status: 'open', visibility: 'public', bidDueDate: TODAY, bidDueTime: '23:59', tradesSought: 'Drywall' }, { job_id: 'JR0b' });
+putRow('activity', 'a_sw', { id: 'a_sw', jobId: 'JR0b', userId: 'u_view', kind: 'view', at: now }, { job_id: 'JR0b', user_id: 'u_view' });
+const n1 = MAIL.length; dr = await BM.dueReminders({ today: TODAY });
+ok('R16 switched off → nothing sent', dr.off === true && MAIL.length === n1, dr);
+await bid(OWN, 'bidmail-cfg', { op: 'set', switches: Object.assign({}, sw.j.switches, { dueSoon: true }) });
+const tomlTxt = fs.readFileSync(path.join(BUILD, 'netlify.toml'), 'utf8');
+const hourAt = (utc) => BA._dueHour(Date.parse(utc));
+ok('R17 the scheduled run: bid-alerts every 10 minutes; the reminders run from 8 to 11:59 AM Central (CST and CDT), not before or after', /\[functions\."bid-alerts"\]\s*\n\s*schedule = "\*\/10 \* \* \* \*"/.test(tomlTxt) && hourAt('2026-12-01T14:05:00Z') && !hourAt('2026-12-01T13:55:00Z') && !hourAt('2026-12-01T18:05:00Z') && hourAt('2026-07-01T13:05:00Z') && !hourAt('2026-07-01T12:55:00Z') && /dueHour\(\)\) out\.dueReminders/.test(fs.readFileSync(path.join(BUILD, 'netlify/functions/bid-alerts.js'), 'utf8')));
+
+/* ═══════════════════ S. the bid due date stays in sync ═══════════════════ */
+console.log('\nS. the bid due date stays in sync');
+const MS = MAIL.length, Q0 = queue().length;
+job('JS', { title: 'Sync Demo', bidDueDate: BM.addDays(TODAY, 10), bidDueTime: '14:00', crmProjectId: '' });
+await bid('al@alpha.test', 'save', { key: 'activity', upsert: [{ id: 'a_js1', jobId: 'JS', kind: 'view' }] });
+r = await bid(OWN, 'addendum-post', { jobId: 'JS', num: 1, title: 'Rough ins', text: 'Rough-in changes.', newDue: BM.addDays(TODAY, 11), notify: false });
+/* ✎ Edit Job Details on the bid site (the page saves the whole job record) */
+const page0 = Object.assign({}, rowData('jobs/JS'), { bidDueDate: BM.addDays(TODAY, 13), _detailsSave: true });
+r = await bid(OWN, 'save', { key: 'jobs', upsert: [page0] });
+const js = rowData('jobs/JS');
+ok('S1 ✎ Edit Job Details → the job\'s bid due date is the new one; stamped as set by a person', r.code === 200 && js.bidDueDate === BM.addDays(TODAY, 13) && !!js.dueSetAt && js.dueSetBy === OWN, { r: r.raw, d: js.bidDueDate });
+const msgs = rowsOf('messages').filter(x => x.job_id === 'JS' && /Bid due date changed to/.test(x.data.body));
+const qS = queue().slice(Q0).find(x => x.meta && x.meta.jobId === 'JS');
+ok('S2 the subs who can see the job are told: "Bid due date changed to … (was …)" on the bid site at once; the e-mail waits on ✅ Approvals (nothing e-mailed)', msgs.length >= 1 && msgs[0].data.body.includes(BM.addDays(TODAY, 13)) && msgs[0].data.body.includes('was ' + BM.addDays(TODAY, 11)) && !!qS && MAIL.length === MS, { msgs: msgs.map(x => x.data.body), q: qS && qS.subject });
+s = await bid('al@alpha.test', 'load', { keys: ['jobs'] });
+sj = s.j.data.jobs.find(x => x.id === 'JS'); sa = sj.addenda[0];
+ok('S3 the sub\'s bid site: the job header date is new; the addendum keeps its history ("changed to ' + BM.addDays(TODAY, 11) + '") — the page adds "Now due"', sj.bidDueDate === BM.addDays(TODAY, 13) && sa.dueTo === BM.addDays(TODAY, 11) + ' 14:00');
+const pb2 = await portal('p-bidjobs'); const pjs = pb2.j.jobs.find(x => x.id === 'JS');
+const hl = await F.hub.handler({ httpMethod: 'GET', headers: { origin: 'https://app.local', authorization: 'Bearer tok-' + OWN }, queryStringParameters: { jobs: '1' } }); const hj = (JSON.parse(hl.body).jobs || []).find(x => x.id === 'JS');
+ok('S4 the sub portal 📋 Jobs to bid and the CRM\'s 🏗 Bid portal list show the new date', pjs && pjs.bidDueDate === BM.addDays(TODAY, 13) && hj && hj.due === BM.addDays(TODAY, 13), { p: pjs && pjs.bidDueDate, h: hj && hj.due });
+/* the Lead Inbox re-sync (bid-portal.js) no longer puts the lead's date back */
+const BPm = require(path.join(BUILD, 'netlify/functions/_lib/bid-portal.js'));
+const BPI = BPm.make({ env: () => '', s: v => v == null ? '' : String(v).trim(), low: v => (v == null ? '' : String(v)).trim().toLowerCase(), arr: v => Array.isArray(v) ? v : [], nowIso: () => new Date().toISOString(), sbUrl: () => 'https://sb.test', svcH: x => Object.assign({ apikey: 'svc', Authorization: 'Bearer svc' }, x || {}), kvCas: async () => [], kvGet: async () => [] });
+const item = { id: 'LI_sync', title: 'Lead Sync Demo', bidDue: BM.addDays(TODAY, 9) + 'T10:00', address: '1 Lead Rd', files: [] };
+let d1 = await BPI.draft(item); const ljId = d1.jobId;
+putRow('jobs', ljId, Object.assign({}, rowData('jobs/' + ljId), { draft: false, status: 'open', visibility: 'public' }), { job_id: ljId });
+await bid(OWN, 'save', { key: 'jobs', upsert: [Object.assign({}, rowData('jobs/' + ljId), { bidDueDate: BM.addDays(TODAY, 15), _detailsSave: true })] });
+await BPI.draft(Object.assign({}, item, { rev: 2, bidDue: BM.addDays(TODAY, 9) + 'T10:00', notes: ['a new e-mail about the job'] }));
+ok('S5 root cause: a Lead Inbox update (a new e-mail on the lead) used to put the lead\'s date back on the bid job — the date a person set now stays', d1.ok && rowData('jobs/' + ljId).bidDueDate === BM.addDays(TODAY, 15), { d1, now: rowData('jobs/' + ljId).bidDueDate });
+ok('S6 a lead job nobody changed by hand still follows the lead\'s date', await (async () => { const it2 = { id: 'LI_follow', title: 'Lead Follow Demo', bidDue: BM.addDays(TODAY, 9), files: [] }; const x = await BPI.draft(it2); await BPI.draft(Object.assign({}, it2, { bidDue: BM.addDays(TODAY, 12) })); return rowData('jobs/' + x.jobId).bidDueDate === BM.addDays(TODAY, 12); })());
+/* the addendum edit that moves the date with "E-mail the subs" NOT ticked is not silent */
+const q1 = queue().length;
+r = await bid(OWN, 'addendum-edit', { jobId: 'JS', num: 1, newDue: BM.addDays(TODAY, 14), notify: false });
+const msg2 = rowsOf('messages').filter(x => x.job_id === 'JS' && /addendum #1 was updated/.test(x.data.body));
+ok('S7 ✎ Edit addendum moves the due date without the e-mail ticked → the same automatic "Bid due date changed" update (bid site now, e-mail on ✅ Approvals)', r.code === 200 && r.j.dueNotice && r.j.dueNotice.status === 'waiting' && msg2.length >= 1 && queue().length === q1 + 1 && rowData('jobs/JS').bidDueDate === BM.addDays(TODAY, 14), { r: r.raw, m: msg2.length });
+
+if (!NOB) {
+  const { chromium } = require(path.join(process.env.NODE_PATH || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/node_modules', 'playwright'));
+  const browser = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
+  const errs = [];
+  try {
+    const ctx = await W.bidsCtx(browser, BUILD, F, 'phone'); const P = await ctx.newPage(); P.on('pageerror', e => errs.push(String(e.message).slice(0, 200)));
+    await P.goto('https://bids.test/?open=JR3'); await W.bidsLogin(P, E.view, 'Pw-u_view');
+    ok('D1 bid site (sub, phone): the reminder e-mail\'s link (?open=JR3) opens the job; it shows its 🔔 reminder and ✋ I\'m bidding / 🚫 Not bidding', await P.waitForSelector('[data-bidintent="JR3"]', { timeout: 30000 }).then(() => true, () => false) && /Bid due in 3 days/.test(await P.textContent('[data-bidintent="JR3"]')) && !!(await P.$('[data-bidintent-yes="JR3"]')));
+    await P.click('[data-bidintent-no="JR3"]');
+    ok('D2 🚫 Not bidding → saved (no more reminders for this job)', await until(() => (rowData('intents/JR3__u_view') || {}).intent === 'no') && await P.waitForSelector('[data-bidintent-is="no"]', { timeout: 10000 }).then(() => true, () => false));
+    await P.click('button:has-text("Back")').catch(() => {});
+    ok('D3 the job list shows 🔔 Reminders (the due-today one) with Open / Dismiss', await P.waitForSelector('[data-bidreminders] [data-bidreminder]', { timeout: 20000 }).then(() => true, () => false) && /Bid due today: Reminder Due Today Demo/.test(await P.textContent('[data-bidreminders]')));
+    const nid = await P.getAttribute('[data-bidreminders] [data-bidreminder]:has-text("Due Today")', 'data-bidreminder');
+    await P.click('[data-bidreminder-x="' + nid + '"]');
+    ok('D4 Dismiss → read on the server and gone from the list', await until(() => !!(rowData('duenotes/' + nid) || {}).readAt) && await until(async () => !(await P.$('[data-bidreminder="' + nid + '"]'))));
+    ok('D5 no sideways scroll; no page errors', !(await P.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) && errs.length === 0, errs);
+  } finally { await browser.close(); }
+}
+ok('Z nothing left the machine (e-mail only captured: the reminders)', OUT.length === 0 && MAIL.every(m => /^(Bid due (in 3 days|today)|La oferta vence)/.test(m.subject)), { OUT, MAIL: MAIL.map(x => x.subject) });
 const n = R.filter(Boolean).length; console.log('BIDREMIND2 ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);

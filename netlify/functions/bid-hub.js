@@ -814,7 +814,7 @@ async function addendum(who, b){
   const num = want >= 1 && want <= 99 && used.indexOf(want) < 0 ? want : Math.max(0, ...used) + 1;   /* patch SUBFLOW: the number the file says (Addendum #2), else the next */
   const a = { num, date: s(b.date).slice(0, 10) || nowIso().slice(0, 10), title, text, files, publishedAt: nowIso(), by: who.email };
   const nd = s(b.newDue).slice(0, 10);
-  if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd) && nd !== s(job.bidDueDate)) { a.dueFrom = s(job.bidDueDate) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); job.bidDueDate = nd; if (s(b.newDueTime)) job.bidDueTime = s(b.newDueTime).slice(0, 5); a.dueTo = nd + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
+  if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd) && nd !== s(job.bidDueDate)) { a.dueFrom = s(job.bidDueDate) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); job.bidDueDate = nd; job.dueSetAt = nowIso(); job.dueSetBy = who.email; if (s(b.newDueTime)) job.bidDueTime = s(b.newDueTime).slice(0, 5); a.dueTo = nd + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
   const to = b.notify === false ? [] : await audience(job);
   a.notice = await queueNotice(who, job, 'addendum', num, a, to);
   job.addenda = arr(job.addenda).concat([a]);
@@ -863,7 +863,7 @@ async function addendumEdit(who, b){
     if (to !== from || (s(a.dueTo) && s(a.dueTo) !== to)) {
       if (!s(a.dueTo)) a.dueFrom = from === 'no due date' ? '' : from;   /* the date before the addendum moved it (kept from the first change) */
       a.dueTo = to;
-      if (to !== from) { job.bidDueDate = nd; job.bidDueTime = tm; dueMoved = true; }
+      if (to !== from) { job.bidDueDate = nd; job.bidDueTime = tm; job.dueSetAt = at; job.dueSetBy = who.email; dueMoved = true; }
       changed.push('bid due → ' + to);
     }
   }
@@ -873,9 +873,13 @@ async function addendumEdit(who, b){
   a.updatedAt = at; a.updatedBy = who.email; a.edits = (Number(old.edits) || 0) + 1;
   if (b.notify === true) a.notice = await queueNotice(who, job, 'addendum', a.num, a, await audience(job));
   list[i] = a; job.addenda = list;
+  /* patch BIDREMIND2: a due date moved by the edit with "E-mail the subs" NOT ticked → the same automatic update as ✎ Edit Job Details and
+     📂 Manage → 📝 Details ("Bid due date changed to …": on the bid site at once, its e-mail waits on ✅ Approvals, held in ⏸) — never silent */
+  let dueNotice = null;
+  if (dueMoved && b.notify !== true) dueNotice = await subNotice(who, job, 'Bid due date changed to ' + dueText(job.bidDueDate, job.bidDueTime) + ' (addendum #' + a.num + ' was updated).');
   logTo(job, who, '✎ Addendum #' + a.num + ' edited: ' + changed.join(' · ') + (dueMoved ? ' — the job\'s bid due date is now ' + dueText(job.bidDueDate, job.bidDueTime) : '') + ' · e-mail: ' + (b.notify === true ? a.notice.status + (a.notice.n ? ' (' + a.notice.n + ')' : '') : 'not sent'));
   await saveJob(job, who);
-  return { ok: true, num: a.num, changed, notice: b.notify === true ? a.notice : { status: 'not sent', n: 0 }, due: job.bidDueDate, dueTime: job.bidDueTime, updatedAt: at };
+  return { ok: true, num: a.num, changed, notice: b.notify === true ? a.notice : { status: 'not sent', n: 0 }, dueNotice, due: job.bidDueDate, dueTime: job.bidDueTime, updatedAt: at };
 }
 
 async function post(who, b){
@@ -986,7 +990,8 @@ async function details(who, b){
     const from = dueText(validDay(job.bidDueDate), s(job.bidDueTime));
     job.bidDueDate = d; job.bidDueTime = d ? (/^\d{2}:\d{2}$/.test(s(b.dueTime)) ? s(b.dueTime) : (b.dueTime === '' ? '' : s(job.bidDueTime))) : '';
     const to = dueText(job.bidDueDate, job.bidDueTime);
-    if (to !== from) { log.push('⏰ bid due ' + from + ' → ' + to); subs.unshift(d ? 'Bid due date changed to ' + to + ' (was ' + from + ')' : 'The bid due date was taken off (was ' + from + ')'); }
+    if (to !== from) { job.dueSetAt = nowIso(); job.dueSetBy = who.email;   /* patch BIDREMIND2: a person set it (the Lead Inbox re-sync keeps it) */
+      log.push('⏰ bid due ' + from + ' → ' + to); subs.unshift(d ? 'Bid due date changed to ' + to + ' (was ' + from + ')' : 'The bid due date was taken off (was ' + from + ')'); }
     out.due = job.bidDueDate; out.dueTime = job.bidDueTime;
   }
   if (log.length) logTo(job, who, '📝 Details changed: ' + log.join(' · '));

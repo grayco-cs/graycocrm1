@@ -22,6 +22,7 @@ import MeasureTool, { MeasureFromPortal, canMeasure } from './Measure.jsx';   //
    ============================================================ */
 const T = {
   en: {
+    brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said you are not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brChange: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', brTitle: 'Reminders',   /* patch BIDREMIND2 */
     addEdit: '✎ Edit', addEditT: 'Edit addendum #', addEditSave: '💾 Save addendum #', addEditNotify: 'E-mail the subs about the update (waits on ✅ Approvals; held in data-entry mode)', addEditDone: 'Addendum #{n} updated', addEditSame: 'Nothing changed', addEditDue: 'Change the bid due date (optional) — now', addUpdated: 'Updated', addReack: 'Updated since you acknowledged — please acknowledge again', addHistory: 'History', addWas: 'Before the edit of', addRemoved: 'taken off', addStale: 'before the update', nowDue: 'Now due:',   /* patch ADDEDIT */
     addPost: 'Post addendum', addAsk: 'looks like an addendum — post it under Addenda (not with the plans):', addNum: 'Addendum #', addTitle: 'Title', addDate: 'Date', addText: 'What changed', addFiles: 'Files', addPick: '📎 Add files', addNewDue: 'New bid due date (optional)', addNotify: 'E-mail the subs who can see this job (it waits on ✅ Approvals; held in data-entry mode)', addSend: '📎 Post addendum #', addCancel: 'Cancel', addPlain: 'No — it is a plan sheet, put it with the plans', addNeed: 'Write what the addendum changes, or attach its files.', addDone: 'Addendum #{n} posted', addHeld: ' — e-mail held (data-entry mode)', addWaits: ' — e-mail waits on ✅ Approvals', badType: 'can not go on a bid job — use PDF, pictures, Word / Excel / PowerPoint, Outlook e-mail (.msg / .eml), text, DWG / DXF or a ZIP', tooBig: 'is over 50 MB — add a 🔗 plan link (Drive / Dropbox) for it instead',   /* patch SUBFLOW */
     addenda: 'Addenda', addendumN: 'Addendum #', acknowledge: 'Acknowledge addendum #', acknowledged: 'Acknowledged', dueChangedTo: 'Bid due date changed to', wasDue: 'was',
@@ -347,6 +348,7 @@ const T = {
     daysUntilExp: 'days until expiration',
   },
   es: {
+    brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brChange: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', brTitle: 'Recordatorios',   /* patch BIDREMIND2 */
     addEdit: '✎ Editar', addEditT: 'Editar adenda #', addEditSave: '💾 Guardar adenda #', addEditNotify: 'Enviar correo a los subcontratistas sobre el cambio (espera en ✅ Aprobaciones)', addEditDone: 'Adenda #{n} actualizada', addEditSame: 'No cambió nada', addEditDue: 'Cambiar la fecha límite (opcional) — ahora', addUpdated: 'Actualizada', addReack: 'Actualizada después de su confirmación — confirme otra vez', addHistory: 'Historial', addWas: 'Antes del cambio del', addRemoved: 'quitado', addStale: 'antes del cambio', nowDue: 'Ahora vence:',   /* patch ADDEDIT */
     addPost: 'Publicar adenda', addAsk: 'parece una adenda — publíquela en Adendas (no con los planos):', addNum: 'Adenda #', addTitle: 'Título', addDate: 'Fecha', addText: 'Qué cambió', addFiles: 'Archivos', addPick: '📎 Agregar archivos', addNewDue: 'Nueva fecha límite (opcional)', addNotify: 'Enviar correo a los subcontratistas que ven este trabajo (espera en ✅ Aprobaciones)', addSend: '📎 Publicar adenda #', addCancel: 'Cancelar', addPlain: 'No — es una hoja de planos, póngala con los planos', addNeed: 'Escriba qué cambia la adenda o adjunte sus archivos.', addDone: 'Adenda #{n} publicada', addHeld: ' — correo retenido (modo de captura)', addWaits: ' — el correo espera en ✅ Aprobaciones', badType: 'no se puede subir a un trabajo — use PDF, fotos, Word / Excel / PowerPoint, correo de Outlook (.msg / .eml), texto, DWG / DXF o un ZIP', tooBig: 'pesa más de 50 MB — agregue un 🔗 enlace (Drive / Dropbox)',   /* patch SUBFLOW */
     addenda: 'Adendas', addendumN: 'Adenda #', acknowledge: 'Acuso recibo de la adenda #', acknowledged: 'Recibo confirmado', dueChangedTo: 'La fecha límite cambió a', wasDue: 'antes',
@@ -1194,6 +1196,9 @@ function BidApp() {
   const [activeJob, setActiveJob] = useState(null);
   /* patch BIDPOST: the open job follows the job list (plans just uploaded, a plan link just added show at once) */
   useEffect(() => { setActiveJob(prev => prev ? (jobs.find(j => j.id === prev.id) || prev) : prev); }, [jobs]);
+  /* patch BIDREMIND2: a reminder e-mail's link (?open=<job id>) opens that job once the list is loaded */
+  const openWanted = useRef((() => { try { return new URLSearchParams(window.location.search).get('open') || ''; } catch (e) { return ''; } })());
+  useEffect(() => { const id = openWanted.current; if (!id || !jobs.length) return; const j = jobs.find(x => x.id === id); if (j) { openWanted.current = ''; setActiveJob(j); } }, [jobs]);
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [toast, setToast] = useState(null);
@@ -2150,6 +2155,46 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
 /* ============================================================
    JOB LIST (subs and admins)
    ============================================================ */
+/* patch BIDREMIND2 (owner 11/23: "on jobs people click yes to bidding on or if they open a project at all send follow up notifications and
+   emails when its within 3 days of being due and the day its being due"): a sub's ✋ I'm bidding / 🚫 Not bidding on a job, and the 🔔 bid-due
+   reminders (the same ones e-mailed by the morning run, netlify/functions/_lib/bidmail.js dueReminders) on top of the job list. */
+const BRS = { v: { notes: [], intents: {} }, subs: new Set(), at: 0 };
+function brSet(v) { BRS.v = v; BRS.subs.forEach(f => f(v)); }
+function brLoad(force) { if (!force && Date.now() - BRS.at < 30000) return Promise.resolve(BRS.v); BRS.at = Date.now(); return api('my-bidstate', {}).then(r => { brSet({ notes: (r && r.notes) || [], intents: (r && r.intents) || {} }); return BRS.v; }).catch(() => BRS.v); }
+function useBidState(on) { const [v, setV] = useState(BRS.v); useEffect(() => { BRS.subs.add(setV); if (on) brLoad(); return () => { BRS.subs.delete(setV); }; }, [on]); return v; }
+function BidReminders({ t, user, jobs, onOpen }) {
+  const st = useBidState(user.role !== 'admin');
+  const list = (st.notes || []).filter(n => !n.readAt && (jobs || []).some(j => j.id === n.jobId));
+  if (user.role === 'admin' || !list.length) return null;
+  async function dismiss(n) { try { await api('notes-read', { ids: [n.id] }); brSet({ ...BRS.v, notes: BRS.v.notes.map(x => x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x) }); } catch (e) { /* stays */ } }
+  return (
+    <div data-bidreminders="1" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontWeight: 700 }}>🔔 {t.brTitle}</div>
+      {list.map(n => (
+        <div key={n.id} data-bidreminder={n.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 12px', borderRadius: 8, background: '#FFFBEB', borderLeft: '4px solid #D97706' }}>
+          <div style={{ flex: '1 1 200px' }}><b>{n.title}</b><div style={{ fontSize: 13, color: styles.text2 }}>{n.body}</div></div>
+          <Btn size="sm" data-bidreminder-open={n.id} onClick={() => { const j = jobs.find(x => x.id === n.jobId); if (j) onOpen(j); }}>{t.brOpen}</Btn>
+          <Btn size="sm" variant="ghost" data-bidreminder-x={n.id} onClick={() => dismiss(n)}>{t.brDismiss}</Btn>
+        </div>
+      ))}
+    </div>
+  );
+}
+function BidIntent({ t, job, showToast }) {
+  const st = useBidState(true);
+  const v = (st.intents || {})[job.id] || '';
+  const note = (st.notes || []).find(n => n.jobId === job.id && !n.readAt);
+  async function set(x) { try { await api('bid-intent', { jobId: job.id, intent: x }); brSet({ ...BRS.v, intents: { ...BRS.v.intents, [job.id]: x } }); showToast(t.brSaved); } catch (e) { showToast(e.message, 'error'); } }
+  return (
+    <div data-bidintent={job.id} style={{ marginBottom: 18, padding: 12, borderRadius: 10, border: `1px solid ${styles.border}`, background: styles.surface }}>
+      {note && <div data-bidreminder-job={job.id} style={{ fontWeight: 700, color: '#B45309', marginBottom: 8 }}>🔔 {note.title} — {note.body}</div>}
+      {v ? <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><b data-bidintent-is={v}>{v === 'yes' ? t.brYouBid : t.brYouNot}</b><Btn size="sm" variant="ghost" data-bidintent-change={job.id} onClick={() => set('')}>{t.brChange}</Btn></div>
+        : <><div style={{ fontSize: 14, marginBottom: 8 }}>{t.brAsk}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Btn size="sm" data-bidintent-yes={job.id} onClick={() => set('yes')}>{t.brBidding}</Btn><Btn size="sm" variant="ghost" data-bidintent-no={job.id} onClick={() => set('no')}>{t.brNot}</Btn></div></>}
+    </div>
+  );
+}
+
 function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   // Admins see everything. Subs see:
   //  - all open PUBLIC jobs
@@ -2185,6 +2230,7 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
     <div>
       <SectionHeader icon={Briefcase} title={showArch ? `${t.jobs} — ${t.archivedJobs}` : t.jobs} count={visibleJobs.length} />
       {archBtn}
+      <BidReminders t={t} user={user} jobs={visibleJobs} onOpen={onOpen} />
       <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {visibleJobs.map(job => {
           const myBidExists = bids.some(b => b.jobId === job.id && b.userId === user.id);
@@ -3485,6 +3531,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             fontFamily: styles.fontDisplay, fontSize: 36, fontWeight: 700,
             margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.02em', lineHeight: 1.1,
           }}>{job.title}</h1>
+          {!isAdmin && !myBid && job.status !== 'closed' && !job.biddingClosed && !job.pastDue && <BidIntent t={t} job={job} showToast={showToast} />}
 
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 24, color: styles.text2, fontSize: 14 }}>
             {job.address && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><MapPin size={16} /> {job.address}</div>}

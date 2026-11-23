@@ -9,7 +9,13 @@
      wonNotUsed   ON   "We won <project> — we did not use your bid this time"
      lost         OFF  "We did not win <project>" — NEVER sent unless an admin switches it on
      addendum     OFF  "Addendum #n posted: <project>"
-     dueReminder  OFF  "Bids due tomorrow: <project>" (bid-alerts.js, the scheduled run)
+     dueSoon      ON   "Bid due in 3 days / Bid due today: <project>" (bid-alerts.js, the scheduled run, mornings Central) — patch
+                       BIDREMIND2 (owner 11/23: "on jobs people click yes to bidding on or if they open a project at all send follow up
+                       notifications and emails when its within 3 days of being due and the day its being due"): every sub / supplier who
+                       said ✋ I'm bidding, opened / downloaded from the job, or asked for its plans — not one who already bid / quoted or
+                       said 🚫 Not bidding. An e-mail + a notification on the bid site (🔔) and the sub portal (📋 Jobs to bid). Once per
+                       step per person per job and due date (a moved due date starts the steps over). Never a draft, closed, deleted,
+                       bidding-closed or past-due job. (Replaces the old OFF "Bids due tomorrow" to invited subs — key dueReminder.)
    Room for more: a new switch is one more row in LIST (and a template + its trigger).
 
    Sub / supplier e-mails are not customer sends: they go out in ⏸ data-entry mode too (custquiet tag 'trade',
@@ -23,11 +29,12 @@ const LIST = [
   { k: 'wonNotUsed', on: true, l: 'We won the project — your bid was not used', d: 'When a job is marked WON: every other bidder / quoter hears, politely, with no prices or names.' },
   { k: 'lost', on: false, l: 'We did NOT win the project', d: 'When a job is marked LOST: every bidder / quoter hears. Off unless you turn it on.' },
   { k: 'addendum', on: false, l: 'Addendum posted', d: 'When an addendum is published on the bid site: the invited subs and everyone who bid.' },
-  { k: 'dueReminder', on: false, l: 'Bid due reminder', d: 'The day before the sub bid due date: invited subs who have not bid yet.' }
+  { k: 'dueSoon', on: true, l: 'Bid due reminders (3 days before + the due day)', d: 'Mornings, 3 days before the sub bid due date and on the day: every sub or supplier who said "I\'m bidding", opened the job or asked for its plans — not those who already bid or said "Not bidding". An e-mail and a 🔔 notice on the bid site and the sub portal.' }   /* patch BIDREMIND2 */
 ];
 const DEFAULTS = {}; LIST.forEach(function(x){ DEFAULTS[x.k] = x.on; });
 const ROW = 'bidmail';
 function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }   /* patch BIDREMIND2 */
 function SP(){ return require('../subportal.js')._hub; }
 
 /* the switches (missing → the default; a bad read → the defaults, so "lost" stays off) */
@@ -93,13 +100,6 @@ function addendumMail(job, a, es){
     es ? 'Revísela en el sitio de licitaciones y confirme que la recibió.' : 'Please review it on the bid site and acknowledge it.'];
   return { subject: subject.slice(0, 240), html: H.mailHtml(es ? 'Adenda publicada' : 'Addendum posted', lines, { href: H.PORTAL_ORIGIN + '/', label: es ? 'Ver la adenda' : 'See the addendum' }) };
 }
-function dueMail(job, es){
-  const H = SP(), t = title(job), due = s(job.bidDueDate).slice(0, 10) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : '');
-  const subject = (es ? 'Las ofertas vencen mañana: ' : 'Bids due tomorrow: ') + t;
-  const lines = [(es ? 'Recordatorio: las ofertas para ' : 'A reminder: bids for ') + '<b>' + H.esc(t) + '</b>' + (es ? ' vencen ' : ' are due ') + '<b>' + H.esc(due) + '</b>.'];
-  return { subject: subject.slice(0, 240), html: H.mailHtml(es ? 'Recordatorio' : 'Bid due reminder', lines, { href: H.PORTAL_ORIGIN + '/', label: es ? 'Enviar mi oferta' : 'Send my bid' }) };
-}
-
 /* one e-mail per person (nobody sees who else got it) → the count sent */
 async function sendEach(list, make){
   const H = SP(); let n = 0;
@@ -139,19 +139,66 @@ async function addendum(job, a){
   (await biddersOf(job.id)).forEach(function(x){ if (!seen[x.email]) { seen[x.email] = 1; list.push(x); } });
   return { sent: await sendEach(list, function(x){ return addendumMail(job, a, x.es); }) };
 }
-/* the scheduled run (bid-alerts.js): open public / invited jobs due tomorrow (Central) → invited subs with no bid yet, once per job */
-async function dueReminders(){
-  const c = await cfg(); if (!c.dueReminder) return { sent: 0, off: true };
-  const H = SP(), tomorrow = new Date(Date.now() - 6 * 3600e3 + 864e5).toISOString().slice(0, 10);
-  let sent = 0;
-  for (const r of await H.listRows([H.eq('collection', 'jobs')])) {
-    const j = r.data || {};
-    if (H.isDraft(j) || H.isGone(j) || /^(closed|won|lost)$/i.test(s(j.status)) || j.biddingClosed || s(j.bidDueDate).slice(0, 10) !== tomorrow || j.dueReminderAt) continue;
-    const bidders = {}; (await biddersOf(j.id)).forEach(function(x){ bidders[x.email] = 1; });
-    const list = (await H.listRows([H.eq('collection', 'invites'), H.eq('job_id', j.id)])).map(function(x){ return s(x.email).toLowerCase(); }).filter(function(e){ return H.okEmail(e) && !bidders[e]; });
-    sent += await sendEach(Array.from(new Set(list)).map(function(e){ return { email: e, es: false }; }), function(x){ return dueMail(j, x.es); });
-    await H.upsertRows([H.rowFor('jobs', Object.assign({}, j, { dueReminderAt: new Date().toISOString() }))], 'bid-alerts');
-  }
-  return { sent: sent };
+/* patch BIDREMIND2: the scheduled run (bid-alerts.js, mornings Central) — "Bid due in 3 days" / "Bid due today" to the interested subs and
+   suppliers of every open job due in 3 days / today (see the dueSoon switch above). Each reminder is a 'duenotes' row (sp_rows) keyed
+   job + person + step + due date: it is the "once" record AND the notification the bid site (🔔) and the sub portal show. */
+const STEPS = { d3: 3, d0: 0 };
+function chiDay(ms){ return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }); }
+function addDays(d, n){ const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+function dueKey(job){ return s(job.bidDueDate).slice(0, 10) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
+function noteText(job, step, es){
+  const t = title(job), due = dueKey(job);
+  if (es) return { title: (step === 'd0' ? 'La oferta vence hoy: ' : 'La oferta vence en 3 días: ') + t, body: 'Fecha límite: ' + due + '.' };
+  return { title: (step === 'd0' ? 'Bid due today: ' : 'Bid due in 3 days: ') + t, body: 'Due ' + due + '.' };
 }
-module.exports = { LIST, DEFAULTS, cfg, save, clean, trade, inviteMail, acceptedMail, wonNotUsedMail, lostMail, addendumMail, dueMail, result, accepted, addendum, dueReminders, biddersOf };
+function jobLink(job){ return SP().PORTAL_ORIGIN + '/?open=' + encodeURIComponent(s(job.id)); }
+function dueSoonMail(job, step, es, supplier){
+  const H = SP(), t = title(job), n = noteText(job, step, es);
+  const lines = es ? [(step === 'd0' ? 'Recordatorio: hoy vence ' : 'Recordatorio: en 3 días vence ') + (supplier ? 'la cotización de materiales para ' : 'la oferta para ') + '<b>' + H.esc(t) + '</b>' + (s(job.address) ? ' (' + H.esc(job.address) + ')' : '') + '.',
+      'Fecha límite: <b>' + H.esc(dueKey(job)) + '</b>.', 'Si ya no va a ofertar, márquelo en el sitio ("No voy a ofertar") y no le enviaremos más recordatorios.']
+    : ['A reminder: ' + (supplier ? 'material quotes' : 'bids') + ' for <b>' + H.esc(t) + '</b>' + (s(job.address) ? ' (' + H.esc(job.address) + ')' : '') + (step === 'd0' ? ' are due <b>today</b>.' : ' are due in <b>3 days</b>.'),
+      'Due: <b>' + H.esc(dueKey(job)) + '</b>.', 'Not bidding after all? Tap "Not bidding" on the job and the reminders stop.'];
+  return { subject: n.title.slice(0, 240), html: H.mailHtml(es ? 'Recordatorio de fecha límite' : (step === 'd0' ? 'Bid due today' : 'Bid due in 3 days'), lines, { href: jobLink(job), label: es ? 'Abrir el trabajo' : (supplier ? 'Open the job and quote' : 'Open the job and bid') }) };
+}
+function openForReminders(H, j){
+  return !!j && !H.isDraft(j) && !H.isGone(j) && !/^(closed|won|lost|awarded|archived|deleted|draft)$/i.test(s(j.status)) && !j.biddingClosed && !(H.dueOver && H.dueOver(j));
+}
+async function dueReminders(opts){
+  opts = opts || {};
+  const c = await cfg(); if (!c.dueSoon) return { sent: 0, notes: 0, off: true };
+  const H = SP(), today = s(opts.today) || chiDay(Date.now()), want = {};
+  Object.keys(STEPS).forEach(function(k){ want[addDays(today, STEPS[k])] = k; });
+  const jobs = (await H.listRows([H.eq('collection', 'jobs')])).map(function(r){ return r.data || {}; })
+    .filter(function(j){ return want[s(j.bidDueDate).slice(0, 10)] && openForReminders(H, j); });
+  if (!jobs.length) return { sent: 0, notes: 0, jobs: 0 };
+  const users = {}; (await H.listRows([H.eq('collection', 'users')])).forEach(function(r){ users[s(r.id)] = r.data || {}; });
+  let sent = 0, notes = 0; const out = [];
+  for (const j of jobs) {
+    const step = want[s(j.bidDueDate).slice(0, 10)], dk = dueKey(j);
+    const rows = async function(col){ try { return await H.listRows([H.eq('collection', col), H.eq('job_id', j.id)]); } catch (e) { return []; } };
+    const [acts, ints, bids, mqs, reqs, invs, done] = await Promise.all(['activity', 'intents', 'bids', 'mquotes', 'planreqs', 'invites', 'duenotes'].map(rows));
+    const want1 = {}, no = {};
+    acts.forEach(function(r){ want1[s(r.user_id || (r.data || {}).userId)] = 'viewed'; });
+    reqs.forEach(function(r){ want1[s(r.user_id || (r.data || {}).userId)] = 'asked for plans'; });
+    ints.forEach(function(r){ const d = r.data || {}, u = s(r.user_id || d.userId); if (d.intent === 'yes') want1[u] = 'bidding'; else if (d.intent === 'no') no[u] = 1; });
+    bids.forEach(function(r){ no[s(r.user_id || (r.data || {}).userId)] = 1; });   /* already bid */
+    mqs.forEach(function(r){ no[s(r.user_id || (r.data || {}).userId)] = 1; });    /* already quoted */
+    const had = {}; done.forEach(function(r){ had[s(r.id)] = 1; });
+    const invited = {}; invs.forEach(function(r){ invited[low(r.email || (r.data || {}).email)] = 1; });
+    for (const uid of Object.keys(want1)) {
+      const u = users[uid]; if (!uid || no[uid] || !u) continue;
+      if (!/^(sub|supplier)$/.test(s(u.role)) || !u.approved || !H.okEmail(low(u.email))) continue;
+      if (s(j.visibility || 'public') !== 'public' && !invited[low(u.email)]) continue;   /* a private job: only the invited */
+      if (u.role === 'supplier' && j.suppliersCanQuote !== true && !invited[low(u.email)]) continue;
+      const id = (s(j.id) + '__' + uid + '__' + step + '__' + dk).replace(/[^A-Za-z0-9_.:-]+/g, '-').slice(0, 180);
+      if (had[id]) continue;
+      const es = u.lang === 'es', m = dueSoonMail(j, step, es, u.role === 'supplier'), nt = noteText(j, step, es);
+      let mailed = false; try { mailed = !!(await trade(function(){ return H.sendMail(low(u.email), m.subject, m.html); })); } catch (e) { mailed = false; }
+      const rec = { id: id, jobId: s(j.id), userId: uid, email: low(u.email), step: step, due: dk, why: want1[uid], title: nt.title, body: nt.body, at: new Date().toISOString(), mailed: mailed, readAt: '' };
+      await H.upsertRows([H.rowFor('duenotes', rec)], 'bid-alerts');
+      notes++; if (mailed) sent++; out.push({ jobId: rec.jobId, userId: uid, step: step, mailed: mailed });
+    }
+  }
+  return { sent: sent, notes: notes, jobs: jobs.length, list: out.slice(0, 50) };
+}
+module.exports = { LIST, DEFAULTS, cfg, save, clean, trade, inviteMail, acceptedMail, wonNotUsedMail, lostMail, addendumMail, dueSoonMail, noteText, chiDay, addDays, result, accepted, addendum, dueReminders, biddersOf };

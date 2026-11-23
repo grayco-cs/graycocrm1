@@ -112,8 +112,11 @@ function make(d){
     const dd = due(item);
     const base = prev || { id: jobIdFor(item), poNumber: '', projectId: '', pmId: '', estimatorId: '', bidResultsSharing: 'private', tradeScopes: [], scopeDocs: [],
       createdBy: 'lead-inbox', createdByName: 'CRM Lead Inbox', createdAt: nowIso() };
+    /* patch BIDREMIND2 (owner 11/23: "i changed the bid date on job details and this didnt change"): a bid due date a person set (✎ Edit Job
+       Details, 📂 Manage → 📝 Details, an addendum — job.dueSetAt) is never put back to the lead's date by a later Lead Inbox update */
+    const keepDue = !!(prev && prev.dueSetAt && s(prev.bidDueDate));
     const j = Object.assign({}, base, {
-      title: s(item.title).slice(0, 200), address: where(item), bidDueDate: dd.day, bidDueTime: dd.time,
+      title: s(item.title).slice(0, 200), address: where(item), bidDueDate: keepDue ? s(prev.bidDueDate) : dd.day, bidDueTime: keepDue ? s(prev.bidDueTime) : dd.time,
       scope: (prev && prev.crmScope) ? prev.scope : s(item.scope), notes: (prev && prev.notesEditedAt) ? s(prev.notes) /* NOTESCLEAN: notes a person typed stay */ : notesFor(item, !!(prev && prev.draft === false)) + (prev && arr(prev.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + prev.crmNotes.map(n => '• ' + n).join('\n') : ''), tradesSought: arr(item.trades).join(', '),
       grayCoRole: item.gc ? 'sub' : (prev && prev.grayCoRole) || 'gc', sourceLink: srcLink(item),
       plans: keepVis(plansMeta, prev && prev.plans), specDocs: keepVis(specs, prev && prev.specDocs),   /* patch BIDVIS: an admin's "Visible to subs" tick stays */
