@@ -22,6 +22,7 @@ import MeasureTool, { MeasureFromPortal, canMeasure } from './Measure.jsx';   //
    ============================================================ */
 const T = {
   en: {
+    addEdit: '✎ Edit', addEditT: 'Edit addendum #', addEditSave: '💾 Save addendum #', addEditNotify: 'E-mail the subs about the update (waits on ✅ Approvals; held in data-entry mode)', addEditDone: 'Addendum #{n} updated', addEditSame: 'Nothing changed', addEditDue: 'Change the bid due date (optional) — now', addUpdated: 'Updated', addReack: 'Updated since you acknowledged — please acknowledge again', addHistory: 'History', addWas: 'Before the edit of', addRemoved: 'taken off', addStale: 'before the update', nowDue: 'Now due:',   /* patch ADDEDIT */
     addPost: 'Post addendum', addAsk: 'looks like an addendum — post it under Addenda (not with the plans):', addNum: 'Addendum #', addTitle: 'Title', addDate: 'Date', addText: 'What changed', addFiles: 'Files', addPick: '📎 Add files', addNewDue: 'New bid due date (optional)', addNotify: 'E-mail the subs who can see this job (it waits on ✅ Approvals; held in data-entry mode)', addSend: '📎 Post addendum #', addCancel: 'Cancel', addPlain: 'No — it is a plan sheet, put it with the plans', addNeed: 'Write what the addendum changes, or attach its files.', addDone: 'Addendum #{n} posted', addHeld: ' — e-mail held (data-entry mode)', addWaits: ' — e-mail waits on ✅ Approvals', badType: 'can not go on a bid job — use PDF, pictures, Word / Excel / PowerPoint, Outlook e-mail (.msg / .eml), text, DWG / DXF or a ZIP', tooBig: 'is over 50 MB — add a 🔗 plan link (Drive / Dropbox) for it instead',   /* patch SUBFLOW */
     addenda: 'Addenda', addendumN: 'Addendum #', acknowledge: 'Acknowledge addendum #', acknowledged: 'Acknowledged', dueChangedTo: 'Bid due date changed to', wasDue: 'was',
     ackBy: 'Acknowledged by', notAckYet: 'Not acknowledged yet', updatesFromGrayCo: 'Updates from GrayCo', currentSet: 'CURRENT', versionL: 'Version', docPlans: 'Plans', docSpecs: 'Specs', docRoom: 'Plan room', bidDocs: 'Bid documents', planLinks: 'Plan room links', openLink: 'Open link',
@@ -346,6 +347,7 @@ const T = {
     daysUntilExp: 'days until expiration',
   },
   es: {
+    addEdit: '✎ Editar', addEditT: 'Editar adenda #', addEditSave: '💾 Guardar adenda #', addEditNotify: 'Enviar correo a los subcontratistas sobre el cambio (espera en ✅ Aprobaciones)', addEditDone: 'Adenda #{n} actualizada', addEditSame: 'No cambió nada', addEditDue: 'Cambiar la fecha límite (opcional) — ahora', addUpdated: 'Actualizada', addReack: 'Actualizada después de su confirmación — confirme otra vez', addHistory: 'Historial', addWas: 'Antes del cambio del', addRemoved: 'quitado', addStale: 'antes del cambio', nowDue: 'Ahora vence:',   /* patch ADDEDIT */
     addPost: 'Publicar adenda', addAsk: 'parece una adenda — publíquela en Adendas (no con los planos):', addNum: 'Adenda #', addTitle: 'Título', addDate: 'Fecha', addText: 'Qué cambió', addFiles: 'Archivos', addPick: '📎 Agregar archivos', addNewDue: 'Nueva fecha límite (opcional)', addNotify: 'Enviar correo a los subcontratistas que ven este trabajo (espera en ✅ Aprobaciones)', addSend: '📎 Publicar adenda #', addCancel: 'Cancelar', addPlain: 'No — es una hoja de planos, póngala con los planos', addNeed: 'Escriba qué cambia la adenda o adjunte sus archivos.', addDone: 'Adenda #{n} publicada', addHeld: ' — correo retenido (modo de captura)', addWaits: ' — el correo espera en ✅ Aprobaciones', badType: 'no se puede subir a un trabajo — use PDF, fotos, Word / Excel / PowerPoint, correo de Outlook (.msg / .eml), texto, DWG / DXF o un ZIP', tooBig: 'pesa más de 50 MB — agregue un 🔗 enlace (Drive / Dropbox)',   /* patch SUBFLOW */
     addenda: 'Adendas', addendumN: 'Adenda #', acknowledge: 'Acuso recibo de la adenda #', acknowledged: 'Recibo confirmado', dueChangedTo: 'La fecha límite cambió a', wasDue: 'antes',
     ackBy: 'Recibo confirmado por', notAckYet: 'Sin confirmar todavía', updatesFromGrayCo: 'Novedades de GrayCo', currentSet: 'VIGENTE', versionL: 'Versión', docPlans: 'Planos', docSpecs: 'Especificaciones', docRoom: 'Sala de planos', bidDocs: 'Documentos de licitación', planLinks: 'Enlaces a planos', openLink: 'Abrir enlace',
@@ -2704,6 +2706,66 @@ function AddendumPost({ t, job, showToast, prefill, onClose, setJobs, onPlain })
   );
 }
 
+/* patch ADDEDIT (owner 11/23: "I need to be able to edit an addendum there too"): ✎ Edit on a posted addendum (admin) — title, date, what
+   changed, files (add / take off), the bid due date; the e-mail about the update only when ticked (it waits on ✅ Approvals). The server
+   (bid-hub op addendumedit) keeps the old version in the addendum's history and asks the subs to acknowledge it again. */
+function AddendumEdit({ t, job, a, showToast, setJobs, onClose }) {
+  const [title, setTitle] = useState(a.title || '');
+  const [date, setDate] = useState(a.date || '');
+  const [text, setText] = useState(a.text || '');
+  const [files, setFiles] = useState((a.files || []).map(f => ({ name: f.name, size: f.size, type: f.type, fileRef: f.fileRef })));
+  const [due, setDue] = useState('');
+  const [notify, setNotify] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const ref = useRef(null);
+  async function pick(list) {
+    setBusy(true); setErr('');
+    try {
+      const out = [];
+      for (const f of list) {
+        if (!ALL_RE.test(f.name)) { setErr(f.name + ' ' + t.badType); continue; }
+        if (f.size > 50 * 1024 * 1024) { setErr(f.name + ' ' + t.tooBig); continue; }
+        out.push({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', fileRef: await uploadBlob(f, f.name) });
+      }
+      setFiles(fs => fs.concat(out));
+    } catch (e) { setErr(e.message); }
+    setBusy(false); if (ref.current) ref.current.value = '';
+  }
+  async function save() {
+    if (!text.trim() && !title.trim() && !files.length) { setErr(t.addNeed); return; }
+    setBusy(true); setErr('');
+    try {
+      const r = await api('addendum-edit', { jobId: job.id, num: a.num, title, date, text, files, newDue: due, notify });
+      const { data } = await api('load', { keys: ['jobs'] });
+      const fresh = ((data && data.jobs) || []).find(x => x.id === job.id);   /* the server's copy (never save a stale one over it) */
+      if (fresh) setJobs(js => js.map(j => j.id === job.id ? { ...j, ...fresh } : j));
+      showToast(r.unchanged ? t.addEditSame : t.addEditDone.replace('{n}', a.num) + (r.notice && r.notice.status === 'held' ? t.addHeld : r.notice && r.notice.status === 'waiting' ? t.addWaits : ''));
+      onClose();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  const inp = { width: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 6, border: `1px solid ${styles.border}`, fontFamily: 'inherit', fontSize: 15 };
+  return (
+    <div data-addedit="form" style={{ marginTop: 10, padding: 12, borderRadius: 8, background: '#FFFBEB', border: `1px solid ${styles.accent}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontWeight: 700 }}>{t.addEditT}{a.num}</div>
+      <label>{t.addDate}<input data-addedit="date" type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} /></label>
+      <label>{t.addTitle}<input data-addedit="title" value={title} maxLength={200} onChange={e => setTitle(e.target.value)} style={inp} /></label>
+      <label>{t.addText}<textarea data-addedit="text" rows={3} value={text} maxLength={8000} onChange={e => setText(e.target.value)} style={inp} /></label>
+      <div>{t.addFiles}: {files.length ? files.map((f, i) => <span key={i} data-addedit="file" style={{ display: 'inline-flex', gap: 4, alignItems: 'center', margin: '2px 6px 2px 0', padding: '2px 8px', borderRadius: 999, background: '#fff', border: `1px solid ${styles.border}`, fontSize: 13 }}>📄 {f.name}<button type="button" aria-label="remove" data-addedit="rmfile" onClick={() => setFiles(files.filter((x, j) => j !== i))} style={{ border: 0, background: 'none', cursor: 'pointer' }}>✕</button></span>) : '—'}
+        <input ref={ref} type="file" multiple accept={ACCEPT_ALL} style={{ display: 'none' }} data-addedit="pick" onChange={e => pick(Array.from(e.target.files || []))} />
+        <Btn size="sm" variant="ghost" disabled={busy} onClick={() => ref.current && ref.current.click()}>{t.addPick}</Btn></div>
+      <label>{t.addEditDue} {job.bidDueDate || '—'}{job.bidDueTime ? ' ' + job.bidDueTime : ''}<input data-addedit="due" type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} /></label>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13 }}><input data-addedit="notify" type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} style={{ marginTop: 3 }} />{t.addEditNotify}</label>
+      {err && <div role="alert" data-addedit="err" style={{ color: '#B91C1C', fontSize: 13 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn data-addedit="save" disabled={busy} onClick={save}>{t.addEditSave}{a.num}</Btn>
+        <Btn variant="ghost" disabled={busy} onClick={onClose}>{t.addCancel}</Btn>
+      </div>
+    </div>
+  );
+}
+
 function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink, onAddendum }) {
   const [reqs, setReqs] = useState(null);
   const [note, setNote] = useState('');
@@ -2877,6 +2939,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
   /* patch SUBFLOW: ⬇ All plans (ZIP) · the 📎 Post addendum box (prefilled by an addendum-named upload) */
   const [zipBusy, setZipBusy] = useState(false);
   const [addPrefill, setAddPrefill] = useState(null);
+  const [editAdd, setEditAdd] = useState(null);   /* patch ADDEDIT: the addendum being edited (its number) */
   async function zipAll() {
     let w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
     setZipBusy(true);
@@ -3659,15 +3722,20 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                 onPlain={async f => { try { const r = await api('plans-import', { jobId: job.id, fileRef: f.fileRef, name: f.name, size: f.size, asPlan: true }); if ((r.added || []).length) setJobs(js => js.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...r.added] } : j)); showToast(t.plansUploaded.replace('{n}', (r.added || []).length)); } catch (e) { showToast(e.message, 'error'); } }} />}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(job.addenda || []).filter(a => a.publishedAt).slice().sort((a, b) => b.num - a.num).map(a => {
-                  const mineAck = (acks || []).find(k => k.jobId === job.id && Number(k.num) === Number(a.num) && k.userId === user.id);
+                  const mineAck0 = (acks || []).find(k => k.jobId === job.id && Number(k.num) === Number(a.num) && k.userId === user.id);
+                  const staleAck = k => !!(k && a.updatedAt && String(k.at || '') < String(a.updatedAt));   /* patch ADDEDIT: acknowledged before the edit */
+                  const mineAck = staleAck(mineAck0) ? null : mineAck0;
                   const allAcks = (acks || []).filter(k => k.jobId === job.id && Number(k.num) === Number(a.num));
                   return (
                     <div key={a.num} data-addendum={a.num} style={{ border: `1px solid ${styles.border}`, borderRadius: 10, padding: 14, background: styles.surface }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{t.addendumN}{a.num}{a.title ? ' — ' + a.title : ''}</div>
-                        <div style={{ fontSize: 12, color: styles.text2 }}>{a.date ? new Date(a.date + 'T12:00:00').toLocaleDateString() : ''}</div>
+                        <div style={{ fontSize: 12, color: styles.text2, display: 'flex', gap: 8, alignItems: 'center' }}>{a.date ? new Date(a.date + 'T12:00:00').toLocaleDateString() : ''}
+                          {isAdmin && editAdd !== a.num && <Btn size="sm" variant="ghost" data-addedit-open={a.num} onClick={() => setEditAdd(a.num)}>{t.addEdit}</Btn>}</div>
                       </div>
+                      {a.updatedAt && <div data-addupd={a.num} style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: styles.accent }}>✎ {t.addUpdated} {new Date(a.updatedAt).toLocaleDateString()}</div>}
                       {a.dueTo && <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: styles.red }}>⏰ {t.dueChangedTo} {a.dueTo}{a.dueFrom ? ` (${t.wasDue} ${a.dueFrom})` : ''}</div>}
+                      {a.dueTo && job.bidDueDate && a.dueTo !== job.bidDueDate + (job.bidDueTime ? ' ' + job.bidDueTime : '') && <div data-nowdue={a.num} style={{ marginTop: 2, fontSize: 13, fontWeight: 700, color: styles.green }}>📅 {t.nowDue} {job.bidDueDate}{job.bidDueTime ? ' ' + job.bidDueTime : ''}</div>}
                       {a.text && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 14, marginTop: 8 }}>{a.text}</div>}
                       {(a.files || []).length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
@@ -3683,13 +3751,29 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         <div style={{ marginTop: 10 }}>
                           {mineAck
                             ? <Badge color={styles.green}>✓ {t.acknowledged} {new Date(mineAck.at).toLocaleDateString()}</Badge>
-                            : <Btn size="sm" data-ack={a.num} onClick={() => setAcks([...(acks || []), { id: `${job.id}__a${a.num}__${user.id}`, jobId: job.id, num: a.num, userId: user.id, at: new Date().toISOString() }])}>✍️ {t.acknowledge}{a.num}</Btn>}
+                            : <>{mineAck0 && <div data-reack={a.num} style={{ fontSize: 13, color: styles.red, fontWeight: 600, marginBottom: 6 }}>{t.addReack}</div>}
+                              <Btn size="sm" data-ack={a.num} onClick={() => setAcks([...(acks || []).filter(k => k.id !== `${job.id}__a${a.num}__${user.id}`), { id: `${job.id}__a${a.num}__${user.id}`, jobId: job.id, num: a.num, userId: user.id, at: new Date().toISOString() }])}>✍️ {t.acknowledge}{a.num}</Btn></>}
                         </div>
                       )}
                       {isAdmin && (
                         <div style={{ marginTop: 8, fontSize: 12, color: styles.text2 }}>
-                          {allAcks.length ? `${t.ackBy}: ${allAcks.map(k => k.userCompany || k.userName).join(', ')}` : t.notAckYet}
+                          {allAcks.length ? `${t.ackBy}: ${allAcks.map(k => (k.userCompany || k.userName) + (staleAck(k) ? ' (' + t.addStale + ')' : '')).join(', ')}` : t.notAckYet}
                         </div>
+                      )}
+                      {isAdmin && editAdd === a.num && <AddendumEdit t={t} job={job} a={a} showToast={showToast} setJobs={setJobs} onClose={() => setEditAdd(null)} />}
+                      {isAdmin && (a.history || []).length > 0 && (
+                        <details data-addhist={a.num} style={{ marginTop: 8, fontSize: 12, color: styles.text2 }}>
+                          <summary style={{ cursor: 'pointer' }}>{t.addHistory} ({a.history.length})</summary>
+                          {a.history.slice().reverse().map((h, i) => (
+                            <div key={i} style={{ borderTop: `1px solid ${styles.border}`, paddingTop: 6, marginTop: 6 }}>
+                              <div><b>{t.addWas} {new Date(h.replacedAt).toLocaleString()}</b> · {h.replacedByName || h.replacedBy} · {(h.changed || []).join(' · ')}</div>
+                              {h.title && <div>{h.title}</div>}
+                              {h.dueTo && <div>⏰ {h.dueTo}</div>}
+                              {h.text && <div style={{ whiteSpace: 'pre-wrap' }}>{h.text}</div>}
+                              {(h.files || []).length > 0 && <div>📎 {h.files.map(f => f.name + ((a.files || []).some(x => (x.fileRef || x.name) === (f.fileRef || f.name)) ? '' : ' (' + t.addRemoved + ')')).join(', ')}</div>}
+                            </div>
+                          ))}
+                        </details>
                       )}
                     </div>
                   );

@@ -779,10 +779,12 @@ function noticeMail(job, what, o, es){
   const tag = [s(job.poNumber), s(job.address)].filter(Boolean).join(' · ');
   if (what === 'addendum') {
     const due = o.dueTo ? (es ? 'Nueva fecha límite: <b>' : 'The bid due date changed to <b>') + SP.esc(o.dueTo) + '</b>' + (o.dueFrom ? (es ? ' (antes ' : ' (was ') + SP.esc(o.dueFrom) + ')' : '') + '.' : '';
-    const subject = (es ? 'Adenda #' : 'Addendum #') + o.num + ' — ' + title + (tag ? ' — ' + tag : '') + (o.dueTo ? (es ? ' · fecha límite cambiada' : ' · due date changed') : '');
-    const lines = [(es ? 'GrayCo publicó la <b>adenda #' : 'GrayCo posted <b>addendum #') + o.num + '</b> ' + (es ? 'para ' : 'for ') + '<b>' + SP.esc(title) + '</b>' + (o.title ? ': ' + SP.esc(o.title) : '') + '.',
+    const upd = !!s(o.updatedAt);   /* patch ADDEDIT: an edited addendum says "updated" and asks for a new acknowledgement */
+    const subject = (es ? 'Adenda #' : 'Addendum #') + o.num + (upd ? (es ? ' actualizada' : ' updated') : '') + ' — ' + title + (tag ? ' — ' + tag : '') + (o.dueTo ? (es ? ' · fecha límite cambiada' : ' · due date changed') : '');
+    const lines = [(upd ? (es ? 'GrayCo actualizó la <b>adenda #' : 'GrayCo updated <b>addendum #') : (es ? 'GrayCo publicó la <b>adenda #' : 'GrayCo posted <b>addendum #')) + o.num + '</b> ' + (es ? 'para ' : 'for ') + '<b>' + SP.esc(title) + '</b>' + (o.title ? ': ' + SP.esc(o.title) : '') + '.',
       due, o.text ? SP.esc(s(o.text).slice(0, 1500)).replace(/\n/g, '<br>') : '', arr(o.files).length ? (es ? 'Archivos en el sitio de licitaciones: ' : 'Files on the bid site: ') + arr(o.files).map(f => SP.esc(f.name)).join(', ') : '',
-      es ? 'Entre al sitio y marque <b>Acuso recibo de la adenda</b>.' : 'Open the job on the bid site and tap <b>Acknowledge addendum #' + o.num + '</b>.'];
+      upd ? (es ? 'Entre al sitio y marque otra vez <b>Acuso recibo de la adenda</b>.' : 'Open the job on the bid site and tap <b>Acknowledge addendum #' + o.num + '</b> again.')
+        : es ? 'Entre al sitio y marque <b>Acuso recibo de la adenda</b>.' : 'Open the job on the bid site and tap <b>Acknowledge addendum #' + o.num + '</b>.'];
     return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? 'Adenda #' + o.num : 'Addendum #' + o.num, lines.filter(Boolean), { href: link, label: es ? 'Ver la adenda' : 'See the addendum' }) };
   }
   const subject = (es ? 'Novedad de GrayCo — ' : 'Update from GrayCo — ') + title + (tag ? ' — ' + tag : '');
@@ -819,6 +821,61 @@ async function addendum(who, b){
   logTo(job, who, '📎 Addendum #' + num + ' posted' + (a.dueTo ? ' — bid due changed to ' + a.dueTo : '') + ' · e-mail: ' + a.notice.status + (a.notice.n ? ' (' + a.notice.n + ')' : ''));
   await saveJob(job, who);
   return { ok: true, num, notice: a.notice, due: job.bidDueDate };
+}
+
+/* patch ADDEDIT (owner 11/23: "I need to be able to edit an addendum there too"): ✎ Edit a posted addendum — the bid site's Addenda card
+   (admin) and the CRM's 📂 Manage → 📎 Addenda. The same people who post one (an admin, an estimator, the office). Title, date, what changed,
+   files (add / take off) and the bid due date change. Every edit keeps the addendum as it was in its history (who, when, the old text and
+   files) — archived, never purged: a file taken off stays in the history and in storage. A due-date change moves the job's bid due date.
+   The addendum's updatedAt asks every sub who acknowledged it before to acknowledge it again ("Updated <date>"). The e-mail to the subs
+   about the update is off unless ticked (notify: true) and then the posting rule: it waits on ✅ Approvals, held in ⏸ data-entry mode. */
+const ADD_KEEP = ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt', 'by', 'notice', 'updatedAt', 'updatedBy'];
+async function addendumEdit(who, b){
+  if (!who.canInvite) return { code: 403, error: 'Only an admin, an estimator or the office edits addenda.' };
+  const job = await jobRow(b.jobId); if (!job || GONE.test(s(job.status))) return { code: 404, error: 'No such bid job.' };
+  const list = arr(job.addenda).slice(), i = list.findIndex(x => x && x.publishedAt && String(x.num) === String(b.num));
+  if (i < 0) return { code: 404, error: 'No such addendum.' };
+  const old = list[i], a = Object.assign({}, old), at = nowIso(), changed = [];
+  if (b.title !== undefined) a.title = s(b.title).slice(0, 200);
+  if (b.text !== undefined) a.text = s(b.text).slice(0, 8000);
+  if (b.date !== undefined) a.date = validDay(b.date) || s(old.date);
+  if (Array.isArray(b.files)) {
+    const had = {}; arr(old.files).forEach(f => { if (f) had[s(f.fileRef) || 'n:' + s(f.name)] = f; });
+    a.files = b.files.filter(Boolean).slice(0, 20).map(f => {
+      const k = s(f.fileRef) || 'n:' + s(f.name); if (had[k]) return had[k];   /* a file it already had: kept as it was */
+      return /^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(s(f.fileRef)) && s(f.fileRef).indexOf('..') < 0 ? { name: s(f.name).slice(0, 200) || 'addendum.pdf', size: Number(f.size) || 0, type: s(f.type).slice(0, 80), fileRef: s(f.fileRef) } : null;
+    }).filter(Boolean);
+  }
+  if (!s(a.text) && !s(a.title) && !arr(a.files).length) return { code: 400, error: 'Write what the addendum changes, or attach its files.' };
+  if (s(a.title) !== s(old.title)) changed.push('title');
+  if (s(a.date) !== s(old.date)) changed.push('date');
+  if (s(a.text) !== s(old.text)) changed.push('what changed');
+  const fk = l => arr(l).map(f => s(f && (f.fileRef || f.name))).join('|');
+  if (fk(a.files) !== fk(old.files)) {
+    const gone = arr(old.files).filter(f => !arr(a.files).some(x => x === f)), added = arr(a.files).filter(f => !arr(old.files).some(x => x === f));
+    changed.push('files' + (added.length ? ' +' + added.map(f => s(f.name)).join(', +') : '') + (gone.length ? ' −' + gone.map(f => s(f.name)).join(', −') : ''));
+  }
+  const nd = validDay(b.newDue), ntm = /^\d{2}:\d{2}$/.test(s(b.newDueTime)) ? s(b.newDueTime) : '';
+  if (s(b.newDue) && !nd) return { code: 400, error: 'The new bid due date is not a date.' };
+  let dueMoved = false;
+  if (nd) {
+    const from = dueText(validDay(job.bidDueDate), s(job.bidDueTime)), tm = ntm || s(job.bidDueTime), to = dueText(nd, tm);
+    if (to !== from || (s(a.dueTo) && s(a.dueTo) !== to)) {
+      if (!s(a.dueTo)) a.dueFrom = from === 'no due date' ? '' : from;   /* the date before the addendum moved it (kept from the first change) */
+      a.dueTo = to;
+      if (to !== from) { job.bidDueDate = nd; job.bidDueTime = tm; dueMoved = true; }
+      changed.push('bid due → ' + to);
+    }
+  }
+  if (!changed.length) return { ok: true, num: a.num, unchanged: true, due: job.bidDueDate };
+  const snap = {}; ADD_KEEP.forEach(k => { if (old[k] !== undefined) snap[k] = old[k]; });
+  a.history = arr(old.history).concat([Object.assign(snap, { replacedAt: at, replacedBy: who.email, replacedByName: s(who.name), changed })]).slice(-50);
+  a.updatedAt = at; a.updatedBy = who.email; a.edits = (Number(old.edits) || 0) + 1;
+  if (b.notify === true) a.notice = await queueNotice(who, job, 'addendum', a.num, a, await audience(job));
+  list[i] = a; job.addenda = list;
+  logTo(job, who, '✎ Addendum #' + a.num + ' edited: ' + changed.join(' · ') + (dueMoved ? ' — the job\'s bid due date is now ' + dueText(job.bidDueDate, job.bidDueTime) : '') + ' · e-mail: ' + (b.notify === true ? a.notice.status + (a.notice.n ? ' (' + a.notice.n + ')' : '') : 'not sent'));
+  await saveJob(job, who);
+  return { ok: true, num: a.num, changed, notice: b.notify === true ? a.notice : { status: 'not sent', n: 0 }, due: job.bidDueDate, dueTime: job.bidDueTime, updatedAt: at };
 }
 
 async function post(who, b){
@@ -1131,6 +1188,7 @@ exports.handler = async function(event){
     else if (b.op === 'plans') r = await plans(who, b);
     else if (b.op === 'scope') r = await scope(who, b);
     else if (b.op === 'addendum') r = await addendum(who, b);
+    else if (b.op === 'addendumedit') r = await addendumEdit(who, b);   /* patch ADDEDIT: ✎ Edit a posted addendum */
     else if (b.op === 'post') r = await post(who, b);
     else if (b.op === 'answer') r = await answer(who, b);
     else if (b.op === 'notice') r = await noticeAgain(who, b);
@@ -1146,7 +1204,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { addendum, subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
+exports._test = { addendum, addendumEdit, subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}
