@@ -200,7 +200,8 @@ let coreyS = '', coreyId = '';
   const tok = confirmTok(DANA);
   ok('4 … a one-time confirm link went to THAT mailbox (even in data-entry mode), only its hash is stored', !!tok && JSON.stringify(T.sp_rows).indexOf(tok) < 0, tok);
   ok('4 … no second company profile is made', !T.sp_rows.some(x => x.collection === 'users' && x.email === DANA));
-  ok('4 … the office is told (a staff-only e-mail)', MAIL.some(x => /is joining Acme Drywall LLC/.test(x.subject) && (x.to || []).every(t => /grayco-cs\.com$/.test(t))));
+  { const tl = KV.gc_office_tasks; const tasks = typeof tl === 'string' ? JSON.parse(tl) : (tl || []);   /* patch OFFICEMAIL: an office To-Do, no e-mail to the office mailbox */
+    ok('4 … the office is told (an office To-Do — no e-mail to the office mailbox)', tasks.some(x => /^teamjoin_/.test(x.id) && /is joining Acme Drywall LLC/.test(x.label)) && !MAIL.some(x => /is joining Acme Drywall LLC/.test(x.subject)), [tasks.map(x => x.label), MAIL.map(x => x.subject)]); }
   TOK['tok-dana'] = DANA;
   const u1 = await pwSignin(DANA, 'Dana-Pass-111'), u2 = await bid('tok-dana', 'me'), u3 = await bid('tok-dana', 'load', { keys: ['bids'] }), u4 = await codeSignin(DANA);
   ok('4 SECURITY: unconfirmed, they can NOT see company data — portal password 403 "check your e-mail", bid site 403, no sign-in code', u1.st === 403 && /confirm link/.test(u1.b.error) && u2.st === 403 && u3.st === 403 && JSON.stringify(u3.b).indexOf('BID1') < 0 && (u4.nomail === true || u4.st !== 200), { u1, u2, u3, u4 });

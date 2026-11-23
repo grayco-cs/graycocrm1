@@ -1261,9 +1261,9 @@ async function teamJoin(email, pw, p, comp){
   try { m = await TEAM().add(TEAM().keySub(comp.id), { name: p.name, email: email, phone: p.phone }, { email: email, name: s(p.name), role: 'signup' }, { kind: 'sub', companyName: comp.company, via: 'domain', status: 'verify', primary: { email: comp.email, phone: comp.phone } }); }
   catch (e) { const id = s(au.id || (au.user && au.user.id)); if (id) await deleteAuthUser(id); throw e; }
   const sent = await teamConfirmMail(m, m.verifyToken);
-  try { await sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE], '👥 ' + s(p.name) + ' is joining ' + s(comp.company) + ' on the portal', mailHtml('New team member (confirming their e-mail)', [
-    '<b>' + esc(p.name) + '</b> (' + esc(email) + ') signed up with the same company e-mail domain as <b>' + esc(comp.company) + '</b>. They join that company\'s portal team once they tap the confirm link sent to that address (24 hours).',
-    'See or remove them in the CRM: Admin → 🔐 Sub portal accounts → ' + esc(comp.company) + ' → 👥 Team.'], { href: crmUrl(), label: 'Open the CRM' })); } catch (e) {}
+  /* patch OFFICEMAIL: an office To-Do (was an e-mail to the office mailbox) */
+  try { await officeTodo('teamjoin_' + s(m && m.id || email), '👥 ' + s(p.name) + ' is joining ' + s(comp.company) + ' on the portal',
+    s(p.name) + ' (' + email + ') signed up with the same company e-mail domain as ' + s(comp.company) + '. They join that company\'s portal team once they tap the confirm link sent to that address (24 hours). See or remove them: Admin → 🔐 Sub portal accounts → ' + s(comp.company) + ' → 👥 Team.'); } catch (e) {}
   return { ok: true, approved: false, verify: true, sent: !!sent, joined: s(comp.company), memberId: s(m && m.id), message: TEAM_VERIFY_MSG };
 }
 const TEAM_VERIFY_MSG = 'Check your e-mail: tap the confirm link we sent to finish joining your company on the GrayCo portal (the link works for 24 hours).';
@@ -1398,8 +1398,14 @@ async function resetPassword(body){
   if (!ok) throw Fail(502, 'The e-mail could not be sent. Call GrayCo ' + OFFICE_PHONE + '.');
   return { ok: true, sent: true };
 }
+/* patch OFFICEMAIL (owner 11/23: "I don't want all these bids to clog up my office email … they go to CRM already"): the office mailbox
+   (office@ / SUBPORTAL_NOTIFY) gets no e-mail about bid-site / sub-portal events any more — sign-ups (✅ Approvals), new / late bids,
+   material quotes, messages, questions, plan requests (🔔 For you + To-Do + push for the PM / estimator), team joins (an office To-Do).
+   The owners' e-mail stays as it is. Kept: a SUPPLIER sign-up (approved automatically — no ✅ Approvals card, nothing else in the CRM). */
+function officeBox(e){ e = low(e); return !!e && (e === OFFICE || e === low(process.env.SUBPORTAL_NOTIFY)); }
+function notOffice(list){ return (Array.isArray(list) ? list : [list]).map(low).filter(function(e){ return e && !officeBox(e); }); }
 async function staffEmailsFor(job){
-  const out = [process.env.SUBPORTAL_NOTIFY || OFFICE];
+  const out = [];   /* patch OFFICEMAIL: was [SUBPORTAL_NOTIFY || office@] first */
   if (job) [job.postedBy, job.pmEmail].forEach(function(e){ if (okEmail(low(e))) out.push(low(e)); });   /* patch BIDPOST: the person who posted it and its PM hear too */
   if (job) {
     const ids = [job.pmId, job.estimatorId].filter(Boolean);
@@ -1748,7 +1754,8 @@ async function requestPlans(who, body, ctx){
     'Contact: ' + esc([rec.name, rec.phone, rec.email].filter(Boolean).join(' · ')) + (rec.trade ? ' · ' + esc(rec.trade) : ''),
     'Sent to ' + esc(contacts.map(function(c){ return c.name + ' (' + c.roles.join(', ') + ')'; }).join(', ')) + '.',
     'Answer it in the CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A (↩ Reply or ✅ Mark sent) — or add the plans / a plan link there; everyone who asked is told when they are posted.'];
-  try { rec.mailed = !!(await sendMail(contacts.map(function(c){ return c.email; }), title, mailHtml(title.replace(/^📩 /, ''), lines.filter(Boolean), { href: crmUrl(), label: 'Open the CRM' }))); } catch (e) { rec.mailed = false; }
+  try { const to = notOffice(contacts.map(function(c){ return c.email; }));   /* patch OFFICEMAIL: the office has the To-Do + 🔔 post */
+    rec.mailed = to.length ? !!(await sendMail(to, title, mailHtml(title.replace(/^📩 /, ''), lines.filter(Boolean), { href: crmUrl(), label: 'Open the CRM' }))) : false; } catch (e) { rec.mailed = false; }
   const crm = await planReqCrm(job, rec, contacts).catch(function(){ return {}; });
   /* patch SUBFLOW: the push + staff text go through the job-message rules (🌙 staff quiet hours, 🏖 Away) — was a raw push at any hour */
   try { rec.ping = !!(await sfPing(s(crm.pid) || sfPid(job), s(crm.msgId) || ('planreq_' + rec.id), contacts, rec.company + ' (' + (rec.via === 'portal' ? 'sub portal' : 'bid site') + ') on ' + s(job.title), '📩 ' + rec.company + ' asked for ' + prWhat(rec).toLowerCase() + (rec.note ? ': ' + rec.note : ''))).ok; } catch (e) {}
@@ -1879,7 +1886,7 @@ async function sfDone(kind, id, by){
     return ch ? { list: l, check: function(l2){ return l2.every(function(t){ return !t || s(t.id) !== tid || t.done; }); } } : null; }); } catch (e) {}
 }
 /* the e-mail list for a sub → GrayCo item: the old list (office, poster, PM) + the job's PM and estimator */
-async function sfEmails(job, contacts){ const base = await staffEmailsFor(job); return Array.from(new Set(base.concat((contacts || []).map(function(c){ return c.email; })))); }
+async function sfEmails(job, contacts){ const base = await staffEmailsFor(job); return notOffice(Array.from(new Set(base.concat((contacts || []).map(function(c){ return c.email; }))))); }   /* patch OFFICEMAIL: never the office mailbox (nobody else → the 🔔 post / To-Do / push only) */
 /* patch SUBFLOW: a job is past its sub due date (the bid due date + time, Central; no time = the end of that day) → no new bids or changes */
 function chiOff(d){ try { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' }).formatToParts(new Date(d + 'T18:00:00Z')).find(function(x){ return x.type === 'timeZoneName'; }); const m = /GMT([+-])(\d{1,2})/.exec(p ? p.value : ''); return m ? m[1] + ('0' + m[2]).slice(-2) + ':00' : '-06:00'; } catch (e) { return '-06:00'; } }
 function dueAt(j){   /* patch LATEBID: the due moment (ms), 0 = no due date */
@@ -1959,7 +1966,7 @@ async function notify(n){
     const owners = String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail);
     /* patch SIGNUPNOTE (owner 11/13: "make sure we get the approval notification"): a phone notice to the owners too, and the e-mail opens ✅ Approvals in the CRM */
     try { await pushTo(owners, u.role === 'supplier' ? '🧱 New supplier signed up (approved automatically)' : u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
-    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.role === 'supplier' ? '🧱 New supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
+    return sendMail((u.role === 'supplier' ? [process.env.SUBPORTAL_NOTIFY || OFFICE] : []).concat(owners), (u.role === 'supplier' ?   /* patch OFFICEMAIL: a sub's sign-up is a card in ✅ Approvals for the office — only the owners get the e-mail (a supplier's: no card, so the office keeps it) */ '🧱 New supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
       mailHtml(u.role === 'supplier' ? 'New supplier sign-up' : 'New subcontractor sign-up', [
         '<b>' + esc(u.company) + '</b>' + (u.dbaName ? ' (DBA ' + esc(u.dbaName) + ')' : ''),
         esc(u.name) + ' · ' + esc(u.email) + (u.phone ? ' · ' + esc(u.phone) : ''),
