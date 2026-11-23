@@ -79,7 +79,7 @@ ok('S2 no solicitation link; the plan link and the ticked BuildingConnected link
 ok('S3 plans: no Invitation to Bid, no Bid Form, not the one ticked hidden; M-101 + Addendum 1', SJ.plans.map(p => p.name).join('|') === 'M-101 HVAC Plan.pdf|Addendum 1.pdf', SJ.plans);
 ok('S4 plans:J1 (the files) the same two', r.b.data['plans:J1'].map(p => p.name).join('|') === 'M-101 HVAC Plan.pdf|Addendum 1.pdf', r.b.data['plans:J1']);
 ok('S5 specs: the project manual, not the instructions to bidders; GrayCo\'s scope doc, the HVAC trade scope file, the addendum files', SJ.specDocs.map(d => d.name).join() === 'Project Manual.pdf' && SJ.scopeDocs.length === 1 && SJ.tradeScopes[0].files.length === 1 && SJ.addenda[0].files.length === 1);
-ok('S6 no source link, no lead inbox record, no _estAuto, the solicitation line gone from the notes (the plan link line kept)', !('sourceLink' in SJ) && !('leadInbox' in SJ) && !('_estAuto' in SJ) && SJ.notes.indexOf(SOL) < 0 && /Plans: https:\/\/files\.demo\.test\/plans/.test(SJ.notes) && /Bid #: 26-014/.test(SJ.notes), SJ.notes);
+ok('S6 no source link, no lead inbox record, no _estAuto, the solicitation line gone from the notes (the plan link line kept)', !('sourceLink' in SJ) && !('leadInbox' in SJ) && !('_estAuto' in SJ) && SJ.notes.indexOf(SOL) < 0 && /Plans: https:\/\/files\.demo\.test\/plans/.test(SJ.notes) && !/Bid #: 26-014|From GrayCo/.test(SJ.notes) /* NOTESCLEAN: no bid # / "From GrayCo" line for subs */, SJ.notes);
 ok('S7 nothing in the sub\'s whole answer names the solicitation URL', JSON.stringify(r.b).indexOf(SOL) < 0);
 /* the admin ticks the invitation to bid visible, and hides the plan link */
 const j1 = rowData('jobs/J1');

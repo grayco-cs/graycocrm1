@@ -94,10 +94,13 @@ function make(d){
   function where(item){ const cs = [s(item.city), [s(item.state), s(item.zip)].filter(Boolean).join(' ')].filter(Boolean).join(', '); return [s(item.address), cs].filter(Boolean).join(', '); }
   function srcLink(item){ const l = arr(item.plansLinks).find(x => x && /^https?:/.test(s(x.url))); return l ? s(l.url) : ''; }
   function notesFor(item, opened){
-    const out = [opened ? 'From GrayCo Construction Services' + (s(item.bidNumber) ? ' — bid # ' + s(item.bidNumber) : '') + '.'
-      : 'Draft from the CRM Lead Inbox — ' + (s(item.source) || 'lead') + '. Check it, then open it to invited subs (private) or publish it from the CRM (Leads → the lead → 🏗 Sub bid portal).'];
-    if (item.gc) out.push('GC: ' + item.gc); if (item.owner) out.push('Owner: ' + item.owner); if (item.bidNumber) out.push('Bid #: ' + item.bidNumber);
+    /* patch NOTESCLEAN (owner 11/23: "take this out and let me edit notes too, but take out they are GC"): the notes subs read never name
+       the GC / owner / bid board, never carry the lead's internal notes or the source links, and no "From GrayCo" line — only what a sub
+       needs (pre-bid). The draft line (admins only) stays until the job is opened. */
+    const out = opened ? [] : ['Draft from the CRM Lead Inbox — ' + (s(item.source) || 'lead') + '. Check it, then open it to invited subs (private) or publish it from the CRM (Leads → the lead → 🏗 Sub bid portal).'];
     if (item.preBid) out.push('Pre-bid: ' + item.preBid.replace('T', ' ') + (item.preBidLocation ? ' at ' + item.preBidLocation : '') + (item.preBidMandatory ? ' (MANDATORY)' : ''));
+    if (opened) return out.join('\n').slice(0, 6000);
+    if (item.gc) out.push('GC: ' + item.gc); if (item.owner) out.push('Owner: ' + item.owner); if (item.bidNumber) out.push('Bid #: ' + item.bidNumber);
     if (item.flag) out.push(item.flag);
     arr(item.plansLinks).slice(0, 8).forEach(l => out.push((l.board || l.label || 'Link') + ': ' + l.url));
     arr(item.notes).slice(-6).forEach(n => out.push(s(n)));
@@ -111,7 +114,7 @@ function make(d){
       createdBy: 'lead-inbox', createdByName: 'CRM Lead Inbox', createdAt: nowIso() };
     const j = Object.assign({}, base, {
       title: s(item.title).slice(0, 200), address: where(item), bidDueDate: dd.day, bidDueTime: dd.time,
-      scope: (prev && prev.crmScope) ? prev.scope : s(item.scope), notes: notesFor(item, !!(prev && prev.draft === false)) + (prev && arr(prev.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + prev.crmNotes.map(n => '• ' + n).join('\n') : ''), tradesSought: arr(item.trades).join(', '),
+      scope: (prev && prev.crmScope) ? prev.scope : s(item.scope), notes: (prev && prev.notesEditedAt) ? s(prev.notes) /* NOTESCLEAN: notes a person typed stay */ : notesFor(item, !!(prev && prev.draft === false)) + (prev && arr(prev.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + prev.crmNotes.map(n => '• ' + n).join('\n') : ''), tradesSought: arr(item.trades).join(', '),
       grayCoRole: item.gc ? 'sub' : (prev && prev.grayCoRole) || 'gc', sourceLink: srcLink(item),
       plans: keepVis(plansMeta, prev && prev.plans), specDocs: keepVis(specs, prev && prev.specDocs),   /* patch BIDVIS: an admin's "Visible to subs" tick stays */
       leadInbox: { id: item.id, source: s(item.source), type: s(item.type), bidNumber: s(item.bidNumber), alsoOn: arr(item.alsoOn), rev: item.rev || 1 },
@@ -229,7 +232,7 @@ function make(d){
       if (o.auto) job.autoPrivate = true;
       Object.assign(job, { status: CLOSEDRE.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: s(who && who.email) || 'staff' });
     }
-    job.notes = notesFor(item, job.draft === false) + (arr(job.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + job.crmNotes.map(n => '• ' + n).join('\n') : '');
+    if (!job.notesEditedAt) job.notes = notesFor(item, job.draft === false) + (arr(job.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + job.crmNotes.map(n => '• ' + n).join('\n') : '');
     job.updatedAt = nowIso();
     await putRows([{ collection: 'jobs', id: r.jobId, job_id: r.jobId, data: job }]);
     return { ok: true, jobId: r.jobId, state: job.draft === false ? (job.visibility === 'public' ? 'public' : 'private') : 'draft', visibility: job.visibility, files: r.files || 0 };

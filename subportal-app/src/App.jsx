@@ -823,6 +823,8 @@ function TradeChips({ picked, onChange }) {
 const ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
 /* patch PLANREQ-B (owner 11/12: "make sure I can add all types of files"): every common type on a bid job — 50 MB each, bigger → a 🔗 link */
 const ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip,.msg,.eml,.odt,.ods,.pages,application/pdf,image/*';   /* patch SUBFLOW: + .msg / .eml / .odt / .ods / .pages (an addendum is often an e-mail) */
+/* patch NOTESCLEAN: the lines the CRM Lead Inbox wrote that subs must never see (who the GC / owner is, the draft note) */
+function cleanNotes(n) { return String(n || '').split('\n').filter(l => !/^\s*(from grayco construction services\b|draft from the crm lead inbox|gc:|owner:|bid #:|general contractor:)/i.test(l)).join('\n').replace(/^\s+|\s+$/g, ''); }
 const ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip|msg|eml|odt|ods|pages)$/i;
 /* patch SUBFLOW: "Addendum 2.pdf" / "ADD-01 …" / "Addendum #3" → its number (0: an addendum, no number); null: not an addendum (the server's addendumNum) */
 function addendumNum(n) { const w = String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/_+/g, ' '); const m = /\baddend(?:um|a)\b\s*(?:no\.?|number|#)?\s*0*(\d{1,2})\b/i.exec(w) || /(?:^|[^A-Za-z])add\s*[-#.]?\s*0*(\d{1,2})(?:\b|[^0-9])/i.exec(w); if (m) return parseInt(m[1], 10); return /\baddend(?:um|a)\b/i.test(w) ? 0 : null; }
@@ -2842,6 +2844,7 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink, onAd
    ============================================================ */
 function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJobs, users, subDocs, estimates, setEstimates, activity, setActivity, invites, setInvites, messages, setMessages, questions, setQuestions, acks, setAcks, mquotes, setMquotes, setView }) {
   const isAdmin = user.role === 'admin';
+  const [notesEdit, setNotesEdit] = useState(null);   /* patch NOTESCLEAN */
   const isSupplier = user.role === 'supplier';   /* patch SUPPLIER */
   const myBid = bids.find(b => b.jobId === job.id && b.userId === user.id);
   const jobBids = bids.filter(b => b.jobId === job.id);
@@ -3050,7 +3053,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       tradeScopes: job.tradeScopes || [],
       scope: job.scope || '',
       specifications: job.specifications || '',
-      notes: job.notes || '',
+      notes: cleanNotes(job.notes),   /* patch NOTESCLEAN: no GC / owner / "From GrayCo" lines to carry over */
     });
     setEditing(true);
   }
@@ -3080,6 +3083,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       scope: editForm.scope,
       specifications: editForm.specifications,
       notes: editForm.notes,
+      ...(editForm.notes !== (job.notes || '') ? { notesEditedAt: new Date().toISOString(), notesEditedBy: user.name } : {}),   /* patch NOTESCLEAN: typed notes are kept (the CRM's refresh never rewrites them) */
       updatedAt: new Date().toISOString(),
       updatedBy: user.name,
     } : j));
@@ -3736,10 +3740,24 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             </Card>
           )}
 
-          {job.notes && (
-            <Card style={{ marginBottom: 16 }}>
-              <h3 style={sectionTitleStyle}><MessageSquare size={18} /> {t.notes}</h3>
-              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: styles.text }}>{job.notes}</div>
+          {/* patch NOTESCLEAN (owner 11/23: "take this out and let me edit notes too, but take out they are GC"): no GC / owner / "From
+              GrayCo" lines; an admin edits the notes right here */}
+          {(cleanNotes(job.notes) || isAdmin) && (
+            <Card style={{ marginBottom: 16 }} data-notes-card="1">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <h3 style={{ ...sectionTitleStyle, marginBottom: 0 }}><MessageSquare size={18} /> {t.notes}</h3>
+                {isAdmin && notesEdit === null && <Btn size="sm" variant="secondary" data-notes-edit="1" onClick={() => setNotesEdit(cleanNotes(job.notes))}>✎ {t.editNotes || 'Edit notes'}</Btn>}
+              </div>
+              {notesEdit === null
+                ? (cleanNotes(job.notes) ? <div data-notes-text="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: styles.text, marginTop: 10 }}>{cleanNotes(job.notes)}</div>
+                  : <div style={{ color: styles.text2, fontSize: 13, marginTop: 10 }}>{t.noNotes || 'No notes yet — subs see what you write here.'}</div>)
+                : <div style={{ marginTop: 10 }}>
+                    <textarea data-notes-input="1" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', minHeight: 90, resize: 'vertical' }} value={notesEdit} onChange={e => setNotesEdit(e.target.value)} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <Btn size="sm" data-notes-save="1" onClick={() => { const v = notesEdit; setJobs(jobs.map(j => j.id === job.id ? { ...j, notes: v, notesEditedAt: new Date().toISOString(), notesEditedBy: user.name, updatedAt: new Date().toISOString(), updatedBy: user.name } : j)); setNotesEdit(null); showToast(t.notesSaved || 'Notes saved — subs see them now.'); }}>{t.save || 'Save'}</Btn>
+                      <Btn size="sm" variant="ghost" onClick={() => setNotesEdit(null)}>{t.cancel || 'Cancel'}</Btn>
+                    </div>
+                  </div>}
             </Card>
           )}
 
@@ -5076,6 +5094,44 @@ function SupplierWork({ t, user, asAdmin = false }) {
     </div>
   );
 }
+/* patch MOVESUP (owner 11/23: "be able to move people to a supplier if I click their profile, also have their profile with phone number etc
+   up top where that docs button is and be able to move them to supplier there"): 👤 Profile on each approved sub / supplier card — the
+   contact, phone, e-mail, company, address, trades, license, website, when they joined — and ↔ Move to supplier / back to subs (asked
+   inline first; the server keeps who / when). */
+function ProfileBox({ u, users, setUsers, showToast, to }) {
+  const [open, setOpen] = useState(false), [ask, setAsk] = useState(false);
+  const tel = String(u.phone || '').replace(/[^\d+]/g, '');
+  const addr = [u.businessAddress, [u.businessCity, u.businessState].filter(Boolean).join(', '), u.businessZip].filter(Boolean).join(' ');
+  const row = (k, v) => v ? <div style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0' }}><span style={{ color: styles.text2, minWidth: 92 }}>{k}</span><span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{v}</span></div> : null;
+  function move() {
+    setUsers(users.map(x => x.id === u.id ? { ...x, role: to, _moveTo: to } : x));
+    setAsk(false); setOpen(false);
+    showToast(to === 'supplier' ? (u.company || u.name) + ' moved to Suppliers.' : (u.company || u.name) + ' moved to Subcontractors.');
+  }
+  return (
+    <div data-profile={u.id} style={{ marginBottom: 8 }}>
+      <Btn size="sm" variant="secondary" data-profile-open={u.id} onClick={() => setOpen(!open)}>👤 {open ? 'Hide profile' : 'Profile'}</Btn>
+      {open && <div data-profile-box={u.id} style={{ marginTop: 8, padding: 10, border: `1px solid ${styles.border}`, borderRadius: 8, background: styles.cream }}>
+        {row('Contact', [u.name, u.contactTitle].filter(Boolean).join(' · '))}
+        {row('Phone', tel ? <a href={'tel:' + tel} style={{ color: styles.accentDk, fontWeight: 700 }}>{u.phone}</a> : '')}
+        {row('E-mail', u.email ? <a href={'mailto:' + u.email} style={{ color: styles.accentDk }}>{u.email}</a> : '')}
+        {row('Company', [u.company, u.dbaName && 'DBA ' + u.dbaName].filter(Boolean).join(' · '))}
+        {row('Address', addr)}
+        {row('Trades', (u.trades || []).join(', '))}
+        {row('License', u.licenseNumbers || u.license)}
+        {row('Website', u.website)}
+        {row('Joined', u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '')}
+        <div style={{ marginTop: 8 }}>
+          {!ask ? <Btn size="sm" variant="ghost" data-move={to} onClick={() => setAsk(true)}>{to === 'supplier' ? '🧱 Move to supplier' : '🔨 Move to subcontractor'}</Btn>
+            : <div data-move-ask={to} style={{ fontSize: 13 }}>
+                {to === 'supplier' ? 'Move ' + (u.company || u.name) + ' to Suppliers? They will see the jobs open for material quotes and send quotes, not labour bids.' : 'Move ' + (u.company || u.name) + ' back to Subcontractors? They will see jobs to bid on for their trades.'}
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}><Btn size="sm" data-move-yes={to} onClick={move}>Yes, move</Btn><Btn size="sm" variant="ghost" onClick={() => setAsk(false)}>Cancel</Btn></div>
+              </div>}
+        </div>
+      </div>}
+    </div>
+  );
+}
 function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
   const list = users.filter(u => u.role === 'supplier' && u.approved);
   const [vendors, setVendors] = useState(null), [work, setWork] = useState(null);
@@ -5099,7 +5155,8 @@ function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
                 <Badge color={w9 ? styles.green : styles.text2}>{w9 ? '✓ W-9' : 'No W-9'}</Badge>
               </div>
               <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
-              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6, marginBottom: 8 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="sub" />
               {u.trades?.length > 0 && <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>{u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}</div>}
               <Field label={t.crmVendor}>
                 <select style={{ ...inputStyle, marginTop: 4 }} data-crm-vendor={u.id} value={u.crmVendorId || ''} onChange={e => link(u.id, e.target.value)}>
@@ -5334,7 +5391,8 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
                   : <Badge color={styles.red}>! Docs</Badge>}
               </div>
               <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
-              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6 }}>{u.email}</div>
+              <div style={{ fontSize: 12, color: styles.text2, marginTop: 6, marginBottom: 8 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
+              <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="supplier" />
               {u.trades?.length > 0 && (
                 <div style={{ marginTop: 10, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   {u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}
