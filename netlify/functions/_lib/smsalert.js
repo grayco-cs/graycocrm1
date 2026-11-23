@@ -1357,6 +1357,7 @@ async function speedText(kind, x){
     text = 'GrayCo: ⏰ reach out — ' + label + (code ? ' ' + code : '') + ' ' + w.line + ' was given to you ' + ago + ' ago and is not marked contacted. Call them, then tap ✅ Contacted' + (LWc().isLsa(l) && code ? ' (or reply BAD ' + code + ' <why> if it is not a real lead)' : '') + ': ' + link;
     only = [low(x.assigneeEmail)];
   } else if (kind === 'pm48') {
+    return { skipped: 'off (owner 11/22: never send the 48 h "has not contacted" alert)' };   /* QUIETSAT */
     text = 'GrayCo: ⚠️ ' + clip(s(x.assignee) || 'The PM', 24) + ' has not contacted ' + label + (code ? ' ' + code : '') + ' ' + w.line + ' — given to them ' + ago + ' ago. ' + link;
     only = owners.map(o => o.email).filter(e => e !== low(x.assigneeEmail));
   } else return { skipped: 'kind' };

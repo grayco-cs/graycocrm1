@@ -169,13 +169,11 @@ const BARTLETT = { id: 'LI-a3dfebd4', title: 'Generator-Animal Shelter', source:
   ok(!toPh(PAT).length, 'once per lead and PM');
   T += 23 * H + 59 * 60e3; MAIL.length = 0; await A.speedToLead(src(), T);
   ok(!toPh(PAT).length && !toPh(O1).length, '23:59 after the assignment → no text (the 4 h reminder is an e-mail to Pat)', { sms: SMS, mail: MAIL.map(m => m.subject) });
-  ok(MAIL.some(m => /⏰ Reach out: /.test(m.subject) && [].concat(m.to).includes(EM.pat)), 'the 4 h reach-out e-mail went to Pat', MAIL.map(m => [m.subject, m.to]));
+  ok(!MAIL.some(m => /⏰ Reach out: /.test(m.subject) && [].concat(m.to).includes(EM.pat)), 'QUIETSAT: this is Saturday 11 AM — the 4 h reach-out e-mail to Pat is held (no Saturday notifications)', MAIL.map(m => [m.subject, m.to]));
   T += 60e3; await A.speedToLead(src(), T);
-  const pr = (toPh(PAT)[0] || {}).Body || '';
-  ok(/^GrayCo: ⏰ reach out — GrayCo website lead [A-Z0-9]{4} Cus Tomer1 📞 \(901\) 555-7002 was given to you 24 h ago and is not marked contacted/.test(pr) && !toPh(O1).length, '24 h after the assignment, not contacted → Pat\'s "⏰ reach out" (not the owners)', { pr, o1: toPh(O1) });
+  ok(!toPh(PAT).length && !toPh(O1).length, 'QUIETSAT: Saturday — the 24 h "reach out" text is held, nothing sent', SMS);
   SMS.length = 0; T = THU10 + 25 * H + 48 * H; await A.speedToLead(src(), T);
-  const o48 = (toPh(O1)[0] || {}).Body || '';
-  ok(/^GrayCo: ⚠️ Pat Miller has not contacted GrayCo website lead [A-Z0-9]{4} Cus Tomer1/.test(o48) && toPh(O2).length === 1 && !toPh(PAT).length, '48 h → both owners: "⚠️ Pat Miller has not contacted …"', { o48, all: SMS });
+  ok(!toPh(O1).length && !toPh(O2).length, 'QUIETSAT (owner 11/22): the 48 h "<PM> has not contacted" alert is never sent to the owners', SMS);
   SMS.length = 0; W1 = Object.assign({}, W1, { contactedAt: iso(T) }); T += 24 * H; await A.speedToLead(src(), T);
   ok(!SMS.length, 'contacted → nothing more');
   /* quiet hours: 4 h after a 6 PM lead is 10 PM → held; 7:10 AM → sent */

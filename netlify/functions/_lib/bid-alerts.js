@@ -814,7 +814,7 @@ function make(d){
     if (!x.assignee) { const a = (t - x.born) / H; return a >= STL_SECOND_H ? ['unasg24', 'unasg'] : a >= STL_FIRST_H ? ['unasg'] : []; }
     if (!x.assigneeEmail) return [];
     const from = isFinite(x.asgAt) ? x.asgAt : x.born, a = (t - from) / H;
-    return a >= STL_OWNER_H ? ['pm48', 'pm24', 'pm4'] : a >= STL_SECOND_H ? ['pm24', 'pm4'] : a >= STL_FIRST_H ? ['pm4'] : [];   /* LEADWATCH: + 48 h → the owners */
+    return a >= STL_SECOND_H ? ['pm24', 'pm4'] : a >= STL_FIRST_H ? ['pm4'] : [];   /* QUIETSAT (owner 11/22: "I don't want that notification at all ever"): the 48 h "<PM> has not contacted …" alert to the owners is gone (text and e-mail) */
   }
   function stlKey(x, k){ return 'stl|' + k + '|' + x.key + (/^pm/.test(k) ? '|' + x.assigneeEmail : ''); }
   async function speedToLead(src, t){
