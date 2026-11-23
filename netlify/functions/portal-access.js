@@ -1805,7 +1805,7 @@ async function pBidJobs(sub){
   const signQ = [];   /* patch PLANREQ-C: trade scope files to sign */
   const reqs = {};   /* patch PLANREQ: their own 📩 requests only */
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'planreqs'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ reqs[s(r.job_id)] = HUB().subReqView(r.data); }); } catch (e) {} }
-  const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); });
+  const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); if (arr(views[id].addenda).length) signQ.push(views[id].addenda); });   /* patch SUBFLOW: + the published addenda's files */
   if (signQ.length) { try { await HUB().signAll(signQ); } catch (e) {} }   /* patch PLANREQ-C: their trades' scope files, as 8-hour links */
   const jobs = ids.map(function(id){
     const j = views[id], b = mine[id] || null, open = !!sc.biddable[id];
@@ -1815,6 +1815,8 @@ async function pBidJobs(sub){
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
       details: detailsOut(j), biddingClosed: !!j.biddingClosed,   /* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details (never internal notes / the RSVP list) */
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null,
+      addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30),
+        files: arr(a.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Addendum', url: f.dataUrl } : null; }).filter(Boolean) }; }),   /* patch SUBFLOW: 📎 Addenda (as on the bid site) */
       messages: (msgs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), pastDue: !!j.pastDue || (!open && !j.biddingClosed && !!HUB().dueOver(sc.jobs[id].data || {})) };   /* patch SUBFLOW */
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });

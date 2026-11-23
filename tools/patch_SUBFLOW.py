@@ -32,6 +32,17 @@ NEW = "+'</div><div style=\"font-size:9px;color:#94a3b8;margin-top:1px\">'+esc(w
 if NEW not in t:
     t = once(t, OLD, NEW)
 
+# 2. the CRM's plan uploads (Subs tab ⬆ Upload plans, 🏗 Bid portal → 📂 Manage → 📐 Plans & specs): a file named as an addendum is not filed
+#    with the plans (subportal.js plans-import) — it is posted as that addendum (bid-hub op addendum, after a yes) instead of being dropped
+OLD2 = "    added += (r.data.added || []).length; told += r.data.notified || 0; (r.data.skipped || []).forEach(function(x){ left.push(x.name); });"
+NEW2 = "    added += (r.data.added || []).length; told += r.data.notified || 0; (r.data.skipped || []).forEach(function(x){ left.push(x.name); }); if ((r.data.addenda || []).length && window._gcSubflow) await window._gcSubflow.addenda(jobId, r.data.addenda);   /* SUBFLOW: an addendum goes under 📎 Addenda */"
+if NEW2 not in t:
+    t = once(t, OLD2, NEW2)
+OLD3 = "      var r = await bidApi(body); added += arr(r.added).length; scoped += arr(r.scoped).length;"
+NEW3 = "      var r = await bidApi(body); added += arr(r.added).length; scoped += arr(r.scoped).length; if (arr(r.addenda).length && W._gcSubflow) await W._gcSubflow.addenda(M.jobId, r.addenda);   /* SUBFLOW: an addendum goes under 📎 Addenda */"
+if NEW3 not in t:
+    t = once(t, OLD3, NEW3)
+
 JS = r"""
 (function(W, D){
 'use strict';
@@ -117,7 +128,20 @@ D.addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('[data-sfr]') : null; if (!b) return;
   e.preventDefault(); e.stopPropagation(); sheet(b.getAttribute('data-sfr'));
 }, true);
-W._gcSubflow = { btn: btn, what: what, sheet: sheet };
+/* a file the bid site's plans-import recognised as an addendum ("Addendum 2.pdf", "ADD-01 …"): post it as that addendum (a person's yes) */
+function addenda(jobId, list){
+  var go = Promise.resolve();
+  (list || []).forEach(function(f){
+    go = go.then(function(){
+      var n = +f.num || 0;
+      if (!W.confirm('📎 ' + s(f.name) + ' looks like an addendum' + (n ? ' (#' + n + ')' : '') + '.\n\nPost it under 📎 Addenda on the bid site' + (n ? ' as Addendum #' + n : '') + '? The subs who can see the job are e-mailed after ✅ Approvals.\n\nCancel = leave it off the job.')) return;
+      return post({ op: 'addendum', jobId: jobId, num: n || undefined, title: s(f.name).replace(/\.[A-Za-z0-9]{1,5}$/, ''), files: [{ name: f.name, size: f.size, type: f.type, fileRef: f.fileRef }], notify: true })
+        .then(function(r){ toast('📎 Addendum #' + r.num + ' posted' + (r.notice && r.notice.status === 'held' ? ' — e-mail held (data-entry mode)' : r.notice && r.notice.status === 'waiting' ? ' — e-mail waits on ✅ Approvals' : '')); }, function(e){ toast(s(e && e.message) || 'The addendum was not posted', true); });
+    });
+  });
+  return go;
+}
+W._gcSubflow = { btn: btn, what: what, sheet: sheet, addenda: addenda };
 try { console.log('[GC] ↩ Reply to the sub from the job thread (patch SUBFLOW): _gcSubflow'); } catch (e) {}
 })(window, document);
 """

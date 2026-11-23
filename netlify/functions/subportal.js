@@ -1312,6 +1312,13 @@ const zlib = require('zlib');
 /* patch PLANREQ-B: every common file type (was PDF / pictures / DWG only) — the ZIP itself is unpacked, not stored */
 const PLAN_EXT = (function(){ const T = require('./_lib/tradeguess.js').TYPES, o = {}; Object.keys(T).forEach(function(k){ if (k !== 'zip') o[k] = T[k]; }); return o; })();
 const ZIP_LIMITS = { files: 300, total: 250 * 1024 * 1024, each: MAX_FILE };
+/* patch SUBFLOW: "Addendum 2.pdf", "ADD-01 Revised doors.pdf", "Addendum #3", "Addenda No. 4" → its number (0 = an addendum with no number); null = not an addendum */
+function addendumNum(n){
+  const w = s(n).replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/[_]+/g, ' ');
+  let m = /\baddend(?:um|a)\b\s*(?:no\.?|number|#)?\s*0*(\d{1,2})\b/i.exec(w) || /(?:^|[^A-Za-z])add\s*[-#.]?\s*0*(\d{1,2})(?:\b|[^0-9])/i.exec(w);
+  if (m) return parseInt(m[1], 10);
+  return /\baddend(?:um|a)\b/i.test(w) ? 0 : null;
+}
 function extOf(n){ const m = /\.([A-Za-z0-9]{2,5})$/.exec(s(n)); return m ? m[1].toLowerCase() : ''; }
 /* a small ZIP reader (stored + deflate; no encryption, no ZIP64) — every size is checked before anything is unpacked */
 function unzip(buf){
@@ -1394,6 +1401,10 @@ async function plansImport(who, body){
   const job = await getRow('jobs', jobId); if (!job) throw Fail(404, 'That bid job is not in the bid site.');
   if (!/^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(ref) || ref.indexOf('..') > -1) throw Fail(400, 'Upload the file first.');
   const name = s(body.name) || ref.split('/').pop(), ext = extOf(name);
+  /* patch SUBFLOW (owner 11/23: "when I put an addendum it should put it under Addendums on the bid portal"): a file named as an addendum
+     is never filed with the plans — it is posted as that addendum (subportal 'addendum-post'); the page asks first */
+  if (ext !== 'zip' && addendumNum(name) !== null && body.asPlan !== true) return { ok: true, added: [], scoped: [], skipped: [], total: (await plansOf(jobId)).length, notified: 0,
+    addenda: [{ name: name, fileRef: ref, size: Number(body.size) || 0, type: PLAN_EXT[ext] || 'application/octet-stream', num: addendumNum(name) }] };
   const have = await plansOf(jobId), known = {}; have.forEach(function(x){ if (x && x.sha) known[x.sha] = 1; });
   const jd = Object.assign({}, job.data); jd.tradeScopes = arr(jd.tradeScopes).map(function(x){ return Object.assign({}, x, { files: arr(x.files).slice() }); });
   const added = [], skipped = [], toScope = [];
@@ -2620,6 +2631,13 @@ exports.handler = async function (event) {
     }
     if (action === 'request-plans') return J(200, await requestPlans(who, body, ctx));
     if (action === 'plans-zip') return J(200, await plansZip(who, body, ctx));   /* patch SUBFLOW: ⬇ All plans (ZIP) */
+    if (action === 'addendum-post') {   /* patch SUBFLOW: 📎 Post addendum on the bid site — the CRM's own rule and code (bid-hub op addendum: who may, the number, the e-mail on ✅ Approvals / held in ⏸) */
+      if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
+      const BH = require('./bid-hub.js')._test, bw = await BH.whoIs(event);
+      if (!bw.ok) return J(bw.code || 401, { error: bw.error });
+      const r = await BH.addendum(bw, body);
+      return r.code ? J(r.code, { error: r.error }) : J(200, r);
+    }
     if (action === 'plans-guess') {   /* patch PLANREQ-C: the trade / kind of each file before it is saved */
       if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
       return J(200, await plansGuess(who, body));
@@ -2663,7 +2681,7 @@ exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUploa
 exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 exports._hub.tradeFit = tradeFit; exports._hub.jobTrades = jobTrades;   /* patch TRADEVIS */
-Object.assign(exports._hub, { sfTell, sfDone, sfPing, sfPid, dueOver, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */
+Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

@@ -808,7 +808,8 @@ async function addendum(who, b){
   if (!text && !title && !arr(b.files).length) return { code: 400, error: 'Write what the addendum changes, or attach its files.' };
   const files = arr(b.files).filter(f => f && /^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(s(f.fileRef)) && s(f.fileRef).indexOf('..') < 0)
     .slice(0, 20).map(f => ({ name: s(f.name).slice(0, 200) || 'addendum.pdf', size: Number(f.size) || 0, type: s(f.type).slice(0, 80), fileRef: s(f.fileRef) }));
-  const num = Math.max(0, ...arr(job.addenda).map(a => Number(a && a.num) || 0)) + 1;
+  const used = arr(job.addenda).map(a => Number(a && a.num) || 0), want = parseInt(b.num, 10);
+  const num = want >= 1 && want <= 99 && used.indexOf(want) < 0 ? want : Math.max(0, ...used) + 1;   /* patch SUBFLOW: the number the file says (Addendum #2), else the next */
   const a = { num, date: s(b.date).slice(0, 10) || nowIso().slice(0, 10), title, text, files, publishedAt: nowIso(), by: who.email };
   const nd = s(b.newDue).slice(0, 10);
   if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd) && nd !== s(job.bidDueDate)) { a.dueFrom = s(job.bidDueDate) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); job.bidDueDate = nd; if (s(b.newDueTime)) job.bidDueTime = s(b.newDueTime).slice(0, 5); a.dueTo = nd + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
@@ -1145,7 +1146,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
+exports._test = { addendum, subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

@@ -14,6 +14,8 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(process.argv[2] || path.join(path.dirname(fileURLToPath(import.meta.url)), '../..'));
 const FN = path.join(ROOT, 'netlify/functions');
 let pass = 0, fail = 0; const ST = {};
+const NOB = process.argv.includes('--no-browser');
+function HNB(){ if (NOB) return false; try { require(path.join(process.env.NODE_PATH || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/node_modules', 'playwright')); return true; } catch (e) { return false; } }
 const R = [];
 async function t(name, fn){ Object.keys(ST).forEach(k => delete ST[k]); /* each step is a new moment: the 5-minute throttle of the job-message rules starts over */ try { await fn(); pass++; R.push(['PASS', name]); console.log('  ✓', name); } catch (e) { fail++; R.push(['FAIL', name]); console.log('  ✗', name, '\n     ', e && e.message ? e.message.slice(0, 900) : e); } }
 function eq(a, b, m){ if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error((m || '') + ' got ' + JSON.stringify(a) + ' want ' + JSON.stringify(b)); }
@@ -58,6 +60,7 @@ const J = {
   JX: { id: 'JX', title: 'Private Demo Job', bidDueDate: day(6), status: 'open', visibility: 'private', tradesSought: 'Drywall' },
   JI: { id: 'JI', title: 'Invited Demo Job', bidDueDate: day(6), status: 'open', visibility: 'private', tradesSought: 'Drywall', crmProjectId: 'P1' },
   JL: { id: 'JL', title: 'Late Demo Job', bidDueDate: day(-2), status: 'open', visibility: 'public', tradesSought: 'Drywall', crmProjectId: 'P1' },
+  JA: { id: 'JA', title: 'Addenda Demo Job', address: '9 Addenda Way', bidDueDate: day(8), status: 'open', visibility: 'public', tradesSought: 'Drywall', crmProjectId: 'P1', estimatorId: est },
   JC: { id: 'JC', title: 'Closed Demo Job', bidDueDate: day(6), status: 'open', visibility: 'public', tradesSought: 'Drywall', biddingClosed: true, crmProjectId: 'P1' } };
 Object.values(J).forEach(j => T.sp_rows.push(spRow('jobs', j.id, j, { job_id: j.id })));
 T.sp_rows.push(spRow('invites', 'inv_ai', { id: 'inv_ai', jobId: 'JI', email: U.A.email }, { job_id: 'JI', email: U.A.email }));
@@ -107,6 +110,8 @@ global.fetch = async (url, init) => {
   }
   if (u.pathname === '/rest/v1/gc_lead_inbox_kv') return res(200, []);
   let mm;
+  if ((mm = /^\/storage\/v1\/object\/upload\/sign\/([^/]+)\/(.+)$/.exec(u.pathname)) && m === 'POST') return res(200, { url: '/object/upload/sign/' + mm[1] + '/' + mm[2] + '?token=up' });
+  if ((mm = /^\/storage\/v1\/object\/upload\/sign\/([^/]+)\/(.+)$/.exec(u.pathname)) && m === 'PUT') { STORE.set(mm[1] + '/' + mm[2].split('/').map(decodeURIComponent).join('/'), Buffer.from(init.body || '')); return res(200, { Key: mm[2] }); }
   if ((mm = /^\/storage\/v1\/object\/sign\/([^/]+)$/.exec(u.pathname))) { const b = JSON.parse(init.body); return res(200, (b.paths || []).map(p => ({ path: p, signedURL: '/object/sign/' + mm[1] + '/' + p + '?token=signed' }))); }
   if ((mm = /^\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/.exec(u.pathname))) { const b = STORE.get(mm[1] + '/' + decodeURIComponent(mm[2])); return b ? res(200, b) : res(404, {}); }
   if ((mm = /^\/storage\/v1\/object\/([^/]+)\/(.+)$/.exec(u.pathname))) {
@@ -168,15 +173,15 @@ const NEVER_SUB = ['INTERNAL-LOG-ZZ', 'INTERNAL-NOTE-ZZ', '98765', 'DRAFT-SECRET
 const clean = (raw, extra) => { const bad = NEVER_SUB.concat(extra || []).filter(w => raw.indexOf(w) >= 0); if (bad.length) throw new Error('a sub saw: ' + bad.join(', ')); };
 
 console.log('\n1. find and open a job (TRADEVIS; details, scope, due date)');
-await t('1a bid site: A (Drywall) sees J1, JI (invited), JL, JC — never the draft, the uninvited private job or the paint-only job; J1 details are right', async () => {
+await t('1a bid site: A (Drywall) sees J1, JA, JI (invited), JL, JC — never the draft, the uninvited private job or the paint-only job; J1 details are right', async () => {
   const r = await bid(U.A.email, 'load', { keys: ['jobs'] }); eq(r.code, 200, r.raw);
-  const ids = r.j.data.jobs.map(j => j.id).sort(); eq(ids, ['J1', 'JC', 'JI', 'JL']);
+  const ids = r.j.data.jobs.map(j => j.id).sort(); eq(ids, ['J1', 'JA', 'JC', 'JI', 'JL']);
   const j = r.j.data.jobs.find(x => x.id === 'J1'); eq([j.title, j.bidDueDate, j.bidDueTime, j.scope, j.tradeScopes.map(x => x.scope)], [J.J1.title, J.J1.bidDueDate, '14:00', J.J1.scope, ['DRYWALL: hang, tape, Level 4.']]);
   clean(r.raw);
 });
-await t('1b sub portal 📋 Jobs to bid: the same four for A, the same details; C (Paint + Drywall) sees JP too', async () => {
+await t('1b sub portal 📋 Jobs to bid: the same five for A, the same details; C (Paint + Drywall) sees JP too', async () => {
   const r = await portal('A', 'p-bidjobs'); eq(r.code, 200, r.raw);
-  eq(r.j.jobs.map(j => j.id).sort(), ['J1', 'JC', 'JI', 'JL']);
+  eq(r.j.jobs.map(j => j.id).sort(), ['J1', 'JA', 'JC', 'JI', 'JL']);
   const j = r.j.jobs.find(x => x.id === 'J1'); eq([j.bidDueDate, j.scope, j.canBid, j.invited], [J.J1.bidDueDate, J.J1.scope, true, false]);
   eq(r.j.jobs.find(x => x.id === 'JI').invited, true, 'JI invited');
   clean(r.raw);
@@ -379,7 +384,7 @@ await t('7a a supplier\'s material quote → Pat + Eve hear (🔔 + push), the s
 console.log('\n8. 👥 team members (PORTALTEAM): Mo acts for Alpha Drywall');
 await t('8a Mo on the bid site: sees the company\'s jobs (incl. the INVITED private one), downloads plans, asks → Pat + Eve hear; the answer reaches Mo and Al', async () => {
   const r = await bid(MO, 'load', { keys: ['jobs', 'plans:J1'] }); eq(r.code, 200, r.raw);
-  eq(r.j.data.jobs.map(j => j.id).sort(), ['J1', 'JC', 'JI', 'JL']); yes(r.j.data['plans:J1'].length === 2, 'plans');
+  eq(r.j.data.jobs.map(j => j.id).sort(), ['J1', 'JA', 'JC', 'JI', 'JL']); yes(r.j.data['plans:J1'].length === 2, 'plans');
   const nm = newMsgs(); const id = 'q_mo_' + Date.now().toString(36);
   const q = await bid(MO, 'save', { key: 'questions', upsert: [{ id, jobId: 'JI', body: 'Mo here: is the soffit included?' }] }); eq(q.code, 200, q.raw);
   const m = nm().find(x => x.sf && x.sf.id === id); yes(m, 'post'); eq(told(m), [PAT], 'JI has no estimator set: its PM');
@@ -387,7 +392,7 @@ await t('8a Mo on the bid site: sees the company\'s jobs (incl. the INVITED priv
   for (const e of [MO, U.A.email]) { const b = await bid(e, 'load', { keys: ['questions'] }); eq((b.j.data.questions.find(x => x.id === id) || {}).answer, 'Soffit is included.', e); }
 });
 await t('8b Mo on the sub portal: 📋 Jobs to bid, ⬇ ZIP, 📩 request, ❓ ask — all as Alpha Drywall', async () => {
-  const j = await portal('MO', 'p-bidjobs'); eq(j.code, 200, j.raw); eq(j.j.jobs.map(x => x.id).sort(), ['J1', 'JC', 'JI', 'JL']);
+  const j = await portal('MO', 'p-bidjobs'); eq(j.code, 200, j.raw); eq(j.j.jobs.map(x => x.id).sort(), ['J1', 'JA', 'JC', 'JI', 'JL']);
   const z = await portal('MO', 'p-bid-zip', { jobId: 'J1' }); eq(z.code, 200, z.raw);
   const nm = newMsgs();
   const q = await portal('MO', 'p-bid-ask', { jobId: 'JI', text: 'Mo again: ceiling height?' }); eq(q.code, 200, q.raw);
@@ -395,11 +400,114 @@ await t('8b Mo on the sub portal: 📋 Jobs to bid, ⬇ ZIP, 📩 request, ❓ a
   const row = T.sp_rows.find(x => x.key === 'questions/' + q.j.id).data; eq([row.userId, row.userCompany], ['u_a', 'Alpha Drywall LLC']);
 });
 
+console.log('\n11. 📎 addenda on the bid site (owner 11/23: "trying to put addendum here it won\'t let me … it should put it under Addendums")');
+const putStaff = (name, buf) => { const ref = 'staff/2026-11/' + crypto.randomBytes(4).toString('hex') + '-' + name.replace(/[^A-Za-z0-9._-]+/g, '_'); STORE.set('subportal-files/' + ref, buf); return ref; };
+let addRef = '';
+await t('11a admin upload (Plans & Documents → ⬆ Upload): "Addendum 2 - revised doors.pdf" is NOT filed with the plans — it comes back as Addendum #2 to post; an Outlook .msg / .eml / .odt goes on the job (was refused)', async () => {
+  addRef = putStaff('Addendum 2 - revised doors.pdf', PDF('ADD2'));
+  const r = await bid(OWN, 'plans-import', { jobId: 'J1', fileRef: addRef, name: 'Addendum 2 - revised doors.pdf', size: 950 }); eq(r.code, 200, r.raw);
+  eq([r.j.added.length, (r.j.addenda || []).map(x => [x.name, x.num, x.fileRef === addRef])], [0, [['Addendum 2 - revised doors.pdf', 2, true]]]);
+  yes(!T.sp_rows.find(x => x.key === 'plans/J1').data.items.some(f => /Addendum/.test(f.name)), 'not in the plans');
+  for (const n of ['Site walk notes.msg', 'RFI answer.eml', 'Meeting minutes.odt']) { const ref = putStaff(n, Buffer.from('x'.repeat(300))); const m = await bid(OWN, 'plans-import', { jobId: 'J1', fileRef: ref, name: n, size: 300 }); eq([m.code, (m.j.added || []).length + (m.j.scoped || []).length], [200, 1], n + ' ' + m.raw); }
+  const odd = await bid(OWN, 'plans-import', { jobId: 'J1', fileRef: putStaff('virus.exe', Buffer.from('MZ')), name: 'virus.exe', size: 2 }); eq(odd.code, 400); yes(/can not go on a bid job/.test(odd.j.error), 'a clear message');
+});
+await t('11b 📎 Post addendum (the bid site\'s box → the CRM\'s own code): #2 with its file, what changed, a new due date, "e-mail the subs" → published; the e-mail waits on ✅ Approvals', async () => {
+  const nd = day(9);
+  const r = await bid(OWN, 'addendum-post', { jobId: 'J1', num: 2, title: 'Revised doors', date: day(0), text: 'Door hardware set 4 changed.', files: [{ name: 'Addendum 2 - revised doors.pdf', size: 950, type: 'application/pdf', fileRef: addRef }], newDue: nd, notify: true }); eq(r.code, 200, r.raw);
+  eq(r.j.num, 2); yes(/^(waiting|held|nobody)$/.test(r.j.notice.status), 'notice ' + JSON.stringify(r.j.notice));
+  const j = T.sp_rows.find(x => x.key === 'jobs/J1').data; const a = j.addenda.find(x => x.num === 2);
+  yes(a && a.publishedAt && a.files.length === 1 && a.dueTo && a.dueTo.indexOf(nd) === 0, JSON.stringify(a)); eq(j.bidDueDate, nd);
+  const r3 = await bid(OWN, 'addendum-post', { jobId: 'J1', text: 'Corridor ceilings now ACT.', notify: false }); eq([r3.code, r3.j.num], [200, 3], r3.raw);   /* auto number */
+  const pm = await bid(PAT, 'addendum-post', { jobId: 'J1', text: 'x' }); eq(pm.code, 403, 'the PM (not admin / estimator / office) — the CRM rule: ' + pm.raw);
+});
+await t('11c the sub sees Addendum #2 (file downloads) and #3 under Addenda on the bid site AND the sub portal, acknowledges #2; the CRM (📂 Manage) shows both and the acknowledgement', async () => {
+  const b = await bid(U.A.email, 'load', { keys: ['jobs'] }); const ad = b.j.data.jobs.find(x => x.id === 'J1').addenda;
+  eq(ad.map(x => x.num).sort(), [2, 3]); const f = ad.find(x => x.num === 2).files[0]; yes((await dl(f.dataUrl)).slice(0, 5).toString() === '%PDF-', 'addendum file bytes');
+  eq((await bid(U.A.email, 'save', { key: 'acks', upsert: [{ id: 'J1__a2__u_a', jobId: 'J1', num: 2 }] })).code, 200);
+  const p = await portal('A', 'p-bidjobs'); const pa = p.j.jobs.find(x => x.id === 'J1').addenda; eq(pa.map(x => x.num), [3, 2]); yes(/^https:/.test(pa[1].files[0].url) && (await dl(pa[1].files[0].url)).length > 900, 'portal file');
+  const m = await hubGet(OWN, { manage: 'J1' }); eq(m.code, 200, m.raw); eq(m.j.job.addenda.map(x => x.num).sort(), [2, 3]); yes(m.j.acks.some(k => k.num === 2 && k.userId === 'u_a'), 'the ack in the CRM');
+});
+
+/* ── 12. the bid site itself in a browser (the built subportal/ app against the REAL subportal.js above), desk and phone ── */
+if (HNB()) {
+  console.log('\n12. the bid site in a browser: ⬆ Upload an addendum file → 📎 Post addendum #N (desk), the box on a phone, the sub sees and acknowledges it');
+  const { chromium } = require(path.join(process.env.NODE_PATH || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/node_modules', 'playwright'));
+  const BRW = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
+  const SBH = 'ieeonhpfahmwwecizdut.supabase.co', fs = require('fs');
+  const ctxFor = async kind => {
+    const ctx = await BRW.newContext(Object.assign({ serviceWorkers: 'block' }, kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 860 } }));
+    await ctx.route('**/*', async r => {
+      const rq = r.request(), u = new URL(rq.url());
+      if (u.host === SBH && u.pathname === '/auth/v1/token') { const b = JSON.parse(rq.postData() || '{}'); const email = u.searchParams.get('grant_type') === 'password' ? String(b.email).toLowerCase() : String(b.refresh_token || '').replace(/^r-tok:/, '');
+        return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ access_token: 'tok:' + email, refresh_token: 'r-tok:' + email, expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, token_type: 'bearer', user: { id: 'auth-' + email.split('@')[0], email } }) }); }
+      if (u.host === SBH) return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{}' });
+      if (u.host === 'sb.test') { if (rq.method() === 'OPTIONS') return r.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
+        const x = await fetch(rq.url(), { method: rq.method(), headers: rq.headers(), body: rq.postDataBuffer() }); const buf = Buffer.from(await x.arrayBuffer()); return r.fulfill({ status: x.status, headers: { 'access-control-allow-origin': '*' }, body: buf.length ? buf : await x.text() }); }
+      if (u.host !== 'bids.test') return r.abort('blockedbyclient');
+      if (u.pathname === '/.netlify/functions/subportal') { const resp = await SP.handler({ httpMethod: rq.method(), headers: Object.assign({ origin: 'https://bids.test', 'x-nf-client-connection-ip': ip() }, rq.headers()), body: rq.postData() || '' }); return r.fulfill({ status: resp.statusCode, contentType: 'application/json', body: resp.body }); }
+      if (u.pathname === '/.netlify/functions/gdrive') return r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"configured":false}' });
+      const f = path.join(ROOT, 'subportal', u.pathname === '/' ? 'index.html' : decodeURIComponent(u.pathname));
+      if (fs.existsSync(f) && fs.statSync(f).isFile()) return r.fulfill({ path: f });
+      return r.fulfill({ path: path.join(ROOT, 'subportal/index.html'), contentType: 'text/html' });
+    });
+    return ctx;
+  };
+  const errs = [];
+  const open = async (kind, email) => { const ctx = await ctxFor(kind), p = await ctx.newPage(); p.on('pageerror', e => errs.push(String(e.message).slice(0, 200))); await p.goto('https://bids.test/');
+    await p.waitForSelector('input[type=email]', { timeout: 30000 }); await p.fill('input[type=email]', email); await p.fill('input[type=password]', 'Any-Pass-123'); await p.press('input[type=password]', 'Enter');
+    await p.waitForSelector('text=Addenda Demo Job', { timeout: 30000 }); await p.click('text=Addenda Demo Job'); await new Promise(r => setTimeout(r, 1500)); if (process.env.SUBFLOW_SHOTS) await p.screenshot({ path: process.env.SUBFLOW_SHOTS + '/bidsite-open-' + kind + '-' + email.split('@')[0] + '.png', fullPage: true }); return { ctx, p }; };
+  const SHOT = process.env.SUBFLOW_SHOTS || '';
+  const ja = () => T.sp_rows.find(x => x.key === 'jobs/JA').data;
+  const until = async (f, ms) => { const t0 = Date.now(); let v; while (Date.now() - t0 < (ms || 20000)) { v = f(); if (v) return v; await new Promise(r => setTimeout(r, 250)); } return v; };
+  try {
+    await t('12a DESK admin: ⬆ Upload "ADD-01 Revised doors.pdf" + a .msg → the .msg goes on the job, the addendum opens "📎 Post addendum #1" prefilled → posted, shown under Addenda, never in the plans', async () => {
+      const { ctx, p } = await open('desk', OWN);
+      try {
+        if (errs.length) throw new Error('page errors: ' + errs.join(' / '));
+        const acc = await p.getAttribute('[data-plans="file"]', 'accept'); yes(['.msg', '.eml', '.pdf', '.docx', '.zip'].every(x => acc.indexOf(x) > -1), 'accept: ' + acc);
+        await p.setInputFiles('[data-plans="file"]', [{ name: 'ADD-01 Revised doors.pdf', mimeType: 'application/pdf', buffer: PDF('ADD-01') }, { name: 'Bidder call notes.msg', mimeType: 'application/vnd.ms-outlook', buffer: Buffer.from('x'.repeat(400)) }]);
+        await p.waitForSelector('[data-addpost="ask"]', { timeout: 20000 });
+        eq(await p.inputValue('[data-addpost="num"]'), '1', 'prefilled number');
+        yes((await p.textContent('[data-addpost="form"]')).includes('ADD-01 Revised doors.pdf'), 'the file is on the form');
+        await p.fill('[data-addpost="text"]', 'Doors 101-104 changed to HM frames.');
+        if (SHOT) await p.screenshot({ path: SHOT + '/bidsite-addendum-desk.png', fullPage: false });
+        await p.click('[data-addpost="send"]');
+        yes(await until(() => (ja().addenda || []).some(a => a.num === 1 && a.publishedAt && a.files.length === 1)), 'Addendum #1 published: ' + JSON.stringify(ja().addenda));
+        yes(await p.waitForSelector('[data-addendum="1"]', { timeout: 15000 }).catch(() => null), 'shown under Addenda');
+        const pl = (T.sp_rows.find(x => x.key === 'plans/JA') || { data: { items: [] } }).data.items.map(f => f.name);
+        yes(pl.includes('Bidder call notes.msg') && !pl.some(n => /ADD-01/.test(n)), 'plans: ' + pl);
+      } finally { await ctx.close(); }
+    });
+    await t('12b PHONE admin: 📎 Post addendum (no file, auto #2) from the box on a 390 px screen — no sideways scroll', async () => {
+      const { ctx, p } = await open('phone', OWN);
+      try {
+        await p.waitForSelector('[data-addpost="open"]', { timeout: 20000 }); await p.click('[data-addpost="open"]');
+        eq(await p.inputValue('[data-addpost="num"]'), '2', 'the next number');
+        await p.fill('[data-addpost="title"]', 'Ceilings'); await p.fill('[data-addpost="text"]', 'Corridor ceilings are now ACT.');
+        const wide = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1); yes(!wide, 'no sideways scroll');
+        if (SHOT) await p.screenshot({ path: SHOT + '/bidsite-addendum-phone.png' });
+        await p.click('[data-addpost="send"]');
+        yes(await until(() => (ja().addenda || []).some(a => a.num === 2 && a.title === 'Ceilings')), 'Addendum #2 published');
+      } finally { await ctx.close(); }
+    });
+    await t('12c PHONE sub (A): both addenda under Addenda on the bid site, ✍️ acknowledges #1; the CRM shows the acknowledgement; the sub portal lists both', async () => {
+      const { ctx, p } = await open('phone', U.A.email);
+      try {
+        await p.waitForSelector('[data-addendum="1"]', { timeout: 20000 }); yes(await p.$('[data-addendum="2"]'), '#2 there');
+        await p.click('[data-ack="1"]');
+        yes(await until(() => T.sp_rows.some(x => x.key === 'acks/JA__a1__u_a')), 'ack saved');
+      } finally { await ctx.close(); }
+      const m = await hubGet(OWN, { manage: 'JA' }); eq(m.j.job.addenda.map(x => x.num).sort(), [1, 2]); yes(m.j.acks.some(k => k.num === 1 && k.userId === 'u_a'), 'CRM ack');
+      const po = await portal('A', 'p-bidjobs'); eq(po.j.jobs.find(x => x.id === 'JA').addenda.map(x => x.num), [2, 1]);
+      eq(errs, [], 'page errors');
+    });
+  } finally { await BRW.close(); }
+}
+
 /* ── 10. the CRM's own screens (a browser, the offline CRM harness): the PM on the PHONE (GrayCo Field) and the estimator on the DESK find the
    sub's post (🔔 / "💬 unread job message"), tap ↩ Reply to <sub>, and the REAL bid-hub answers the sub — who sees it on both sites.
    Skipped with --no-browser (or when the harness / Chromium is not there). */
-const NOB = process.argv.includes('--no-browser');
-let HN = null; if (!NOB) { try { HN = await import(process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs'); } catch (e) { console.log('  (browser part skipped: ' + String(e && e.message).slice(0, 120) + ')'); } }
+let HN = null; if (!NOB && HNB()) { try { HN = await import(process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/wN/harness_N.mjs'); } catch (e) { console.log('  (browser part skipped: ' + String(e && e.message).slice(0, 120) + ')'); } }
 if (HN) {
   console.log('\n10. the CRM: ↩ Reply from GrayCo Field (phone, the PM) and the desk (the estimator) — the real bid-hub behind it');
   /* the harness's sign-ins: pm@ (Demo PM) = Pat, sbiffle@ (Demo Estimator) = Eve */
@@ -420,7 +528,7 @@ if (HN) {
   });
   const SHOT = process.env.SUBFLOW_SHOTS || '';
   const reply = async (A, text, which) => { const P = A.page();
-    const b = await P.waitForSelector('#_gcJobMsgOv [data-sfr]', { timeout: 15000 }); await b.click();
+    await P.click('#_gcJobMsgOv [data-sfr]', { timeout: 20000 });   /* re-resolved: the thread redraws on its own pull */
     await P.waitForSelector('#gc-sfr-text', { timeout: 5000 }); await P.fill('#gc-sfr-text', text); await P.click('#gc-sfr-sheet [data-sfx=' + (which || 'send') + ']');
     await HN.waitFor(A, () => !document.getElementById('gc-sfr-sheet'), null, 15000); };
   await t('10a the PM on the PHONE (GrayCo Field): Home says "💬 1 unread job message" → Open → ↩ Reply to Alpha Drywall LLC → A sees the answer on the bid site AND the sub portal; the To-Do is done', async () => {
