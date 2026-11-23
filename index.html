@@ -253093,11 +253093,39 @@ function isBidSignals(l){
   if (s(l.bidDue) || s(l.gc) || s(l.dueToCompany) || s(l.bidNumber)) return true;
   return BID_BOARDS.test([l.source].concat(arr(l.sources).map(function(y){ return s(y && y.name || y); })).join(' '));
 }
-/* 'lsa' | 'website' | 'phone' | 'referral' | 'source' | 'other' (customer leads) · 'bid' | 'permit' | 'roofscout' | 'job' | 'soft' (not) */
+/* patch SUBSEEK (owner 11/19 on a drafting sub's website "Commercial bid inquiry": "he is a sub trying to find work, we like that …
+   That message can go in somewhere else"): a sub / supplier looking for work is NO customer lead, whatever way it came in (website
+   form, Google LSA, a text, a call, e-mail, a lead source) and however old it is — never on the clock, never assigned, never texted.
+   The words are _lib/salesguard.js classify (the CRM page: window._gcSalesBlock.classify, the same rules); a lead already moved to
+   🤝 Subs & suppliers (sgKind 'sub') stays out. An owner's "Actually a customer lead" (notSpam) lets it back. A real bid invitation
+   (a bid board / plan room, a GC, a bid role, a due date, the bid watch) is never a sub's pitch. → '' or why it is a sub / supplier. */
+var SUBC = {}, SUBN = 0;
+function sgApi(){
+  if (typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { return require('./salesguard.js'); } catch (e) { return {}; } }
+  return obj(root && root._gcSalesBlock);
+}
+function ownText(l){ var ex = obj(l.leadExtra), c = obj(l.contact), a = [obj(l.said).message, obj(ex.said).message, l.textBody, ex.textBody, l.callerSaid, ex.callerSaid, l.spokenReason, ex.spokenReason, l.scope, l.message, c.message, l.body].map(s).filter(Boolean);
+  return a.filter(function(x, i){ return a.indexOf(x) === i; }).join('\n'); }
+function subWhy(l){
+  if (!l) return '';
+  var ex = obj(l.leadExtra), t, r, SB, hit;
+  if (l.notSpam === true || ex.notSpam === true) return '';
+  if ([l.sgKind, ex.sgKind].some(function(v){ return /^subs?$/i.test(s(v)); })) return 'moved to 🤝 Subs & suppliers';
+  if (l.fromBidBoard || s(l.gc) || s(l.bidRole || ex.bidRole) || s(l.bidDue) || s(l.origin) === 'watch' || BID_BOARDS.test([l.source].concat(arr(l.sources).map(function(y){ return s(y && y.name || y); })).join(' '))) return '';
+  t = ownText(l); if (!t) return '';
+  if (Object.prototype.hasOwnProperty.call(SUBC, t)) return SUBC[t];
+  SB = sgApi(); r = {};
+  try { if (typeof SB.classify === 'function') r = obj(SB.classify(t, { email: low(obj(l.contact).email || l.email), company: s(l.company || obj(l.said).company || obj(ex.said).company) })); } catch (e) { r = {}; }
+  hit = r.kind === 'sub' ? s(r.why) || 'a sub / supplier looking for work' : '';
+  if (typeof SB.classify === 'function') { if (++SUBN > 2000) { SUBC = {}; SUBN = 0; } SUBC[t] = hit; }
+  return hit;
+}
+/* 'lsa' | 'website' | 'phone' | 'referral' | 'source' | 'other' (customer leads) · 'bid' | 'permit' | 'roofscout' | 'job' | 'soft' | 'sub' (not) */
 function kindOf(l){
   if (!l) return 'job';
   var ex = obj(l.leadExtra), src = srcText(l);
   if (l.softLead || ex.softLead) return 'soft';
+  if (subWhy(l)) return 'sub';   /* patch SUBSEEK */
   if (isLsa(l)) return 'lsa';
   if (isWebsite(l)) return 'website';
   if (l.rsLeadId || /^LEAD_RS_/.test(s(l.id)) || /roof ?scout/i.test(src)) return 'roofscout';
@@ -253114,7 +253142,7 @@ function kindOf(l){
 var CUSTOMER = { lsa: 1, website: 1, phone: 1, referral: 1, source: 1, other: 1 };
 function isCustomer(l){ return !!CUSTOMER[kindOf(l)]; }
 function isBid(l){ return kindOf(l) === 'bid'; }
-var LABEL = { lsa: 'Google LSA', website: 'Website', phone: 'Phone', referral: 'Referral', source: 'Lead source', other: 'Other', bid: 'Bid invite', permit: 'Permit', roofscout: 'RoofScout', job: 'Job copy', soft: 'Soft lead' };
+var LABEL = { lsa: 'Google LSA', website: 'Website', phone: 'Phone', referral: 'Referral', source: 'Lead source', other: 'Other', bid: 'Bid invite', permit: 'Permit', roofscout: 'RoofScout', job: 'Job copy', soft: 'Soft lead', sub: 'Sub / supplier' };
 
 function closed(l){
   if (!l) return true;
@@ -253205,7 +253233,7 @@ function defaultDue(items, crmLeads, now, holdUntil){
 }
 
 var API = { V: 1, NOPM_H: NOPM_H, NOPM2_H: NOPM2_H, PM_H: PM_H, OWNER_H: OWNER_H, CARD_DAYS: CARD_DAYS, LABEL: LABEL,
-  kindOf: kindOf, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
+  kindOf: kindOf, subWhy: subWhy, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
   contacted: contacted, risk: risk, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else root._gcLeadWatchCore = API;
@@ -253416,6 +253444,7 @@ function notCustomer(l){
   if (!l) return 'no lead';
   var ex = obj(l.leadExtra), SB = W._gcSalesBlock || {}, c = obj(l.contact), t = leadText(l), r;
   if (l.notSpam === true || ex.notSpam === true) return '';
+  if (s(obj(l.subMove).why)) return 'a sub / supplier looking for work: ' + s(l.subMove.why);   /* patch SUBSEEK: moved to 🤝 Subs & suppliers */
   if ([l.stage, l.status, l.inboxState, l.sgKind, ex.sgKind].some(function(v){ return NC_STATE.test(s(v)); }) || /sales\s*&\s*spam/i.test(s(l.dismissedBy))) return 'taken by the Sales & spam filter';
   if (!t) return '';
   try { if (typeof SB.botWhy === 'function' && (r = SB.botWhy({ name: s(c.name || l.contactName), message: t, email: low(c.email || l.email), company: s(l.company || obj(l.said).company) }))) return r; } catch (e) {}
@@ -253519,9 +253548,37 @@ async function fakeCleanup(opts){
 }
 SI.call(W, function(){ if (!FJ.done && ++FJ.tries >= 3) fakeCleanup().catch(function(){}); }, 7000);
 
+/* ── patch SUBSEEK (owner 11/19: "he is a sub trying to find work, we like that … That message can go in somewhere else") ──
+   An OPEN lead that is a sub / supplier looking for work (lead-watch.js subWhy — the Sales & spam words; any source: website form, Google
+   LSA, text, call, e-mail; however old) is moved off the customer leads: 🗄 archived (never deleted) with sgKind 'sub' and a note on the lead
+   — off every open / PM list and every alert (who had it is kept in subMove.was). The server puts it in Leads → 🤝 Subs & suppliers and dismisses its Lead Inbox
+   item (bid-alerts subMove); the clock, the 5 PM assign and the lead texts already skip it. An owner's "Actually a customer lead"
+   (notSpam) is never moved. One admin desk, never on a stale copy or while typing; nothing is sent to anyone. */
+var SUBQ = { moved: [], at: '' }, SUB_BY = 'Sub / supplier check';
+function subPlan(){ return leads().filter(function(l){ return l && !l.archived && !l.deleted && !l._deleted && !s(l.mergedInto) && !l.converted && !/^(won|lost)$/i.test(s(l.stage)) && !/^subs?$/i.test(s(l.sgKind)) && typeof C.subWhy === 'function' && C.subWhy(l) && !s(l.subMove && l.subMove.at); }); }
+function subSweep(o){
+  o = obj(o);
+  if (!o.force) { if (!admin() || vas() || D.hidden) return { skipped: 'not an admin desk' };
+    try { if (W._gcStaleGate && W._gcStaleGate.holdSweeps()) return { skipped: 'stale copy' }; } catch (e) {}
+    if (W.__GC_IS_TYPING__ || W.__GC_FORM_OPEN__) return { skipped: 'typing' }; }
+  if (!W._gcSalesBlock || typeof W._gcSalesBlock.classify !== 'function' || typeof W._setLeads !== 'function') return { skipped: 'not loaded' };
+  var list = subPlan(); if (!list.length) return { moved: [] };
+  var at = new Date().toISOString(), set = {};
+  list.forEach(function(l){ var why = C.subWhy(l);
+    set[l.id] = { archived: true, archivedAt: at, archivedBy: SUB_BY, archivedWhy: 'a sub / supplier looking for work — moved to 🤝 Subs & suppliers (' + why.slice(0, 200) + ')', sgKind: 'sub',
+      subMove: { at: at, by: SUB_BY, why: why.slice(0, 300), was: { stage: s(l.stage), pm: s(l.pm), pmEmail: s(l.pmEmail), estimator: s(l.estimator), estimatorEmail: s(l.estimatorEmail), apm: s(l.apm) } },
+      activity: arr(l.activity).some(function(a){ return a && a.id === 'SUBSEEK_' + l.id; }) ? arr(l.activity) : arr(l.activity).concat([{ id: 'SUBSEEK_' + l.id, at: at, by: SUB_BY, type: 'system',
+        text: '🤝 Moved to Leads → 🤝 Subs & suppliers: a sub / supplier looking for work, not a customer lead (' + why.slice(0, 160) + '). No PM, no reminders, no texts. Archived, not deleted' + (s(l.pm || l.estimator) ? ' — it was with ' + s(l.pm || l.estimator) : '') + '. If it is a real customer: 🤝 Subs & suppliers → "Actually a customer lead".' }]) }; });
+  W._setLeads(function(prev){ return arr(prev).map(function(l){ return l && set[l.id] ? Object.assign({}, l, set[l.id], { updatedAt: at }) : l; }); });
+  SUBQ.moved = SUBQ.moved.concat(Object.keys(set)); SUBQ.at = at;
+  try { console.log('[GC] 🤝 SUBSEEK: ' + Object.keys(set).length + ' sub / supplier lead(s) moved off the customer leads: ' + Object.keys(set).join(', ')); } catch (e) {}
+  return { moved: Object.keys(set) };
+}
+SI.call(W, function(){ try { subSweep(); } catch (e) {} }, 9000);
+
 SI.call(W, paint, 2000);
 ST.call(W, paint, 800);
-W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
+W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, subSweep: subSweep, subPlan: subPlan, subState: function(){ return SUBQ; }, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
   state: function(){ return { atRisk: list().map(function(z){ return { id: z.l.id, k: z.r.k, h: z.r.h, kind: C.kindOf(z.l) }; }), hidden: OLD.n, by: OLD.why, cut: cut(), admin: admin(), office: office() }; } };
 try { console.log('[GC] 🚨 leads at risk + To-Do only from now on (patch LEADWATCH) — _gcLeadWatch'); } catch (e) {}
 })(window);

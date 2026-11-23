@@ -138,6 +138,26 @@ const nothingSent = () => !SMS.length && !CALLS.length && !MAIL.length && !appro
   const nl = AP.noteList(items);
   ok(nl.length === 1 && nl[0].key === 'ap2:appr_x1', 'apprping skips lead_first_contact (other approvals still ping)', nl.map(x => x.key));
 
+  console.log('— 6. patch SUBSEEK: a website "Commercial bid inquiry" from a sub (11/21 David Wilson / Swiss Drafting) — any source, old ones too');
+  const SWISS = "Hi GrayCo Construction Services team,\nFollowing up on the note we sent through your website last month. If you have any steel jobs coming up, we'd be glad to help with:\n- Structural and misc. steel shop drawings (stairs, railings, platforms)\n- Steel take-offs and estimates\nJust reply to david@example-drafting.test and we'll send a price and turnaround the same day.\nThanks,\nDavid Wilson\nExample Drafting\nProject location: Brooklyn";
+  world();
+  r = await web({ type: 'commercial', name: 'David Wilson', company: 'Example Drafting', phone: '(323) 555-0872', email: 'david@example-drafting.test', message: SWISS, city: 'Brooklyn', page: 'https://grayco-cs.com/contact' });
+  ok(r.statusCode === 200 && nothingSent() && store().list.some(x => x.kind === 'sub' && x.status === 'sub'), 'the website commercial form → 🤝 Subs & suppliers, no lead, nobody texted', { sms: SMS.map(x => x.Body), i: inbox().map(x => x.title), s: store().list });
+  world();
+  const LIW = { id: 'LI-sw1', status: 'new', title: 'Commercial bid inquiry — Example Drafting — Brooklyn', type: 'commercial', source: 'Website (grayco-cs.com)', contact: { name: 'David Wilson', phone: '(323) 555-0872', email: 'david@example-drafting.test' }, leadExtra: { said: { message: SWISS, company: 'Example Drafting' }, websiteLead: true, websiteForm: 'Commercial bid inquiry' } };
+  setKv('gc_lead_inbox', [LIW]);
+  r = await BI._lib.alertsApi().notifyNew([LIW]);
+  ok(r.salesblock && !SMS.length && !inbox().length && store().list.some(x => x.kind === 'sub' && x.leadId === 'LI-sw1'), 'notifyNew re-check: a commercial-type website lead is no longer skipped as a "bid" — a sub is taken off', { r, s: store().list, i: inbox() });
+  world();
+  setKv('gc_lead_inbox', [{ id: 'LI-gc1', status: 'new', title: 'ABC Builders', type: 'commercial', source: 'Website (grayco-cs.com)', contact: { name: 'Pat GC', phone: '(901) 555-0112' }, scope: REAL[2] }]);
+  r = await BI._lib.alertsApi().notifyNew([{ id: 'LI-gc1', title: 'ABC Builders', type: 'commercial', source: 'Website (grayco-cs.com)', contact: { name: 'Pat GC', phone: '(901) 555-0112' }, scope: REAL[2] }]);
+  ok(!r.salesblock && inbox().length === 1 && !store().list.length, 'a GC inviting us to bid (commercial) is still not taken', { r, s: store().list });
+  const LWm = require(path.join(SRC, '_lib/lead-watch.js'));
+  ['Google LSA', 'Text message', 'Missed call', 'leads@grayco-cs.com', 'Roof Ignite'].forEach(src => { const l = { id: 'LX', source: src, stage: 'New Lead', textBody: SUBS[2], leadExtra: { lsaCheck: /LSA/.test(src) ? 'pending' : '' } };
+    ok(LWm.kindOf(l) === 'sub' && !LWm.isCustomer(l), 'lead-watch: a sub from "' + src + '" is no customer lead', LWm.kindOf(l)); });
+  ok(LWm.kindOf({ source: 'Google LSA', textBody: SUBS[2], notSpam: true }) === 'lsa', '"Actually a customer lead" (notSpam) → a customer lead again');
+  ok(LWm.kindOf({ source: 'BuildingConnected', gc: 'Big GC', bidDue: '2026-12-01', scope: SUBS[2] }) === 'bid', 'a GC\'s bid invitation is never a sub\'s pitch');
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

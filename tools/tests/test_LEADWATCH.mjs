@@ -154,6 +154,13 @@ try {
   const un = await H.waitFor(A, () => { const f = (window._crm.projects || []).find(p => p.id === 'PFAKE'); return f && /^bidding$/i.test(f.status) ? f : null; }, null, 20000);
   ok(!!un, '↩ Undo puts the job back (bidding)', un);
 
+  const window_risk_null = z => z.risk === null && z.closed === true;
+  console.log('G. patch SUBSEEK: an open sub / supplier lead (a website "Commercial bid inquiry", 11/21) is moved off the customer leads');
+  const sb = await H.waitFor(A, () => { const L = window._crm.leads || [], x = L.find(l => l.id === 'LW_SUB'); return x && x.archived ? { x, risk: window._gcLeadWatchCore.risk(x, Date.now()), closed: window._gcLeadWatchCore.closed(x), web: L.find(l => l.id === 'LW_WEB'), plan: window._gcLeadWatch.subPlan().map(l => l.id), kind: window._gcLeadWatchCore.kindOf(x) } : null; }, null, 60000);
+  ok(sb && sb.x.sgKind === 'sub' && sb.x.archivedBy === 'Sub / supplier check' && /moved to 🤝 Subs & suppliers/.test(sb.x.archivedWhy) && !sb.x.deleted, 'the open pitch is archived (not deleted) as a sub / supplier', sb && sb.x);
+  ok(sb && sb.x.subMove && sb.x.subMove.was.estimator === 'Demo PM' && window_risk_null(sb) && (sb.x.activity || []).filter(a => a.id === 'SUBSEEK_LW_SUB').length === 1 && /No PM, no reminders, no texts/.test((sb.x.activity || []).find(a => a.id === 'SUBSEEK_LW_SUB').text), 'off the clock and the estimator\'s lists (who had it kept in subMove.was), a note on the lead', sb && sb.x);
+  ok(sb && sb.kind === 'sub' && !sb.plan.length && sb.web && !sb.web.archived, 'a sub / supplier kind; nothing left to move; the real website lead is untouched', sb && { kind: sb.kind, plan: sb.plan, web: sb.web && sb.web.archived });
+
   console.log('B2. the PM');
   const P = await H.computer('PM', { build, init: [INIT] }); OPEN.push(P);
   await H.signIn(P, PM, 30000);

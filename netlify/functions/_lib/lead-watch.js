@@ -46,11 +46,39 @@ function isBidSignals(l){
   if (s(l.bidDue) || s(l.gc) || s(l.dueToCompany) || s(l.bidNumber)) return true;
   return BID_BOARDS.test([l.source].concat(arr(l.sources).map(function(y){ return s(y && y.name || y); })).join(' '));
 }
-/* 'lsa' | 'website' | 'phone' | 'referral' | 'source' | 'other' (customer leads) · 'bid' | 'permit' | 'roofscout' | 'job' | 'soft' (not) */
+/* patch SUBSEEK (owner 11/19 on a drafting sub's website "Commercial bid inquiry": "he is a sub trying to find work, we like that …
+   That message can go in somewhere else"): a sub / supplier looking for work is NO customer lead, whatever way it came in (website
+   form, Google LSA, a text, a call, e-mail, a lead source) and however old it is — never on the clock, never assigned, never texted.
+   The words are _lib/salesguard.js classify (the CRM page: window._gcSalesBlock.classify, the same rules); a lead already moved to
+   🤝 Subs & suppliers (sgKind 'sub') stays out. An owner's "Actually a customer lead" (notSpam) lets it back. A real bid invitation
+   (a bid board / plan room, a GC, a bid role, a due date, the bid watch) is never a sub's pitch. → '' or why it is a sub / supplier. */
+var SUBC = {}, SUBN = 0;
+function sgApi(){
+  if (typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { return require('./salesguard.js'); } catch (e) { return {}; } }
+  return obj(root && root._gcSalesBlock);
+}
+function ownText(l){ var ex = obj(l.leadExtra), c = obj(l.contact), a = [obj(l.said).message, obj(ex.said).message, l.textBody, ex.textBody, l.callerSaid, ex.callerSaid, l.spokenReason, ex.spokenReason, l.scope, l.message, c.message, l.body].map(s).filter(Boolean);
+  return a.filter(function(x, i){ return a.indexOf(x) === i; }).join('\n'); }
+function subWhy(l){
+  if (!l) return '';
+  var ex = obj(l.leadExtra), t, r, SB, hit;
+  if (l.notSpam === true || ex.notSpam === true) return '';
+  if ([l.sgKind, ex.sgKind].some(function(v){ return /^subs?$/i.test(s(v)); })) return 'moved to 🤝 Subs & suppliers';
+  if (l.fromBidBoard || s(l.gc) || s(l.bidRole || ex.bidRole) || s(l.bidDue) || s(l.origin) === 'watch' || BID_BOARDS.test([l.source].concat(arr(l.sources).map(function(y){ return s(y && y.name || y); })).join(' '))) return '';
+  t = ownText(l); if (!t) return '';
+  if (Object.prototype.hasOwnProperty.call(SUBC, t)) return SUBC[t];
+  SB = sgApi(); r = {};
+  try { if (typeof SB.classify === 'function') r = obj(SB.classify(t, { email: low(obj(l.contact).email || l.email), company: s(l.company || obj(l.said).company || obj(ex.said).company) })); } catch (e) { r = {}; }
+  hit = r.kind === 'sub' ? s(r.why) || 'a sub / supplier looking for work' : '';
+  if (typeof SB.classify === 'function') { if (++SUBN > 2000) { SUBC = {}; SUBN = 0; } SUBC[t] = hit; }
+  return hit;
+}
+/* 'lsa' | 'website' | 'phone' | 'referral' | 'source' | 'other' (customer leads) · 'bid' | 'permit' | 'roofscout' | 'job' | 'soft' | 'sub' (not) */
 function kindOf(l){
   if (!l) return 'job';
   var ex = obj(l.leadExtra), src = srcText(l);
   if (l.softLead || ex.softLead) return 'soft';
+  if (subWhy(l)) return 'sub';   /* patch SUBSEEK */
   if (isLsa(l)) return 'lsa';
   if (isWebsite(l)) return 'website';
   if (l.rsLeadId || /^LEAD_RS_/.test(s(l.id)) || /roof ?scout/i.test(src)) return 'roofscout';
@@ -67,7 +95,7 @@ function kindOf(l){
 var CUSTOMER = { lsa: 1, website: 1, phone: 1, referral: 1, source: 1, other: 1 };
 function isCustomer(l){ return !!CUSTOMER[kindOf(l)]; }
 function isBid(l){ return kindOf(l) === 'bid'; }
-var LABEL = { lsa: 'Google LSA', website: 'Website', phone: 'Phone', referral: 'Referral', source: 'Lead source', other: 'Other', bid: 'Bid invite', permit: 'Permit', roofscout: 'RoofScout', job: 'Job copy', soft: 'Soft lead' };
+var LABEL = { lsa: 'Google LSA', website: 'Website', phone: 'Phone', referral: 'Referral', source: 'Lead source', other: 'Other', bid: 'Bid invite', permit: 'Permit', roofscout: 'RoofScout', job: 'Job copy', soft: 'Soft lead', sub: 'Sub / supplier' };
 
 function closed(l){
   if (!l) return true;
@@ -158,7 +186,7 @@ function defaultDue(items, crmLeads, now, holdUntil){
 }
 
 var API = { V: 1, NOPM_H: NOPM_H, NOPM2_H: NOPM2_H, PM_H: PM_H, OWNER_H: OWNER_H, CARD_DAYS: CARD_DAYS, LABEL: LABEL,
-  kindOf: kindOf, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
+  kindOf: kindOf, subWhy: subWhy, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
   contacted: contacted, risk: risk, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else root._gcLeadWatchCore = API;
