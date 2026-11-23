@@ -991,7 +991,9 @@ function invRow(x){
         var j = r.data || {}; if (!j.ok || !j.html) throw new Error(j.error || 'not available');
         msg.textContent = '';
         /* "⬇️ Download PDF" is the CRM's own: its print → "Save as PDF" (the white paper version of the same design) */
-        var html = String(j.html).replace(/<link[^>]+fonts\.googleapis\.com[^>]*>/gi, '') /* patch PORTALTAPS: the portal page's CSP (no outside styles) blocked it with a console error; the invoice has its own fallback fonts */ + (printIt ? '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print()}catch(e){}},1600)});<\/script>' : '');
+        var html = String(j.html).replace(/<link[^>]+fonts\.googleapis\.com[^>]*>/gi, '').replace(/try\{fetch\("[^"]*invoice-track[^"]*",\{mode:"no-cors"\}\);\}catch\(e\)\{\}/g, '')
+          /* patch PORTALTAPS: shown inside the portal (its CSP: no outside styles / connections) the font link and the view ping's fetch were console errors;
+             the invoice has its own fallback fonts and the view still counts (its 1-pixel image and this request) */ + (printIt ? '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print()}catch(e){}},1600)});<\/script>' : '');
         if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); return; }
         var ov = h('div', { class: 'lb', role: 'dialog', 'aria-label': 'Invoice' }, [h('div', { class: 'top' }, [h('span', { text: 'Invoice ' + (j.number || '') }), h('button', { type: 'button', 'aria-label': 'Close', text: '✕', on: { click: function(){ ov.remove(); } } })])]);
         var fr = h('iframe', { title: 'Invoice', style: 'flex:1 1 auto;width:100%;border:0;background:#060b16' }); fr.srcdoc = html; ov.appendChild(fr); document.body.appendChild(ov);
