@@ -2063,6 +2063,7 @@ async function inviteSend(who, body){
   const emails = Array.from(new Set(arr([]).concat(Array.isArray(body.emails) ? body.emails : [body.email]).map(low).filter(okEmail))).slice(0, 100);
   if (!emails.length) throw Fail(400, 'Enter an e-mail address.');
   const asSup = s(body.as) === 'supplier';
+  const coName = emails.length === 1 ? s(body.company).slice(0, 120) : '';   /* patch INVCO: the company name typed / picked on Invite subs */
   const BM = require('./_lib/bidmail.js'), sw = await BM.cfg();
   const have = {}; (await listRows([eq('collection', 'invites'), eq('job_id', jobId)])).forEach(function(r){ have[low(r.email)] = r.data; });
   const accts = {}; (await listRows([eq('collection', 'users')])).forEach(function(r){ const d = r.data || {}; if (d.role === 'sub' || d.role === 'supplier') accts[low(r.email)] = d; });
@@ -2070,14 +2071,14 @@ async function inviteSend(who, body){
   let mailed = 0;
   for (const e of emails) {
     const acct = accts[e], sup = acct ? acct.role === 'supplier' : asSup;
-    const inv = Object.assign({}, have[e] || { id: 'i_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: jobId, email: e, token: crypto.randomBytes(16).toString('hex'), createdAt: at, createdBy: who.email, via: 'bidsite' }, { as: sup ? 'supplier' : 'sub' });
+    const inv = Object.assign({}, have[e] || { id: 'i_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: jobId, email: e, token: crypto.randomBytes(16).toString('hex'), createdAt: at, createdBy: who.email, via: 'bidsite' }, { as: sup ? 'supplier' : 'sub' }, coName ? { company: coName } : {});
     if (sw.invite) {
       const link = acct ? PORTAL_ORIGIN + '/' : PORTAL_ORIGIN + '/?invite=' + inv.token + '&job=' + encodeURIComponent(jobId) + (sup ? '&as=supplier' : '');
       const m = BM.inviteMail(jr.data, link, !!(acct && acct.lang === 'es'), sup, !!acct);
       let ok = false; try { ok = !!(await BM.trade(function(){ return sendMail(e, m.subject, m.html); })); } catch (x) { ok = false; }
       if (ok) { mailed++; inv.mailedAt = at; inv.mailedBy = who.email; }
     }
-    rows.push(rowFor('invites', inv)); out.push(pick(inv, ['id', 'jobId', 'email', 'token', 'createdAt', 'createdBy', 'as', 'mailedAt', 'usedAt', 'usedBy']));
+    rows.push(rowFor('invites', inv)); out.push(pick(inv, ['id', 'jobId', 'email', 'company', 'token', 'createdAt', 'createdBy', 'as', 'mailedAt', 'usedAt', 'usedBy']));
   }
   if (isDraft(jr.data)) {   /* an invite opens a draft as PRIVATE (the CRM's invite does the same): only invited accounts see it */
     await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);

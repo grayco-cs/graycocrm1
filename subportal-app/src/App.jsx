@@ -149,7 +149,7 @@ const T = {
     acctTypeQ: 'I am signing up as', acctSub: 'Subcontractor (labour)', acctSupplier: 'Supplier / vendor (materials)', supplierL: 'Supplier',
     materialsTap: 'Materials you supply — tap all that fit', myQuotes: 'My Quotes', approvedSuppliers: 'Suppliers', materialList: 'Materials to quote',
     suppliersCanQuote: 'Suppliers can quote (materials)', suppliersHint: 'Approved suppliers see this job, its plans and the material list below, and send a material quote. They never see labour scopes or bids.',
-    /* patch BIDSITE3 */ bidMail: 'Bid site e-mails', bidMailHint: 'The e-mails the bid site sends to subs and suppliers. Each one has its own switch. They go out in data-entry mode too (they are not customer e-mails); never a price.', bidMailSaved: 'Saved', inviteAs: 'Inviting a', inviteSub: 'Subcontractor', inviteSupplier: 'Supplier', inviteMailed: 'Invite e-mailed', inviteNotMailed: 'Invite added (the invite e-mail is switched off) — copy the link to share.', inviteSend: 'Invite', inviteHint2: 'They get the e-mail "GrayCo invited you to bid" at once, with their sign-in link (or a sign-up link that approves them for this job).', mailedL: 'e-mailed', showSupMat: 'Show supplier materials to subs while bidding', showSupMatHint: 'Subs then see the suppliers\' materials, specs and quantities on this job (never a price). Once the job is WON they see them anyway.', supMat: 'Supplier materials (no prices)', specL: 'Spec / model', mqDocs: 'Your files, specs and quotes', mqDocsHint: 'Attach your quote PDF, spec sheets or cut sheets — any file up to 50 MB.', matListSub: 'Materials for this job', reqMat: 'Request more materials', reqItem: 'Material', reqQty: 'Quantity', reqUnit: 'Unit', reqReason: 'Why is it needed?', reqSend: 'Send the request', reqSent: 'Request sent to the job\'s PM', reqMine: 'Your material requests', reqStatus: { pending: 'Waiting for the PM', approved: 'Approved', declined: 'Declined' }, reqNone: 'No requests yet.',
+    /* patch BIDSITE3 */ bidMail: 'Bid site e-mails', bidMailHint: 'The e-mails the bid site sends to subs and suppliers. Each one has its own switch. They go out in data-entry mode too (they are not customer e-mails); never a price.', bidMailSaved: 'Saved', inviteAs: 'Inviting a', inviteSub: 'Subcontractor', inviteSupplier: 'Supplier', inviteMailed: 'Invite e-mailed', inviteNotMailed: 'Invite added (the invite e-mail is switched off) — copy the link to share.', inviteSend: 'Invite', inviteCompany: 'Company name — type to find a sub or supplier', inviteHint2: 'They get the e-mail "GrayCo invited you to bid" at once, with their sign-in link (or a sign-up link that approves them for this job).', mailedL: 'e-mailed', showSupMat: 'Show supplier materials to subs while bidding', showSupMatHint: 'Subs then see the suppliers\' materials, specs and quantities on this job (never a price). Once the job is WON they see them anyway.', supMat: 'Supplier materials (no prices)', specL: 'Spec / model', mqDocs: 'Your files, specs and quotes', mqDocsHint: 'Attach your quote PDF, spec sheets or cut sheets — any file up to 50 MB.', matListSub: 'Materials for this job', reqMat: 'Request more materials', reqItem: 'Material', reqQty: 'Quantity', reqUnit: 'Unit', reqReason: 'Why is it needed?', reqSend: 'Send the request', reqSent: 'Request sent to the job\'s PM', reqMine: 'Your material requests', reqStatus: { pending: 'Waiting for the PM', approved: 'Approved', declined: 'Declined' }, reqNone: 'No requests yet.',
     mqTitle: 'Material quote', mqEnter: 'Send a material quote', mqDesc: 'Item', mqQty: 'Qty', mqUnit: 'Unit', mqPrice: 'Unit price', mqAddLine: '+ Add a line',
     mqLead: 'Lead time', mqValid: 'Valid until', mqNotes: 'Notes', mqTax: 'Tax', mqFreight: 'Freight / delivery', mqSubtotal: 'Subtotal', mqTotal: 'Total',
     mqSubmit: 'Send quote', mqUpdate: 'Update quote', mqSent: 'Quote sent to GrayCo.', mqNeedLine: 'Add at least one item with a description.',
@@ -464,7 +464,7 @@ const T = {
     acctTypeQ: 'Me registro como', acctSub: 'Subcontratista (mano de obra)', acctSupplier: 'Proveedor (materiales)', supplierL: 'Proveedor',
     materialsTap: 'Materiales que suministra — toque todos los que apliquen', myQuotes: 'Mis cotizaciones', approvedSuppliers: 'Proveedores', materialList: 'Materiales a cotizar',
     suppliersCanQuote: 'Los proveedores pueden cotizar (materiales)', suppliersHint: 'Los proveedores aprobados ven este trabajo, sus planos y la lista de materiales, y envían una cotización. Nunca ven alcances ni ofertas de mano de obra.',
-    /* patch BIDSITE3 */ bidMail: 'Correos del sitio', bidMailHint: 'Los correos que el sitio envía a subcontratistas y proveedores. Cada uno tiene su interruptor. Salen también en modo de captura de datos (no son correos a clientes); nunca un precio.', bidMailSaved: 'Guardado', inviteAs: 'Invitar a un', inviteSub: 'Subcontratista', inviteSupplier: 'Proveedor', inviteMailed: 'Invitación enviada por correo', inviteNotMailed: 'Invitación agregada (el correo de invitación está apagado) — copie el enlace.', inviteSend: 'Invitar', inviteHint2: 'Recibe al instante el correo "GrayCo le invitó a ofertar" con su enlace para entrar (o para crear su cuenta, aprobada para este trabajo).', mailedL: 'enviado', showSupMat: 'Mostrar a los subs los materiales de los proveedores durante la licitación', showSupMatHint: 'Los subs verán los materiales, especificaciones y cantidades de los proveedores (nunca un precio). Cuando el trabajo se GANA los ven de todos modos.', supMat: 'Materiales de proveedores (sin precios)', specL: 'Especificación / modelo', mqDocs: 'Sus archivos, especificaciones y cotizaciones', mqDocsHint: 'Adjunte su cotización en PDF u hojas técnicas — cualquier archivo de hasta 50 MB.', matListSub: 'Materiales de este trabajo', reqMat: 'Pedir más materiales', reqItem: 'Material', reqQty: 'Cantidad', reqUnit: 'Unidad', reqReason: '¿Por qué se necesita?', reqSend: 'Enviar la solicitud', reqSent: 'Solicitud enviada al PM del trabajo', reqMine: 'Sus solicitudes de materiales', reqStatus: { pending: 'Esperando al PM', approved: 'Aprobada', declined: 'Rechazada' }, reqNone: 'Sin solicitudes todavía.',
+    /* patch BIDSITE3 */ bidMail: 'Correos del sitio', bidMailHint: 'Los correos que el sitio envía a subcontratistas y proveedores. Cada uno tiene su interruptor. Salen también en modo de captura de datos (no son correos a clientes); nunca un precio.', bidMailSaved: 'Guardado', inviteAs: 'Invitar a un', inviteSub: 'Subcontratista', inviteSupplier: 'Proveedor', inviteMailed: 'Invitación enviada por correo', inviteNotMailed: 'Invitación agregada (el correo de invitación está apagado) — copie el enlace.', inviteSend: 'Invitar', inviteCompany: 'Nombre de la empresa — escriba para buscar', inviteHint2: 'Recibe al instante el correo "GrayCo le invitó a ofertar" con su enlace para entrar (o para crear su cuenta, aprobada para este trabajo).', mailedL: 'enviado', showSupMat: 'Mostrar a los subs los materiales de los proveedores durante la licitación', showSupMatHint: 'Los subs verán los materiales, especificaciones y cantidades de los proveedores (nunca un precio). Cuando el trabajo se GANA los ven de todos modos.', supMat: 'Materiales de proveedores (sin precios)', specL: 'Especificación / modelo', mqDocs: 'Sus archivos, especificaciones y cotizaciones', mqDocsHint: 'Adjunte su cotización en PDF u hojas técnicas — cualquier archivo de hasta 50 MB.', matListSub: 'Materiales de este trabajo', reqMat: 'Pedir más materiales', reqItem: 'Material', reqQty: 'Cantidad', reqUnit: 'Unidad', reqReason: '¿Por qué se necesita?', reqSend: 'Enviar la solicitud', reqSent: 'Solicitud enviada al PM del trabajo', reqMine: 'Sus solicitudes de materiales', reqStatus: { pending: 'Esperando al PM', approved: 'Aprobada', declined: 'Rechazada' }, reqNone: 'Sin solicitudes todavía.',
     mqTitle: 'Cotización de materiales', mqEnter: 'Enviar una cotización de materiales', mqDesc: 'Artículo', mqQty: 'Cant.', mqUnit: 'Unidad', mqPrice: 'Precio unitario', mqAddLine: '+ Agregar línea',
     mqLead: 'Tiempo de entrega', mqValid: 'Válida hasta', mqNotes: 'Notas', mqTax: 'Impuesto', mqFreight: 'Flete / entrega', mqSubtotal: 'Subtotal', mqTotal: 'Total',
     mqSubmit: 'Enviar cotización', mqUpdate: 'Actualizar cotización', mqSent: 'Cotización enviada a GrayCo.', mqNeedLine: 'Agregue al menos un artículo con descripción.',
@@ -4081,7 +4081,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
 
             {/* Invite panel — for private jobs, or optional add invites to public ones */}
             <InvitePanel t={t} job={job} invites={invites} addInvite={addInvite}
-              setInvites={setInvites} showToast={showToast} />
+              setInvites={setInvites} showToast={showToast} users={users} />
 
             {/* 33.151: pre-bid questions — answer privately or to all bidders */}
             <QuestionsPanel t={t} job={job} user={user} isAdmin={true} questions={questions || []} setQuestions={setQuestions}
@@ -6000,8 +6000,27 @@ function TeamPage({ t, users, setUsers, showToast }) {
 /* ============================================================
    INVITE PANEL — admin invites subs by email; generates a shareable link
    ============================================================ */
-function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
+function InvitePanel({ t, job, invites, addInvite, setInvites, showToast, users }) {
   const [email, setEmail] = useState('');
+  /* patch INVCO (owner 11/23 "make sure i can enter the companies name on this invite subs spot"): a company-name box — type part of a
+     name, pick a sub/supplier we already know (portal accounts + the CRM's sub list) and its e-mail fills in; a new company keeps its name */
+  const [company, setCompany] = useState('');
+  const [crmDir, setCrmDir] = useState(null);
+  const [coOpen, setCoOpen] = useState(false);
+  function loadDir() { if (crmDir === null) { setCrmDir([]); api('crm-subs').then(r => setCrmDir(r.subs || [])).catch(() => {}); } }
+  const dir = React.useMemo(() => {
+    const out = [], seen = new Set();
+    (users || []).forEach(u => { if (!u || !(u.role === 'sub' || u.role === 'supplier')) return; const e = String(u.email || '').toLowerCase(); const n = String(u.company || u.name || '').trim(); if (!n && !e) return;
+      const k = n.toLowerCase() + '|' + e; if (seen.has(k)) return; seen.add(k); out.push({ name: n || e, email: e, trade: Array.isArray(u.trades) ? u.trades.join(', ') : String(u.trade || ''), as: u.role === 'supplier' ? 'supplier' : 'sub' }); });
+    (crmDir || []).forEach(c => { const e = String(c.email || '').toLowerCase(); const n = String(c.company || c.name || '').trim(); if (!n) return;
+      const k = n.toLowerCase() + '|' + e; if (seen.has(k)) return; seen.add(k); out.push({ name: n, email: e, trade: c.trade || '', flag: c.flag || '' }); });
+    return out;
+  }, [users, crmDir]);
+  const coHits = React.useMemo(() => {
+    const q = company.trim().toLowerCase(); if (q.length < 2) return [];
+    return dir.filter(d => d.flag !== 'dnu' && (d.name.toLowerCase().includes(q) || d.email.includes(q))).sort((a, b) => (a.name.toLowerCase().startsWith(q) ? 0 : 1) - (b.name.toLowerCase().startsWith(q) ? 0 : 1) || a.name.localeCompare(b.name)).slice(0, 8);
+  }, [company, dir]);
+  function pickCo(d) { setCompany(d.name); if (d.email) setEmail(d.email); if (d.as) setAsWho(d.as); setCoOpen(false); }
   const [asWho, setAsWho] = useState('sub');   /* patch BIDSITE3: a sub or a supplier */
   const [busy, setBusy] = useState(false);
   const jobInvites = invites.filter(i => i.jobId === job.id);
@@ -6012,10 +6031,10 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
     if (!list.length) { showToast('Invalid email', 'error'); return; }
     setBusy(true);
     try {
-      const r = await api('invite-send', { jobId: job.id, emails: list, as: asWho });
+      const r = await api('invite-send', { jobId: job.id, emails: list, as: asWho, company: list.length === 1 ? company.trim().slice(0, 120) : '' });   /* patch INVCO */
       const got = r.invites || [];
       setInvites(prev => { const next = [...prev.filter(i => !got.some(g => g.id === i.id)), ...got]; try { rememberLoaded(['invites'], { invites: next }); } catch (e) {} return next; });
-      setEmail('');
+      setEmail(''); setCompany('');
       showToast(r.mailed ? t.inviteMailed + ' (' + r.mailed + ')' : t.inviteNotMailed);
     } catch (e) { showToast(e.message || 'Could not send the invite.', 'error'); }
     setBusy(false);
@@ -6053,6 +6072,26 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
           <button key={k} type="button" data-invite-pick={k} onClick={() => setAsWho(k)} style={{ border: `1px solid ${asWho === k ? styles.accent : styles.border}`, background: asWho === k ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '4px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>{l}</button>
         ))}
       </div>
+      <div style={{ position: 'relative', marginBottom: 6 }}>
+        <input style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} type="text" data-invite-company="1" autoComplete="off"
+          placeholder={t.inviteCompany || 'Company name (type to find a sub or supplier)'}
+          value={company}
+          onFocus={() => { loadDir(); setCoOpen(true); }}
+          onBlur={() => setTimeout(() => setCoOpen(false), 150)}
+          onChange={e => { setCompany(e.target.value); setCoOpen(true); loadDir(); }}
+          onKeyDown={e => { if (e.key === 'Enter' && coHits.length) { e.preventDefault(); pickCo(coHits[0]); } }} />
+        {coOpen && coHits.length > 0 && (
+          <div data-invite-hits="1" style={{ position: 'absolute', left: 0, right: 0, top: '100%', zIndex: 20, background: '#fff', border: `1px solid ${styles.border}`, borderRadius: 6, boxShadow: '0 6px 18px rgba(0,0,0,.12)', maxHeight: 260, overflowY: 'auto' }}>
+            {coHits.map((d, i) => (
+              <button key={d.name + '|' + d.email + i} type="button" data-invite-hit={d.name} onMouseDown={e => { e.preventDefault(); pickCo(d); }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', borderBottom: `1px solid ${styles.border}`, background: '#fff', cursor: 'pointer', fontSize: 13 }}>
+                <strong>{d.flag === 'preferred' ? '⭐ ' : ''}{d.name}</strong>
+                <span style={{ color: styles.text2, fontSize: 12 }}>{d.trade ? ' · ' + d.trade : ''}{d.email ? ' · ' + d.email : ' · no e-mail on file'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <input style={{ ...inputStyle, flex: 1 }} type="email" data-invite-email="1"
           placeholder={asWho === 'supplier' ? 'sales@supplier.com' : 'subcontractor@email.com'}
@@ -6075,7 +6114,7 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast }) {
               fontSize: 12, border: `1px solid ${styles.border}`,
             }}>
               <div data-invite-row={inv.email} style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <strong>{inv.email}</strong>{inv.as === 'supplier' ? ' · 🧱' : ''}{inv.mailedAt ? <span style={{ color: styles.green }}> · ✉ {t.mailedL}</span> : ''}{inv.usedAt ? ' · ✓' : ''}
+                {inv.company ? <><strong>{inv.company}</strong> · </> : null}<strong>{inv.email}</strong>{inv.as === 'supplier' ? ' · 🧱' : ''}{inv.mailedAt ? <span style={{ color: styles.green }}> · ✉ {t.mailedL}</span> : ''}{inv.usedAt ? ' · ✓' : ''}
               </div>
               <button onClick={() => copyLink(inv)} title="Copy invite link" style={{
                 background: styles.navy, color: '#fff', border: 'none', cursor: 'pointer',
