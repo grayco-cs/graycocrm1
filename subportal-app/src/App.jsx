@@ -821,6 +821,8 @@ function TradeChips({ picked, onChange }) {
 const ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
 /* patch PLANREQ-B (owner 11/12: "make sure I can add all types of files"): every common type on a bid job — 50 MB each, bigger → a 🔗 link */
 const ACCEPT_ALL = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.rtf,.dwg,.dxf,.dwf,.zip,.msg,.eml,.odt,.ods,.pages,application/pdf,image/*';   /* patch SUBFLOW: + .msg / .eml / .odt / .ods / .pages (an addendum is often an e-mail) */
+/* patch NOTESCLEAN: the lines the CRM Lead Inbox wrote that subs must never see (who the GC / owner is, the draft note) */
+function cleanNotes(n) { return String(n || '').split('\n').filter(l => !/^\s*(from grayco construction services\b|draft from the crm lead inbox|gc:|owner:|bid #:|general contractor:)/i.test(l)).join('\n').replace(/^\s+|\s+$/g, ''); }
 const ALL_RE = /\.(pdf|png|jpe?g|gif|webp|heic|heif|tiff?|bmp|docx?|xlsx?|xlsm|csv|pptx?|txt|rtf|dwg|dxf|dwf|zip|msg|eml|odt|ods|pages)$/i;
 /* patch SUBFLOW: "Addendum 2.pdf" / "ADD-01 …" / "Addendum #3" → its number (0: an addendum, no number); null: not an addendum (the server's addendumNum) */
 function addendumNum(n) { const w = String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '').replace(/_+/g, ' '); const m = /\baddend(?:um|a)\b\s*(?:no\.?|number|#)?\s*0*(\d{1,2})\b/i.exec(w) || /(?:^|[^A-Za-z])add\s*[-#.]?\s*0*(\d{1,2})(?:\b|[^0-9])/i.exec(w); if (m) return parseInt(m[1], 10); return /\baddend(?:um|a)\b/i.test(w) ? 0 : null; }
@@ -2819,6 +2821,7 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink, onAd
    ============================================================ */
 function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJobs, users, subDocs, estimates, setEstimates, activity, setActivity, invites, setInvites, messages, setMessages, questions, setQuestions, acks, setAcks, mquotes, setMquotes, setView }) {
   const isAdmin = user.role === 'admin';
+  const [notesEdit, setNotesEdit] = useState(null);   /* patch NOTESCLEAN */
   const isSupplier = user.role === 'supplier';   /* patch SUPPLIER */
   const myBid = bids.find(b => b.jobId === job.id && b.userId === user.id);
   const jobBids = bids.filter(b => b.jobId === job.id);
@@ -3027,7 +3030,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       tradeScopes: job.tradeScopes || [],
       scope: job.scope || '',
       specifications: job.specifications || '',
-      notes: job.notes || '',
+      notes: cleanNotes(job.notes),   /* patch NOTESCLEAN: no GC / owner / "From GrayCo" lines to carry over */
     });
     setEditing(true);
   }
@@ -3057,6 +3060,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       scope: editForm.scope,
       specifications: editForm.specifications,
       notes: editForm.notes,
+      ...(editForm.notes !== (job.notes || '') ? { notesEditedAt: new Date().toISOString(), notesEditedBy: user.name } : {}),   /* patch NOTESCLEAN: typed notes are kept (the CRM's refresh never rewrites them) */
       updatedAt: new Date().toISOString(),
       updatedBy: user.name,
     } : j));
@@ -3713,10 +3717,24 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             </Card>
           )}
 
-          {job.notes && (
-            <Card style={{ marginBottom: 16 }}>
-              <h3 style={sectionTitleStyle}><MessageSquare size={18} /> {t.notes}</h3>
-              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: styles.text }}>{job.notes}</div>
+          {/* patch NOTESCLEAN (owner 11/23: "take this out and let me edit notes too, but take out they are GC"): no GC / owner / "From
+              GrayCo" lines; an admin edits the notes right here */}
+          {(cleanNotes(job.notes) || isAdmin) && (
+            <Card style={{ marginBottom: 16 }} data-notes-card="1">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <h3 style={{ ...sectionTitleStyle, marginBottom: 0 }}><MessageSquare size={18} /> {t.notes}</h3>
+                {isAdmin && notesEdit === null && <Btn size="sm" variant="secondary" data-notes-edit="1" onClick={() => setNotesEdit(cleanNotes(job.notes))}>✎ {t.editNotes || 'Edit notes'}</Btn>}
+              </div>
+              {notesEdit === null
+                ? (cleanNotes(job.notes) ? <div data-notes-text="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: styles.text, marginTop: 10 }}>{cleanNotes(job.notes)}</div>
+                  : <div style={{ color: styles.text2, fontSize: 13, marginTop: 10 }}>{t.noNotes || 'No notes yet — subs see what you write here.'}</div>)
+                : <div style={{ marginTop: 10 }}>
+                    <textarea data-notes-input="1" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', minHeight: 90, resize: 'vertical' }} value={notesEdit} onChange={e => setNotesEdit(e.target.value)} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <Btn size="sm" data-notes-save="1" onClick={() => { const v = notesEdit; setJobs(jobs.map(j => j.id === job.id ? { ...j, notes: v, notesEditedAt: new Date().toISOString(), notesEditedBy: user.name, updatedAt: new Date().toISOString(), updatedBy: user.name } : j)); setNotesEdit(null); showToast(t.notesSaved || 'Notes saved — subs see them now.'); }}>{t.save || 'Save'}</Btn>
+                      <Btn size="sm" variant="ghost" onClick={() => setNotesEdit(null)}>{t.cancel || 'Cancel'}</Btn>
+                    </div>
+                  </div>}
             </Card>
           )}
 
