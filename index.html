@@ -185717,6 +185717,11 @@ function judge(){
   if (age > STALE) return { ok: null, text: pre + '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
   line = 'Last sync: ' + at + ' — OK, ' + (+h.read || 0) + ' project' + (+h.read === 1 ? '' : 's') + ' read, ' + (+h.made || 0) + ' job' + (+h.made === 1 ? '' : 's') + ' made';
   if (h.ccError && +h.ccError.status >= 500) line += ' · CompanyCam had a server error (' + h.ccError.status + ') — retried another way';
+  /* patch CCLINKSTAT: how much is linked, what waits for a person, how many CompanyCam-made jobs are copies (counts only) */
+  if (h.jobsLinked != null) line += ' · ' + (+h.jobsLinked || 0) + ' job' + (+h.jobsLinked === 1 ? '' : 's') + ' linked';
+  if (+h.waitingNew > 0) line += ' · ⚠ ' + (+h.waitingNew) + ' new CompanyCam project' + (+h.waitingNew === 1 ? '' : 's') + ' waiting on 📷 Photos'
+    + (h.newJobsOn === false ? ' ("Make new jobs" is OFF in ⚡ Automations)' : '');
+  if (+h.ccDupes > 0) line += ' · ' + (+h.ccDupes) + ' CompanyCam-made Bidding job' + (+h.ccDupes === 1 ? ' is a copy' : 's are copies') + ' of a project another job already has';
   return { ok: tokenOk ? true : null, text: pre + line + shape };
 }
 /* patch CCBANNER: THE verdict — the 📷 Photos banner and the Photos header pill both read this, so they cannot disagree.
