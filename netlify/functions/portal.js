@@ -1884,6 +1884,7 @@ async function aqSend(item, now){
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
   if (s(item.kind) === 'portal_publish') return gateOnApproved(item, now);
+  if (s(item.kind) === 'portal_signup') return require('./portal-access.js')._signup.onApproved(item, now);   /* patch PORTALSIGNUP: approved → the person may open that job; their "you are connected" e-mail */
   if (/^preq_/.test(s(item.kind))) return require('./_lib/portalreq.js').onApproved(item, now);   /* patch PORTALREQ: a reply / "not possible" note shows in the customer's My requests (no e-mail) */
   if (s(item.kind) === 'sub_contact') return subcLib().onApproved(exports._core, item, now);   /* patch SUBCONTACT: the "Your crew" card — no e-mail */   /* patch PORTALGATE: approved → it shows in the portal (no e-mail) */
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
@@ -2155,6 +2156,7 @@ async function approvalAction(body, who){
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
     if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }
     if (s(it0.kind) === 'sub_contact') { try { await subcLib().onRejected(exports._core, it0, me); } catch (e) {} }
+    if (s(it0.kind) === 'portal_signup') { try { await require('./portal-access.js')._signup.onRejected(it0, me); } catch (e) {} }   /* patch PORTALSIGNUP: no access, nothing sent */
     if (/^preq_/.test(s(it0.kind))) { try { await require('./_lib/portalreq.js').onRejected(it0, me); } catch (e) {} }
     await auditIt('denied');   /* AWAY */   /* patch PORTALREQ: a reply not approved never shows */   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
     try {

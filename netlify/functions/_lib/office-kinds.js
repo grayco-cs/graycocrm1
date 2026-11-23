@@ -42,7 +42,9 @@ const OFFICE_KINDS = [
   /* MAINTTAB / MAINTPLUS: maintenance outreach e-mails (prospects, pamphlets), repair quotes from a visit, the customer's visit reminder */
   'maint_outreach', 'maint_repair', 'maint_reminder',
   /* PORTALREQ: a customer's / GC's portal request (its card), our reply and our "not possible" note in their portal */
-  'preq_change', 'preq_project', 'preq_reply', 'preq_decline'
+  'preq_change', 'preq_project', 'preq_reply', 'preq_decline',
+  /* PORTALSIGNUP: a portal sign-up matched to a job by name + address — let them in (or another job / deny) */
+  'portal_signup'
 ];
 const OFFICE_PREFIX = /^sign_[a-z0-9_]+$/;   /* portal-sign.js: 'sign_' + the paper's kind (a change order, a warranty paper …) to the customer */
 const ADMIN_ONLY_KINDS = [
