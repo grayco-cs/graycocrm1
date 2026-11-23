@@ -458,8 +458,87 @@ function boardOf(host){ host = low(host); for (const b of BOARDS) if (b[0].test(
 const FILE_HOSTS = /(^|\.)(dropbox\.com|box\.com|drive\.google\.com|docs\.google\.com|sharefile\.com|egnyte\.com|onedrive\.live\.com|1drv\.ms|sharepoint\.com|wetransfer\.com|we\.tl|hightail\.com)$/;
 const JUNK_LINK = /unsubscribe|optout|opt-out|preferences|privacy|terms|facebook\.com|twitter\.com|x\.com\/|linkedin\.com|instagram\.com|youtube\.com|apple\.com\/app|play\.google\.com|mailto:|tel:|\.(png|jpg|gif)(\?|$)|tracking|\/o\/[A-Za-z0-9]{20,}|list-manage|sendgrid\.net\/wf\/open|google\.com\/maps/i;
 /* patch ACCTMAIL: a bid site's account e-mail (not a bid) — and its confirm / verify / reset links for the office To-Do */
-const ACCT_MAIL = /\b(verify (your )?(e-?mail|account|address)|confirm (your )?(e-?mail|account|registration|subscription|address|sign[- ]?up)|activate (your )?account|account (activation|created|approved|registration|confirmation|verification)|reset (your )?password|password reset|verification code|one[- ]time (code|passcode|password)|(sign[- ]?in|login|security) code|complete your (registration|sign[- ]?up|profile)|registration (confirmation|received|approved|complete)|thanks? (you )?for (registering|signing up)|welcome to\b)/i;
-const ACCT_NOT = /\b(invitation|invited?|invite to|bids?|bidding|rfp|rfq|itb|ifb|addend(um|a)|pre-?bid|proposals?|due date|bids? due)\b/i;
+/* patch ACCTMAIL2 (owner 11/23: "my sign up email is leads@, it should send this confirmation to office"): "Activate your Central Bidding
+   account", "Confirm your PlanHub account", "Welcome to BidNet Direct — confirm" were dropped because the subject said "bid". ACCT_NOT is
+   now only the words of a real invitation / notice; ACCT_MAIL knows more account phrasings, and a generic subject ("Action required",
+   "Welcome") is read in the body. */
+const ACCT_MAIL = /\b(verify (your )?(e-?mail|account|address|identity)|verification (code|link|e-?mail)|confirm (your )?([\w&'.-]+ ){0,3}(e-?mail|account|registration|subscription|address|sign[- ]?up)|confirm(ation)? (of )?(your )?(e-?mail|registration|account)|activat(e|ion)\b|reset (your )?password|password reset|(verification|security|sign[- ]?in|login|access|one[- ]time) (code|passcode|password|pin)|complete (your )?([\w&'.-]+ ){0,2}(registration|sign[- ]?up|profile|account)|registration (confirmation|received|approved|complete)|thanks? (you )?for (registering|signing up|joining)|welcome to\b|account (activation|created|approved|registration|confirmation|verification|set ?up)|your account (is|has been) (ready|created|approved|activated))/i;
+const ACCT_NOT = /\b(invitations?( (to|for) bids?)?|invited to bid|invite to bid|itb|ifb|rfps?|rfqs?|addend(um|a)|pre-?bid|bids? (are )?due|bid due date|bid date|solicitation)\b/i;
+const ACCT_GENERIC = /^\s*((re|fwd?):\s*)*(action (is )?required|welcome\b|important\b|please (confirm|verify|activate)|confirm\b|verify\b|activate\b|your account\b|account\b|one more step|almost done|you're almost|get started|finish (setting|signing)|complete (your )?(registration|sign[- ]?up))/i;
+function acctMail(mail){
+  const subj = s(mail.subject), body = s(mail.text).slice(0, 3000);
+  if (ACCT_NOT.test(subj)) return false;
+  if (ACCT_MAIL.test(subj)) return true;
+  return ACCT_GENERIC.test(subj) && ACCT_MAIL.test(body) && !/\b(invit(ed|ation) to bid|bids? (are )?due|addend(um|a))\b/i.test(body);
+}
+/* patch ACCTMAIL2 (owner 11/23: "I NEED LEADS@ EMAIL FOR EVERYTHING THAT'S NOT A new lead to go into the office email, like this confirmation
+   email to sign up for A2H … I don't want those bid invites to clog up the office email"): mail to leads@ / bids@ that is NOT a lead, a bid
+   invitation, an addendum or a bid notice (an account confirmation, a code, a password reset, a welcome, a plan room / vendor-registration
+   message, anything the CRM drops as "not a bid opportunity" / "not construction" / "not a lead") is forwarded — the ORIGINAL e-mail, its
+   subject with "[leads@] " in front, its body and small files, Reply-To the sender — to the office (LEADS_FWD_TO). A staff e-mail: tagged
+   'staff' (data-entry mode lets staff-only mail go; customer quiet hours never hold it; it is no push, so staff quiet hours do not apply).
+   Never: our own mail or anything from @grayco-cs.com (no loop; the forward carries X-GrayCo-CRM and comes from leads@, which ownOrAuto
+   ignores), a bounce / auto-reply (ownOrAuto, before this), a blocked sender, a sales pitch / spam (salesguard; an account e-mail is never
+   a pitch). Once per e-mail (gc_leads_fwd keeps the ids). */
+const KV_FWD = 'gc_leads_fwd';
+function fwdTo(){ return (env('LEADS_FWD_TO') || 'office@grayco-cs.com').split(',').map(low).filter(x => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x)); }
+async function leadsFwd(mail, box, why, opts){
+  opts = opts || {};
+  const key = env('RESEND_API_KEY'); if (!key) return { forwarded: false, why: 'RESEND_API_KEY is not set' };
+  const from = low(mail.from && mail.from.email), to = fwdTo();
+  if (!to.length || !from) return { forwarded: false, why: 'no address' };
+  if (/@(.+\.)?grayco-cs\.com$/.test(from) || to.indexOf(from) >= 0 || ownOrAuto(mail)) return { forwarded: false, why: 'our own mail (no loop)' };
+  if (/^(leads|bids)@\[/.test(s(mail.subject)) || /^\s*\[(leads|bids)@\]/i.test(s(mail.subject))) return { forwarded: false, why: 'already a forward (no loop)' };
+  try { const G = require('./_lib/salesguard.js');
+    if (await G.def().blocked({ email: from }, { via: 'email', text: s(mail.subject), log: false })) return { forwarded: false, why: 'blocked sender' };
+    if (!opts.account && G.isSales([mail.subject, s(mail.text).slice(0, 4000)].join('\n'), { email: from, name: s(mail.from.name) })) return { forwarded: false, why: 'sales pitch / spam' };
+  } catch (e) {}
+  const id = s(mail.messageId) || s(mail.id) || itemId(from + '|' + mail.subject + '|' + mail.date);
+  let fresh = false;
+  try { await kvCas(KV_FWD, v => { const l = arr(v); if (l.some(x => x && x.id === id)) { fresh = false; return undefined; } fresh = true; return l.concat([{ id, at: nowIso(), from, subject: s(mail.subject).slice(0, 160), box, why }]).slice(-400); }); }
+  catch (e) { fresh = true; }
+  if (!fresh) return { forwarded: false, why: 'already forwarded' };
+  const esc = v => s(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const head = 'Sent to ' + box + ' by ' + (s(mail.from.name) ? s(mail.from.name) + ' <' + from + '>' : from) + (mail.date ? ' on ' + mail.date : '') + ' — forwarded by the CRM (' + why + '). Reply goes to the sender.';
+  const html = '<div style="font:12px Arial;color:#666;border-bottom:1px solid #ddd;padding:6px 0;margin-bottom:10px">' + esc(head) + '</div>'
+    + (s(mail.html) ? s(mail.html) : '<pre style="font:14px Arial;white-space:pre-wrap">' + esc(mail.text) + '</pre>');
+  let size = 0; const attachments = arr(mail.files).filter(f => f && f.buf && (size += f.buf.length) <= 15 * 1024 * 1024).slice(0, 10).map(f => ({ filename: s(f.name) || 'attachment', content: f.buf.toString('base64') }));
+  const payload = { from: env('LEADS_FWD_FROM') || 'GrayCo leads@ <leads@grayco-cs.com>', to, reply_to: from, subject: ('[' + box + '] ' + s(mail.subject || '(no subject)')).slice(0, 300),
+    html, text: head + '\n\n' + s(mail.text), headers: { 'X-GrayCo-CRM': 'leads-forward' } };
+  if (attachments.length) payload.attachments = attachments;
+  try {
+    const send = () => fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    let r; try { r = await require('./_lib/custquiet.js').run('staff', send); } catch (e) { r = await send(); }
+    if (!r || !r.ok) { try { await kvCas(KV_FWD, v => arr(v).filter(x => !x || x.id !== id)); } catch (e) {} return { forwarded: false, why: 'Resend answered ' + (r ? r.status : 0) }; }   /* a retry can try again */
+    return { forwarded: true, to };
+  } catch (e) { try { await kvCas(KV_FWD, v => arr(v).filter(x => !x || x.id !== id)); } catch (e2) {} return { forwarded: false, why: 'Resend unreachable' }; }
+}
+/* what the CRM dropped that the office should see ("not a lead" / "not a bid opportunity" / "not construction") — never spam, a pitch, a
+   blocked sender, "too far" (that is a bid), our own mail or an auto-reply */
+const FWD_DROPS = /^(not a bid opportunity|not construction work|not a lead|no name, e-mail or phone)/i;
+async function fwdDropped(mail, box, r){
+  const b = r && r.body;
+  if (!r || r.status !== 200 || !b || !FWD_DROPS.test(s(b.ignored))) return r;
+  let f = null; try { f = await leadsFwd(mail, box, s(b.ignored)); } catch (e) { f = { forwarded: false, why: s(e && e.message).slice(0, 80) }; }
+  return Object.assign({}, r, { body: Object.assign({}, b, { officeFwd: f }) });
+}
+/* 🔔 For you: the owners and the office see an account e-mail (a post naming them; no job) */
+async function acctForYou(mail, box, links, tid){
+  let users = [], staff = [];
+  try { users = arr((await require('./portal.js')._core.kvRead(['users'])).users); } catch (e) {}
+  try { const r = await sb('gc_staff?select=email,name,role,active'); if (r && r.ok) staff = arr(await r.json()); } catch (e) {}
+  const want = (env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(Boolean);
+  staff.forEach(x => { const e = low(x && x.email); if (e && x.active !== false && /office/i.test(s(x.role)) && want.indexOf(e) < 0) want.push(e); });
+  users.forEach(u => { const e = low(u && u.email); if (e && u.active !== false && /office/i.test(s(u.role)) && /@grayco-cs\.com$/.test(e) && want.indexOf(e) < 0) want.push(e); });
+  const ppl = want.map(e => { const u = users.find(x => low(x && x.email) === e) || {}, st = staff.find(x => low(x && x.email) === e) || {}; return { id: s(u.id), e, n: s(u.name) || s(st.name) || e.split('@')[0] }; });
+  if (!ppl.length) return false;
+  const at = nowIso(), mid = 'M_ACCT_' + itemId(s(mail.messageId) || (mail.from.email + '|' + mail.subject));
+  const text = '🔑 ' + ppl.map(p => '@' + p.n).join(' ') + ' — a sign-up / account e-mail came to ' + box + ' from ' + (s(mail.from.name) || mail.from.email) + ': “' + s(mail.subject).slice(0, 160) + '”. It was forwarded to the office e-mail — open it there and finish it (confirm / code / password).' + (links.length ? ' Link: ' + links[0] : '');
+  const msg = { id: mid, pid: 'office:accounts', authorId: 'leads-inbox', authorName: box + ' (account e-mail)', text, tags: ppl.map(p => p.id || p.e), mentions: ppl.map(p => ({ id: p.id, e: p.e, n: p.n })),
+    notify: ppl.map(p => ({ id: p.id, e: p.e, n: p.n, why: 'mention' })), at, source: 'leads-inbox', todoId: tid };
+  const has = l => l.some(m => m && s(m.id) === mid);
+  try { const w = await require('./portal.js')._core.kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); return !!(w && w.ok); } catch (e) { return false; }
+}
 function acctLinks(mail){
   const out = [];
   String(mail.html || '').replace(/href\s*=\s*["'](https?:\/\/[^"']+)["']/gi, (m, u) => { out.push(decodeEntities(u)); return m; });
@@ -1057,19 +1136,23 @@ async function processEventCore(evt, opts){
   /* Google's forwarding / group set-up messages: kept for the owner, never a lead */
   if (/^(forwarding-noreply|groups-noreply|noreply-.*groups)@google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email)) {
     await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== mail.id).concat([{ id: mail.id || itemId(mail.subject + mail.date), at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20));
-    return { status: 200, body: { ok: true, notice: true } };
+    let f0 = null; if (toLeads || toBids) { try { f0 = await leadsFwd(mail, toLeads ? 'leads@' : 'bids@', 'a Google group / forwarding notice', { account: true }); } catch (e) {} }   /* patch ACCTMAIL2: a forwarding code is an account e-mail too */
+    return { status: 200, body: { ok: true, notice: true, officeFwd: f0 } };
   }
   /* patch ACCTMAIL (owner 11/23: "I signed up for leads@ email, does that go to office when people send confirmation emails etc"):
      a plan room / bid site's account e-mail to leads@ or bids@ (confirm your e-mail, activate, verification code, password reset,
      welcome / registration approved) was read as "not a bid" and dropped. Now: kept under Lead Inbox → Messages, and on the office
      To-Do with the sender, the subject, the confirm links and the start of the text. Never a lead; nothing is sent anywhere. */
-  if ((toLeads || toBids) && ACCT_MAIL.test(mail.subject) && !ACCT_NOT.test(mail.subject)) {   /* (a plan room's own domain reads as a bid board, so the subject decides) */
-    const id = mail.id || itemId(mail.subject + mail.date);
+  if ((toLeads || toBids) && acctMail(mail)) {   /* (a plan room's own domain reads as a bid board, so the subject decides — patch ACCTMAIL2: or the body under a generic subject) */
+    const id = mail.id || itemId(mail.subject + mail.date), box = toLeads ? 'leads@' : 'bids@';
     try { await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== id).concat([{ id: id, at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20)); } catch (e) {}
     const links = acctLinks(mail), who = s(mail.from.name) || mail.from.email;
-    try { await require('./portal.js')._core.officeTodo('acctmail_' + itemId(mail.from.email + '|' + mail.subject), '🔑 Account e-mail to ' + (toLeads ? 'leads@' : 'bids@') + ' — ' + s(who).slice(0, 60) + ': ' + s(mail.subject).slice(0, 120),
-      'From ' + mail.from.email + '. A bid site / plan room account e-mail (sign-up confirmation, code or password) — finish it so their bid alerts keep coming.' + (links.length ? '\nLinks:\n' + links.join('\n') : '') + '\n\n' + s(mail.text).replace(/\s+\n/g, '\n').slice(0, 900)); } catch (e) {}
-    return { status: 200, body: { ok: true, notice: true, account: true } };
+    let fw = null; try { fw = await leadsFwd(mail, box, 'an account e-mail', { account: true }); } catch (e) { fw = { forwarded: false, why: s(e && e.message).slice(0, 80) }; }   /* patch ACCTMAIL2: the real e-mail, so a person can click its link */
+    const tid = 'acctmail_' + itemId(mail.from.email + '|' + mail.subject);
+    try { await require('./portal.js')._core.officeTodo(tid, '🔑 Account e-mail to ' + box + ' — finish the sign-up · ' + s(who).slice(0, 60) + ': ' + s(mail.subject).slice(0, 120),
+      'A bid site / plan room sent a sign-up confirmation, code or password e-mail to ' + box + ' (from ' + mail.from.email + '). ' + (fw && fw.forwarded ? 'It is in the office e-mail now, subject "[' + box + '] ' + s(mail.subject).slice(0, 120) + '" — open it there and click its link / type its code.' : 'Open the link below to finish it.') + ' Finish it so their bid alerts keep coming.' + (links.length ? '\nLinks:\n' + links.join('\n') : '') + '\n\n' + s(mail.text).replace(/\s+\n/g, '\n').slice(0, 900)); } catch (e) {}
+    let fy = false; try { fy = await acctForYou(mail, box, links, tid); } catch (e) {}   /* patch ACCTMAIL2: 🔔 For you — the owners and the office */
+    return { status: 200, body: { ok: true, notice: true, account: true, officeFwd: fw, forYou: fy } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
   if (toBids && !viaLeads) {   /* patch BIDSEND (+ LEADROUTE) */
@@ -1091,10 +1174,12 @@ async function processEventCore(evt, opts){
     catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this sub bid yet (' + (e && e.message) + ') — retry.' } }; }
   }
   if (leadMail) {
-    try { const r = await require('./website-intake.js').fromEmail(mail); return { status: 200, body: Object.assign({ inbox: 'leads' }, r) }; }
+    let r0;
+    try { const r = await require('./website-intake.js').fromEmail(mail); r0 = { status: 200, body: Object.assign({ inbox: 'leads' }, r) }; }
     catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this lead yet (' + (e && e.message) + ') — retry.' } }; }
+    return fwdDropped(mail, 'leads@', r0);   /* patch ACCTMAIL2: not a lead → the office e-mail */
   }
-  return bidPath(mail, opts);
+  return fwdDropped(mail, toLeads ? 'leads@' : 'bids@', await bidPath(mail, opts));   /* patch ACCTMAIL2: not a bid opportunity / not construction → the office e-mail */
 }
 /* patch INVMAIL: one copy of a watched mailbox's message → the invoice detector → the invoices@ intake / receipts / 📥 Possible invoices */
 async function invmailTake(mail, boxes, road, opts, kind){
