@@ -161036,7 +161036,8 @@ function stLead(a, st){
   try { W._setLeads(function(prev){ prev = Array.isArray(prev) ? prev : []; return prev.some(function(x){ return x && x.id === L.id; }) ? prev : [L].concat(prev); }); } catch (e) { return Promise.resolve({ ok: false, error: e.message }); }
   try { if (W._crm && Array.isArray(W._crm.leads) && !W._crm.leads.some(function(x){ return x && x.id === L.id; })) W._crm.leads = [L].concat(W._crm.leads); } catch (e) {}
   ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
-  return Promise.resolve({ ok: true, lead: L, where: 'Leads — ' + L.name + ' · New lead (nobody was contacted)' });
+  var res = { ok: true, lead: L, where: 'Leads — ' + L.name + ' · New lead (nobody was contacted)' };
+  return new Promise(function(done){ var t0 = Date.now(); (function look(){ var on = false; try { on = (Array.isArray(W.__gcLeadsLive) ? W.__gcLeadsLive : []).some(function(x){ return x && x.id === L.id; }); } catch (e) {} if (on || Date.now() - t0 > 3000) { ST(function(){ done(res); }, on ? 50 : 0); return; } ST(look, 60); })(); });   /* patch FIELDFAST: ✓ once it is on the list */
 }
 /* 🧾 → a pending expense on the job (the expenses list's own setter; Log Expense's record, waiting for review) */
 function stExpense(a, pid, st){

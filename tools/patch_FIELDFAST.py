@@ -27,6 +27,7 @@ Measured by tools/tests/test_FIELDTAPS.mjs (iPhone 390x844, standalone, CPU x4) 
    them: the CRM opens as that person at once (it opened as nobody and reloaded 7-10 s later).
 7. A pulled lead list is merged with the screen's own when it is applied: a lead entered here that the pulled copy lacks
    (or has older) stays on the list.
+8. 🎤 Speak → ➕ Lead says "✓ Leads — …" once the lead is on the Leads list (at most 3 s).
 """
 import os, sys
 p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
@@ -156,5 +157,11 @@ function _ffKeepLocalLeads(v){
   }catch(e){ return v; }
 }
 function _flushPendingSync(){""")
+# 8. SPEAKTILE ➕ → Leads: "✓ Leads — …" once the lead is on the Leads list (the app has drawn it), not the moment it was
+#    handed over (at most 3 s). Measured (test_SPEAKTILE debug): with Home usable sooner the Post lands while the open's
+#    first sync is still being applied; the lead was on the list (window.__gcLeadsLive) but the app had not drawn it yet.
+once("""  return Promise.resolve({ ok: true, lead: L, where: 'Leads — ' + L.name + ' · New lead (nobody was contacted)' });""",
+     """  var res = { ok: true, lead: L, where: 'Leads — ' + L.name + ' · New lead (nobody was contacted)' };
+  return new Promise(function(done){ var t0 = Date.now(); (function look(){ var on = false; try { on = (Array.isArray(W.__gcLeadsLive) ? W.__gcLeadsLive : []).some(function(x){ return x && x.id === L.id; }); } catch (e) {} if (on || Date.now() - t0 > 3000) { ST(function(){ done(res); }, on ? 50 : 0); return; } ST(look, 60); })(); });   /* patch FIELDFAST: ✓ once it is on the list */""")
 open(p, 'w', encoding='utf-8').write(t)
 print('FIELDFAST: patched')
