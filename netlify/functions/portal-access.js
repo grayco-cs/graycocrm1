@@ -620,7 +620,8 @@ async function customerMatch(data, id, noTeam){
   return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: low(p0.clientEmail || p0.email || c0.email), lang: 'en' };
 }
 async function partnerMatch(data, id){
-  const subs = crmSubs(data).filter(function(r){ return id.kind === 'email' ? [r.email].concat(arr(r.altEmails)).map(low).indexOf(id.value) > -1 : [r.phone].concat(arr(r.altPhones)).map(phone10).indexOf(id.value) > -1; });   /* patch SUBSYNC: + the e-mail / phone their bid-site account brought (merged in as altEmails / altPhones) */
+  const subs = crmSubs(data).filter(function(r){ return id.kind === 'email' ? [r.email].concat(arr(r.altEmails)).map(low).indexOf(id.value) > -1 : [r.phone].concat(arr(r.altPhones)).map(phone10).indexOf(id.value) > -1; })   /* patch SUBSYNC: + the e-mail / phone their bid-site account brought (merged in as altEmails / altPhones) */
+    .sort(function(a, b){ return (okEmail(low(b.email)) ? 1 : 0) - (okEmail(low(a.email)) ? 1 : 0); });   /* patch CODEFIX2: one phone on several records (a duplicate "Mason" with no e-mail beside "Rapid Air") — the record with an e-mail answers, so the code can reach them */
   for (const sub of subs) {
     if (subOff(data, [sub.id])) continue;   /* patch SUBACCT: turned off — no code is sent */
     if (await teamPrimaryOff(id, function(m){ return s(m.crmSubId) === s(sub.id) || s(m.company) === 'crm:' + s(sub.id); })) continue;   /* patch PORTALTEAM: taken off the team */
@@ -640,9 +641,9 @@ async function partnerMatch(data, id){
 }
 /* patch CODEFIX: a code request that sends nothing goes on the office To-Do (internal only — the person asking is never told whether
    the address is on file); once per address per day */
-function codeBlocked(id, what, how){
+function codeBlocked(id, what, how, uniq){
   try {
-    const day = new Date().toISOString().slice(0, 10), key = 'codeblk_' + hmac(id.key + '|' + day).slice(0, 16);
+    const day = new Date().toISOString().slice(0, 10), key = 'codeblk_' + hmac(id.key + '|' + day + '|' + (uniq || '')).slice(0, 16);
     const who = id.kind === 'email' ? id.value : ('(' + id.value.slice(0, 3) + ') ' + id.value.slice(3, 6) + '-' + id.value.slice(6));
     return require('./portal.js')._core.officeTodo(key, '🔑 Portal sign-in: ' + what + ' (' + who + ')', how).catch(function(){});
   } catch (e) { return null; }
@@ -668,6 +669,8 @@ async function signinStart(body, ip){
     else {
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
       await dbPatch('gc_portal_code', 'id=' + eq(rid), { relay: { phone: id.value, code: code, pids: m.pids || [], who: m.name || '' } });
+      /* patch CODEFIX2: nobody saw these waiting — the office gets a To-Do with a one-tap text (the code itself only in the sms: link) */
+      codeBlocked(id, (m.kind === 'partner' ? (m.sub && m.sub.name) : m.name || 'Someone') + ' is waiting for a portal code — no e-mail on file and texting is not set up', 'Text it from your phone within 10 minutes: sms:' + id.value + '?body=' + encodeURIComponent('GrayCo Portal code: ' + code + ' (10 min)') + ' — or add their e-mail to the record so codes go by e-mail.', rid);
     }
   }
   if (id.kind === 'email' && !(m && m.kind === 'customer')) {   /* patch SELFRESET: every sub / supplier account (linked or not) also gets the reset link */

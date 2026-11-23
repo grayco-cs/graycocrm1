@@ -140,4 +140,14 @@ r = await pa({ action: 'signin-start', who: 'alec@unknownplumbing.test' });
 ok('9 asked again the same day: still one To-Do', todos().filter(t => /alec@unknownplumbing/.test(t.label)).length === 1, todos());
 r = await pa({ action: 'signin-start', who: 'bob@pendingpaint.test' });
 ok('10 a bid-site account e-mail (gets the reset link) is not reported as unknown', !todos().some(t => /bob@pendingpaint/.test(t.label)), todos());
+/* CODEFIX2: one phone on two records — "Mason" (phone only) and "Rapid Demo Air" (phone + e-mail) */
+KV.vendors.push({ id: 'VENmason', name: 'Mason', phone: '901-555-0160', isSub: true }, { id: 'SUBrapid', name: 'Rapid Demo Air', email: 'office@rapiddemoair.test', phone: '901-555-0160', isSub: true, trade: 'HVAC' });
+r = await pa({ action: 'signin-start', who: '901-555-0160' });
+ok('11 one phone on a no-e-mail duplicate and the real record: the code goes to the real record\'s e-mail', codeMails('office@rapiddemoair.test').length === 1 && T.gc_sub_link.some(l => l.sub_id === 'SUBrapid' && !l.revoked), MAIL.map(m => m.to));
+KV.vendors.push({ id: 'VENphoneonly', name: 'Phone Only Painting', phone: '901-555-0170', isSub: true });
+r = await pa({ action: 'signin-start', who: '901-555-0170' });
+const w = todos().find(t => /Phone Only Painting/.test(t.label) && /waiting for a portal code/.test(t.label));
+ok('12 a phone-only sub (no texting yet): the office To-Do has a one-tap text with the code', !!w && /sms:9015550170\?body=GrayCo%20Portal%20code%3A%20\d{6}/.test(w.note || ''), todos());
+r = await pa({ action: 'signin-start', who: '901-555-0170' });
+ok('13 asking again: a new To-Do with the new code', todos().filter(t => /Phone Only Painting/.test(t.label)).length === 2, todos().length);
 const n = R.filter(Boolean).length; console.log('CODEFIX ' + n + '/' + R.length); process.exit(n === R.length ? 0 : 1);
