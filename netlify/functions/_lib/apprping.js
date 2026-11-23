@@ -274,19 +274,69 @@ async function feed(email, items){
   await kvSet(FEED, cur);
   return { ok: true, n: list.length };
 }
-/* one approval decision → gc_appr_audit (≤ 2000, 60 days); a second report of the same decision within 2 minutes is the same one */
+/* one approval decision → gc_appr_audit (≤ 2000, 60 days); a second report of the same decision within 2 minutes is the same one.
+   APPRHIST: what leaves the live list (older than 60 days, or past 2000) is first ARCHIVED — appended to gc_appr_audit_arch_<year>
+   (never purged) — and only an entry the archive holds is taken off the live list. The decisions: approved · denied · recorded
+   (approved, not sent) · answered (a plan / info request) · merged / kept (same sub? — merged / different subs). */
+const ARCH = 'gc_appr_audit_arch_', DECISIONS = { approved: 1, denied: 1, recorded: 1, answered: 1, merged: 1, kept: 1 };
+function aid(x){ return s(x && x.id) || (s(x && x.key) + '|' + s(x && x.at) + '|' + low(x && x.email)); }
+async function archive(items){
+  const by = {}, done = {};
+  items.forEach(function(x){ const y = s(x.at).slice(0, 4); if (!/^\d{4}$/.test(y)) return; (by[y] = by[y] || []).push(x); });
+  for (const y of Object.keys(by)) {
+    const add = by[y];
+    const r = await C().kvListUpdate(ARCH + y, function(l){
+      const have = {}; l.forEach(function(x){ have[aid(x)] = 1; });
+      const nw = add.filter(function(x){ return !have[aid(x)]; });
+      if (!nw.length) return null;
+      return { list: l.concat(nw), check: function(l2){ const h2 = {}; l2.forEach(function(x){ h2[aid(x)] = 1; }); return nw.every(function(x){ return h2[aid(x)]; }); } };
+    });
+    if (r && r.ok) add.forEach(function(x){ done[aid(x)] = 1; });
+  }
+  return done;
+}
 async function audit(rec){
-  const at = new Date(D.now()).toISOString();
-  const r0 = { id: 'A' + D.now().toString(36) + Math.random().toString(36).slice(2, 6), key: clip(rec.key, 160), src: clip(rec.src, 20), kind: clip(rec.kind, 40), title: clip(rec.title, 160), job: clip(rec.job, 120),
-    decision: rec.decision === 'denied' ? 'denied' : rec.decision === 'recorded' ? 'recorded' : 'approved', by: clip(rec.by, 60), email: low(rec.email), role: clip(rec.role, 20),
+  const now = D.now(), at0 = Date.parse(s(rec.at));
+  const at = new Date(at0 && at0 > now - 7 * 864e5 && at0 <= now + 5 * 60e3 ? Math.min(at0, now) : now).toISOString();   /* APPRHIST: a decision sent late (offline) keeps its own time */
+  const r0 = { id: 'A' + now.toString(36) + Math.random().toString(36).slice(2, 6), key: clip(rec.key, 160), src: clip(rec.src, 20), kind: clip(rec.kind, 40), title: clip(rec.title, 160), job: clip(rec.job, 120),
+    decision: DECISIONS[s(rec.decision)] ? s(rec.decision) : 'approved', by: clip(rec.by, 60), email: low(rec.email), role: clip(rec.role, 20),
     device: /^(phone|tablet|computer)$/.test(low(rec.device)) ? low(rec.device) : 'unknown', at: at, since: clip(rec.since, 40), coverFor: clip(rec.coverFor, 60) };
-  if (r0.since && !isNaN(Date.parse(r0.since))) r0.waitedMin = Math.max(0, Math.round((D.now() - Date.parse(r0.since)) / 60e3));
-  const cut = new Date(D.now() - 60 * 864e5).toISOString();
+  if (s(rec.pid)) r0.pid = clip(rec.pid, 60);   /* APPRHIST: the job, for the link */
+  if (s(rec.note)) r0.note = clip(rec.note, 200);   /* APPRHIST: why (a deny / decline reason) */
+  if (r0.since && !isNaN(Date.parse(r0.since))) r0.waitedMin = Math.max(0, Math.round((now - Date.parse(r0.since)) / 60e3));
+  const cut = new Date(now - 60 * 864e5).toISOString();
+  /* APPRHIST: archive first what is about to leave the live list */
+  let gone = {};
+  try {
+    const cur = await C().kvListRead(AUDIT);
+    if (cur && cur.list) {
+      const keep = cur.list.filter(function(x){ return x && s(x.at) >= cut; }), old = cur.list.filter(function(x){ return x && !(s(x.at) >= cut); });
+      const over = keep.length + 1 > 2000 ? keep.slice().sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(0, keep.length + 1 - 2000) : [];
+      if (old.length || over.length) gone = await archive(old.concat(over));
+    }
+  } catch (e) { gone = {}; }
   const r = await C().kvListUpdate(AUDIT, function(l){
-    if (l.some(function(x){ return x && x.key === r0.key && x.decision === r0.decision && low(x.email) === r0.email && D.now() - (Date.parse(x.at) || 0) < 120e3; })) return null;
-    return { list: l.filter(function(x){ return x && s(x.at) >= cut; }).concat([r0]).slice(-2000), check: function(l2){ return l2.some(function(x){ return x && x.id === r0.id; }); }, result: r0 };
+    if (l.some(function(x){ return x && x.key === r0.key && x.decision === r0.decision && low(x.email) === r0.email && Math.abs(Date.parse(r0.at) - (Date.parse(x.at) || 0)) < 120e3; })) return null;
+    return { list: l.filter(function(x){ return x && !gone[aid(x)]; }).concat([r0]), check: function(l2){ return l2.some(function(x){ return x && x.id === r0.id; }); }, result: r0 };
   });
   return { ok: !!(r && r.ok), rec: r && r.result, dup: !!(r && r.unchanged) };
+}
+/* APPRHIST: 📜 All approvals history — the live list + every year's archive, newest first, a page at a time ({ before, limit }) */
+async function history(o){
+  o = o || {};
+  const now = D.now(), y1 = new Date(now).getUTCFullYear(), keys = [AUDIT];
+  for (let y = 2026; y <= y1; y++) keys.push(ARCH + y);
+  const all = [], seen = {};
+  for (const k of keys) {
+    let l = []; try { const r = await C().kvListRead(k); l = r && r.list ? r.list : []; } catch (e) { l = []; }
+    l.forEach(function(x){ if (!x || !x.at) return; const id = aid(x); if (seen[id]) return; seen[id] = 1; all.push(x); });
+  }
+  all.sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); });
+  const before = s(o.before), lim = Math.max(1, Math.min(1000, parseInt(o.limit, 10) || 400));
+  const from = before ? all.filter(function(x){ return s(x.at) < before; }) : all;
+  const page = from.slice(0, lim).map(function(x){ const y = { id: aid(x), key: s(x.key), src: s(x.src), kind: s(x.kind), title: s(x.title), job: s(x.job), decision: s(x.decision), by: s(x.by), email: low(x.email), role: s(x.role), device: s(x.device), at: s(x.at) };
+    if (x.pid) y.pid = s(x.pid); if (x.note) y.note = s(x.note); if (x.waitedMin != null) y.waitedMin = x.waitedMin; if (x.coverFor) y.coverFor = s(x.coverFor); return y; });
+  return { ok: true, items: page, more: from.length > lim, total: all.length };
 }
 /* 📊 Approvals this week (admins): what came in, who handled it, how long it waited, anything waiting 24 h+ */
 async function week(now){
@@ -299,4 +349,4 @@ async function week(now){
   let away = []; try { away = AW().upcoming(await AW().load(true), now); } catch (e) {}
   return { ok: true, at: new Date(now).toISOString(), came: inList.length, handled: done, waiting: waiting, stuck: waiting.filter(function(c){ return c.waitH >= 24; }), away: away, covered: obj(st.covered), pings: Object.keys(obj(st.last)).map(function(e){ return { email: e, last: st.last[e] }; }) };
 }
-module.exports = { STATE, FEED, AUDIT, LOCK, SIG_KEYS, FEED_PREFIX, D, run, gather, compose, feed, audit, week, quiet, ck, noteList };
+module.exports = { STATE, FEED, AUDIT, ARCH, LOCK, SIG_KEYS, FEED_PREFIX, D, run, gather, compose, feed, audit, history, week, quiet, ck, noteList };
