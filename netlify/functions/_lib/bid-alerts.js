@@ -786,7 +786,7 @@ function make(d){
     const row = '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b>' + (who ? '<br><span style="font-size:13px"><b>Contact:</b> ' + esc(who) + '</span>' : '')
       + (x.address ? '<br><span style="font-size:13px;color:#555">' + esc(x.address) + '</span>' : '') + '<br><span style="font-size:13px;color:#555">' + esc([x.form || cap(x.type), x.source && 'from ' + x.source].filter(Boolean).join(' · ')) + '</span>'
       + (x.assignee ? '<br><span style="font-size:13px"><b>Assigned to:</b> ' + esc(x.assignee) + '</span>' : '<br><span style="font-size:13px;color:#b45309"><b>Not assigned yet</b></span>') + '</td></tr>';
-    const html = frame(head, intro, row, 'Speed to lead: the owners are texted when a new lead has no PM after 4 and 24 hours; the PM when nobody has reached out 4 hours (e-mail) and 24 hours (text) after it was assigned, and the owners at 48 hours. Nothing between 9 PM and 7 AM Central.');
+    const html = frame(head, intro, row, 'Speed to lead: the owners are texted when a new lead has no PM after 4 and 24 hours; the PM when nobody has reached out 4 hours (e-mail) and 24 hours (text) after it was assigned. Nothing between 9 PM and 7 AM Central.');
     const text = subject + '\n\n' + x.title + (who ? '\n' + who : '') + (x.address ? '\n' + x.address : '') + '\n\nOpen Leads: ' + site() + '/#leads';
     return { area: 'area:Leads', leadKey: x.key, replyTo: s(x.email || (x.contact || {}).email), subject, html, text, push: { title: subject.slice(0, 100), body: (x.title + (who ? ' — ' + who : '')).slice(0, 180), tag: 'lead-stl-' + kind + '-' + x.key } };
   }
@@ -794,7 +794,8 @@ function make(d){
     const out = [], haveInbox = {}, have = {};
     arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
     arr(leads).forEach(l => {
-      if (!l || !l.id || closed(l) || LW().closed(l) || !inbound(l)) return;   /* LEADWATCH: a held lead is still unassigned — the owners hear at 4 h that it goes to the suggested PM at 5 PM */
+      if (!l || !l.id || closed(l) || LW().closed(l) || !inbound(l)) return;
+      if (typeof LW().cleared === 'function' && LW().cleared(l)) return;   /* patch LEADRISK: an owner's ✕ Clear on 🚨 Leads at risk — no reminder, no text about it, until something new happens on the lead */   /* LEADWATCH: a held lead is still unassigned — the owners hear at 4 h that it goes to the suggested PM at 5 PM */
       const x = entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type }));
       if (x.assignee && low(l.createdBy) === low(x.assignee)) return;   /* a PM's own lead, typed in after talking to them */
       out.push(Object.assign(x, { born: bornAt(l), asgAt: LW().asgAt(l), contacted: contacted(l), contactName: s(l.contactName), phone: s(l.phone), email: s(l.email), address: s(l.address), raw: l }));
