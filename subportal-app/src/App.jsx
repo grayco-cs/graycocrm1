@@ -6000,6 +6000,222 @@ function TeamPage({ t, users, setUsers, showToast }) {
 /* ============================================================
    INVITE PANEL — admin invites subs by email; generates a shareable link
    ============================================================ */
+/* ═══ patch INVGROUPS (owner 11/23 "have we this where I can invite all subs, or recent invitees too, or if I have a special group of who I
+   usually invite let them be group 1"): 👥 Pick several on ✉️ Invite Subs — every sub / supplier we know with an e-mail (portal accounts +
+   the CRM's sub list), grouped by trade, ⭐ Preferred first, ⛔ Do not use never listed or sent; quick picks (All subs · This job's trades ·
+   ⭐ Preferred · 🕘 Recent invitees) like the staff CRM's ✉️ Invite subs picker; 💾 saved groups (server-side, every admin sees them;
+   delete = archive). Sends only on the admin's click, after one inline "Invite N?" step, in chunks of ≤100 through invite-send. */
+const IG_CHUNK = 100, IG_RECENT_DAYS = 90;
+const igOkMail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+function igTrades(v) { return (Array.isArray(v) ? v : String(v || '').split(/\s*[,;\/]\s*/)).map(x => String(x || '').trim()).filter(Boolean); }
+function igTradeHit(trades, wanted) { return trades.some(tr => tradeMine(tr, wanted)); }
+function igNextName(groups) { let n = 1; const used = new Set(groups.map(g => String(g.name).toLowerCase())); while (used.has('group ' + n)) n++; return 'Group ' + n; }
+function InviteBulk({ t, job, invites, setInvites, users, showToast, crmDir, loadDir }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [trade, setTrade] = useState('');
+  const [view, setView] = useState('');          /* '' (everyone) | 'recent' — the recent view lists newest first */
+  const [kind, setKind] = useState('sub');       /* 🔨 subs / 🧱 suppliers */
+  const [sel, setSel] = useState({});            /* email → entry */
+  const [confirmN, setConfirmN] = useState(false);
+  const [prog, setProg] = useState(null);        /* { done, total, mailed, skipped, failed, end } */
+  const [groups, setGroups] = useState(null);
+  const [naming, setNaming] = useState(null);    /* the "Save as group" name box */
+  const [edit, setEdit] = useState(null);        /* { id, name } while editing a saved group */
+  const [note, setNote] = useState('');
+  function loadGroups() { api('invite-groups', { op: 'get' }).then(r => setGroups(r.groups || [])).catch(e => { setGroups([]); showToast(e.message || 'Could not load the groups.', 'error'); }); }
+  function toggleOpen() { if (!open) { loadDir(); if (groups === null) loadGroups(); } setOpen(!open); }
+  const invitedHere = React.useMemo(() => { const m = {}; invites.forEach(i => { if (i.jobId === job.id && i.email) m[String(i.email).toLowerCase()] = i; }); return m; }, [invites, job.id]);
+  const recent = React.useMemo(() => {   /* invited to OTHER bid jobs in the last 90 days, newest first */
+    const cut = Date.now() - IG_RECENT_DAYS * 864e5, m = {};
+    invites.forEach(i => { const e = String(i.email || '').toLowerCase(), at = Date.parse(i.createdAt || i.mailedAt || '') || 0;
+      if (!igOkMail(e) || i.jobId === job.id || at < cut) return; if (!m[e] || m[e].at < at) m[e] = { at, inv: i }; });
+    return m;
+  }, [invites, job.id]);
+  /* everyone, one row per e-mail; a CRM ⛔ Do-not-use flag on that e-mail wins */
+  const pool = React.useMemo(() => {
+    const m = {};
+    const put = (e, x) => { e = String(e || '').toLowerCase().trim(); if (!igOkMail(e)) return; const o = m[e] || (m[e] = { email: e, name: '', company: '', trades: [], kind: 'sub', flag: '' });
+      if (!o.company && x.company) o.company = x.company; if (!o.name && x.name) o.name = x.name;
+      igTrades(x.trades).forEach(tr => { if (!o.trades.some(y => y.toLowerCase() === tr.toLowerCase())) o.trades.push(tr); });
+      if (x.kind === 'supplier') o.kind = 'supplier'; if (x.flag === 'dnu' || (x.flag === 'preferred' && o.flag !== 'dnu')) o.flag = x.flag; };
+    (users || []).forEach(u => { if (u && (u.role === 'sub' || u.role === 'supplier')) put(u.email, { name: u.name, company: u.company, trades: Array.isArray(u.trades) ? u.trades : u.trade, kind: u.role }); });
+    (crmDir || []).forEach(c => put(c.email, { name: c.name, company: c.company || c.name, trades: c.trade, flag: c.flag }));
+    Object.keys(recent).forEach(e => { const i = recent[e].inv; put(e, { company: i.company, kind: i.as === 'supplier' ? 'supplier' : 'sub' }); });
+    (groups || []).forEach(g => (g.members || []).forEach(x => put(x.email, { name: x.name, company: x.company })));
+    return m;
+  }, [users, crmDir, recent, groups]);
+  const label = x => x.company || x.name || x.email;
+  const usable = x => x.flag !== 'dnu' && !invitedHere[x.email];
+  const ofKind = React.useMemo(() => Object.values(pool).filter(x => x.flag !== 'dnu' && x.kind === kind), [pool, kind]);
+  const allTrades = React.useMemo(() => { const m = {}; ofKind.forEach(x => x.trades.forEach(tr => { m[tr.toLowerCase()] = m[tr.toLowerCase()] || tr; })); return Object.values(m).sort((a, b) => a.localeCompare(b)); }, [ofKind]);
+  const jobTrades = tradeList(job.tradesSought || job.trades);
+  const shown = React.useMemo(() => {
+    const s = q.trim().toLowerCase();
+    let l = ofKind.filter(x => (!s || [x.company, x.name, x.email, x.trades.join(' ')].join(' ').toLowerCase().includes(s)) && (!trade || igTradeHit(x.trades, [trade])));
+    if (view === 'recent') return l.filter(x => recent[x.email]).sort((a, b) => recent[b.email].at - recent[a.email].at);
+    return l.sort((a, b) => (a.flag === 'preferred' ? 0 : 1) - (b.flag === 'preferred' ? 0 : 1) || label(a).localeCompare(label(b)));
+  }, [ofKind, q, trade, view, recent]);
+  const byTrade = React.useMemo(() => {   /* grouped by trade (its first trade); ⭐ Preferred first inside each */
+    if (view === 'recent') return [['🕘 ' + (t.igRecent || 'Recent invitees'), shown]];
+    const m = {}; shown.forEach(x => { const k = x.trades[0] || ''; (m[k] = m[k] || []).push(x); });
+    return Object.keys(m).sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b)).map(k => [k || (t.igNoTrade || 'No trade on file'), m[k]]);
+  }, [shown, view]);
+  const selList = Object.values(sel).filter(usable);
+  function pickMany(list, how) {
+    const m = {}; list.filter(usable).forEach(x => { m[x.email] = x; }); setSel(m); setConfirmN(false); setProg(null); setNote(how || '');
+  }
+  function quick(k) {
+    setQ(''); setTrade(''); setEdit(null);
+    if (k === 'recent') { setView('recent'); pickMany(ofKind.filter(x => recent[x.email]), ''); return; }
+    setView('');
+    if (k === 'all') pickMany(ofKind);
+    else if (k === 'trades') pickMany(ofKind.filter(x => igTradeHit(x.trades, jobTrades)));
+    else if (k === 'preferred') pickMany(ofKind.filter(x => x.flag === 'preferred'));
+  }
+  function toggle(x) { if (!usable(x)) return; setConfirmN(false); setSel(p => { const n = { ...p }; if (n[x.email]) delete n[x.email]; else n[x.email] = x; return n; }); }
+  function memberNote(g) {
+    const ms = (g.members || []).map(x => pool[String(x.email).toLowerCase()]).filter(Boolean);
+    const dnu = ms.filter(x => x.flag === 'dnu').length, done = ms.filter(x => x.flag !== 'dnu' && invitedHere[x.email]).length;
+    return [dnu ? '⛔ ' + dnu + ' ' + (t.igDnuNote || 'in this group marked Do not use — not invited') : '', done ? done + ' ' + (t.igAlready || 'already invited to this job') : ''].filter(Boolean).join(' · ');
+  }
+  function chip(g) {
+    setView(''); setQ(''); setTrade(''); setEdit(null);
+    const ms = (g.members || []).map(x => pool[String(x.email).toLowerCase()]).filter(Boolean);
+    if (ms.some(x => x.kind !== kind) && !ms.some(x => x.kind === kind)) setKind(ms[0].kind);
+    pickMany(ms, memberNote(g));
+  }
+  function editGroup(g) { chip(g); setEdit({ id: g.id, name: g.name }); setNaming(null); }
+  async function saveGroup(id, name) {
+    const nm = String(name || '').trim(); if (!nm) { showToast(t.igNeedName || 'Give the group a name.', 'error'); return; }
+    const members = Object.values(sel).filter(x => x.flag !== 'dnu').map(x => ({ email: x.email, name: x.name, company: x.company }));
+    if (!members.length) { showToast(t.igNoneSel || 'Pick someone first.', 'error'); return; }
+    try { const r = await api('invite-groups', { op: 'save', group: { id: id || '', name: nm, members } }); setGroups(r.groups || []); setNaming(null); setEdit(null); showToast('💾 ' + nm + ' — ' + members.length); }
+    catch (e) { showToast(e.message || 'Could not save the group.', 'error'); }
+  }
+  async function delGroup(id) {
+    try { const r = await api('invite-groups', { op: 'archive', id }); setGroups(r.groups || []); setEdit(null); setSel({}); setNote(''); showToast(t.igDeleted || 'Group deleted (kept in the archive).'); }
+    catch (e) { showToast(e.message || 'Could not delete the group.', 'error'); }
+  }
+  async function send() {
+    const list = selList.slice(); if (!list.length) return;
+    setConfirmN(false);
+    const st = { done: 0, total: list.length, mailed: 0, skipped: 0, failed: 0, end: false }; setProg({ ...st });
+    const parts = [];
+    ['sub', 'supplier'].forEach(k => { const l = list.filter(x => x.kind === k); for (let i = 0; i < l.length; i += IG_CHUNK) parts.push([k, l.slice(i, i + IG_CHUNK)]); });
+    const got = [];
+    for (const [k, part] of parts) {
+      try {
+        const r = await api('invite-send', { jobId: job.id, emails: part.map(x => x.email), as: k, skipDnu: true });
+        (r.invites || []).forEach(g => got.push(g)); st.mailed += r.mailed || 0; st.skipped += r.skippedDnu || 0;
+      } catch (e) { st.failed += part.length; showToast(e.message || 'Could not send some invites.', 'error'); }
+      st.done += part.length; setProg({ ...st });
+    }
+    if (got.length) setInvites(prev => { const next = [...prev.filter(i => !got.some(g => g.id === i.id)), ...got]; try { rememberLoaded(['invites'], { invites: next }); } catch (e) {} return next; });
+    st.end = true; setProg({ ...st }); setSel({}); setNote('');
+    showToast('✉️ ' + got.length + ' ' + (t.igInvited || 'invited') + (st.mailed ? ' · ' + st.mailed + ' ' + (t.mailedL || 'e-mailed') : ''));
+  }
+  const who = kind === 'supplier' ? (t.igSuppliers || 'suppliers') : (t.igSubs || 'subs');
+  const pill = (on, extra) => ({ border: `1px solid ${on ? styles.accent : styles.border}`, background: on ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '5px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 12, ...(extra || {}) });
+  const n = selList.length, busy = prog && !prog.end;
+  return (
+    <div data-ig="1" style={{ marginBottom: 12, border: `1px solid ${styles.border}`, borderRadius: 8, background: open ? styles.cream : '#fff' }}>
+      <button type="button" data-ig-open="1" onClick={toggleOpen} style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '10px 12px', cursor: 'pointer', fontWeight: 800, fontSize: 13, color: styles.navy }}>
+        👥 {t.igPick || 'Pick several'} <span style={{ fontWeight: 500, color: styles.text2, fontSize: 12 }}>— {t.igPickHint || 'all subs, this job’s trades, ⭐ Preferred, recent invitees, your groups'}</span> <span style={{ float: 'right' }}>{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 12px 12px' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            {[['sub', '🔨 ' + (t.inviteSub || 'Subcontractor')], ['supplier', '🧱 ' + (t.inviteSupplier || 'Supplier')]].map(([k, l]) => (
+              <button key={k} type="button" data-ig-kind={k} onClick={() => { setKind(k); setTrade(''); setView(''); }} style={pill(kind === k)}>{l}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            <button type="button" data-ig-quick="all" onClick={() => quick('all')} style={pill(false)}>{kind === 'supplier' ? (t.igAllSup || 'All suppliers') : (t.igAll || 'All subs')}</button>
+            <button type="button" data-ig-quick="trades" onClick={() => quick('trades')} disabled={!jobTrades.length} title={jobTrades.join(', ')} style={pill(false, jobTrades.length ? null : { opacity: 0.5, cursor: 'default' })}>{t.igJobTrades || 'This job’s trades'}</button>
+            <button type="button" data-ig-quick="preferred" onClick={() => quick('preferred')} style={pill(false)}>⭐ {t.igPreferred || 'Preferred'}</button>
+            <button type="button" data-ig-quick="recent" onClick={() => quick('recent')} style={pill(view === 'recent')}>🕘 {t.igRecent || 'Recent invitees'}</button>
+            {n > 0 && <button type="button" data-ig-clear="1" onClick={() => { setSel({}); setNote(''); setConfirmN(false); }} style={pill(false, { fontWeight: 500 })}>✕ {t.igClear || 'Clear'}</button>}
+          </div>
+          {groups && groups.length > 0 && (
+            <div data-ig-groups="1" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: styles.text2 }}>💾</span>
+              {groups.map(g => (
+                <span key={g.id} style={{ display: 'inline-flex', alignItems: 'center', border: `1px solid ${edit && edit.id === g.id ? styles.accent : styles.navy}`, borderRadius: 999, overflow: 'hidden', maxWidth: '100%' }}>
+                  <button type="button" data-ig-chip={g.name} onClick={() => chip(g)} style={{ border: 'none', background: '#EEF2FF', padding: '5px 9px', cursor: 'pointer', fontWeight: 700, fontSize: 12, color: styles.navy, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{g.name} · {(g.members || []).length}</button>
+                  <button type="button" data-ig-edit={g.name} title={t.igEdit || 'Rename / edit'} onClick={() => editGroup(g)} style={{ border: 'none', borderLeft: `1px solid ${styles.border}`, background: '#fff', padding: '5px 8px', cursor: 'pointer', fontSize: 12 }}>✎</button>
+                </span>
+              ))}
+            </div>
+          )}
+          {edit && (
+            <div data-ig-editing="1" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8, padding: 8, background: '#FFFBEB', border: `1px solid ${styles.accent}`, borderRadius: 6, fontSize: 12 }}>
+              <span>✎ {t.igEditHint || 'Tick / untick below to add or remove, then'}</span>
+              <input data-ig-rename="1" value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} style={{ ...inputStyle, padding: '6px 8px', fontSize: 16, width: 'auto', flex: '1 1 120px', minWidth: 0 }} />
+              <button type="button" data-ig-update="1" onClick={() => saveGroup(edit.id, edit.name)} style={pill(true)}>💾 {t.igSaveChanges || 'Save'}</button>
+              <button type="button" data-ig-del="1" onClick={() => delGroup(edit.id)} style={pill(false, { color: styles.red })}>🗑 {t.igDelete || 'Delete group'}</button>
+              <button type="button" onClick={() => setEdit(null)} style={pill(false, { fontWeight: 500 })}>{t.cancel || 'Cancel'}</button>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+            <input data-ig-q="1" value={q} onChange={e => { setQ(e.target.value); }} placeholder={t.igSearch || 'Search name, e-mail, trade'} style={{ ...inputStyle, padding: '7px 10px', fontSize: 16, flex: '2 1 160px', width: 'auto', minWidth: 0 }} />
+            <select data-ig-trade="1" value={trade} onChange={e => { setTrade(e.target.value); if (view === 'recent') setView(''); }} style={{ ...inputStyle, padding: '7px 8px', fontSize: 14, flex: '1 1 120px', width: 'auto', minWidth: 0 }}>
+              <option value="">{t.igAnyTrade || 'Every trade'}</option>
+              {allTrades.map(tr => <option key={tr} value={tr}>{tr}</option>)}
+            </select>
+          </div>
+          {note && <div data-ig-note="1" style={{ fontSize: 12, color: styles.red, marginBottom: 6 }}>{note}</div>}
+          <div data-ig-list="1" style={{ maxHeight: 320, overflowY: 'auto', background: '#fff', border: `1px solid ${styles.border}`, borderRadius: 6 }}>
+            {shown.length === 0 ? (
+              <div style={{ padding: 10, fontSize: 12, color: styles.text2, fontStyle: 'italic' }}>{view === 'recent' ? (t.igNoRecent || 'Nobody invited to another bid job in the last 90 days.') : (t.igNobody || 'Nobody with an e-mail here yet.')}</div>
+            ) : byTrade.map(([tr, list]) => (
+              <div key={tr}>
+                <div style={{ padding: '5px 10px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: styles.text2, background: styles.surface, position: 'sticky', top: 0 }}>{tr} · {list.length}</div>
+                {list.map(x => { const inv = invitedHere[x.email], on = !!inv || !!sel[x.email];
+                  return (
+                    <label key={x.email} data-ig-row={x.email} data-ig-invited={inv ? '1' : undefined} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', borderTop: `1px solid ${styles.border}`, cursor: inv ? 'default' : 'pointer', opacity: inv ? 0.5 : 1, fontSize: 13 }}>
+                      <input type="checkbox" data-ig-check={x.email} checked={on} disabled={!!inv} onChange={() => toggle(x)} style={{ width: 18, height: 18, flex: '0 0 auto' }} />
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <strong>{x.flag === 'preferred' ? '⭐ ' : ''}{label(x)}</strong>
+                        <span style={{ color: styles.text2, fontSize: 12 }}> · {x.email}{x.trades.length > 1 ? ' · ' + x.trades.join(', ') : ''}{view === 'recent' && recent[x.email] ? ' · 🕘 ' + new Date(recent[x.email].at).toLocaleDateString() : ''}</span>
+                      </span>
+                      {inv && <span style={{ fontSize: 11, color: styles.green, fontWeight: 700, flex: '0 0 auto' }}>{t.igInvitedL || 'Invited'}</span>}
+                    </label>
+                  ); })}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+            <span data-ig-count={n} style={{ fontSize: 13, fontWeight: 800 }}>{n} {t.igSelected || 'selected'}</span>
+            <span style={{ flex: 1 }} />
+            {!edit && n > 0 && (naming === null
+              ? <button type="button" data-ig-save="1" onClick={() => setNaming(igNextName(groups || []))} style={pill(false)}>💾 {t.igSaveAs || 'Save as group'}</button>
+              : <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input data-ig-name="1" value={naming} onChange={e => setNaming(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveGroup('', naming)} style={{ ...inputStyle, padding: '6px 8px', fontSize: 16, width: 140 }} />
+                  <button type="button" data-ig-save-ok="1" onClick={() => saveGroup('', naming)} style={pill(true)}>💾</button>
+                  <button type="button" onClick={() => setNaming(null)} style={pill(false, { fontWeight: 500 })}>✕</button>
+                </span>)}
+            <button type="button" data-ig-send="1" disabled={!n || busy} onClick={() => setConfirmN(true)} style={{ background: n && !busy ? styles.navy : styles.borderDk, color: '#fff', border: 'none', borderRadius: 999, padding: '7px 14px', fontWeight: 800, fontSize: 13, cursor: n && !busy ? 'pointer' : 'default' }}>✉️ {t.igInvite || 'Invite'} {n}</button>
+          </div>
+          {confirmN && n > 0 && (
+            <div data-ig-confirm="1" style={{ marginTop: 8, padding: 10, background: '#FFFBEB', border: `1px solid ${styles.accent}`, borderRadius: 6, fontSize: 13, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ flex: '1 1 200px' }}><strong>{(t.igConfirm || 'Invite {n} {who}?').replace('{n}', n).replace('{who}', n === 1 ? who.replace(/s$/, '') : who)}</strong> {t.igConfirm2 || 'They each get the e-mail now.'}</span>
+              <button type="button" data-ig-yes="1" onClick={send} style={{ background: styles.green, color: '#fff', border: 'none', borderRadius: 999, padding: '7px 14px', fontWeight: 800, cursor: 'pointer' }}>{t.igYes || 'Yes, send'}</button>
+              <button type="button" data-ig-cancel="1" onClick={() => setConfirmN(false)} style={pill(false)}>{t.cancel || 'Cancel'}</button>
+            </div>
+          )}
+          {prog && (
+            <div data-ig-progress={prog.end ? 'done' : 'sending'} style={{ marginTop: 8, fontSize: 12, color: prog.failed ? styles.red : styles.text2 }}>
+              {prog.end ? '✓ ' : '⏳ '}{prog.end ? (t.igDone || 'Done') : (t.igSending || 'Sending…')} {prog.done} / {prog.total}
+              {prog.mailed ? ' · ✉ ' + prog.mailed + ' ' + (t.mailedL || 'e-mailed') : ''}{prog.skipped ? ' · ⛔ ' + prog.skipped + ' ' + (t.igSkipped || 'Do not use — not sent') : ''}{prog.failed ? ' · ' + prog.failed + ' ' + (t.igFailed || 'not sent (try again)') : ''}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InvitePanel({ t, job, invites, addInvite, setInvites, showToast, users }) {
   const [email, setEmail] = useState('');
   /* patch INVCO (owner 11/23 "make sure i can enter the companies name on this invite subs spot"): a company-name box — type part of a
@@ -6100,6 +6316,8 @@ function InvitePanel({ t, job, invites, addInvite, setInvites, showToast, users 
           onKeyDown={e => e.key === 'Enter' && addOne()} />
         <Btn size="md" icon={Send} onClick={addOne} disabled={busy} data-invite-send="1">{t.inviteSend}</Btn>
       </div>
+      {/* patch INVGROUPS: 👥 Pick several — bulk invite + saved groups */}
+      <InviteBulk t={t} job={job} invites={invites} setInvites={setInvites} users={users} showToast={showToast} crmDir={crmDir} loadDir={loadDir} />
 
       {jobInvites.length === 0 ? (
         <div style={{ fontSize: 12, color: styles.text2, fontStyle: 'italic' }}>
