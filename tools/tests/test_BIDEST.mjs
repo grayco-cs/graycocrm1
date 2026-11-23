@@ -38,7 +38,7 @@ cset('estimates', [est('E1', 'P1', 'Maple Street Clinic — base bid', HAND, { t
 
 /* the fake bid-hub: made-up bid jobs and sub bids from the three doors */
 const JOBS = [
-  { id: 'J1', title: 'Maple Street Clinic', address: '100 Maple St', status: 'open', visibility: 'private', due: day, trades: 'Electrical, Plumbing', invited: 5, bids: 6, leadId: 'crm:L1' },
+  { id: 'J1', title: 'Maple Street Clinic', address: '100 Maple St', status: 'open', visibility: 'private', due: new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10), trades: 'Electrical, Plumbing', invited: 5, bids: 6, leadId: 'crm:L1' },
   { id: 'J2', title: 'Riverbend Flood Job', address: '7 River Rd', status: 'open', visibility: 'private', due: day, trades: 'Mold remediation', invited: 2, bids: 2, leadId: 'crm:L2' },
   { id: 'J3', title: 'Oak Hollow Office', address: '3 Oak Way', status: 'open', visibility: 'public', due: day, trades: 'Roofing', invited: 3, bids: 1, leadId: 'crm:L3' }];
 const BIDS = {

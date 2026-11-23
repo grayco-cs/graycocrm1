@@ -183993,7 +183993,7 @@ function bidsTable(list, jobId, opts){
       return '<tr' + (isLow ? ' class="low"' : '') + ' data-sys-bid="' + esc(b.id) + '"><td><b>' + esc(b.company || b.sub || b.email) + '</b>' + (b.sub && b.company ? '<div class="mut">' + esc(b.sub) + '</div>' : '') + '</td>'
         + '<td class="num">' + money(b.amount) + (isLow ? ' <span class="mut">low</span>' : '') + '</td>'
         + '<td>' + (b.files.length ? b.files.map(function(f){ return '📄 ' + esc(f.name); }).join('<br>') : '<span class="mut">—</span>') + '</td>'
-        + '<td class="mut">' + esc(when(b.at)) + '</td><td>' + srcTag(b.source) + '</td>'
+        + '<td class="mut">' + esc(when(b.at)) + (b.late ? '<div data-sys-latebid="' + esc(b.id) + '" style="color:#b45309;font-weight:800" title="' + esc(b.lateChangedAt ? 'Changed after the due date ' + when(b.lateChangedAt) : 'Sent after the due date') + '">⏰ Late bid</div>' : '') + '</td><td>' + srcTag(b.source) + '</td>'   /* patch LATEBID */
         + '<td>' + (b.awarded ? '<b style="color:#166534">🏆 Awarded</b>' + (aw ? ' <button type="button" class="b" data-sys="unaward" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">Undo</button>' : '')
           : (b.notSelected ? '<span class="mut">Not selected</span> ' : '') /*AWARDFLOW*/ + (aw ? '<button type="button" class="b" data-sys="award" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">🏆 Mark awarded</button>' : '')) + '</td></tr>';
     }).join('');
@@ -184029,6 +184029,8 @@ function shown(){
     else if (BP.f === 'archived') { if (!j.archived) return false; }   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     else if (j.deleted) return false;
     if (BP.f === 'open' && /^(closed|won|lost|awarded)$/i.test(j.status)) return false;
+    if (BP.f === 'open' && pastDue(j)) return false;   /* patch LATEBID: past the sub due date → off the default list */
+    if (BP.f === 'pastdue' && (!pastDue(j) || j.visibility === 'draft' || /^(closed|won|lost|awarded)$/i.test(j.status))) return false;
     if (BP.f === 'private' && j.visibility !== 'private') return false;
     if (BP.f === 'public' && j.visibility !== 'public') return false;
     if (BP.f === 'draft' && j.visibility !== 'draft') return false;
@@ -184076,8 +184078,9 @@ function canDelete(){ return realAdmin() || isEst() || !!(BP.me && BP.me.canPubl
 /* patch PLANREQ-F (owner 11/12): the bid due date is edited right in the list (click it → date + time → Save: bid-hub op details, the same rule and
    the same automatic 📣 update as 📂 Manage); a past due date is red; "Subs due 11/24 · Our bid due 11/25" (our date: staff only) */
 function mdy(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) + '/' + d.slice(2, 4) : ''; }
+function pastDue(j){ return j && j.pastDue != null ? !!j.pastDue : !!(j && j.due && j.due < new Date().toISOString().slice(0, 10)); }   /* patch LATEBID */
 function dueCell(j){
-  var past = j.due && j.due < new Date().toISOString().slice(0, 10) && !/^(closed|won|lost|awarded)$/i.test(s(j.status));
+  var past = pastDue(j) && !/^(closed|won|lost|awarded)$/i.test(s(j.status));
   var ed = canInvite() || !!(BP.me && BP.me.canInvite);
   var lbl = j.due ? 'Subs due ' + mdy(j.due) + (j.dueTime ? ' ' + j.dueTime : '') : 'No due date';
   return (ed ? '<button type="button" class="b" data-sys="dueedit" data-job="' + esc(j.id) + '" title="Change the date subs see" style="padding:2px 7px;font-size:12px;white-space:normal;text-align:left;max-width:100%' + (past ? ';color:#b91c1c;border-color:#fca5a5;font-weight:800' : '') + '"' + (past ? ' data-pastdue="1"' : '') + '>' + esc(lbl) + ' ✏️</button>'
@@ -184104,7 +184107,7 @@ function drawRows(){
   var fbar = m.querySelector('[data-sys-filters]'), box = m.querySelector('[data-sys-rows]'); if (!box) return;
   var all = arr(BP.jobs), cnt = function(f){ var o = BP.f; BP.f = f; var n = shown().length; BP.f = o; return n; };
   var q0 = BP.q; BP.q = '';
-  fbar.innerHTML = [['open', 'Open'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['archived', '🗄 Archived'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
+  fbar.innerHTML = [['open', 'Open'], ['pastdue', '⏰ Past due'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['archived', '🗄 Archived'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
   BP.q = q0;
   if (BP.err && !BP.jobs) { box.innerHTML = '<div class="mut" style="color:#b91c1c">' + esc(BP.err) + '</div>'; return; }
   if (!BP.jobs) { box.innerHTML = '<div class="mut">Loading the bid jobs…</div>'; return; }
@@ -184121,7 +184124,7 @@ function drawRows(){
       return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
         + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + (j.biddingClosed ? '⏸ bidding closed · ' : '') + esc([j.address, j.po].filter(Boolean).join(' · ')) + '</div>'
         + (s(j.trades) ? '<div class="mut" data-row-trades="' + esc(j.id) + '">🔨 Trades: ' + esc((function(l){ return l.slice(0, 3).join(' · ') + (l.length > 3 ? ' +' + (l.length - 3) : ''); })(s(j.trades).split(/\s*[,;\/]\s*/).filter(Boolean))) + '</div>' : '') + '</td>'   /* patch PLANREQ-T */
-        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
+        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + (j.lateBids ? '<div data-sys-late="' + esc(j.id) + '" style="color:#b45309;font-weight:700;font-size:12px">⏰ ' + j.lateBids + ' late</div>' : '') + '</td>'
         + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '" data-sys-duecell="' + esc(j.id) + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : dueCell(j)) + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
@@ -233364,7 +233367,7 @@ function draw(){
           + '<td class="num">' + money(b.amount) + (b.isLow ? '<span class="lowtag" data-be-low>⬇ Lowest</span>' : '') + readCell(b) + '</td>'
           + (function(){ var P = scopeOf(b), raw = [s(b.scope), s(b.notes)].filter(Boolean).join(' · '); return '<td class="sc" title="' + esc(raw) + '"><div class="scn" data-be-scn="' + P.inc.length + '/' + P.exc.length + '"><span class="i">✅ ' + P.inc.length + ' included</span> · <span class="x">⛔ ' + P.exc.length + ' excluded</span></div>' + (function(){ var hs = scopeHits(b, b.trade); return hs.length ? '<div class="red" data-be-red="' + esc(hs.map(function(h){ return h.label; }).join('|')) + '">🚩 Excludes part of our scope: ' + esc(hs.map(function(h){ return h.label; }).join(', ')) + '</div>' : ''; })() + (raw ? esc(short(raw, 140)) : '<span class="mut">—</span>') + '</td>'; })()
           + '<td>' + (arr(b.files).length ? arr(b.files).map(function(f){ return (f.ref || f.url) ? '<button type="button" class="fl" data-be="file" data-ref="' + esc(f.ref || '') + '" data-url="' + esc(f.url || '') + '" data-name="' + esc(f.name) + '">📄 ' + esc(f.name) + '</button>' : '<span>📄 ' + esc(f.name) + '</span>'; }).join('') : '<span class="mut">—</span>') + '</td>'
-          + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + '</td>'
+          + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + (b.late ? '<div data-be-late="' + esc(k) + '" style="color:#b45309;font-weight:800">⏰ Late bid</div>' : '') + '</td>'   /* patch LATEBID */
           + '<td><span class="st ' + b.status + '" data-be-status="' + b.status + '">' + { awarded: '🏆 Awarded', notselected: 'Not selected', pending: 'Pending' }[b.status] + '</span></td>'
           + '<td>' + (ie ? '<span class="ine" title="' + esc(ie.est.name) + '">✓ In estimate</span><div class="mut">' + esc(short(ie.est.name, 40)) + '</div>' : '<span class="mut">—</span>') + '</td>'
           + '<td><div class="acts">' + acts + '</div></td></tr>';

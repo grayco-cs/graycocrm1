@@ -459,18 +459,43 @@ async function subScope(who){
   ]);
   const invited = new Set(invites.map(function(r){ return r.job_id; }));
   const bidOn = new Set(myBids.map(function(r){ return r.job_id; }));
-  const visible = {}, biddable = {};
+  const visible = {}, biddable = {}, late = {}, lateCand = [];
   if (who.approved) {
     jobs.forEach(function(r){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;   /* patch SYS2: a deleted bid job is gone for every sub, even one who bid on it */
       const canSee = ((j.visibility || 'public') === 'public' && tradeFit(j, who.profile)) || invited.has(r.id);   /* patch TRADEVIS */
-      const open = CLOSED.indexOf(low(j.status)) < 0;
+      const open = CLOSED.indexOf(low(j.status)) < 0, past = dueOver(j);
+      /* patch LATEBID: past the due date → only a sub who had it on their list sees it (decided below, one read for all of them) */
+      if (past && !bidOn.has(r.id) && !invited.has(r.id)) { if (canSee && open) lateCand.push(r); return; }
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
-      if (canSee && open && !j.biddingClosed && !dueOver(j)) biddable[r.id] = true;   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids · patch SUBFLOW: past the due date too */
+      if (canSee && open && !j.biddingClosed) { biddable[r.id] = true; if (past) late[r.id] = true; }   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids · patch LATEBID: past due → a ⏰ late bid */
     });
+    if (lateCand.length) {
+      const on = await onTheirList(me, lateCand);
+      lateCand.forEach(function(r){ if (!on.has(r.id)) return; visible[r.id] = r; if (!(r.data || {}).biddingClosed) { biddable[r.id] = true; late[r.id] = true; } });
+    }
   }
-  return { me: me, jobs: visible, biddable: biddable, invites: invites, myBids: myBids };
+  return { me: me, jobs: visible, biddable: biddable, late: late, invites: invites, myBids: myBids };
+}
+/* patch LATEBID (owner 11/23: "when jobs are past due they come off our bid list, subs can still send us a bid if they have it on their bid
+   list in their portal from invite or they put it on their list to keep up with then they can send a late bid in but if they missed it
+   completely it should never show to them"): a past-due job is on a sub's list when they were invited or bid on it (checked by the caller),
+   tapped ✋ I'm bidding, asked for plans / info (📩), or opened it / downloaded a plan BEFORE the due date (activity 'view' / 'download' rows:
+   the server stamps their time, the browser never sends it). Never anyone else's rows. */
+async function onTheirList(me, rows){
+  const ids = rows.map(function(r){ return r.id; }), due = {}, out = new Set();
+  rows.forEach(function(r){ due[r.id] = dueAt(r.data || {}); });
+  const [ints, reqs, acts] = await Promise.all([
+    listRows([eq('collection', 'intents'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }),
+    listRows([eq('collection', 'planreqs'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }),
+    listRows([eq('collection', 'activity'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; })
+  ]);
+  ints.forEach(function(r){ const d = r.data || {}; if (d.intent === 'yes' && s(d.userId) === me) out.add(s(r.job_id || d.jobId)); });
+  reqs.forEach(function(r){ const d = r.data || {}; if (s(d.userId) === me) out.add(s(r.job_id || d.jobId)); });
+  acts.forEach(function(r){ const d = r.data || {}, id = s(r.job_id || d.jobId), at = Date.parse(s(d.at));
+    if (s(d.userId) === me && (d.kind === 'view' || d.kind === 'download') && at && due[id] && at <= due[id]) out.add(id); });
+  return out;
 }
 
 /* ── patch SUPPLIER (owner 11/19: "Vendors, not subs, should also be able to have a portal and see these jobs for bid and their own jobs
@@ -662,7 +687,7 @@ async function loadKey(who, key, ctx){
       const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });   /* patch BIDPO: the CRM's PO (never a new one from a sub's load) */
       return withSupplierMaterials((await estFill(ps.jobs, ctx)).map(function(j){   /* patch BIDEST: the Senior Estimator next to the PM · patch BIDSITE3: + supplier materials */
         const v = subJobView(j, tr);
-        if (!v.biddingClosed && dueOver(j)) { v.biddingClosed = true; v.pastDue = true; }   /* patch SUBFLOW: past the due date → the bid site shows "Bidding is closed" (the server refuses it too) */
+        if (dueOver(j)) { v.pastDue = true; if (sc.late && sc.late[j.id]) v.lateBid = true; else v.biddingClosed = true; }   /* patch SUBFLOW · LATEBID: past due → a ⏰ late bid when it is on their list, else "Bidding is closed" (the server refuses it too) */
         if (ps.data && !(v.siteWalk && v.siteWalk.date)) { try { const w = BPO().crmSiteWalk(j, ps.data); if (w) v.siteWalk = { date: w.date, time: w.time, location: w.location, mandatory: w.mandatory }; } catch (e) {} }   /* the CRM's site walk when the bid site has none */
         return v;
       })); }
@@ -928,7 +953,16 @@ async function saveCollection(who, key, upsert, del, ctx){
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (prev && prev.read && JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs))) delete b.read;   /* patch SUBSIMPLE: a new PDF → GrayCo reads it again ("Not read yet") */
         if (!prev && x.via === 'portal') b.via = 'portal';   /* patch SUBFLOW: sent from the sub portal's 📋 Jobs to bid */
-        if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
+        /* patch LATEBID: sent or changed after the due date → ⏰ Late bid (the server's clock, never the browser's); a change after the due date
+           to an on-time bid is told like a new one (the PM + estimator may have compared it already) */
+        let lateEdit = false;
+        if (sc.late && sc.late[jobId]) {
+          const lat = new Date().toISOString();
+          if (!prev) { b.late = true; b.lateAt = lat; }
+          else if (num(prev.amount) !== num(b.amount) || JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs)) || JSON.stringify(prev.lines || null) !== JSON.stringify(b.lines || null)) {
+            b.late = true; b.lateAt = s(prev.lateAt) || lat; b.lateChangedAt = lat; if (!prev.late) b.lateEdit = true; lateEdit = true; }
+        }
+        if (!prev || lateEdit) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data, lateEdit: lateEdit });
         rows.push(rowFor('bids', b));
       }
       del.forEach(function(id){
@@ -1848,11 +1882,12 @@ async function sfDone(kind, id, by){
 async function sfEmails(job, contacts){ const base = await staffEmailsFor(job); return Array.from(new Set(base.concat((contacts || []).map(function(c){ return c.email; })))); }
 /* patch SUBFLOW: a job is past its sub due date (the bid due date + time, Central; no time = the end of that day) → no new bids or changes */
 function chiOff(d){ try { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' }).formatToParts(new Date(d + 'T18:00:00Z')).find(function(x){ return x.type === 'timeZoneName'; }); const m = /GMT([+-])(\d{1,2})/.exec(p ? p.value : ''); return m ? m[1] + ('0' + m[2]).slice(-2) + ':00' : '-06:00'; } catch (e) { return '-06:00'; } }
-function dueOver(j, nowMs){
-  const d = s(j && j.bidDueDate).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+function dueAt(j){   /* patch LATEBID: the due moment (ms), 0 = no due date */
+  const d = s(j && j.bidDueDate).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return 0;
   const tm = /^\d{2}:\d{2}$/.test(s(j.bidDueTime)) ? s(j.bidDueTime) + ':00' : '23:59:59';
-  const t = Date.parse(d + 'T' + tm + chiOff(d)); return !!t && (nowMs || Date.now()) > t;
+  return Date.parse(d + 'T' + tm + chiOff(d)) || 0;
 }
+function dueOver(j, nowMs){ const t = dueAt(j); return !!t && (nowMs || Date.now()) > t; }
 /* patch SUBFLOW: "⬇ All plans (ZIP)" — every plan file the sub may open on the job, in one ZIP (a phone opened only the first of several
    files). Built once per set of files (kept in the bucket under zips/), a signed 8-hour link back. Stored (no compression: plans are PDFs). */
 const ZIP_MAX = 150 * 1024 * 1024;
@@ -1962,9 +1997,12 @@ async function notify(n){
   if (n.kind === 'new-bid' && n.job) {
     const b = n.bid;
     const sfC = await planReqContacts(n.job).catch(function(){ return []; });   /* patch SUBFLOW: the PM + estimator hear (🔔 + push / text) — never the price in the post */
-    try { await sfTell(n.job, { kind: 'bid', id: b.id, userId: b.userId, company: b.userCompany, name: b.userName, via: b.via === 'portal' ? 'sub portal' : 'bid site', what: 'sent a bid' + (s(b.trade) ? ' for ' + s(b.trade) : ''), body: '', hint: 'Compare it in 🏗 Bid portal → 📨 Bids.', contacts: sfC }); } catch (e) {}
-    return sendMail(await sfEmails(n.job, sfC), 'New bid — ' + s(n.job.title) + ' — ' + b.userCompany,
-      mailHtml('New bid on ' + s(n.job.title), [
+    /* patch LATEBID: a late bid (or a change after the due date) is told the same way, marked ⏰ Late bid */
+    const lt = b.late ? (n.lateEdit ? '⏰ Late bid — changed their bid after the due date' : '⏰ Late bid — sent after the due date') : '';
+    try { await sfTell(n.job, { kind: 'bid', id: b.id, userId: b.userId, company: b.userCompany, name: b.userName, via: b.via === 'portal' ? 'sub portal' : 'bid site', what: (lt ? (n.lateEdit ? 'changed their bid' : 'sent a ⏰ Late bid') : 'sent a bid') + (s(b.trade) ? ' for ' + s(b.trade) : '') + (lt ? ' after the due date' + (n.lateEdit ? ' (⏰ Late bid)' : '') : ''), body: '', hint: 'Compare it in 🏗 Bid portal → 📨 Bids.', contacts: sfC, stamp: n.lateEdit ? s(b.lateChangedAt) : '' }); } catch (e) {}
+    return sendMail(await sfEmails(n.job, sfC), (lt ? '⏰ Late bid — ' : 'New bid — ') + s(n.job.title) + ' — ' + b.userCompany,
+      mailHtml((lt ? '⏰ Late bid on ' : 'New bid on ') + s(n.job.title), [
+        lt ? '<b>' + esc(lt) + '</b> (due ' + esc(s(n.job.bidDueDate) + (s(n.job.bidDueTime) ? ' ' + s(n.job.bidDueTime) : '')) + ').' : '',
         '<b>' + esc(b.userCompany) + '</b> (' + esc(b.userName) + ') bid <b>$' + num(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</b>.',
         b.scope ? 'Scope: ' + esc(b.scope.slice(0, 600)) : ''
       ].filter(Boolean), { href: portalLink(), label: 'Review the bid' }));
@@ -2789,7 +2827,7 @@ exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUploa
 exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 exports._hub.tradeFit = tradeFit; exports._hub.jobTrades = jobTrades;   /* patch TRADEVIS */
-Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */
+Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, dueAt, onTheirList, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

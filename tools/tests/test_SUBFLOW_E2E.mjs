@@ -59,11 +59,16 @@ const J = {
   JD: { id: 'JD', title: 'Draft Demo Job', bidDueDate: day(6), status: 'draft', draft: true, visibility: 'private', tradesSought: 'Drywall' },
   JX: { id: 'JX', title: 'Private Demo Job', bidDueDate: day(6), status: 'open', visibility: 'private', tradesSought: 'Drywall' },
   JI: { id: 'JI', title: 'Invited Demo Job', bidDueDate: day(6), status: 'open', visibility: 'private', tradesSought: 'Drywall', crmProjectId: 'P1' },
-  JL: { id: 'JL', title: 'Late Demo Job', bidDueDate: day(-2), status: 'open', visibility: 'public', tradesSought: 'Drywall', crmProjectId: 'P1' },
+  JL: { id: 'JL', title: 'Late Demo Job', bidDueDate: day(-2), status: 'open', visibility: 'public', tradesSought: 'Drywall', crmProjectId: 'P1', estimatorId: est },
   JA: { id: 'JA', title: 'Addenda Demo Job', address: '9 Addenda Way', bidDueDate: day(8), status: 'open', visibility: 'public', tradesSought: 'Drywall', crmProjectId: 'P1', estimatorId: est },
   JC: { id: 'JC', title: 'Closed Demo Job', bidDueDate: day(6), status: 'open', visibility: 'public', tradesSought: 'Drywall', biddingClosed: true, crmProjectId: 'P1' } };
 Object.values(J).forEach(j => T.sp_rows.push(spRow('jobs', j.id, j, { job_id: j.id })));
 T.sp_rows.push(spRow('invites', 'inv_ai', { id: 'inv_ai', jobId: 'JI', email: U.A.email }, { job_id: 'JI', email: U.A.email }));
+/* patch LATEBID: A opened JL on the bid site before its due date (so it is on A's list → a ⏰ late bid); C opened it only AFTER the due date
+   (does not count) and E never had it — neither ever sees it */
+T.sp_rows.push(spRow('activity', 'a_pv_JL_u_a', { id: 'a_pv_JL_u_a', jobId: 'JL', userId: 'u_a', kind: 'view', via: 'bidsite', at: new Date(Date.now() - 3 * 864e5).toISOString() }, { job_id: 'JL', user_id: 'u_a' }),
+  spRow('activity', 'a_pv_JL_u_c', { id: 'a_pv_JL_u_c', jobId: 'JL', userId: 'u_c', kind: 'view', via: 'bidsite', at: new Date().toISOString() }, { job_id: 'JL', user_id: 'u_c' }));
+T.sp_rows.push(spRow('plans', 'JL', { items: [{ name: 'LATE-PLAN.pdf', fileRef: 'staff/2026-11/ee55-L.pdf', size: 10, type: 'application/pdf' }] }, { job_id: 'JL' }));
 /* plan files (bytes in the bucket) */
 const STORE = new Map();
 const PDF = n => Buffer.concat([Buffer.from('%PDF-1.4\n% sheet ' + n + '\n'), Buffer.alloc(900, 0x20), Buffer.from('\n%%EOF')]);
@@ -187,10 +192,34 @@ await t('1b sub portal 📋 Jobs to bid: the same five for A, the same details; 
   clean(r.raw);
   const c = await portal('C', 'p-bidjobs'); yes(c.j.jobs.some(x => x.id === 'JP') && c.j.jobs.some(x => x.id === 'J1'), 'C: ' + c.j.jobs.map(x => x.id));
 });
-await t('1c past due (JL) and ⏸ bidding closed (JC) show as closed on both sites', async () => {
+/* patch LATEBID: past due → off the list for a sub who never had it; on their list (opened before the due date) → a ⏰ late bid */
+await t('1c past due: JL is a ⏰ late bid for A (opened it before the due date) on both sites; ⏸ bidding closed (JC) stays closed', async () => {
   const r = await bid(U.A.email, 'load', { keys: ['jobs'] }); const jl = r.j.data.jobs.find(x => x.id === 'JL'), jc = r.j.data.jobs.find(x => x.id === 'JC');
-  eq([!!jl.biddingClosed, !!jl.pastDue, !!jc.biddingClosed], [true, true, true]);
-  const p = await portal('A', 'p-bidjobs'); eq([p.j.jobs.find(x => x.id === 'JL').canBid, p.j.jobs.find(x => x.id === 'JC').canBid, p.j.jobs.find(x => x.id === 'JL').pastDue], [false, false, true]);
+  eq([!!jl.biddingClosed, !!jl.pastDue, !!jl.lateBid, !!jc.biddingClosed, !!jc.lateBid], [false, true, true, true, false]);
+  const p = await portal('A', 'p-bidjobs'); const pl = p.j.jobs.find(x => x.id === 'JL');
+  eq([pl.canBid, pl.pastDue, pl.lateBid, p.j.jobs.find(x => x.id === 'JC').canBid], [true, true, true, false]);
+});
+await t('1d a sub who never had JL never sees it: not in the list on either site, plans by direct load empty, a bid refused (C opened it only after the due date; E never)', async () => {
+  for (const e of [U.C.email, U.E.email]) {
+    const r = await bid(e, 'load', { keys: ['jobs', 'plans:JL'] }); eq(r.code, 200, r.raw); yes(!r.j.data.jobs.some(x => x.id === 'JL'), e + ' list'); eq(r.j.data['plans:JL'], [], e + ' plans');
+    yes(!r.raw.includes('Late Demo Job') && !r.raw.includes('LATE-PLAN'), e + ' saw JL');
+    const b = await bid(e, 'save', { key: 'bids', upsert: [{ id: 'b_never_' + e.length, jobId: 'JL', amount: 500 }] }); yes(b.code === 403, e + ' bid ' + b.raw);
+    const q = await bid(e, 'save', { key: 'questions', upsert: [{ id: 'q_never_' + e.length, jobId: 'JL', body: 'hello?' }] }); eq(q.code, 200); yes(!T.sp_rows.some(x => x.key === 'questions/q_never_' + e.length), e + ' question went in');
+    const v = await bid(e, 'save', { key: 'activity', upsert: [{ id: 'a_never_' + e.length, jobId: 'JL', kind: 'view' }] }); eq(v.code, 200); yes(!T.sp_rows.some(x => x.key === 'activity/a_never_' + e.length), e + ' a view after the due date was logged');
+  }
+  const c = await portal('C', 'p-bidjobs'); yes(!c.j.jobs.some(x => x.id === 'JL'), 'C sub portal list');
+  for (const [act, extra] of [['p-bid-save', { amount: 500, uploadIds: ['EupC'] }], ['p-bid-zip', {}], ['p-bid-ask', { text: 'hi' }], ['p-bid-request', { needs: ['plans'] }], ['p-bid-intent', { intent: 'yes' }]]) {
+    const x = await portal('C', act, Object.assign({ jobId: 'JL' }, extra)); eq(x.code, 403, act + ' ' + x.raw); }
+});
+await t('1e what puts a past-due job on a sub\'s list: ✋ I\'m bidding, a 📩 request, a view / download BEFORE the due date (not after, not 🚫 not bidding, never another sub\'s row)', async () => {
+  const H = SP._hub, jr = T.sp_rows.find(x => x.key === 'jobs/JL'), before = new Date(Date.now() - 3 * 864e5).toISOString(), after = new Date().toISOString();
+  const add = (c, id, d) => { const r = spRow(c, id, Object.assign({ id, jobId: 'JL' }, d), { job_id: 'JL', user_id: d.userId }); T.sp_rows.push(r); return r; };
+  const tmp = [add('intents', 'JL__u_x1', { userId: 'u_x1', intent: 'yes', at: after }), add('intents', 'JL__u_x2', { userId: 'u_x2', intent: 'no', at: before }),
+    add('planreqs', 'JL__u_x3', { userId: 'u_x3', at: after }), add('activity', 'a_dl_x4', { userId: 'u_x4', kind: 'download', at: before }), add('activity', 'a_pv_x5', { userId: 'u_x5', kind: 'view', at: after })];
+  const got = []; for (const u of ['u_x1', 'u_x2', 'u_x3', 'u_x4', 'u_x5', 'u_x6']) got.push((await H.onTheirList(u, [jr])).has('JL'));
+  tmp.forEach(r => T.sp_rows.splice(T.sp_rows.indexOf(r), 1));
+  eq(got, [true, false, true, true, false, false]);
+  eq([H.dueOver({ bidDueDate: '2026-11-03' }, Date.parse('2026-11-04T05:59:00Z')), H.dueOver({ bidDueDate: '2026-11-03' }, Date.parse('2026-11-04T06:00:01Z')), H.dueOver({ bidDueDate: '2026-11-03', bidDueTime: '14:00' }, Date.parse('2026-11-03T20:00:01Z'))], [false, true, true], 'Central, end of day / the due time');
 });
 
 console.log('\n2. plans: every file, the ZIP of all, the plan links; drafts / private never');
@@ -333,10 +362,23 @@ await t('5b with papers: the bid site bid (amount, bid form line, PDF) is saved;
 await t('5c edit before the due date (bid site) works; ⏸ closed and past-due jobs are refused on BOTH sites', async () => {
   const r = await bid(U.A.email, 'save', { key: 'bids', upsert: [{ id: bidA, jobId: 'J1', amount: 40900, scope: 'Hang, tape, L4', docs: [{ name: 'Alpha bid.pdf', type: 'application/pdf', size: 900, fileRef: 'u/u_a/ff-bid.pdf' }] }] }); eq(r.code, 200, r.raw);
   eq(T.sp_rows.find(x => x.key === 'bids/' + bidA).data.amount, 40900);
-  for (const id of ['JC', 'JL']) {
+  for (const id of ['JC']) {
     const b = await bid(U.A.email, 'save', { key: 'bids', upsert: [{ id: 'b_' + id, jobId: id, amount: 500 }] }); eq(b.code, 403, id + ' bid site ' + b.raw);
     const p = await portal('A', 'p-bid-save', { jobId: id, amount: 500, uploadIds: ['EupA'] }); eq(p.code, 403, id + ' portal ' + p.raw);
   }
+});
+/* patch LATEBID: JL is past due and on A's list → A sends a ⏰ late bid (bid site), then changes it (sub portal); Pat + Eve hear both, marked */
+await t('5c2 ⏰ late bid: A sends one on past-due JL (bid site) → saved marked late, Pat + Eve hear "⏰ Late bid"; a change from the sub portal is told too; the CRM lists it ⏰', async () => {
+  const p0 = PUSH.length, nm = newMsgs();
+  const r = await bid(U.A.email, 'save', { key: 'bids', upsert: [{ id: 'b_JL', jobId: 'JL', amount: 500, submittedAt: '2020-01-01T00:00:00Z', docs: [{ name: 'Late.pdf', type: 'application/pdf', size: 900, fileRef: 'u/u_a/late.pdf' }] }] }); eq(r.code, 200, r.raw);
+  const row = T.sp_rows.find(x => x.key === 'bids/b_JL').data; yes(row.late === true && row.lateAt && !row.lateEdit, JSON.stringify(row));
+  const m = nm().find(x => x.sf && x.sf.kind === 'bid' && x.sf.id === 'b_JL'); yes(m && /⏰ Late bid/.test(m.text) && /after the due date/.test(m.text), 'post ' + (m && m.text)); eq(told(m), [EVE, PAT]); eq(pingTo(p0).sort(), [EVE, PAT]);
+  const nm2 = newMsgs();
+  const p = await portal('A', 'p-bid-save', { jobId: 'JL', amount: 650, uploadIds: ['EupA'] }); eq([p.code, p.j.created], [200, false], p.raw);
+  const row2 = T.sp_rows.find(x => x.key === 'bids/b_JL').data; yes(row2.late && row2.lateChangedAt && row2.amount === 650, JSON.stringify(row2));
+  const m2 = nm2().find(x => x.sf && x.sf.kind === 'bid' && x.sf.id === 'b_JL'); yes(m2 && /changed their bid/.test(m2.text) && /⏰ Late bid/.test(m2.text), 'change post ' + (m2 && m2.text));
+  for (const e of [PAT, EVE]) { const h = await hubGet(e, { subbids: 'JL' }); eq(h.code, 200, h.raw); const b = h.j.bids.find(x => x.id === 'b_JL'); yes(b && b.late === true && b.amount === 650, e + ' ' + h.raw); }
+  const jl = await hubGet(OWN, { jobs: '1' }); const jr = jl.j.jobs.find(x => x.id === 'JL'); eq([jr.pastDue, jr.lateBids], [true, 1], 'CRM list row'); eq(jl.j.jobs.find(x => x.id === 'J1').pastDue, false);
 });
 await t('5d the sub portal bid (C: amount, trade, included / not, its PDF) is saved, Pat + Eve hear; C changes it before the due date', async () => {
   T.sp_rows.find(r => r.key === 'users/u_c').data.trades = ['Paint', 'Drywall'];

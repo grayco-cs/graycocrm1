@@ -237,6 +237,9 @@ rr = await portalAs('Y'.repeat(43), 'p-bid-view', { jobId: 'JR5' });
 const rr2 = await portalAs('Y'.repeat(43), 'p-bid-intent', { jobId: 'JR5', intent: 'no' });
 const rr3 = await portalAs('Y'.repeat(43), 'p-bid-intent', { jobId: 'JRD', intent: 'yes' });
 ok('R12 sub portal: opening a job logs a view; 🚫 Not bidding is saved; a job they cannot see is refused', rr.code === 200 && rowsOf('activity').some(r => r.job_id === 'JR5' && r.user_id === 'u_yes' && r.data.via === 'portal') && rr2.code === 200 && rowData('intents/JR5__u_yes').intent === 'no' && rr3.code === 403, [rr.raw, rr2.raw, rr3.raw]);
+/* patch LATEBID: a view carries the server's time (a past-due job stays on the sub's list only when it was opened BEFORE the due date) */
+{ const vw = rowsOf('activity').filter(r => r.data && r.data.kind === 'view'); const t0 = Date.now();
+  ok('R12b LATEBID: every logged view (bid site and sub portal) has its time, set by the server', vw.length > 0 && vw.every(r => { const x = Date.parse(r.data.at); return x > t0 - 3600e3 && x <= t0 + 1000; }), vw.map(r => r.data.at)); }
 /* a moved due date starts over */
 putRow('jobs', 'JR3', Object.assign({}, rowData('jobs/JR3'), { bidDueDate: BM.addDays(TODAY, 4) }), { job_id: 'JR3' });
 const n0 = MAIL.length; await BM.dueReminders({ today: TODAY });

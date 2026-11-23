@@ -347,8 +347,8 @@ Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse
 /* patch PLANREQ (owner 11/12): 📩 Request plans / more info on a job — what they need + a note; the job's PM + estimator get an e-mail,
    a CRM message and a To-Do (portal-access p-bid-request → subportal.js). A big button when the job has no plans, a small link otherwise. */
 /* patch SUBFLOW: ⬇ All plans (ZIP) · 💬 Messages with GrayCo on a bid job · past due */
-Object.assign(L.en, { brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brUndo: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', sfAddUpd: 'Updated', sfNowDue: 'Now due:', sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
-Object.assign(L.es, { brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brUndo: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', sfAddUpd: 'Actualizada', sfNowDue: 'Ahora vence:', sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
+Object.assign(L.en, { sfLate: '⏰ Late bid', sfLateOk: 'The bid due date has passed. Because this job is on your list, you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brUndo: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', sfAddUpd: 'Updated', sfNowDue: 'Now due:', sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
+Object.assign(L.es, { sfLate: '⏰ Oferta tardía', sfLateOk: 'La fecha límite ya pasó. Como este trabajo está en su lista, todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brUndo: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', sfAddUpd: 'Actualizada', sfNowDue: 'Ahora vence:', sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
 Object.assign(L.en, { prBtn: '📩 Request plans / more info', prSmall: '📩 Request more info', prNoPlans: 'No plans posted yet. Ask GrayCo for them — the job’s PM / estimator gets your request right away.', prWhat: 'What do you need?',
   prPlans: 'Plans', prSpecs: 'Specs', prSitewalk: 'Site walk / access', prOther: 'Other', prNote: 'Note (optional)', prNotePh: 'e.g. which sheets, your trade, best time for a walk', prFrom: 'From (your profile)',
   prSend: 'Send request', prPickOne: 'Tick what you need.', prOtherNote: 'Write what you need.', prSent: 'Request sent — the job’s PM / estimator will get back to you.', prOpen: 'Request sent {d}',
@@ -441,6 +441,7 @@ function bidPill(j){
   if (b && b.status === 'rejected') return pill(t('bidRejected'), 'skip');
   if (b) return pill(t('bidPending') + ' · ' + usd(b.amount), 'ok');
   if (!j.canBid) return pill(t('bidClosed'), 'skip');
+  if (j.lateBid) return pill(t('sfLate'), 'due');   /* patch LATEBID */
   return j.invited ? pill(t('bidInvited'), 'due') : pill(t('bidOpen'));
 }
 function paperName(k){ return k === 'w9' ? t('pW9') : k === 'insurance_general' ? t('pGL') : k === 'insurance_workers_comp' ? t('pWC') : k; }
@@ -502,7 +503,7 @@ function paintBids(){
   body.appendChild(h('a', { class: 'btn navy', href: D.url, target: '_blank', rel: 'noopener', text: t('bidsSite') }));
 }
 function intentBox(j){   /* patch BIDREMIND2: ✋ I'm bidding / 🚫 Not bidding (the bid-due reminders go to the subs who are bidding or opened the job) */
-  if (!j.canBid || j.myBid) return null;
+  if (!j.canBid || j.myBid || j.pastDue) return null;   /* patch LATEBID: no ✋ after the due date */
   var box = h('div', { class: 'box', 'data-bidintent': j.id });
   function paint(){
     box.innerHTML = '';
@@ -550,6 +551,7 @@ function bidSheet(j){
   else if (decided) sec.push(h('div', { class: 'how', text: t('bidDecided') }));
   else if (!j.canBid) sec.push(h('div', { class: 'how', 'data-bidpastdue': j.pastDue ? '1' : null, text: j.pastDue ? t('sfPastDue') : t('bidClosedNote') }));   /* patch SUBFLOW: past due says so */
   else {
+    if (j.lateBid) sec.push(h('div', { class: 'how', 'data-bidlate': j.id, text: t('sfLateOk') }));   /* patch LATEBID: past due, on their list → a ⏰ late bid */
     sec.push(papersBox(docs, D.url));
     var blocked = !docs.ok;
     var amt = h('input', { class: 'inp', id: 'bidAmt', type: 'number', inputmode: 'decimal', min: '0', step: '0.01', disabled: blocked, placeholder: '0.00' });
