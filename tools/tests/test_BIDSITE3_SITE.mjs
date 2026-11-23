@@ -62,7 +62,7 @@ try {
   await A.click('button:has-text("Bid site e-mails")');
   await A.waitForSelector('[data-bidmail-sw="lost"]', { timeout: 15000 });
   const sw = await A.evaluate(() => Array.from(document.querySelectorAll('[data-bidmail-sw]')).map(i => [i.getAttribute('data-bidmail-sw'), i.checked]));
-  ok('4 📧 Bid site e-mails: six switches — invite / accepted / won-not-used ON; we-lost / addendum / due reminder OFF', JSON.stringify(sw) === JSON.stringify([['invite', true], ['accepted', true], ['wonNotUsed', true], ['lost', false], ['addendum', false], ['dueReminder', false]]), sw);
+  ok('4 📧 Bid site e-mails: six switches — invite / accepted / won-not-used / bid-due reminders ON (BIDREMIND2); we-lost / addendum OFF', JSON.stringify(sw) === JSON.stringify([['invite', true], ['accepted', true], ['wonNotUsed', true], ['lost', false], ['addendum', false], ['dueSoon', true]]), sw);
   await shot(A, 'bs3_bidmail');
   await A.click('[data-bidmail-sw="addendum"]');
   ok('5 turning "Addendum posted" on is saved', await until(() => { const r = rowData('settings/bidmail'); return r && r.switches && r.switches.addendum === true && r.switches.lost === false; }), rowData('settings/bidmail'));

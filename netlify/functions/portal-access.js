@@ -1605,6 +1605,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-bids') return bidsAccept(sub, body);
   if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
   if (action === 'p-bid-save') return pBidSave(sub, body);
+  if (action === 'p-bid-intent' || action === 'p-bid-view' || action === 'p-bid-note-read') return pBidIntent(sub, action, body);   /* patch BIDREMIND2: ✋ I'm bidding / 🚫 Not bidding, opened, 🔔 read */
   if (action === 'p-bid-ask') return pBidAsk(sub, body);
   if (action === 'p-receipt') return pReceipt(ctx, body);         /* patch POGUARD: 🧾 Send a receipt / expense — with its PO (or "I don't know" → the No-PO alert) */
   if (action === 'p-receipt-po') return pReceiptPo(ctx, body);   /* patch POGUARD: ✏️ Add / fix the PO on their own receipt until it is approved */
@@ -1835,9 +1836,10 @@ async function pBidJobs(sub){
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'planreqs'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ reqs[s(r.job_id)] = HUB().subReqView(r.data); }); } catch (e) {} }
   const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); if (arr(views[id].addenda).length) signQ.push(views[id].addenda); });   /* patch SUBFLOW: + the published addenda's files */
   if (signQ.length) { try { await HUB().signAll(signQ); } catch (e) {} }   /* patch PLANREQ-C: their trades' scope files, as 8-hour links */
+  let bst = { notes: [], intents: {} }; try { bst = await require('./_lib/bidintent.js').stateOf(c.profile.id, ids); } catch (e) {}   /* patch BIDREMIND2 */
   const jobs = ids.map(function(id){
     const j = views[id], b = mine[id] || null, open = !!sc.biddable[id];
-    return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), tradesSought: clip(tradesOf(j.tradesSought), 300),
+    return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), bidDueTime: /^\d{2}:\d{2}$/.test(s(j.bidDueTime)) ? s(j.bidDueTime) : '', tradesSought: clip(tradesOf(j.tradesSought), 300),
       tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000), files: arr(x.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Scope', type: clip(f.type, 80), url: f.dataUrl } : null; }).filter(Boolean) }; }).filter(function(x){ return x.scope || x.files.length; }),   /* patch PLANREQ-C: + the trade's scope files (signed) */
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
@@ -1845,10 +1847,11 @@ async function pBidJobs(sub){
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null,
       addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30), updatedAt: clip(a.updatedAt, 40),   /* patch ADDEDIT: "Updated <date>" */
         files: arr(a.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Addendum', url: f.dataUrl } : null; }).filter(Boolean) }; }),   /* patch SUBFLOW: 📎 Addenda (as on the bid site) */
+      intent: s(bst.intents[s(id)]), reminder: bst.notes.filter(function(n){ return n.jobId === s(id) && !n.readAt; })[0] || null,   /* patch BIDREMIND2: ✋ / 🚫 and the 🔔 bid-due reminder */
       messages: (msgs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), pastDue: !!j.pastDue || (!open && !j.biddingClosed && !!HUB().dueOver(sc.jobs[id].data || {})) };   /* patch SUBFLOW */
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
-  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email), trades: (Array.isArray(c.profile.trades) ? c.profile.trades : []).map(function(x){ return clip(x, 60); }).slice(0, 20) } };   /* patch PLANREQ: the request form shows who it is from; PLANREQ-T: their trades ("Your trade") */
+  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), reminders: bst.notes.filter(function(n){ return !n.readAt && ids.indexOf(n.jobId) > -1; }).slice(0, 10), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email), trades: (Array.isArray(c.profile.trades) ? c.profile.trades : []).map(function(x){ return clip(x, 60); }).slice(0, 20) } };   /* patch PLANREQ: the request form shows who it is from; PLANREQ-T: their trades ("Your trade") */
 }
 function detailsOut(j){
   const r = j.requirements || {}, w = j.siteWalk || {}, c = j.contacts || {};
@@ -1922,6 +1925,18 @@ async function bidReadAfterSave(row, uploadIds, sub){
   d.read = read;
   await HUB().upsertRows([HUB().rowFor('bids', d)], 'portal-read');
   return Object.assign({}, row, { data: d });
+}
+/* patch BIDREMIND2: the sub portal's ✋ I'm bidding / 🚫 Not bidding, "opened this job" (for the bid-due reminders) and 🔔 dismiss —
+   the bid site's own rows (_lib/bidintent.js), as the linked bid-site account */
+async function pBidIntent(sub, action, body){
+  const BI = require('./_lib/bidintent.js');
+  const c = await bidCtx(sub);
+  if (!c.linked) throw Fail(403, 'Join GrayCo bids first (📋 Jobs to bid on Home).');
+  if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
+  if (action === 'p-bid-note-read') return BI.markRead(c.profile.id, body.ids);
+  const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
+  if (action === 'p-bid-view') return BI.logView(c.who, c.sc, jobId, 'portal');
+  try { return await BI.setIntent(c.who, c.sc, jobId, body.intent, 'portal'); } catch (e) { throw Fail(e.status || 500, e.message); }
 }
 async function pBidSave(sub, body){
   const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');

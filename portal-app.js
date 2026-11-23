@@ -347,8 +347,8 @@ Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse
 /* patch PLANREQ (owner 11/12): 📩 Request plans / more info on a job — what they need + a note; the job's PM + estimator get an e-mail,
    a CRM message and a To-Do (portal-access p-bid-request → subportal.js). A big button when the job has no plans, a small link otherwise. */
 /* patch SUBFLOW: ⬇ All plans (ZIP) · 💬 Messages with GrayCo on a bid job · past due */
-Object.assign(L.en, { sfAddUpd: 'Updated', sfNowDue: 'Now due:', sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
-Object.assign(L.es, { sfAddUpd: 'Actualizada', sfNowDue: 'Ahora vence:', sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
+Object.assign(L.en, { brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brUndo: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', sfAddUpd: 'Updated', sfNowDue: 'Now due:', sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
+Object.assign(L.es, { brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brUndo: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', sfAddUpd: 'Actualizada', sfNowDue: 'Ahora vence:', sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
 Object.assign(L.en, { prBtn: '📩 Request plans / more info', prSmall: '📩 Request more info', prNoPlans: 'No plans posted yet. Ask GrayCo for them — the job’s PM / estimator gets your request right away.', prWhat: 'What do you need?',
   prPlans: 'Plans', prSpecs: 'Specs', prSitewalk: 'Site walk / access', prOther: 'Other', prNote: 'Note (optional)', prNotePh: 'e.g. which sheets, your trade, best time for a walk', prFrom: 'From (your profile)',
   prSend: 'Send request', prPickOne: 'Tick what you need.', prOtherNote: 'Write what you need.', prSent: 'Request sent — the job’s PM / estimator will get back to you.', prOpen: 'Request sent {d}',
@@ -478,6 +478,12 @@ function paintBids(){
   if (!D.approved) { body.appendChild(h('div', { class: 'muted', text: t('bidsWaiting') })); return; }
   body.appendChild(papersBox(D.docs, D.url));
   var J = D.jobs || [];
+  (D.reminders || []).forEach(function(n){   /* patch BIDREMIND2: 🔔 the bid-due reminders (also e-mailed) */
+    var jj = J.filter(function(x){ return x.id === n.jobId; })[0];
+    body.appendChild(h('div', { class: 'post', 'data-bidreminder': n.id, style: 'border-left:4px solid #d97706' }, [h('b', { text: '🔔 ' + n.title }), h('div', { class: 'muted', text: n.body }),
+      h('div', { class: 'row' }, [jj ? h('button', { type: 'button', class: 'btn gold', text: t('brOpen'), on: { click: function(){ bidSheet(jj); } } }) : null,
+        h('button', { type: 'button', class: 'btn', 'data-bidreminder-x': n.id, text: t('brDismiss'), on: { click: function(){ api('p-bid-note-read', { ids: [n.id] }).then(function(){ D.reminders = (D.reminders || []).filter(function(x){ return x.id !== n.id; }); J.forEach(function(x){ if (x.reminder && x.reminder.id === n.id) x.reminder = null; }); paintBids(); }, function(e){ toast(e.message, true); }); } } })])]));
+  });
   if (!J.length) body.appendChild(h('div', { class: 'empty', text: t('bidsNoneOpen') }));
   J.forEach(function(j){
     var meta = [j.address, j.bidDueDate ? dueText(j.bidDueDate) : ''].filter(Boolean).join(' · '), n = daysTo(j.bidDueDate);
@@ -487,6 +493,7 @@ function paintBids(){
       meta ? h('div', { class: 'muted' + (j.canBid && n != null && n <= 3 ? ' duesoon' : ''), text: meta }) : null,
       j.tradesSought ? h('div', { class: 'muted', text: t('tradesLbl') + ': ' + j.tradesSought }) : null,
       yourTradeTag(j),   /* patch PLANREQ-T */
+      j.intent && !j.myBid ? h('div', { class: 'muted', 'data-bidintent-tag': j.intent, text: j.intent === 'yes' ? t('brYouBid') : t('brYouNot') }) : null,   /* patch BIDREMIND2 */
       short ? h('p', { class: 'scp', text: short }) : null,
       planLinks(j),
       prIsOpen(j.request) ? h('div', { class: 'muted prtag', 'data-prtag': j.id, text: t('prTag') + ' · ' + dt(j.request.at) }) : null,   /* patch PLANREQ */
@@ -494,13 +501,29 @@ function paintBids(){
   });
   body.appendChild(h('a', { class: 'btn navy', href: D.url, target: '_blank', rel: 'noopener', text: t('bidsSite') }));
 }
+function intentBox(j){   /* patch BIDREMIND2: ✋ I'm bidding / 🚫 Not bidding (the bid-due reminders go to the subs who are bidding or opened the job) */
+  if (!j.canBid || j.myBid) return null;
+  var box = h('div', { class: 'box', 'data-bidintent': j.id });
+  function paint(){
+    box.innerHTML = '';
+    if (j.intent) { box.appendChild(h('b', { text: j.intent === 'yes' ? t('brYouBid') : t('brYouNot') })); box.appendChild(h('button', { type: 'button', class: 'btn sm', 'data-bidintent-change': j.id, text: t('brUndo'), on: { click: function(){ set(''); } } })); return; }
+    box.appendChild(h('p', { text: t('brAsk') }));
+    box.appendChild(h('div', { class: 'row' }, [h('button', { type: 'button', class: 'btn gold', 'data-bidintent-yes': j.id, text: t('brBidding'), on: { click: function(){ set('yes'); } } }),
+      h('button', { type: 'button', class: 'btn', 'data-bidintent-no': j.id, text: t('brNot'), on: { click: function(){ set('no'); } } })]));
+  }
+  function set(v){ api('p-bid-intent', { jobId: j.id, intent: v }).then(function(){ j.intent = v; paint(); toast(t('brSaved')); try { paintBids(); } catch (e) {} }, function(e){ toast(e.message, true); }); }
+  paint(); return box;
+}
 function bidSheet(j){
   var D = BIDS || {}, docs = D.docs || {}, b = j.myBid, kids = [];
+  try { api('p-bid-view', { jobId: j.id }).catch(function(){}); } catch (e) {}   /* patch BIDREMIND2: opened → the bid-due reminders */
+  if (j.reminder) kids.push(h('div', { class: 'how', 'data-bidreminder-job': j.id, text: '🔔 ' + j.reminder.title + ' — ' + j.reminder.body }));
+  var ib = intentBox(j); if (ib) kids.push(ib);
   if (j.address) kids.push(h('div', { class: 'muted', text: j.address }));
   var yt = yourTradeTag(j); if (yt) kids.push(yt);   /* patch PLANREQ-T */
   var dbx = detailsBox(j); if (dbx) kids.push(dbx);   /* patch PLANREQ-E */
   if (j.biddingClosed) kids.push(h('div', { class: 'how', 'data-bidclosed': j.id, text: '⏸ ' + t('dClosed') }));
-  kids.push(h('dl', { class: 'info' }, [j.bidDueDate ? h('dt', { text: t('bidDue') }) : null, j.bidDueDate ? h('dd', { text: dueText(j.bidDueDate).replace(t('bidDue') + ' ', '') }) : null,
+  kids.push(h('dl', { class: 'info' }, [j.bidDueDate ? h('dt', { text: t('bidDue') }) : null, j.bidDueDate ? h('dd', { 'data-biddue': j.id, text: dueText(j.bidDueDate).replace(t('bidDue') + ' ', '') + (j.bidDueTime ? ' · ' + j.bidDueTime : '') }) : null,
     j.tradesSought ? h('dt', { text: t('tradesLbl') }) : null, j.tradesSought ? h('dd', { text: j.tradesSought }) : null]));
   (j.tradeScopes || []).forEach(function(x){ kids.push(h('div', { class: 'box', 'data-tradescope': x.trade || '' }, [h('b', { text: t('yourTradeScope') + (x.trade ? ' — ' + x.trade : '') }), x.scope ? h('p', { class: 'pre', text: x.scope }) : null].concat((x.files || []).map(function(f){   /* patch PLANREQ-C: the trade's scope files */
     return h('div', { class: 'doc', 'data-scopefile': f.name }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : /sheet|excel|csv/.test(f.type) ? '📊' : /word/.test(f.type) ? '📝' : '📎' }), h('span', { class: 'grow' }, [h('span', { class: 'n', text: f.name })]), h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]); })))); });
