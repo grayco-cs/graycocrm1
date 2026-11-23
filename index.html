@@ -53844,6 +53844,23 @@ function _applyOrQueue(key, val){
 try{ window._gcApplyOrQueue = _applyOrQueue; }catch(e){}
 // Flush queued sync data, but ONLY when the user is truly idle. If they're active, wait and
 // re-check — the data just sits in the queue until it's safe, then applies in one quiet batch.
+/* patch FIELDFAST: the pulled leads + every lead on this screen the pulled copy lacks or has older */
+function _ffKeepLocalLeads(v){
+  try{
+    var inc = (typeof v === 'string') ? JSON.parse(v) : v; if(!Array.isArray(inc)) return v;
+    var mine = Array.isArray(window.__gcLeadsLive) ? window.__gcLeadsLive : []; if(!mine.length) return v;
+    var at = function(r){ return Date.parse(String((r && (r.updatedAt || r.createdAt || r.receivedAt)) || '')) || 0; };
+    var byId = {}, out = inc.slice(), kept = 0;
+    inc.forEach(function(r, i){ if(r && r.id != null) byId[String(r.id)] = i; });
+    mine.forEach(function(r){
+      if(!r || r.id == null) return; var i = byId[String(r.id)];
+      if(i === undefined){ out.push(r); kept++; }
+      else if(at(r) > at(out[i])){ out[i] = r; kept++; }
+    });
+    if(kept){ try{ window.__gcLeadsKeptLocal = (window.__gcLeadsKeptLocal || 0) + kept; }catch(_k){} }
+    return kept ? out : v;
+  }catch(e){ return v; }
+}
 function _flushPendingSync(){
   try{
     // ============================================================================
@@ -53858,7 +53875,7 @@ function _flushPendingSync(){
     if(!keys.length){ _applyQueued=false; return; }
     keys.forEach(function(k){
       if(k==='__estimator__'){ try{ if(window._gcReloadEstimatorData) window._gcReloadEstimatorData(); }catch(e){} }
-      else { try{ if(window._gcApplySync) window._gcApplySync(k, _pendingApply[k]); }catch(e){} }
+      else { try{ if(window._gcApplySync) window._gcApplySync(k, k === 'leads' ? _ffKeepLocalLeads(_pendingApply[k]) : _pendingApply[k]); }catch(e){} }   /* patch FIELDFAST: leads — merged with the screen's */
       delete _pendingApply[k];
     });
     _applyQueued=false;

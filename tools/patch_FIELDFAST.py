@@ -25,6 +25,8 @@ Measured by tools/tests/test_FIELDTAPS.mjs (iPhone 390x844, standalone, CPU x4) 
    while it is up redraws it in place (it was thrown away and made again).
 6. At a first sign-in on a phone the person is looked up in the cloud's people list when this phone's lists do not have
    them: the CRM opens as that person at once (it opened as nobody and reloaded 7-10 s later).
+7. A pulled lead list is merged with the screen's own when it is applied: a lead entered here that the pulled copy lacks
+   (or has older) stays on the list.
 """
 import os, sys
 p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
@@ -126,5 +128,32 @@ once("""  lists.push(await idb('get', 'users'));
     }
   } catch (e) {}""")
 
+# 7. a lead entered on this phone never leaves its list (the sync's apply of a pulled lead list). Found by test_SPEAKTILE
+#    once Home is usable sooner: a lead posted while the open's first pull was on its way was not in that pull's copy (nor
+#    yet on the disk the pull merges with), and the apply replaced the screen's list with it — the lead was in the cloud but
+#    gone from the phone's Leads until the next pull. Now the pulled list is merged with the screen's own: a lead on the
+#    screen that the pulled copy does not have is kept, and one changed here later than the pulled copy's is kept as it is
+#    here (deleted leads still go: the tombstone filter runs on the merged list as before).
+once("""      else { try{ if(window._gcApplySync) window._gcApplySync(k, _pendingApply[k]); }catch(e){} }""",
+     """      else { try{ if(window._gcApplySync) window._gcApplySync(k, k === 'leads' ? _ffKeepLocalLeads(_pendingApply[k]) : _pendingApply[k]); }catch(e){} }   /* patch FIELDFAST: leads — merged with the screen's */""")
+once("""function _flushPendingSync(){""",
+     """/* patch FIELDFAST: the pulled leads + every lead on this screen the pulled copy lacks or has older */
+function _ffKeepLocalLeads(v){
+  try{
+    var inc = (typeof v === 'string') ? JSON.parse(v) : v; if(!Array.isArray(inc)) return v;
+    var mine = Array.isArray(window.__gcLeadsLive) ? window.__gcLeadsLive : []; if(!mine.length) return v;
+    var at = function(r){ return Date.parse(String((r && (r.updatedAt || r.createdAt || r.receivedAt)) || '')) || 0; };
+    var byId = {}, out = inc.slice(), kept = 0;
+    inc.forEach(function(r, i){ if(r && r.id != null) byId[String(r.id)] = i; });
+    mine.forEach(function(r){
+      if(!r || r.id == null) return; var i = byId[String(r.id)];
+      if(i === undefined){ out.push(r); kept++; }
+      else if(at(r) > at(out[i])){ out[i] = r; kept++; }
+    });
+    if(kept){ try{ window.__gcLeadsKeptLocal = (window.__gcLeadsKeptLocal || 0) + kept; }catch(_k){} }
+    return kept ? out : v;
+  }catch(e){ return v; }
+}
+function _flushPendingSync(){""")
 open(p, 'w', encoding='utf-8').write(t)
 print('FIELDFAST: patched')
