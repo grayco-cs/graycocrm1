@@ -75078,13 +75078,18 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
        jobs, the same job entered twice, one address on two jobs → a guess for the office, never the first one silently). */
     var spaced=' '+String((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
     var sp=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); };
+    /* INVJOB: the bill's own full street address(es) — house # + street + Rd / St / Dr … ("418 Maplecrest rd") */
+    var ijKeys=(window._gcInvJobStreets?window._gcInvJobStreets(spaced):[]);
     projects.forEach(function(p){
       if(!p || p.deleted || p._deleted || p.overhead===true || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
       var pn=norm(p.name), pc=norm(p.client||''), pa=norm(p.address||''), pp=norm(p.autoPO||p.po||'');
       var conf=0, signals=0;
+      /* INVJOB: the bill names a street; this job has another street on file ('other') or none at all, a city only ('none') */
+      var ijVs=ijKeys.length&&window._gcInvJobVs?window._gcInvJobVs(ijKeys, p.address||p.jobAddress||''):'';
       // Strong single signals (each near-certain on its own)
       var exactPO = poText && pp && poText===pp;
       var exactAddr = pa && invAddr && (invAddr===pa || (pa.length>10 && invAddr.indexOf(pa)>-1));
+      if(exactAddr && !/\d{1,6}\s+[a-z]/i.test(String(p.address||''))) exactAddr=false;   /* INVJOB: a job address with no house # / street ("Demoville TN") is a city only — never an "exact address" */
       // Full job-name match: certain if the name is distinctive (long enough / multi-word)
       var nameWords = pn.split(' ').filter(function(w){return w.length>2;}).length;
       var distinctiveName = pn.length>=8 || nameWords>=2; // e.g. "Cordova Club Apartments", "Smith Kitchen"
@@ -75096,12 +75101,13 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var strong = exactPO || exactAddr || (exactName && distinctiveName);
       // Supporting signals
       if(pc && pc.length>=4 && spaced.indexOf(' '+sp(p.client)+' ')>-1){ conf+=40; signals++; }   /* INVMATCH: whole words */
-      if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6){ conf+=35; signals++; }
+      if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6 && ijVs!=='none'){ conf+=35; signals++; }   /* INVJOB: a city alone ("Demoville TN") is no match when the bill names its own street */
       // amount sanity (sub invoice amount within a job's contract range = weak support)
       var amt=parseFloat(inv.amt||inv.amount)||0, contract=parseFloat(p.contract||p.contractAmt||0)||0;
       if(amt>0 && contract>0 && amt<=contract){ conf+=10; }
       // word overlap on name (weak)
       words(p.name).forEach(function(w){ if(w.length>3 && jobText.indexOf(norm(w))>-1) conf+=8; });
+      if(ijVs==='other' && !exactPO){ conf=Math.max(0, conf-60); strong=false; }   /* INVJOB: the bill's street is not this job's — contradicting evidence */
       if(conf>bestJobConf){ runnerUp=bestJobConf; bestJobConf=conf; bestJob=p; bestSignals=signals; bestStrong=strong; }
       else if(conf>runnerUp){ runnerUp=conf; }
     });
@@ -104284,11 +104290,13 @@ window._gcJobMatchesForInvoice = function(inv, projList){
   var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.qbMemo, inv.title, inv.address, inv.jobAddress,
             inv.readText, inv.job, inv.jobName].filter(Boolean).join(' \n ');
   var invClient=imName(inv.client||inv.customer||'');
+  var ijKeys=window._gcInvJobStreets?window._gcInvJobStreets(text):[];   /* INVJOB: the bill's own street address(es) */
   list.forEach(function(p){
     if(!imLive(p)) return;
     var how='', st=0;
     var ak=imAddrKey(p.address||p.addr||p.jobAddress);
     if(ak && text && imAddrIn(text, ak)){ how='the address '+String(p.address||'').split(',')[0]; st=3; }
+    if(!st && ijKeys.length && window._gcInvJobVs && window._gcInvJobVs(ijKeys, p.address||p.addr||p.jobAddress||'')==='other') return;   /* INVJOB: another street than the bill's — never by its name / customer */
     var nm=imName(nameOf(p));
     if(!st && nm.length>=8 && nm.split(' ').length>=2 && imPhraseIn(text, nm)){ how='the job name'; st=2; }
     var cl=imName(p.client||p.customer||'');
@@ -172571,10 +172579,12 @@ function rowQueue(x, mine, now){
     open: { l: 'Open / Edit', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } }, edit: editForQueue(x, invId, inv),
     doc: invId ? { l: '🧾 Invoice PDF', f: function(){ call('_gcViewInvoicePDF', invId, s(x.jobId || x.pid)); } } : { l: x.channel === 'sms' ? '💬 The text' : '✉️ The e-mail', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } } };
 }
+/* INVJOB: QuickBooks hands names / memos over HTML-escaped ("A&amp;Z Demo Supply LLC"); the card escapes them again → "R&amp;D" on screen */
+function unEnt(v){ return s(v).replace(/&(amp|lt|gt|quot|#39|#x27|apos);/g, function(m, k){ return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'", apos: "'" }[k]; }); }
 function rowSub(a, mine, now){
   var p = proj(a.pid), id = s(a.invId || a.id);
   var t = Date.parse(a.submittedAt || a.createdAt || a.at || a.date || 0) || num(a.queuedAt) || now;
-  return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (s(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + s(a.desc).slice(0, 60) : ''),
+  return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (unEnt(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + unEnt(a.desc).slice(0, 60) : ''),   /* INVJOB: unEnt */
     pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM ' + ((s(a.pmName) || s(p && p.pm)) ? (s(a.pmName) || s(p && p.pm)) + ' ' : '') + 'or the office',   /* patch APOFFICE */ since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
     escalated: false, chain: a.kickedBackToPm ? '↩ sent back by ' + s(a.deniedBy) : '',
     approve: mine || adminLike() ? { l: '✅ Approve', mode: (typeof W._gcSubPayBlocked === 'function' && W._gcSubPayBlocked(id)) ? undefined : 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',   /* patch PAYFAST: a stopped one opens the pay-check window at once */
@@ -240958,6 +240968,16 @@ function scoreText(t, J, src){
 }
 /* THE MATCHER: input { memo, desc, lines:[{memo,desc,cust,klass}], cust, klass, name, side, num, text } · ctx { jobs | projects, memoMap }
    → { pid, conf, how, why, cands:[{pid, score, why, name}], ambiguous } */
+/* INVJOB: the full street addresses in a text (house # + street + Rd / St / Dr …): a job with ANOTHER street on file is contradicted */
+function streetsIn(t){
+  var w = nk(t).split(' '), out = [];
+  for (var i = 0; i < w.length - 2; i++) {
+    if (!/^\d{1,6}[a-z]?$/.test(w[i]) || /^(19|20)\d\d$/.test(w[i])) continue;
+    var st = [];
+    for (var j = i + 1; j < w.length && j <= i + 4; j++) { if (/^\d/.test(w[j])) break; if (/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|hwy|highway)$/.test(w[j])) { if (st.length) out.push({ n: w[i].replace(/[a-z]$/, ''), w: st }); break; } if (!SUFX.test(w[j])) st.push(w[j]); }
+  }
+  return out;
+}
 function matchJob(input, ctx){
   input = input || {}; ctx = ctx || {};
   var jobs = ctx.jobs || jobIndex(ctx.projects), byId = {}; jobs.forEach(function(j){ byId[j.id] = j; });
@@ -240974,11 +240994,14 @@ function matchJob(input, ctx){
   if (input.side === 'income') add(input.name, 0.9, 'Name column');
   add(input.text, 0.9, 'attached PDF');
   var num0 = poNorm(input.num);
+  var ijSt = []; srcs.forEach(function(x){ if (x.src !== 'Name column') ijSt = ijSt.concat(streetsIn(x.t)); });   /* INVJOB */
   var sc = jobs.map(function(J){
     var best = { score: 0, how: '', why: '' }, n = 0;
     if (num0 && input.side === 'income' && J.qbn.indexOf(num0) >= 0) best = { score: 98, how: 'qbnum', why: 'QuickBooks invoice #' + input.num + ' is on this job' };
     srcs.forEach(function(x){ var r = scoreText(x.t, J, x.src); if (r.score) { n++; var v = r.score * x.w; if (v > best.score) best = { score: v, how: r.how, why: r.why }; } });
     if (!best.score) return null;
+    /* INVJOB: the memo names a street that is not this job's street (contradicting evidence) → only a suggestion, a person picks */
+    if (ijSt.length && J.addr && best.how !== 'address' && best.how !== 'qbnum' && !ijSt.some(function(a){ return a.n === J.addr.n && (!J.addr.w.length || J.addr.w.some(function(w){ return a.w.some(function(x){ return near(x, w); }); })); })) { best.score -= 40; best.why += ' — but the memo\'s address (' + ijSt[0].n + ' ' + ijSt[0].w.join(' ') + ') is another street'; }
     var v = best.score + (n >= 2 ? 3 : 0) + (J.lost ? -12 : J.done ? -2 : 1);
     return { pid: J.id, score: Math.min(99, Math.round(v)), how: best.how, why: best.why, name: J.name, company: J.company };
   }).filter(Boolean).sort(function(a, b){ return b.score - a.score; });
@@ -251437,6 +251460,14 @@ function scoreJob(inv, p, ctx){
   if (pos.length && explicit.some(function(x){ return pos.indexOf(x) >= 0; })) { sc += 95; strong = strong || 'po'; why.push('PO ' + pos[0] + ' on the invoice'); }
   var ah = addrHit(tkeys, _nk.addr);
   if (ah) { sc += 90; strong = strong || 'address'; why.push('the address ' + ah); }
+  /* INVJOB: the bill names a full street address that this job does not have — another street (contradicting evidence), or none on
+     file (a city only): a bare PO-looking token / the job's name words / the customer are not enough to put it here by itself */
+  var ijVs = ah ? 'same' : streetVs(ctx.streets, p.address || p.jobAddress || p.addr);
+  if (!ah && (ijVs === 'other' || ijVs === 'none')) {
+    var poLab = pos.length && (ctx.labelledPOs || []).some(function(x){ return pos.indexOf(x) >= 0; });
+    if (strong === 'po' && !poLab) { strong = ''; sc -= ijVs === 'other' ? 60 : 25; why.push(ijVs === 'other' ? 'but the bill\'s address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is another street' : 'but the bill\'s street address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is not on this job'); }
+    else if (ijVs === 'other' && strong !== 'po' && strong !== 'qbjob') { sc -= 60; why.push('but the bill\'s address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is another street'); }
+  }
   var nw = _nk.nw, hits = nw.filter(function(x){ return tw.indexOf(' ' + x + ' ') >= 0; });
   if (hits.length) { var add = Math.min(50, hits.length * 30); sc += add; why.push('the job name ("' + hits.join('", "') + '")'); }
   var ck = custKey(inv.client || inv.customer || inv.sub, amap), pk = _nk.pk, pn = _nk.pn;
@@ -251455,6 +251486,23 @@ function scoreJob(inv, p, ctx){
   if (/^(bidding|lead|estimating|estimate)$/i.test(s(p.status)) && !con) sc -= 10;
   return { p: p, pid: s(p.id), score: sc, strong: strong, why: why };
 }
+/* INVJOB (owner 11/23): the bill's own FULL street address — house # + street + Rd / St / Dr … (not "2 coats", not a ZIP) — and how a job's
+   street compares: 'same', 'other' (the job has another street on file), 'none' (the job has no street: a city only, "Demoville TN") */
+var IJ_SUF = /^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|ter|terrace|hwy|highway)$/;
+function streetsStrict(text){
+  var w = words(text).trim().split(' '), out = [];
+  for (var i = 0; i < w.length - 2; i++) {
+    if (!/^\d{1,6}[a-z]?$/.test(w[i]) || /^(19|20)\d\d$/.test(w[i])) continue;
+    var st = '';
+    for (var j = i + 1; j < w.length && j <= i + 4; j++) { var x = w[j]; if (/^\d/.test(x)) break; if (IJ_SUF.test(x)) { if (st && j > i + 1) out.push({ n: w[i].replace(/[a-z]$/, ''), st: st }); break; } if (!st && !STREET_SKIP.test(x) && x.length >= 3) st = x; }
+  }
+  return out;
+}
+function streetVs(billKeys, jobAddress){
+  if (!billKeys || !billKeys.length) return '';
+  var jk = addrKeysIn(s(jobAddress).split(',')[0]).slice(0, 1); if (!jk.length) return 'none';
+  return addrHit(billKeys, jk) ? 'same' : 'other';
+}
 function ctxFor(inv, projects, opts){
   var text = textOf(inv), amap = (opts && opts.amap) || ALIAS;
   /* a PO counts only when the invoice itself carries it: in its text, or typed on a record a person made (not one a job finder copied from the job) */
@@ -251463,7 +251511,10 @@ function ctxFor(inv, projects, opts){
   if (s(inv.po) && !isQB(inv) && !inv.autoLinked && !inv.linkedBy && !inv.autoPO) ex.push(poN(inv.po));
   var qbBilled = null;
   if (opts && opts.invs) { qbBilled = {}; arr(opts.invs).forEach(function(v){ if (v === inv || s(v.id) === s(inv.id) || !isClient(v) || isArchived(v) || !isQB(v) || !s(v.pid) || !placedOK(v)) return; qbBilled[s(v.pid)] = num(qbBilled[s(v.pid)]) + num(v.amt); }); }
-  return { text: text, tw: words(text), tkeys: addrKeysIn(text), amap: amap, nums: qbNums(inv), explicitPOs: ex, qbBilled: qbBilled };
+  /* INVJOB: a PO the bill LABELS ("PO X901", "PO#: X901") or a person typed is strong; a bare "X901" somewhere in a memo is weak */
+  var lab = []; (text.toUpperCase().match(/\bP\.?\s?O\.?\s*(?:#|NO\.?|NUM(?:BER)?)?\s*[:#-]?\s*[A-Z]-?\d{3}\b/g) || []).forEach(function(x){ lab.push(poN(x.replace(/^P\.?\s?O\.?\s*(?:#|NO\.?|NUM(?:BER)?)?\s*[:#-]?\s*/, ''))); });
+  if (s(inv.po) && !isQB(inv) && !inv.autoLinked && !inv.linkedBy && !inv.autoPO) lab.push(poN(inv.po));
+  return { text: text, tw: words(text), tkeys: addrKeysIn(text), amap: amap, nums: qbNums(inv), explicitPOs: ex, labelledPOs: lab, streets: streetsStrict(text), qbBilled: qbBilled };
 }
 /* every job that fits, best first, and how sure the best one is:
    sure   — a strong signal (QuickBooks project / job's QB invoice #, the PO on the invoice, the address) and no other job close → may link by itself
@@ -251699,12 +251750,15 @@ function matchPayable(inv, projects, opts){
   return m;
 }
 
-return { OLDER_BEFORE: OLDER_BEFORE, ALIAS: ALIAS, nk: nk, custKey: custKey, custSame: custSame, aliasMap: aliasMap, isClient: isClient, isArchived: isArchived, isQB: isQB, qbNums: qbNums,
+return { streetsStrict: streetsStrict, streetVs: streetVs, /* INVJOB */ OLDER_BEFORE: OLDER_BEFORE, ALIAS: ALIAS, nk: nk, custKey: custKey, custSame: custSame, aliasMap: aliasMap, isClient: isClient, isArchived: isArchived, isQB: isQB, qbNums: qbNums,
   isPastJob: isPastJob, isOverhead: isOverhead, liveJob: liveJob, addrKeysIn: addrKeysIn, jobAddrKeys: jobAddrKeys, match: match, sureJob: sureJob, scoreJob: scoreJob,
   placedByPerson: placedByPerson, audit: audit, plan: plan, apply: apply, undo: undo, relink: relink, poCell: poCell, openBal: openBal, isOverdue: isOverdue,
   payeeKind: payeeKind, payableKind: payableKind, matchPayable: matchPayable, customerMerges: customerMerges };
 })();
 var D = W.document;
+/* INVJOB: the older finders (the sub-invoice router, FINDJOB) use the same full-street rule */
+W._gcInvJobStreets = function(text){ try { return CORE.streetsStrict(text); } catch (e) { return []; } };
+W._gcInvJobVs = function(keys, jobAddress){ try { return CORE.streetVs(keys, jobAddress); } catch (e) { return ''; } };
 if (!D || !D.createElement) { W._gcInvLink = CORE; return; }
 if (W.__GC_PATCH_INVLINK__) return; W.__GC_PATCH_INVLINK__ = true;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;

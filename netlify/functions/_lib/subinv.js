@@ -334,9 +334,19 @@ function matchSub(subs, who){
 /* ── 7. which job: the job-site address first, then the PO, then the customer / job name ── */
 function closed(p){ return /^(lost|dead|cancel+ed|void|archived|declined)$/i.test(s(p.status)) || p.deleted === true; }
 function jobAddr(p){ return s(p.address || p.jobAddress || p.siteAddress || p.street || (p.location && p.location.address)); }
+/* patch INVJOB (owner 11/23: "it read the wrong job — the address on the bill is another job's"): the bill's own street address against a job's —
+   'same' (house # + street name), 'other' (the job has a street on file and it is not this one), 'none' (the job has no street on file:
+   a city only, e.g. "Demoville TN"), '' (the bill names no street). A full street address beats a city-only / weak-PO / "the sub's
+   only open job" guess, and an address that contradicts the job takes the job's confidence down so a person picks (🧾 Match this invoice). */
+function addrVs(billAddr, p){
+  const a = addrParts(billAddr); if (!a || !a.num) return '';
+  const pa = addrParts(jobAddr(p)); if (!pa || !pa.num) return 'none';
+  const nameOk = a.name === pa.name || (a.name.length >= 5 && lev(a.name, pa.name) <= 1);
+  return a.num === pa.num && nameOk ? 'same' : 'other';
+}
 function scoreJob(p, f){
   let sc = 0; const why = [];
-  const a = addrParts(f.jobAddress), pa = addrParts(jobAddr(p));
+  const a = addrParts(f.jobAddress), pa = addrParts(jobAddr(p)), vs = addrVs(f.jobAddress, p);   /* patch INVJOB */
   if (a && pa) {
     const sameNum = a.num && a.num === pa.num;
     const nameEq = a.name === pa.name, nameNear = !nameEq && a.name.length >= 5 && lev(a.name, pa.name) <= 1;
@@ -351,11 +361,16 @@ function scoreJob(p, f){
   const po = s(p.autoPO || p.po).toUpperCase();
   if (po && po.length >= 3) {
     if (f.po && s(f.po).toUpperCase() === po) { sc = Math.max(sc, 95) + (sc >= 80 ? 4 : 0); why.push('PO ' + po); }
-    else if (f.hay && new RegExp('\\b' + po.replace(/[^A-Z0-9]/g, '') + '\\b').test(f.hay.toUpperCase()) && /^[A-Z]-?\d{3,}$/.test(po)) { sc = Math.max(sc, 85); why.push('PO ' + po + ' in the text'); }
+    else if (f.hay && new RegExp('\\b' + po.replace(/[^A-Z0-9]/g, '') + '\\b').test(f.hay.toUpperCase()) && /^[A-Z]-?\d{3,}$/.test(po)) {
+      /* patch INVJOB: a bare "X901" somewhere in the text is a WEAK PO — the bill's own street address beats it; on a job with another street it is not this job */
+      const weak = vs === 'other' ? 55 : vs === 'none' ? 70 : 85;
+      sc = Math.max(sc, weak); why.push('PO ' + po + ' in the text' + (vs === 'other' ? ' — but the bill\'s address is not this job\'s' : vs === 'none' ? ' — the bill\'s street address is not on this job' : ''));
+    }
   }
   const cust = normName(p.client || p.customer || p.clientName), jn = normName(p.name), hay = normName(f.hay + ' ' + f.customer);
   if (cust && cust.length >= 6 && hay.indexOf(cust) >= 0) { sc = sc ? sc + 3 : 40; why.push('customer ' + s(p.client || p.customer)); }
   if (jn && jn.length >= 8 && hay.indexOf(jn) >= 0) { sc = sc ? sc + 3 : 50; why.push('job name'); }
+  if (vs === 'other' && !(f.po && s(f.po).toUpperCase() === po)) { sc = Math.min(sc, 55); why.push('the bill\'s address (' + a.num + ' ' + a.name + ') is not this job\'s (' + pa.num + ' ' + pa.name + ')'); }   /* patch INVJOB: contradicting evidence */
   if (closed(p)) sc -= 30;
   return { pid: s(p.id), name: s(p.name), address: jobAddr(p), po: s(p.autoPO || p.po), pm: s(p.pm || p.projectManager), conf: Math.max(0, Math.min(100, sc)), why: why.join(' · ') };
 }
@@ -549,6 +564,7 @@ async function analyze(mail, files, deps){
   }
   let job = jm.best, how = job ? 'match' : '';
   const pj = poJob(data.projects, { po: read.po, hay: hay }, data.gc_deleted_projects);
+  /* patch INVJOB: an explicit PO ("PO #: X901", the PO field) still wins (patch MONEY) — only a bare "X901" in the text is weak (scoreJob) */
   if (pj) {
     const sc = scoreJob(pj, { jobAddress: read.jobAddress, po: s(pj.autoPO || pj.po), customer: read.customer, hay: hay });
     job = Object.assign(sc, { conf: Math.max(97, sc.conf), why: 'PO ' + s(pj.autoPO || pj.po) + ' on the invoice' + (sc.why && !/^PO /.test(sc.why) ? ' · ' + sc.why : '') });
@@ -559,7 +575,10 @@ async function analyze(mail, files, deps){
   if (deps.payee === 'supplier' && payKind === 'sub' && !(sub && sub.conf >= 80 && (payees.find(function(x){ return s(x.id) === sub.id; }) || {}).isSub === true)) payKind = 'supplier';
   if (!jm.certain && payKind === 'sub' && sub && sub.conf >= 80) {
     const open = subOpenJobs(data, sub, now);
-    if (open.length === 1 && (!job || job.conf < 85 || job.pid === open[0].pid)) { job = open[0]; jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'sub'; }
+    /* patch INVJOB: the bill names a street address that is not on the sub's open job (another street, or a city only) → a suggestion, never placed by itself */
+    const oVs = open.length === 1 ? addrVs(read.jobAddress, open[0]) : '';
+    if (open.length === 1 && (oVs === 'other' || oVs === 'none')) { const o = Object.assign({}, open[0], { conf: 60, why: open[0].why + ' — but the bill\'s address ' + s(read.jobAddress) + ' is ' + (oVs === 'other' ? 'another street' : 'not on this job') }); if (!job || job.conf < 60) job = o; jm.top = (job === o ? [o] : [job, o]).concat(arr(jm.top).filter(function(x){ return x.pid !== o.pid && (!job || x.pid !== job.pid); })).slice(0, 3); }
+    else if (open.length === 1 && (!job || job.conf < 85 || job.pid === open[0].pid)) { job = open[0]; jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'sub'; }
     else if (open.length > 1) jm.top = arr(jm.top).concat(open.filter(function(o){ return !arr(jm.top).some(function(x){ return x.pid === o.pid; }); }).map(function(o){ return Object.assign({}, o, { conf: 60, why: 'one of the sub\'s open jobs' }); })).slice(0, 5);
   }
   const pay = payDateFor(recvDate, read);
@@ -594,6 +613,6 @@ function clientDup(read, invoices){
   return hit ? { invId: s(hit.id), why: 'invoice # ' + s(read.invoiceNumber) + ' is already in ▥ Invoices', same: true } : null;
 }
 function fileHash(buf){ return crypto.createHash('sha256').update(buf).digest('hex'); }
-module.exports = { analyze, parseText, docxText, xlsxText, docText, pdfText, csvText, textOf, kindOf, typeFor, unzipEntries, addrParts, findAddress, matchJob, matchSub, scoreJob,
+module.exports = { addrVs, analyze, parseText, docxText, xlsxText, docText, pdfText, csvText, textOf, kindOf, typeFor, unzipEntries, addrParts, findAddress, matchJob, matchSub, scoreJob,
   payRule, payDateFor, centralYmd, findDup, invKey, forwarded, googleLinks, fetchGoogle, retainageFor, aiRead, AI_TOOL, fileHash,
   poJob, poTokens, subOpenJobs, payeeKind, supplierRows, findExpDup, ownInvoice, clientDup, sameSub, normName };   /* patch INVMAIL: + sameSub, normName */
