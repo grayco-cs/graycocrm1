@@ -50,15 +50,15 @@ try {
   await A.click('[data-invite-hit="Electra Power LLC"]');
   ok('3 picking it fills the company and its e-mail', (await A.inputValue('[data-invite-company]')) === 'Electra Power LLC' && (await A.inputValue('[data-invite-email]')) === 'bids@electra.test', [await A.inputValue('[data-invite-company]'), await A.inputValue('[data-invite-email]')]);
   await A.click('[data-invite-send]');
-  ok('4 the invite is saved with the company name and e-mailed', await until(() => rowsOf('invites').some(r => r.email === 'bids@electra.test' && r.company === 'Electra Power LLC') && MAIL.some(m => m.to.includes('bids@electra.test'))), rowsOf('invites'));
+  ok('4 the invite is saved with the company name and e-mailed', await until(() => rowsOf('invites').map(r => r.data || r).some(r => r.email === 'bids@electra.test' && r.company === 'Electra Power LLC') && MAIL.some(m => m.to.includes('bids@electra.test'))), rowsOf('invites').map(r => r.data || r));
   ok('5 the invite row shows the company', await A.waitForSelector('[data-invite-row="bids@electra.test"]:has-text("Electra Power LLC")', { timeout: 10000 }).then(() => true, () => false));
   ok('6 the boxes are cleared after inviting', (await A.inputValue('[data-invite-company]')) === '' && (await A.inputValue('[data-invite-email]')) === '');
   await A.type('[data-invite-company]', 'alp', { delay: 40 });
   ok('7 portal accounts are found too ("alp" → Alpha Drywall)', await A.waitForSelector('[data-invite-hit="Alpha Drywall"]', { timeout: 10000 }).then(() => true, () => false));
   await A.fill('[data-invite-company]', 'Brand New Roofing Co'); await A.fill('[data-invite-email]', 'hello@newroof.test'); await A.click('[data-invite-send]');
-  ok('8 a new company typed by hand keeps its name on the invite', await until(() => rowsOf('invites').some(r => r.email === 'hello@newroof.test' && r.company === 'Brand New Roofing Co')), rowsOf('invites'));
+  ok('8 a new company typed by hand keeps its name on the invite', await until(() => rowsOf('invites').map(r => r.data || r).some(r => r.email === 'hello@newroof.test' && r.company === 'Brand New Roofing Co')), rowsOf('invites').map(r => r.data || r));
   await A.fill('[data-invite-email]', 'x1@a.test, x2@a.test'); await A.fill('[data-invite-company]', 'Shared Name'); await A.click('[data-invite-send]');
-  ok('9 several e-mails at once still work (no single company name stamped on all)', await until(() => rowsOf('invites').filter(r => /^x[12]@a\.test$/.test(r.email)).length === 2) && !rowsOf('invites').some(r => /^x[12]@a\.test$/.test(r.email) && r.company));
+  ok('9 several e-mails at once still work (no single company name stamped on all)', await until(() => rowsOf('invites').map(r => r.data || r).filter(r => /^x[12]@a\.test$/.test(r.email)).length === 2) && !rowsOf('invites').map(r => r.data || r).some(r => /^x[12]@a\.test$/.test(r.email) && r.company));
   const P = await page(await W.bidsCtx(browser, BUILD, F, 'phone'));
   await W.bidsLogin(P, 'owner@grayco-cs.com', 'Admin-Pass-1');
   await P.waitForSelector('h3:has-text("Private Fit-out Demo")', { timeout: 30000 }); await P.click('h3:has-text("Private Fit-out Demo")');
