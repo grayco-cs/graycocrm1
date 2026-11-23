@@ -1,0 +1,17 @@
+# OWNERLIST4 (owner 11/23: "things I ignore if I bring it up and then move on … remember to put them in my owner setup still, like if I
+# forget to change something over for all my leads going to office email clogging it up etc"): the open owner items from today.
+p = 'index.html'; s = open(p, encoding='utf-8').read()
+assert 'OWNERLIST4' not in s
+a = "  /* OWNERLIST3: HOA outreach (owner 11/23) */"
+assert s.count(a) == 1
+s = s.replace(a, r"""  /* OWNERLIST4: open items from 11/23 */
+  { id: 'office_filter', g: 'now', t: 'office@ Gmail: send bid e-mails to a label, not the inbox (they are in the CRM already)', how: 'In the office@ mailbox: Gmail search box → ⚙ Show search options → From / Has the words: "Bid Invite" OR Addendum OR "Reminder to Bid" OR "invited you to bid" OR buildingconnected OR planhub OR isqft OR constructconnect OR hotelprojectleads → Create filter → tick "Skip the Inbox" and "Apply the label: Bids (in CRM)" (new label) → Create filter. The CRM still gets them. (The CRM\'s own sign-up / new-bid e-mails to office@ are being turned off — they are in ✅ Approvals and 🔔.)' },
+  { id: 'leads_group', g: 'now', t: 'Make sure leads@ mail reaches the CRM (plan room sign-up confirmations go to the office To-Do from there)', how: 'admin.google.com → Directory → Groups → leads@grayco-cs.com → Members → Add member: leads@in.grayco-cs.com → Save. Then a sign-up confirmation sent to leads@ shows on the office To-Do as "🔑 Account e-mail to leads@" with its link.' },
+  { id: 'ccam_newjobs', g: 'soon', t: 'Decide: CompanyCam "Make new jobs" (off since Nov 3)', how: 'New CompanyCam projects that do not match a CRM job wait on 📷 Photos instead of becoming Bidding jobs (projects at an existing job\'s address still link by themselves). Turn it on in ⚙ Admin → ⚡ Automations → "Make new jobs", or review the waiting list on 📷 Photos. ~165 of the old "bidding" placeholders are duplicates from the September import — see "Decide: clean up the 480 jobs".' },
+  { id: 'dup_jobs', g: 'soon', t: 'Merge duplicate jobs (e.g. Auditorium HVAC Replacement — D742 and V708; Rapid Air ×3 in Subs)', how: 'Jobs: ⚙ Admin tools → 🔗 Merge Duplicate Jobs → keep one. Subs: the 🔗 Same sub? merge on ✅ Approvals or the Subs list.' },
+  { id: 'qa_invoices', g: 'now', t: 'Move Q&A Construction bills #1530 and #1531 to the UT Martin Somerville job', how: '✅ Approvals → each "Sub invoice — Q&A Construction LLC · QuickBooks bill #153x" card → ✎ Edit → pick the job at 214 Lakeview Rd, Somerville → Save. (The matcher is being fixed so an address match wins.)' },
+  { id: 'q_supstmt', g: 'soon', t: 'Answer: supplier statements — put ABC bills on jobs from the statement\'s PO / address? Finance charges as overhead?', how: 'Tell Claude yes / no for each (🧾 Supplier statement on Accounting).' },
+  { id: 'q_adddate', g: 'later', t: 'Answer: should posting an addendum that moves the bid date also post the automatic "Bid due date changed" message?', how: 'Tell Claude yes / no. Today the addendum uses its own "E-mail the subs" box.' },
+  { id: 'push_keys', g: 'soon', t: 'Phone push notifications for PMs / estimators (VAPID keys)', how: 'Ask Claude for the one-line command that makes the VAPID keys, add them in Netlify → Environment variables → Trigger deploy; then each person taps "Turn on notifications" on their phone.' },
+""" + a)
+open(p, 'w', encoding='utf-8').write(s); print('OWNERLIST4 applied')
