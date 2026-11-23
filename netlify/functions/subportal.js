@@ -92,7 +92,7 @@ function subJobView(j, trades){
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
   if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope', 'files']); })   /* patch PLANREQ-C: + the trade's scope files */
     .filter(function(ts){ return s(ts.scope) || (Array.isArray(ts.files) && ts.files.length); });   /* patch QAA: a trade with no scope written yet is not an empty box on the sub's page (the trades are listed under "We are bidding") */
-  if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
+  if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt', 'updatedAt']); });   /* patch ADDEDIT: + updatedAt ("Updated <date>"; never its history) */
   /* patch BIDVIS (owner 11/19: "just the plans, addendums and scopes"): no invitation to bid / solicitation / bid form, no bid board's page,
      unless an admin ticked "Visible to subs" (_lib/subvis.js); the Lead Inbox's source link and its notes lines with those links go too */
   const V = SV(), hidLinks = arr(v.plansLinks).filter(function(l){ return !V.visible(l, 'link'); });
@@ -976,10 +976,10 @@ async function saveCollection(who, key, upsert, del, ctx){
       for (const x of upsert) {
         const jobId = s(x.jobId), n = parseInt(x.num, 10);
         const jr = sc.jobs[jobId]; if (!jr || !(n > 0)) continue;
-        if (!arr(jr.data.addenda).some(function(a){ return a && a.publishedAt && Number(a.num) === n; })) continue;
-        const id = jobId + '__a' + n + '__' + me;
-        if (existing[id]) continue;
-        rows.push(rowFor('acks', { id: id, jobId: jobId, num: n, userId: me, userName: p.name, userCompany: p.company, userEmail: p.email, at: new Date().toISOString() }));
+        const ad = arr(jr.data.addenda).find(function(a){ return a && a.publishedAt && Number(a.num) === n; }); if (!ad) continue;
+        const id = jobId + '__a' + n + '__' + me, prevAck = existing[id] && existing[id].data;
+        if (prevAck && !(s(ad.updatedAt) && s(prevAck.at) < s(ad.updatedAt))) continue;   /* patch ADDEDIT: acknowledged before an edit → acknowledged again */
+        rows.push(rowFor('acks', Object.assign({ id: id, jobId: jobId, num: n, userId: me, userName: p.name, userCompany: p.company, userEmail: p.email, at: new Date().toISOString() }, prevAck ? { firstAt: s(prevAck.firstAt || prevAck.at) } : {})));
       }
     } else if (key === 'activity') {
       upsert.filter(function(x){ return !existing[x.id] && sc.jobs[s(x.jobId)]; }).slice(0, 50).forEach(function(x){
@@ -2722,6 +2722,13 @@ exports.handler = async function (event) {
       const BH = require('./bid-hub.js')._test, bw = await BH.whoIs(event);
       if (!bw.ok) return J(bw.code || 401, { error: bw.error });
       const r = await BH.addendum(bw, body);
+      return r.code ? J(r.code, { error: r.error }) : J(200, r);
+    }
+    if (action === 'addendum-edit') {   /* patch ADDEDIT: ✎ Edit a posted addendum on the bid site — the CRM's own rule and code (bid-hub op addendumedit) */
+      if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
+      const BH = require('./bid-hub.js')._test, bw = await BH.whoIs(event);
+      if (!bw.ok) return J(bw.code || 401, { error: bw.error });
+      const r = await BH.addendumEdit(bw, body);
       return r.code ? J(r.code, { error: r.error }) : J(200, r);
     }
     if (action === 'plans-guess') {   /* patch PLANREQ-C: the trade / kind of each file before it is saved */

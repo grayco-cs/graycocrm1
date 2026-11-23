@@ -7742,7 +7742,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.320-2026-11-23-r38h -->
+<!-- GrayCo CRM Build: 33.321-2026-11-23-r38i -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -8714,7 +8714,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.320-2026-11-23-r38h");
+  console.log("[GC] Build 33.321-2026-11-23-r38i");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -8762,7 +8762,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.320-2026-11-23-r38h"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.321-2026-11-23-r38i"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -184867,19 +184867,47 @@ function addFiles(fs){
   Promise.all(fs.map(function(f){ return putFile(f).then(function(ref){ return { name: f.name, size: f.size, type: f.type || '', fileRef: ref }; }, function(e){ toast(e.message, true); return null; }); }))
     .then(function(l){ AF = AF.concat(l.filter(Boolean)); draw(); });
 }
-function audienceAcks(num){
-  var r = M.data, ack = arr(r.acks).filter(function(k){ return Number(k.num) === Number(num); });
+function audienceAcks(num, ad){   /* patch ADDEDIT-1: ad = the addendum; an acknowledgement older than its last edit is "before the update" */
+  var r = M.data, upd = s(ad && ad.updatedAt), ack0 = arr(r.acks).filter(function(k){ return Number(k.num) === Number(num); });
+  var ack = ack0.filter(function(k){ return !upd || s(k.at) >= upd; }), stale = ack0.filter(function(k){ return upd && s(k.at) < upd; });
   var by = {}; ack.forEach(function(k){ by[low(k.userEmail)] = k; });
   var not = arr(r.audience).filter(function(x){ return !by[low(x.email)]; });
   return '<div class="mut" data-acks="' + num + '">✍️ Acknowledged by ' + (ack.length ? ack.map(function(k){ return '<b>' + esc(k.userCompany || k.userName) + '</b> ' + esc(when(k.at)); }).join(', ') : 'nobody yet')
-    + (not.length ? ' · <span>not yet: ' + not.slice(0, 12).map(function(x){ return esc(x.company || x.name || x.email); }).join(', ') + (not.length > 12 ? '…' : '') + '</span>' : '') + '</div>';
+    + (not.length ? ' · <span>not yet: ' + not.slice(0, 12).map(function(x){ return esc(x.company || x.name || x.email); }).join(', ') + (not.length > 12 ? '…' : '') + '</span>' : '')
+    + (stale.length ? ' · <span data-acks-stale="' + num + '">acknowledged before the update (asked again): ' + stale.map(function(k){ return esc(k.userCompany || k.userName); }).join(', ') + '</span>' : '') + '</div>';
+}
+/* patch ADDEDIT: ✎ Edit a posted addendum */
+var AE = null;   /* { num, files } — the addendum being edited */
+function addEditHtml(a){
+  var n = a.num, j = job();
+  return '<div class="card" data-addedit="' + n + '" style="background:#fffbeb"><b>✎ Edit addendum #' + n + '</b>'
+    + '<div class="row"><input type="text" data-k="aetitle' + n + '" value="' + esc(a.title || '') + '" placeholder="Title" style="flex:1;min-width:220px"><label>Date <input type="date" data-k="aedate' + n + '" value="' + esc(a.date || '') + '"></label></div>'
+    + '<textarea data-k="aetext' + n + '" placeholder="What changed">' + esc(a.text || '') + '</textarea>'
+    + '<div class="mut">📎 ' + (AE.files.length ? AE.files.map(function(f, i){ return esc(f.name) + ' <button type="button" class="b" data-a="aerm" data-i="' + i + '" title="Take it off (it stays in the history)">✕</button>'; }).join(' ') : 'no files')
+    + ' <button type="button" class="b" data-a="aepick">📎 Add files</button></div>'
+    + '<div class="row"><label>Change the bid due date (optional — now ' + esc(s(j.due) ? s(j.due) + (s(j.dueTime) ? ' ' + s(j.dueTime) : '') : 'none') + ') <input type="date" data-k="aedue' + n + '"></label>'
+    + '<label><input type="checkbox" data-k="aenotify' + n + '"> E-mail the subs about the update (waits on ✅ Approvals)</label></div>'
+    + '<div class="row"><button type="button" class="b pri" data-a="aesave">💾 Save addendum #' + n + '</button><button type="button" class="b" data-a="aecancel">Cancel</button></div></div>';
+}
+function addHistHtml(a){
+  var h = arr(a.history); if (!h.length) return '';
+  var now = {}; arr(a.files).forEach(function(f){ now[s(f.fileRef || f.name)] = 1; });
+  return '<details data-addhist="' + a.num + '"><summary class="mut">History (' + h.length + ')</summary>' + h.slice().reverse().map(function(x){
+    return '<div class="mut" style="border-top:1px solid #e5e7eb;padding-top:4px;margin-top:4px"><b>Before the edit of ' + esc(when(x.replacedAt)) + '</b> · ' + esc(x.replacedByName || x.replacedBy) + ' · ' + esc(arr(x.changed).join(' · '))
+      + (x.title ? '<div>' + esc(x.title) + '</div>' : '') + (x.dueTo ? '<div>⏰ ' + esc(x.dueTo) + '</div>' : '') + (x.text ? '<div style="white-space:pre-wrap">' + esc(x.text) + '</div>' : '')
+      + (arr(x.files).length ? '<div>📎 ' + arr(x.files).map(function(f){ return esc(f.name) + (now[s(f.fileRef || f.name)] ? '' : ' (taken off)'); }).join(', ') + '</div>' : '') + '</div>'; }).join('') + '</details>';
 }
 function addendaHtml(){
   var ad = arr(job().addenda).slice().sort(function(a, b){ return b.num - a.num; }), next = ad.length ? Math.max.apply(null, ad.map(function(a){ return +a.num || 0; })) + 1 : 1;
+  var jd = job(), dd0 = s(jd.due || jd.bidDueDate), dt0 = s(jd.due ? jd.dueTime : jd.bidDueTime), curDue = dd0 ? dd0 + (dt0 ? ' ' + dt0 : '') : '';   /* 📂 Manage's job: due / dueTime */
   return ad.map(function(a){ return '<div class="card" data-addendum="' + a.num + '"><div class="row"><b>Addendum #' + a.num + (a.title ? ' — ' + esc(a.title) : '') + '</b><span class="mut">' + esc(a.date) + '</span>' + noticeTag(a.notice)
+      + (a.publishedAt && !(AE && AE.num === a.num) ? '<button type="button" class="b" data-a="aedit" data-n="' + a.num + '">✎ Edit</button>' : '')   /* patch ADDEDIT */
       + (a.notice && a.notice.status === 'held' && !M.data.paused ? '<button type="button" class="b" data-a="resend" data-w="addendum" data-ref="' + a.num + '">✉️ Send the e-mail now (Approvals)</button>' : '') + '</div>'
+      + (a.updatedAt ? '<div class="mut" data-addupd="' + a.num + '" style="font-weight:700">✎ Updated ' + esc(when(a.updatedAt)) + (a.updatedBy ? ' · ' + esc(a.updatedBy) : '') + '</div>' : '')
       + (a.dueTo ? '<div style="color:#b91c1c;font-weight:700">⏰ Bid due changed to ' + esc(a.dueTo) + (a.dueFrom ? ' (was ' + esc(a.dueFrom) + ')' : '') + '</div>' : '')
-      + (a.text ? '<div style="white-space:pre-wrap">' + esc(a.text) + '</div>' : '') + (arr(a.files).length ? '<div class="mut">📎 ' + arr(a.files).map(function(f){ return esc(f.name); }).join(', ') + '</div>' : '') + audienceAcks(a.num) + '</div>'; }).join('')
+      + (a.dueTo && curDue && s(a.dueTo) !== curDue ? '<div data-nowdue="' + a.num + '" style="color:#15803d;font-weight:700">📅 Now due: ' + esc(curDue) + '</div>' : '')
+      + (a.text ? '<div style="white-space:pre-wrap">' + esc(a.text) + '</div>' : '') + (arr(a.files).length ? '<div class="mut">📎 ' + arr(a.files).map(function(f){ return esc(f.name); }).join(', ') + '</div>' : '') + audienceAcks(a.num, a)
+      + (AE && AE.num === a.num ? addEditHtml(a) : '') + addHistHtml(a) + '</div>'; }).join('')
     + '<h4>New addendum — #' + next + '</h4>'
     + '<div class="row"><input type="text" data-k="atitle" placeholder="What it is (Revised roof plan, RFI #3 answer…)" style="flex:1;min-width:220px"><label>Date <input type="date" data-k="adate" value="' + today() + '"></label></div>'
     + '<textarea data-k="atext" placeholder="What changed — the subs read this on the bid site"></textarea>'
@@ -184991,6 +185019,14 @@ function onClick(ev){
     if (!W.confirm(msg)) return;
     return post({ op: 'addendum', title: val('atitle'), date: val('adate'), text: val('atext'), newDue: nd, files: AF, notify: !!val('anotify') }, t, function(r){ AF = []; ['atitle', 'atext', 'adue'].forEach(function(k){ var x = D.querySelector('#gcsys2 [data-k=' + k + ']'); if (x) x.value = ''; }); toast('📎 Addendum #' + r.num + ' posted' + (r.notice && r.notice.status === 'held' ? ' — e-mail held (data-entry mode)' : r.notice && r.notice.status === 'waiting' ? ' — e-mail waits on Approvals' : '')); });
   }
+  if (a === 'aedit') { var an = +t.getAttribute('data-n'), ao = arr(job().addenda).find(function(x){ return Number(x.num) === an; }); if (!ao) return; AE = { num: an, files: arr(ao.files).map(function(f){ return { name: f.name, size: f.size, type: f.type, fileRef: f.fileRef }; }) }; return draw(); }   /* patch ADDEDIT */
+  if (a === 'aecancel') { AE = null; return draw(); }
+  if (a === 'aerm') { if (AE) AE.files.splice(+t.getAttribute('data-i'), 1); return draw(); }
+  if (a === 'aepick') return pickFiles(function(fs){ if (!fs.length || !AE) return; var keep = AE; toast('Uploading ' + fs.length + ' file' + (fs.length === 1 ? '' : 's') + '…');
+    Promise.all(fs.map(function(f){ return putFile(f).then(function(ref){ return { name: f.name, size: f.size, type: f.type || '', fileRef: ref }; }, function(e){ toast(e.message, true); return null; }); })).then(function(l){ keep.files = keep.files.concat(l.filter(Boolean)); draw(); }); }, ACCEPT_ALL);
+  if (a === 'aesave') { if (!AE) return; var en = AE.num, ed = val('aedue' + en);
+    if (!W.confirm('Save addendum #' + en + '?' + (ed ? '\n\nThe bid due date changes to ' + ed + '.' : '') + '\n\nSubs who acknowledged it are asked to acknowledge it again.' + (val('aenotify' + en) ? '\n\nThe e-mail to the subs waits on ✅ Approvals.' : ''))) return;
+    return post({ op: 'addendumedit', num: en, title: val('aetitle' + en), date: val('aedate' + en), text: val('aetext' + en), files: AE.files, newDue: ed, notify: !!val('aenotify' + en) }, t, function(r){ AE = null; toast(r.unchanged ? 'Nothing changed' : '✎ Addendum #' + en + ' updated' + (r.notice && r.notice.status === 'held' ? ' — e-mail held (data-entry mode)' : r.notice && r.notice.status === 'waiting' ? ' — e-mail waits on Approvals' : '')); }); }
   if (a === 'post') {
     var tg = val('utarget') || 'all', k = tg.split(':')[0], v = tg.slice(k.length + 1);
     return post({ op: 'post', body: val('ubody'), email: !!val('uemail'), target: { kind: k, trade: k === 'trade' ? v : '', email: k === 'sub' ? v : '' } }, t, function(r){ var x = D.querySelector('#gcsys2 [data-k=ubody]'); if (x) x.value = ''; toast('📣 Posted to ' + r.n + ' sub' + (r.n === 1 ? '' : 's')); });

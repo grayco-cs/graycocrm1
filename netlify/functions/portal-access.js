@@ -1843,7 +1843,7 @@ async function pBidJobs(sub){
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
       details: detailsOut(j), biddingClosed: !!j.biddingClosed,   /* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details (never internal notes / the RSVP list) */
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null,
-      addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30),
+      addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30), updatedAt: clip(a.updatedAt, 40),   /* patch ADDEDIT: "Updated <date>" */
         files: arr(a.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Addendum', url: f.dataUrl } : null; }).filter(Boolean) }; }),   /* patch SUBFLOW: 📎 Addenda (as on the bid site) */
       messages: (msgs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), pastDue: !!j.pastDue || (!open && !j.biddingClosed && !!HUB().dueOver(sc.jobs[id].data || {})) };   /* patch SUBFLOW */
   });
