@@ -114,14 +114,15 @@ once("""  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDa
 #    lists and, found, opens again as them. A first sign-in on a phone has only the built-in people: a PM / estimator /
 #    crew member was not found, the page opened without knowing who they were (no name, no role — "No jobs assigned to you
 #    yet") and reloaded ~7-10 s later once the people list came. Now, not found here, the cloud's people list is asked
-#    (at most 6 s) — the CRM opens as that person at once.
+#    (at most 6 s) — the CRM opens as that person at once. Only once the whole page has arrived: a sign-in while it is
+#    still downloading (a weak signal) keeps the old way (no reload that would start the download again).
 once("""  lists.push(await idb('get', 'users'));
   try { lists.push(window._uDef); } catch (e) {}""",
      """  lists.push(await idb('get', 'users'));
   try { lists.push(window._uDef); } catch (e) {}
   try {   /* patch FIELDFAST: not on this phone's lists — the cloud's people list (a first sign-in on this phone) */
     var here = lists.some(function(L){ return Array.isArray(L) && L.some(function(u){ return u && low(u.email) === email && u.active !== false; }); });
-    if (!here) {
+    if (!here && document.readyState === 'complete') {   /* the whole page is here: a reload now is quick (on a weak signal, still downloading, it would start the download again — as before, the CRM opens and finds the person later) */
       var cr = await Promise.race([window.fetch(SB_URL + '/rest/v1/gc_kv?key=eq.users&select=value', { headers: { Accept: 'application/json' }, cache: 'no-store' }).then(function(r){ return r && r.ok ? r.json() : null; }, function(){ return null; }), new Promise(function(res){ nST(function(){ res(null); }, 6000); })]);
       var cv = cr && cr[0] && cr[0].value; if (typeof cv === 'string') { try { cv = JSON.parse(cv); } catch (e) { cv = null; } }
       if (Array.isArray(cv)) lists.push(cv);
