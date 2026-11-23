@@ -78,7 +78,9 @@ const INIT = `(() => {
   d(Navigator.prototype, 'maxTouchPoints', 5); d(Navigator.prototype, 'standalone', true);
   const mm = window.matchMedia;
   window.matchMedia = function(q){ if (/display-mode:\\s*standalone/.test(q)) return { matches: true, media: q, onchange: null, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){}, dispatchEvent(){ return false; } }; if (/display-mode/.test(q)) return { matches: false, media: q, onchange: null, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){}, dispatchEvent(){ return false; } }; return mm.call(window, q); };
-  const R = window.__ft = { rec: [], vis: 'visible', online: true, iosRule: true };
+  const R = window.__ft = { rec: [], vis: 'visible', online: true, iosRule: true, lt: [] };
+  /* patch NICKFREEZE: the main thread's long tasks (wall-clock time), collected by the test every 2 s */
+  try { new PerformanceObserver(l => { for (const e of l.getEntries()) R.lt.push({ at: Math.round(performance.timeOrigin + e.startTime), ms: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
   const rec = (k, v) => R.rec.push({ k, v: String(v == null ? '' : v).slice(0, 120), at: Date.now() });
   Object.defineProperty(Document.prototype, 'visibilityState', { get: () => R.vis, configurable: true });
   Object.defineProperty(Document.prototype, 'hidden', { get: () => R.vis === 'hidden', configurable: true });
@@ -192,6 +194,10 @@ async function runOne(roleK, mode){
   });
   const cdp = await A.ctx.newCDPSession(pg);
   const throttle = async () => { try { await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 }); } catch (e) {} };
+  /* patch NICKFREEZE: long tasks while the crawl runs (each one is put on the step that was being tested) */
+  const LTS = []; let ltBusy = false;
+  const ltTake = async () => { if (ltBusy) return; ltBusy = true; try { const l = await pg.evaluate(() => { const R = window.__ft; if (!R || !R.lt) return []; const x = R.lt; R.lt = []; return x; }); LTS.push(...l); } catch (e) {} ltBusy = false; };
+  const ltIv = setInterval(ltTake, 2000);
   /* a finger: down, ~120 ms, up (a real tap is not instant — a screen redrawn in between loses the tap, as on a phone) */
   const finger = async (x, y) => {
     try { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, radiusX: 6, radiusY: 6, force: 1, id: 1 }] }); await sleep(FINGER_MS);
@@ -202,7 +208,7 @@ async function runOne(roleK, mode){
   const ev = (f, a) => pg.evaluate(f, a);
   const helpers = () => pg.evaluate(PAGE);
   const rows = [], screensSeen = new Set();
-  const log = (screen, control, result, why) => { rows.push({ role: roleK, mode, screen, control, result, why }); console.log(`  ${((Date.now() - T00) / 1000).toFixed(0)}s ${result === 'OK' ? '✓' : result === 'SKIP' ? '·' : result === 'NOTE' ? '!' : '✗'} [${roleK}/${mode}] ${screen} · ${control} · ${result} · ${why}`); };
+  const log = (screen, control, result, why) => { rows.push({ role: roleK, mode, screen, control, result, why, at: Date.now() }); console.log(`  ${((Date.now() - T00) / 1000).toFixed(0)}s ${result === 'OK' ? '✓' : result === 'SKIP' ? '·' : result === 'NOTE' ? '!' : '✗'} [${roleK}/${mode}] ${screen} · ${control} · ${result} · ${why}`); };
   const boot = { ok: false };
   try {
     await throttle();
@@ -397,15 +403,21 @@ async function runOne(roleK, mode){
       }
     }
   } catch (e) { if (!/no field/.test(String(e))) log('(run)', '(test)', 'FAIL', 'threw: ' + String(e && e.stack || e).slice(0, 300)); }
+  clearInterval(ltIv); await ltTake();
+  /* patch NICKFREEZE: each long task on the step logged next after it */
+  for (const lt of LTS) { const r = rows.find(x => x.at >= lt.at) || rows[rows.length - 1]; if (!r) continue; r.lt = Math.max(r.lt || 0, lt.ms); r.ltN1s = (r.ltN1s || 0) + (lt.ms > 1000 ? 1 : 0); r.ltN500 = (r.ltN500 || 0) + (lt.ms > 500 ? 1 : 0); }
+  rows.ltAll = LTS;
   await A.close().catch(() => {});
   return rows;
 }
 
-const ALL = [];
+const ALL = [], LTSUM = [];
 for (const r of ROLES) for (const m of MODES) {
   const t0 = Date.now();
   const rows = await runOne(r, m);
   ALL.push(...rows);
+  { const l = rows.ltAll || [], w = rows.reduce((a, b) => (b.lt || 0) > (a.lt || 0) ? b : a, {});
+    LTSUM.push({ rm: r + '/' + m, n: l.length, n500: l.filter(x => x.ms > 500).length, n1s: l.filter(x => x.ms > 1000).length, worst: w.lt || 0, where: w.screen ? w.screen + ' · ' + w.control : '' }); }
   if (!process.env.FT_PROBE) fs.writeFileSync(OUT + '/ft_' + r + '_' + m + '.json', JSON.stringify(rows, null, 1));
   const n = rows.filter(x => x.result === 'OK' || x.result === 'FAIL').length, f = rows.filter(x => x.result === 'FAIL').length;
   console.log(`== ${r}/${m}: ${n} controls tapped, ${f} FAIL (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
@@ -413,6 +425,8 @@ for (const r of ROLES) for (const m of MODES) {
 const fails = ALL.filter(x => x.result === 'FAIL');
 console.log('\n| role/mode | screen | control | result | why |\n|---|---|---|---|---|');
 for (const x of ALL.filter(x => x.result !== 'OK' && x.result !== 'SKIP')) console.log(`| ${x.role}/${x.mode} | ${x.screen} | ${x.control} | ${x.result} | ${x.why.replace(/\|/g, '/')} |`);
+console.log('\n| role/mode | long tasks | > 500 ms | > 1 s | worst (ms) | worst at |\n|---|---|---|---|---|---|');   /* patch NICKFREEZE */
+for (const s of LTSUM) console.log(`| ${s.rm} | ${s.n} | ${s.n500} | ${s.n1s} | ${s.worst} | ${s.where.replace(/\|/g, '/')} |`);
 const hard = fails.filter(x => !(SKIPFAIL && SKIPFAIL.test(x.screen + ' ' + x.control)));
 console.log(`FIELDTAPS ${ALL.filter(x => x.result === 'OK').length} OK · ${fails.length} FAIL (${fails.length - hard.length} in screens owned elsewhere) · ${ALL.filter(x => x.result === 'SKIP').length} skipped`);
 process.exit(hard.length ? 1 : 0);
