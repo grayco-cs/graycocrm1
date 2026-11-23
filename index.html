@@ -184218,6 +184218,8 @@ function drawInvite(){
   var all = {}; INV.subs.forEach(function(x){ tradesOf(x).forEach(function(t){ all[low(t)] = t; }); }); Object.keys(INV.trades).forEach(function(t){ if (!all[t]) all[t] = t; });
   var list = invShown(), n = Object.keys(INV.pick).filter(function(e){ return INV.pick[e]; }).length;
   b.innerHTML = '<div class="mut">Trades (tap to filter):</div><div class="chips">' + Object.keys(all).sort().map(function(t){ return '<button type="button" class="b' + (INV.trades[t] ? ' on' : '') + '" data-sys="trade" data-t="' + esc(t) + '">' + esc(all[t]) + '</button>'; }).join('') + '</div>'
+    /* INVALL: tick / untick everyone shown */
+    + (list.filter(function(x){ return !x.invited; }).length ? '<div class="bar" style="margin:6px 0"><button type="button" class="b" data-sys="pickall">☑ Select all shown (' + list.filter(function(x){ return !x.invited; }).length + ')</button>' + (n ? '<button type="button" class="b" data-sys="picknone">☐ Clear (' + n + ')</button>' : '') + '</div>' : '')
     + '<div class="list">' + (list.length ? list.map(function(x){
       return '<label class="row"><input type="checkbox" data-sys="pick" data-e="' + esc(x.email) + '"' + (INV.pick[x.email] ? ' checked' : '') + (x.invited ? ' disabled' : '') + '>'
         + '<span style="flex:1"><b>' + (x.flag === 'preferred' ? '⭐ ' : '') + esc(x.company || x.name || x.email) + '</b> <span class="mut">' + esc([x.name !== x.company ? x.name : '', x.email, tradesOf(x).join(', ')].filter(Boolean).join(' · ')) + '</span></span>'
@@ -184300,6 +184302,8 @@ function onClick(ev){
   if (a === 'lead') return openLead(t.getAttribute('data-lead'));
   if (a === 'award' || a === 'unaward') return award(t, a === 'award');
   if (a === 'trade') { var k = t.getAttribute('data-t'); if (INV.trades[k]) delete INV.trades[k]; else INV.trades[k] = 1; return drawInvite(); }
+  if (a === 'pickall') { invShown().forEach(function(x){ if (!x.invited && x.email) INV.pick[x.email] = true; }); return drawInvite(); }   /* INVALL */
+  if (a === 'picknone') { INV.pick = {}; return drawInvite(); }   /* INVALL */
   if (a === 'send') {   /* + the pasted e-mails (subs not on file yet) */
     var ta = D.querySelector('#gcsys-modal [data-sys-paste]'), raw = ta ? String(ta.value || '') : ''; INV.paste = raw;
     var pasted = (raw.match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map(function(e){ return low(e); });
