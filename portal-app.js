@@ -1702,7 +1702,7 @@ function signup(opts){
     if (picked.bad.length) { err.textContent = t('ppExpNeed', { f: picked.bad.join(', ') }); return; }
     var body = { action: 'register', email: v('email').toLowerCase(), password: F.pw.value, force: force ? true : undefined,
       profile: { name: v('name'), company: v('company'), phone: v('phone'), trades: trades, businessCity: v('city'), businessState: v('state').toUpperCase(), serviceArea: v('area'),
-        numEmployees: v('crew'), lang: LANG, papersClaimed: picked.claimed } };
+        numEmployees: v('crew'), lang: LANG, papersClaimed: picked.claimed, acctType: opts.acctType === 'supplier' ? 'supplier' : undefined } };   /* PORTALSIGNUP: 🧱 Supplier (portal-signup.js) */
     if (opts.invite) { body.invite = opts.invite; body.job = opts.job || ''; }
     busy(go, true);
     sp(body).then(function(r){

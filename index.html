@@ -7742,7 +7742,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.329-2026-11-23-r38q -->
+<!-- GrayCo CRM Build: 33.330-2026-11-23-r38r -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -8714,7 +8714,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.329-2026-11-23-r38q");
+  console.log("[GC] Build 33.330-2026-11-23-r38r");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -8762,7 +8762,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.329-2026-11-23-r38q"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.330-2026-11-23-r38r"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -75079,13 +75079,18 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
        jobs, the same job entered twice, one address on two jobs → a guess for the office, never the first one silently). */
     var spaced=' '+String((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
     var sp=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); };
+    /* INVJOB: the bill's own full street address(es) — house # + street + Rd / St / Dr … ("418 Maplecrest rd") */
+    var ijKeys=(window._gcInvJobStreets?window._gcInvJobStreets(spaced):[]);
     projects.forEach(function(p){
       if(!p || p.deleted || p._deleted || p.overhead===true || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
       var pn=norm(p.name), pc=norm(p.client||''), pa=norm(p.address||''), pp=norm(p.autoPO||p.po||'');
       var conf=0, signals=0;
+      /* INVJOB: the bill names a street; this job has another street on file ('other') or none at all, a city only ('none') */
+      var ijVs=ijKeys.length&&window._gcInvJobVs?window._gcInvJobVs(ijKeys, p.address||p.jobAddress||''):'';
       // Strong single signals (each near-certain on its own)
       var exactPO = poText && pp && poText===pp;
       var exactAddr = pa && invAddr && (invAddr===pa || (pa.length>10 && invAddr.indexOf(pa)>-1));
+      if(exactAddr && !/\d{1,6}\s+[a-z]/i.test(String(p.address||''))) exactAddr=false;   /* INVJOB: a job address with no house # / street ("Demoville TN") is a city only — never an "exact address" */
       // Full job-name match: certain if the name is distinctive (long enough / multi-word)
       var nameWords = pn.split(' ').filter(function(w){return w.length>2;}).length;
       var distinctiveName = pn.length>=8 || nameWords>=2; // e.g. "Cordova Club Apartments", "Smith Kitchen"
@@ -75097,12 +75102,13 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var strong = exactPO || exactAddr || (exactName && distinctiveName);
       // Supporting signals
       if(pc && pc.length>=4 && spaced.indexOf(' '+sp(p.client)+' ')>-1){ conf+=40; signals++; }   /* INVMATCH: whole words */
-      if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6){ conf+=35; signals++; }
+      if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6 && ijVs!=='none'){ conf+=35; signals++; }   /* INVJOB: a city alone ("Demoville TN") is no match when the bill names its own street */
       // amount sanity (sub invoice amount within a job's contract range = weak support)
       var amt=parseFloat(inv.amt||inv.amount)||0, contract=parseFloat(p.contract||p.contractAmt||0)||0;
       if(amt>0 && contract>0 && amt<=contract){ conf+=10; }
       // word overlap on name (weak)
       words(p.name).forEach(function(w){ if(w.length>3 && jobText.indexOf(norm(w))>-1) conf+=8; });
+      if(ijVs==='other' && !exactPO){ conf=Math.max(0, conf-60); strong=false; }   /* INVJOB: the bill's street is not this job's — contradicting evidence */
       if(conf>bestJobConf){ runnerUp=bestJobConf; bestJobConf=conf; bestJob=p; bestSignals=signals; bestStrong=strong; }
       else if(conf>runnerUp){ runnerUp=conf; }
     });
@@ -104285,11 +104291,13 @@ window._gcJobMatchesForInvoice = function(inv, projList){
   var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.qbMemo, inv.title, inv.address, inv.jobAddress,
             inv.readText, inv.job, inv.jobName].filter(Boolean).join(' \n ');
   var invClient=imName(inv.client||inv.customer||'');
+  var ijKeys=window._gcInvJobStreets?window._gcInvJobStreets(text):[];   /* INVJOB: the bill's own street address(es) */
   list.forEach(function(p){
     if(!imLive(p)) return;
     var how='', st=0;
     var ak=imAddrKey(p.address||p.addr||p.jobAddress);
     if(ak && text && imAddrIn(text, ak)){ how='the address '+String(p.address||'').split(',')[0]; st=3; }
+    if(!st && ijKeys.length && window._gcInvJobVs && window._gcInvJobVs(ijKeys, p.address||p.addr||p.jobAddress||'')==='other') return;   /* INVJOB: another street than the bill's — never by its name / customer */
     var nm=imName(nameOf(p));
     if(!st && nm.length>=8 && nm.split(' ').length>=2 && imPhraseIn(text, nm)){ how='the job name'; st=2; }
     var cl=imName(p.client||p.customer||'');
@@ -133241,7 +133249,7 @@ function officeMe(){ if(isAdmin()) return false; var u = myUser(); return myEmai
 window._gcApOfficeMe = officeMe;
 /* patch APOFFICE4 (owner 10/30): every customer / outside-facing approval is the office's own at once, at any step, and her
    approval is final; owner money / permission kinds never are. Same lists as netlify/functions/_lib/office-kinds.js. */
-var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page","lead_assign","assign_estimator","assign_pm","sub_doc_request","gcp_co_nudge","sign_co_nudge","maint_outreach","maint_repair","maint_reminder","preq_change","preq_project","preq_reply","preq_decline"];   /* patch OFFFIX1: lead assignment is office work */
+var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page","lead_assign","assign_estimator","assign_pm","sub_doc_request","gcp_co_nudge","sign_co_nudge","maint_outreach","maint_repair","maint_reminder","preq_change","preq_project","preq_reply","preq_decline","portal_signup"];   /* patch OFFFIX1: lead assignment is office work */
 var AP4K_ADMIN = ["offer_letter","refcredit","refgift","mkt_payout","mkt_ad","mkt_addraft","mkt_experiment","mkt_feature"];
 var AP4K_ADMIN_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override/, AP4K_PREFIX = /^sign_[a-z0-9_]+$/;
 function ap4kKind(x){ return low(x && typeof x === 'object' ? x.kind : x); }
@@ -133336,7 +133344,7 @@ function markInvoiceSent(invId){
 window._gcApprovalAct = act;
 
 /* ── the list screen ── */
-var KIND = { portal_publish:'Put in customer portal', invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
+var KIND = { portal_signup:'Portal sign-up: match a job', portal_publish:'Put in customer portal', invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
 function kindOf(x){ return KIND[x.kind] || s(x.kind).replace(/_/g, ' '); }
 function preview(x){ return esc(s(x.text)).split(esc(PH)).join('<span style="color:#2563eb;text-decoration:underline">[portal link]</span>'); }
 function stepLabel(x){
@@ -142682,7 +142690,7 @@ function post(body){
 window._gcAp2Items = function(){ return items().slice(); };
 
 /* ── the cards ── */
-var KIND = { portal_publish:'Put in customer portal', portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign', pay_app:'Pay application', offer_letter:'Offer letter', walkthrough_sign:'Final walkthrough to sign' };
+var KIND = { portal_signup:'Portal sign-up: match a job', portal_publish:'Put in customer portal', portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign', pay_app:'Pay application', offer_letter:'Offer letter', walkthrough_sign:'Final walkthrough to sign' };
 var ICON = { portal_publish:'📄', invoice:'🧾', final_invoice:'🧾', final_reminder:'⏰', thank_you:'🎉', portal_link:'🔗', portal_docs:'📄', lien_waiver:'📜', contract:'✍️', selection_sign:'🎨', pay_app:'🏗', offer_letter:'🤝', walkthrough_sign:'🏁' };
 function titleOf(x){
   if(x.title) return x.title;
@@ -172574,10 +172582,12 @@ function rowQueue(x, mine, now){
     open: { l: 'Open / Edit', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } }, edit: editForQueue(x, invId, inv),
     doc: invId ? { l: '🧾 Invoice PDF', f: function(){ call('_gcViewInvoicePDF', invId, s(x.jobId || x.pid)); } } : { l: x.channel === 'sms' ? '💬 The text' : '✉️ The e-mail', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } } };
 }
+/* INVJOB: QuickBooks hands names / memos over HTML-escaped ("A&amp;Z Demo Supply LLC"); the card escapes them again → "R&amp;D" on screen */
+function unEnt(v){ return s(v).replace(/&(amp|lt|gt|quot|#39|#x27|apos);/g, function(m, k){ return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'", apos: "'" }[k]; }); }
 function rowSub(a, mine, now){
   var p = proj(a.pid), id = s(a.invId || a.id);
   var t = Date.parse(a.submittedAt || a.createdAt || a.at || a.date || 0) || num(a.queuedAt) || now;
-  return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (s(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + s(a.desc).slice(0, 60) : ''),
+  return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (unEnt(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + unEnt(a.desc).slice(0, 60) : ''),   /* INVJOB: unEnt */
     pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM ' + ((s(a.pmName) || s(p && p.pm)) ? (s(a.pmName) || s(p && p.pm)) + ' ' : '') + 'or the office',   /* patch APOFFICE */ since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
     escalated: false, chain: a.kickedBackToPm ? '↩ sent back by ' + s(a.deniedBy) : '',
     approve: mine || adminLike() ? { l: '✅ Approve', mode: (typeof W._gcSubPayBlocked === 'function' && W._gcSubPayBlocked(id)) ? undefined : 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',   /* patch PAYFAST: a stopped one opens the pay-check window at once */
@@ -240999,6 +241009,16 @@ function scoreText(t, J, src){
 }
 /* THE MATCHER: input { memo, desc, lines:[{memo,desc,cust,klass}], cust, klass, name, side, num, text } · ctx { jobs | projects, memoMap }
    → { pid, conf, how, why, cands:[{pid, score, why, name}], ambiguous } */
+/* INVJOB: the full street addresses in a text (house # + street + Rd / St / Dr …): a job with ANOTHER street on file is contradicted */
+function streetsIn(t){
+  var w = nk(t).split(' '), out = [];
+  for (var i = 0; i < w.length - 2; i++) {
+    if (!/^\d{1,6}[a-z]?$/.test(w[i]) || /^(19|20)\d\d$/.test(w[i])) continue;
+    var st = [];
+    for (var j = i + 1; j < w.length && j <= i + 4; j++) { if (/^\d/.test(w[j])) break; if (/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|hwy|highway)$/.test(w[j])) { if (st.length) out.push({ n: w[i].replace(/[a-z]$/, ''), w: st }); break; } if (!SUFX.test(w[j])) st.push(w[j]); }
+  }
+  return out;
+}
 function matchJob(input, ctx){
   input = input || {}; ctx = ctx || {};
   var jobs = ctx.jobs || jobIndex(ctx.projects), byId = {}; jobs.forEach(function(j){ byId[j.id] = j; });
@@ -241015,11 +241035,14 @@ function matchJob(input, ctx){
   if (input.side === 'income') add(input.name, 0.9, 'Name column');
   add(input.text, 0.9, 'attached PDF');
   var num0 = poNorm(input.num);
+  var ijSt = []; srcs.forEach(function(x){ if (x.src !== 'Name column') ijSt = ijSt.concat(streetsIn(x.t)); });   /* INVJOB */
   var sc = jobs.map(function(J){
     var best = { score: 0, how: '', why: '' }, n = 0;
     if (num0 && input.side === 'income' && J.qbn.indexOf(num0) >= 0) best = { score: 98, how: 'qbnum', why: 'QuickBooks invoice #' + input.num + ' is on this job' };
     srcs.forEach(function(x){ var r = scoreText(x.t, J, x.src); if (r.score) { n++; var v = r.score * x.w; if (v > best.score) best = { score: v, how: r.how, why: r.why }; } });
     if (!best.score) return null;
+    /* INVJOB: the memo names a street that is not this job's street (contradicting evidence) → only a suggestion, a person picks */
+    if (ijSt.length && J.addr && best.how !== 'address' && best.how !== 'qbnum' && !ijSt.some(function(a){ return a.n === J.addr.n && (!J.addr.w.length || J.addr.w.some(function(w){ return a.w.some(function(x){ return near(x, w); }); })); })) { best.score -= 40; best.why += ' — but the memo\'s address (' + ijSt[0].n + ' ' + ijSt[0].w.join(' ') + ') is another street'; }
     var v = best.score + (n >= 2 ? 3 : 0) + (J.lost ? -12 : J.done ? -2 : 1);
     return { pid: J.id, score: Math.min(99, Math.round(v)), how: best.how, why: best.why, name: J.name, company: J.company };
   }).filter(Boolean).sort(function(a, b){ return b.score - a.score; });
@@ -251478,6 +251501,14 @@ function scoreJob(inv, p, ctx){
   if (pos.length && explicit.some(function(x){ return pos.indexOf(x) >= 0; })) { sc += 95; strong = strong || 'po'; why.push('PO ' + pos[0] + ' on the invoice'); }
   var ah = addrHit(tkeys, _nk.addr);
   if (ah) { sc += 90; strong = strong || 'address'; why.push('the address ' + ah); }
+  /* INVJOB: the bill names a full street address that this job does not have — another street (contradicting evidence), or none on
+     file (a city only): a bare PO-looking token / the job's name words / the customer are not enough to put it here by itself */
+  var ijVs = ah ? 'same' : streetVs(ctx.streets, p.address || p.jobAddress || p.addr);
+  if (!ah && (ijVs === 'other' || ijVs === 'none')) {
+    var poLab = pos.length && (ctx.labelledPOs || []).some(function(x){ return pos.indexOf(x) >= 0; });
+    if (strong === 'po' && !poLab) { strong = ''; sc -= ijVs === 'other' ? 60 : 25; why.push(ijVs === 'other' ? 'but the bill\'s address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is another street' : 'but the bill\'s street address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is not on this job'); }
+    else if (ijVs === 'other' && strong !== 'po' && strong !== 'qbjob') { sc -= 60; why.push('but the bill\'s address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is another street'); }
+  }
   var nw = _nk.nw, hits = nw.filter(function(x){ return tw.indexOf(' ' + x + ' ') >= 0; });
   if (hits.length) { var add = Math.min(50, hits.length * 30); sc += add; why.push('the job name ("' + hits.join('", "') + '")'); }
   var ck = custKey(inv.client || inv.customer || inv.sub, amap), pk = _nk.pk, pn = _nk.pn;
@@ -251496,6 +251527,23 @@ function scoreJob(inv, p, ctx){
   if (/^(bidding|lead|estimating|estimate)$/i.test(s(p.status)) && !con) sc -= 10;
   return { p: p, pid: s(p.id), score: sc, strong: strong, why: why };
 }
+/* INVJOB (owner 11/23): the bill's own FULL street address — house # + street + Rd / St / Dr … (not "2 coats", not a ZIP) — and how a job's
+   street compares: 'same', 'other' (the job has another street on file), 'none' (the job has no street: a city only, "Demoville TN") */
+var IJ_SUF = /^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|ter|terrace|hwy|highway)$/;
+function streetsStrict(text){
+  var w = words(text).trim().split(' '), out = [];
+  for (var i = 0; i < w.length - 2; i++) {
+    if (!/^\d{1,6}[a-z]?$/.test(w[i]) || /^(19|20)\d\d$/.test(w[i])) continue;
+    var st = '';
+    for (var j = i + 1; j < w.length && j <= i + 4; j++) { var x = w[j]; if (/^\d/.test(x)) break; if (IJ_SUF.test(x)) { if (st && j > i + 1) out.push({ n: w[i].replace(/[a-z]$/, ''), st: st }); break; } if (!st && !STREET_SKIP.test(x) && x.length >= 3) st = x; }
+  }
+  return out;
+}
+function streetVs(billKeys, jobAddress){
+  if (!billKeys || !billKeys.length) return '';
+  var jk = addrKeysIn(s(jobAddress).split(',')[0]).slice(0, 1); if (!jk.length) return 'none';
+  return addrHit(billKeys, jk) ? 'same' : 'other';
+}
 function ctxFor(inv, projects, opts){
   var text = textOf(inv), amap = (opts && opts.amap) || ALIAS;
   /* a PO counts only when the invoice itself carries it: in its text, or typed on a record a person made (not one a job finder copied from the job) */
@@ -251504,7 +251552,10 @@ function ctxFor(inv, projects, opts){
   if (s(inv.po) && !isQB(inv) && !inv.autoLinked && !inv.linkedBy && !inv.autoPO) ex.push(poN(inv.po));
   var qbBilled = null;
   if (opts && opts.invs) { qbBilled = {}; arr(opts.invs).forEach(function(v){ if (v === inv || s(v.id) === s(inv.id) || !isClient(v) || isArchived(v) || !isQB(v) || !s(v.pid) || !placedOK(v)) return; qbBilled[s(v.pid)] = num(qbBilled[s(v.pid)]) + num(v.amt); }); }
-  return { text: text, tw: words(text), tkeys: addrKeysIn(text), amap: amap, nums: qbNums(inv), explicitPOs: ex, qbBilled: qbBilled };
+  /* INVJOB: a PO the bill LABELS ("PO X901", "PO#: X901") or a person typed is strong; a bare "X901" somewhere in a memo is weak */
+  var lab = []; (text.toUpperCase().match(/\bP\.?\s?O\.?\s*(?:#|NO\.?|NUM(?:BER)?)?\s*[:#-]?\s*[A-Z]-?\d{3}\b/g) || []).forEach(function(x){ lab.push(poN(x.replace(/^P\.?\s?O\.?\s*(?:#|NO\.?|NUM(?:BER)?)?\s*[:#-]?\s*/, ''))); });
+  if (s(inv.po) && !isQB(inv) && !inv.autoLinked && !inv.linkedBy && !inv.autoPO) lab.push(poN(inv.po));
+  return { text: text, tw: words(text), tkeys: addrKeysIn(text), amap: amap, nums: qbNums(inv), explicitPOs: ex, labelledPOs: lab, streets: streetsStrict(text), qbBilled: qbBilled };
 }
 /* every job that fits, best first, and how sure the best one is:
    sure   — a strong signal (QuickBooks project / job's QB invoice #, the PO on the invoice, the address) and no other job close → may link by itself
@@ -251740,12 +251791,15 @@ function matchPayable(inv, projects, opts){
   return m;
 }
 
-return { OLDER_BEFORE: OLDER_BEFORE, ALIAS: ALIAS, nk: nk, custKey: custKey, custSame: custSame, aliasMap: aliasMap, isClient: isClient, isArchived: isArchived, isQB: isQB, qbNums: qbNums,
+return { streetsStrict: streetsStrict, streetVs: streetVs, /* INVJOB */ OLDER_BEFORE: OLDER_BEFORE, ALIAS: ALIAS, nk: nk, custKey: custKey, custSame: custSame, aliasMap: aliasMap, isClient: isClient, isArchived: isArchived, isQB: isQB, qbNums: qbNums,
   isPastJob: isPastJob, isOverhead: isOverhead, liveJob: liveJob, addrKeysIn: addrKeysIn, jobAddrKeys: jobAddrKeys, match: match, sureJob: sureJob, scoreJob: scoreJob,
   placedByPerson: placedByPerson, audit: audit, plan: plan, apply: apply, undo: undo, relink: relink, poCell: poCell, openBal: openBal, isOverdue: isOverdue,
   payeeKind: payeeKind, payableKind: payableKind, matchPayable: matchPayable, customerMerges: customerMerges };
 })();
 var D = W.document;
+/* INVJOB: the older finders (the sub-invoice router, FINDJOB) use the same full-street rule */
+W._gcInvJobStreets = function(text){ try { return CORE.streetsStrict(text); } catch (e) { return []; } };
+W._gcInvJobVs = function(keys, jobAddress){ try { return CORE.streetVs(keys, jobAddress); } catch (e) { return ''; } };
 if (!D || !D.createElement) { W._gcInvLink = CORE; return; }
 if (W.__GC_PATCH_INVLINK__) return; W.__GC_PATCH_INVLINK__ = true;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
@@ -258697,4 +258751,443 @@ function addenda(jobId, list){
 W._gcSubflow = { btn: btn, what: what, sheet: sheet, addenda: addenda };
 try { console.log('[GC] ↩ Reply to the sub from the job thread (patch SUBFLOW): _gcSubflow'); } catch (e) {}
 })(window, document);
+</script>
+<script id="gc-patch-newbidjob">
+/* BIDNEW (owner 11/23: "want to be able to enter a project into the portal from here") — "＋ New bid job" on the 🏗 Bid portal screen
+   (📊 Bids & invites, next to Open the bid portal ↗ / ↻ Refresh / the search box / 🔐 Accounts). It opens an INLINE form (no popup, desk
+   and phone): title, site address, sub bid due date + time, the trades we need priced, scope / notes, 🔒 Private or 🌐 Public, an optional
+   link to an existing CRM lead or job (search), and plans (＋ Upload — the CRM's file pipeline window._gcStoreFile, a crm-files reference
+   only — or a Drive / Dropbox link). 📢 Put on bid portal → the SAME server path as "📢 Put on bid portal" on a lead / estimate / job
+   (bid-hub op postjob: a person posted it — postedAt / postedBy — so the "On bid portal" logic counts it), then its 📂 Manage sheet opens
+   so subs can be invited.
+   Who: the same people who post today (window._gcBidPost.canPost): an admin, an estimator; a PM only for a lead / job of their own (they
+   must link it). The server checks the same (posterRole).
+   A lead / job that already has a bid job is never overwritten from here: the form says so and offers 📂 Manage on that job instead.
+   Console: _gcNewBidJob.open()  _gcNewBidJob.state() */
+(function(W, D){
+'use strict';
+if (W.__gcNewBidJobOn) return; W.__gcNewBidJobOn = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC new bid job]', e && e.message || e); } catch (x) {} }
+function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(m, bad); if (W._gcToast) W._gcToast(m); } catch (e) {} }
+function fn(path, body){
+  if (W._gcSys && W._gcSys.fn) return W._gcSys.fn(path, body);
+  return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || ('The server answered ' + r.status)); return j; }); });
+}
+function crm(){ return W._crm || {}; }
+function BPo(){ return W._gcBidPost || null; }
+function leadsAll(){ var out = [], seen = {}; var add = function(l){ if (l && s(l.id) && !seen[s(l.id)]) { seen[s(l.id)] = 1; out.push(l); } };
+  arr(crm().leads).forEach(add); try { arr(W._gcLeadsHubKit && W._gcLeadsHubKit.all && W._gcLeadsHubKit.all()).forEach(add); } catch (e) {} arr(W._gcLeadsList).forEach(add); return out; }
+function projAll(){ return arr(crm().projects).filter(function(p){ return p && s(p.id); }); }
+
+/* ── who: the 📢 Put on bid portal rule ── */
+function canAny(){ var B = BPo(); if (!B || !B.canPost) return false; try { return !!B.canPost({}); } catch (e) { return false; } }
+function canFor(k){ var B = BPo(); if (!B || !B.canPost) return false; try { return !!B.canPost(k.kind === 'pid' ? { pid: k.id } : { leadId: k.id }); } catch (e) { return false; } }
+var MAY = { at: 0, v: false };
+function may(){
+  if (Date.now() - MAY.at < 20000) return MAY.v;
+  var v = canAny();
+  if (!v) v = projAll().some(function(p){ return canFor({ kind: 'pid', id: s(p.id) }); }) || leadsAll().some(function(l){ return canFor({ kind: 'leadId', id: s(l.id) }); });
+  MAY = { at: Date.now(), v: v }; return v;
+}
+
+/* ── the form ── */
+var TRADES0 = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry', 'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
+function tradeList(){ var B = BPo(); try { var l = B && B.trades && B.trades(); if (arr(l).length) return l; } catch (e) {} return TRADES0.slice(); }
+var F = { open: false, vis: 'private', trades: {}, link: null, files: [], links: [], busy: false, q: '', existing: null };
+function fresh(){ F = { open: false, vis: 'private', trades: {}, link: null, files: [], links: [], busy: false, q: '', existing: null }; }
+function css(){
+  if (D.getElementById('gcnb-css')) return;
+  var st = D.createElement('style'); st.id = 'gcnb-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '#gcnb{border:2px solid #d4a017;background:#fffdf5;border-radius:14px;padding:14px;margin:4px 0 14px;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1640;box-sizing:border-box;max-width:100%}'
+    + '#gcnb h3{margin:0;font-size:18px}#gcnb .hd{display:flex;justify-content:space-between;gap:8px;align-items:center}#gcnb label.f{display:block;font-weight:700;font-size:13px;margin:12px 0 4px}'
+    + '#gcnb input[type=text],#gcnb input[type=search],#gcnb input[type=url],#gcnb input[type=date],#gcnb input[type=time],#gcnb textarea{width:100%;box-sizing:border-box;border:1px solid #d6d1e6;border-radius:8px;padding:8px 10px;font:inherit;background:#fff;min-height:40px}'
+    + '#gcnb .g2{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}#gcnb .vis{display:flex;gap:8px;flex-wrap:wrap}#gcnb .vis label{flex:1;min-width:200px;border:2px solid #e7e3f2;border-radius:10px;padding:8px 10px;cursor:pointer;background:#fff}#gcnb .vis label.on{border-color:#d4a017;background:#fffbeb}'
+    + '#gcnb .chips{display:flex;flex-wrap:wrap;gap:6px}#gcnb .chip{border:1px solid #d6d1e6;background:#fff;border-radius:999px;padding:6px 11px;cursor:pointer;font:600 12.5px system-ui;min-height:32px}#gcnb .chip.on{background:#241968;color:#fff;border-color:#241968}'
+    + '#gcnb .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}#gcnb .row>input{flex:1;min-width:160px}#gcnb .hits{border:1px solid #eeeaf6;border-radius:10px;background:#fff;margin-top:4px;max-height:240px;overflow:auto}'
+    + '#gcnb .hits button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f4f2fa;background:#fff;padding:8px 10px;cursor:pointer;font:inherit}#gcnb .hits button:hover{background:#f7f5fc}'
+    + '#gcnb .pick{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:8px 10px}#gcnb .warn{background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:10px;padding:8px 10px;margin-top:6px}'
+    + '#gcnb ul.fl{list-style:none;margin:6px 0 0;padding:0}#gcnb ul.fl li{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px;word-break:break-all}#gcnb .err{color:#b91c1c;font-weight:600;min-height:1em;margin-top:8px}'
+    + '#gcnb .mut{color:#6b6787;font-size:12px}#gcnb .bar2{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#gcnb button.b{min-height:38px}'
+    + '@media(max-width:640px){#gcnb{padding:12px 10px}#gcnb .g2{grid-template-columns:1fr 1fr}#gcnb .g2>div:first-child{grid-column:1/-1}#gcnb .vis label{min-width:0;flex-basis:100%}#gcnb .bar2 button{flex:1 1 auto}}';
+  D.head.appendChild(st);
+}
+function host(){ return D.querySelector('#gc-sys-bp'); }
+function barOf(){ var h = host(); if (!h) return null; var o = h.querySelector('[data-sys="openbids"]'); return o ? o.parentNode : null; }
+function box(){ return D.getElementById('gcnb'); }
+function val(k){ var b = box(), e = b && b.querySelector('[data-nb="' + k + '"]'); return e ? s(e.value) : ''; }
+function setErr(t){ var b = box(), e = b && b.querySelector('[data-nb-err]'); if (e) e.textContent = t || ''; }
+function addrOf(x){ return [s(x.address), s(x.city), s(x.state)].filter(Boolean).join(', '); }
+function labelOf(k){ if (!k) return ''; if (k.kind === 'pid') { var p = projAll().filter(function(x){ return s(x.id) === k.id; })[0]; return p ? '🏗 Job ' + [s(p.autoPO), s(p.name)].filter(Boolean).join(' · ') + (addrOf(p) ? ' — ' + addrOf(p) : '') : '🏗 Job ' + k.id; }
+  var l = leadsAll().filter(function(x){ return s(x.id) === k.id; })[0]; return l ? '◈ Lead ' + s(l.name || l.title) + (addrOf(l) ? ' — ' + addrOf(l) : '') : '◈ Lead ' + k.id; }
+function hits(q){
+  q = low(q); if (q.length < 2) return [];
+  var words = q.split(/\s+/).filter(Boolean), out = [];
+  var test = function(t){ t = low(t); return words.every(function(w){ return t.indexOf(w) > -1; }); };
+  projAll().forEach(function(p){ if (p.deleted || p.archived) return; if (test([p.autoPO, p.name, p.client, p.address, p.city].join(' '))) out.push({ kind: 'pid', id: s(p.id), t: 0 }); });
+  leadsAll().forEach(function(l){ if (l.deleted || l.archived) return; if (test([l.name, l.title, l.company, l.address, l.city].join(' '))) out.push({ kind: 'leadId', id: s(l.id), t: 1 }); });
+  return out.filter(canFor).slice(0, 10);
+}
+function existingFor(k){   /* the bid job already linked to that lead / job (the same rule as 📢 Put on bid portal's postedFor) */
+  var B = BPo(); if (!k || !B || !B.jobs) return Promise.resolve(null);
+  return Promise.resolve(B.jobs(false)).then(function(list){ var l = arr(list).filter(function(j){ return j && ((k.kind === 'pid' && s(j.crmProjectId) === k.id) || (k.kind === 'leadId' && s(j.crmLeadId) === k.id)); });
+    return l.filter(function(j){ return !j.deleted; })[0] || l[0] || null; }, function(){ return null; });
+}
+function draw(){
+  var b = box(); if (!b) return;
+  var tl = tradeList(); Object.keys(F.trades).forEach(function(t){ if (!tl.some(function(x){ return low(x) === low(t); })) tl.push(t); });
+  var lk = F.link, ex = F.existing, pmOnly = !canAny();
+  b.innerHTML = '<div class="hd"><h3>＋ New bid job</h3><button type="button" class="b" data-nb-a="cancel" aria-label="Close">✕</button></div>'
+    + '<div class="mut">Put a job on bids.grayco-cs.com by hand. Subs see the job, the scope and the plans you share — never prices, never a customer\'s details.</div>'
+    + '<label class="f">Who sees it</label><div class="vis">'
+    + '<label class="' + (F.vis === 'private' ? 'on' : '') + '"><input type="radio" name="gcnb-vis" value="private"' + (F.vis === 'private' ? ' checked' : '') + '> <b>🔒 Private</b><div class="mut">Only subs you invite.</div></label>'
+    + '<label class="' + (F.vis === 'public' ? 'on' : '') + '"><input type="radio" name="gcnb-vis" value="public"' + (F.vis === 'public' ? ' checked' : '') + '> <b>🌐 Public</b><div class="mut">Every approved sub can see it and bid. Needs a due date.</div></label></div>'
+    + '<label class="f" for="gcnb-title">Job title</label><input type="text" id="gcnb-title" data-nb="title" maxlength="200" placeholder="e.g. Sample Clinic — exterior paint">'
+    + '<div class="g2"><div><label class="f" for="gcnb-addr">Site address</label><input type="text" id="gcnb-addr" data-nb="address" maxlength="240" placeholder="Street, city, state"></div>'
+    + '<div><label class="f" for="gcnb-due">Bid due <span class="mut">(subs)</span></label><input type="date" id="gcnb-due" data-nb="due"></div>'
+    + '<div><label class="f" for="gcnb-duet">Time</label><input type="time" id="gcnb-duet" data-nb="dueTime"></div></div>'
+    + '<label class="f">Trades we need priced</label><div class="chips" data-nb-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (F.trades[t] ? ' on' : '') + '" data-nb-a="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
+    + '<div class="row" style="margin-top:6px"><input type="text" data-nb="trade" placeholder="Another trade (e.g. Exterior paint)" maxlength="40" aria-label="Another trade"><button type="button" class="b" data-nb-a="addtrade">＋ Add</button></div>'
+    + '<label class="f" for="gcnb-scope">Scope / notes for bidders</label><textarea id="gcnb-scope" data-nb="scope" rows="4" maxlength="20000" placeholder="e.g. 2,500 SF exterior repaint: wash, scrape, prime bare wood, 2 coats. Walk-through Tue 9 AM."></textarea>'
+    + '<label class="f">Link to a CRM lead or job <span class="mut">(optional' + (pmOnly ? ' — as a PM, pick one of your own' : '') + ')</span></label>'
+    + (lk ? '<div class="pick" data-nb-linked="' + esc(lk.kind + ':' + lk.id) + '"><span>' + esc(labelOf(lk)) + '</span><button type="button" class="b" data-nb-a="unlink">✕ Unlink</button></div>'
+      + (ex ? '<div class="warn" data-nb-existing="' + esc(ex.id) + '">This ' + (lk.kind === 'pid' ? 'job' : 'lead') + ' is already on the bid portal' + (ex.deleted ? ' (🗄 archived)' : '') + ': <b>' + esc(ex.title || 'Bid job') + '</b>. It is not changed from here — <button type="button" class="b" data-nb-a="manage" data-job="' + esc(ex.id) + '">📂 Manage it</button> or unlink to make a separate job.</div>' : '')
+      : '<input type="search" data-nb="q" placeholder="Search leads and jobs — name, PO, address" aria-label="Search CRM leads and jobs" value="' + esc(F.q) + '"><div class="hits" data-nb-hits style="display:none"></div>')
+    + '<label class="f">Plans</label><div class="row"><button type="button" class="b" data-nb-a="upload">＋ Upload plans / files</button><input type="file" data-nb-file multiple accept=".pdf,.png,.jpg,.jpeg,.heic,.heif,.webp,.tif,.tiff,.dwg,.dxf,.zip,.doc,.docx,.xls,.xlsx,application/pdf,image/*" style="display:none"><span class="mut" data-nb-upmsg></span></div>'
+    + '<div class="row" style="margin-top:6px"><input type="url" data-nb="link" placeholder="or a Drive / Dropbox link — https://…" aria-label="Plans link (Drive / Dropbox)"><button type="button" class="b" data-nb-a="addlink">＋ Add link</button></div>'
+    + '<ul class="fl" data-nb-files>' + F.files.map(function(f, i){ return '<li>📄 ' + esc(f.name) + ' <button type="button" class="b" data-nb-a="rmfile" data-i="' + i + '" aria-label="Remove">✕</button></li>'; }).join('')
+      + F.links.map(function(x, i){ return '<li>🔗 ' + esc(x.label) + ' <span class="mut">' + esc(x.url) + '</span> <button type="button" class="b" data-nb-a="rmlink" data-i="' + i + '" aria-label="Remove">✕</button></li>'; }).join('') + '</ul>'
+    + '<div class="err" data-nb-err role="alert"></div>'
+    + '<div class="bar2"><button type="button" class="b pri" data-nb-a="save"' + (ex || F.busy ? ' disabled' : '') + '>📢 Put on bid portal</button><button type="button" class="b" data-nb-a="cancel">Cancel</button></div>';
+}
+function keepVals(){ var b = box(); if (!b) return null; var o = {}; ['title', 'address', 'due', 'dueTime', 'scope', 'link', 'trade'].forEach(function(k){ o[k] = val(k); }); return o; }
+function putVals(o){ var b = box(); if (!b || !o) return; Object.keys(o).forEach(function(k){ var e = b.querySelector('[data-nb="' + k + '"]'); if (e) e.value = o[k]; }); }
+function redraw(){ var v = keepVals(); draw(); putVals(v); }
+function open(){
+  if (!may()) { toast('Only an admin, an estimator, or a job\'s PM puts jobs on the bid portal.', true); return false; }
+  var h = host(), bar = barOf(); if (!h || !bar) return false;
+  css();
+  var b = box(); if (!b) { fresh(); b = D.createElement('div'); b.id = 'gcnb'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('data-gc-noac', '1'); b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'New bid job');
+    b.addEventListener('click', onClick); b.addEventListener('input', onInput); b.addEventListener('change', onChange); bar.parentNode.insertBefore(b, bar.nextSibling); draw(); }
+  F.open = true;
+  try { b.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
+  var t = b.querySelector('[data-nb="title"]'); if (t) try { t.focus({ preventScroll: true }); } catch (e) { t.focus(); }
+  return true;
+}
+function close(){ var b = box(); if (b) b.remove(); fresh(); }
+function showHits(){
+  var b = box(), hb = b && b.querySelector('[data-nb-hits]'); if (!hb) return;
+  var l = hits(F.q); if (!l.length) { hb.style.display = F.q.length >= 2 ? '' : 'none'; hb.innerHTML = F.q.length >= 2 ? '<div class="mut" style="padding:8px 10px">No lead or job matches' + (canAny() ? '' : ' (only your own leads / jobs)') + '.</div>' : ''; return; }
+  hb.style.display = ''; hb.innerHTML = l.map(function(k){ return '<button type="button" data-nb-a="link" data-k="' + esc(k.kind) + '" data-id="' + esc(k.id) + '">' + esc(labelOf(k)) + '</button>'; }).join('');
+}
+function pickLink(k){
+  var v = keepVals(); F.link = k; F.existing = null; F.q = '';
+  var x = k.kind === 'pid' ? projAll().filter(function(p){ return s(p.id) === k.id; })[0] : leadsAll().filter(function(l){ return s(l.id) === k.id; })[0];
+  /* a box is filled from the lead / job only when it is empty or still holds what an earlier link filled in — never over what a person typed */
+  var A0 = F.auto || {}, A1 = {}, fill = function(k, nv){ if (!v || !nv) return; if (!v[k] || (A0[k] && v[k] === A0[k])) { v[k] = nv; A1[k] = nv; } };
+  if (x) { fill('title', s(x.name || x.title)); fill('address', addrOf(x)); fill('scope', s(x.scope || x.desc || x.description).slice(0, 8000)); }
+  F.auto = A1;
+  draw(); putVals(v);
+  existingFor(k).then(function(j){ if (F.link !== k) return; F.existing = j; if (j) redraw(); });
+}
+var UP_RE = /\.(pdf|png|jpe?g|heic|heif|webp|tiff?|dwg|dxf|zip|docx?|xlsx?)$/i;
+function upMsg(t){ var b = box(), x = b && b.querySelector('[data-nb-upmsg]'); if (x) x.textContent = t; }
+function upload(list){
+  var files = Array.prototype.slice.call(list || []); if (!files.length) return Promise.resolve(0);
+  if (typeof W._gcStoreFile !== 'function') { upMsg('File storage is not ready on this device — add a Drive / Dropbox link instead.'); return Promise.resolve(0); }
+  var n = 0, left = []; upMsg('⏳ Uploading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…');
+  return files.reduce(function(p, f){ return p.then(function(){
+    if (!UP_RE.test(s(f.name)) && !/^image\//.test(s(f.type))) { left.push(f.name + ' (not a plan / file type)'); return; }
+    if (f.size > 50 * 1048576) { left.push(f.name + ' (over 50 MB — add a link)'); return; }
+    return W._gcStoreFile(f, { kind: 'doc', pid: F.link ? F.link.id : 'bid-portal', name: f.name }).then(function(meta){
+      if (!meta || !/^sb:crm-files\//.test(s(meta.ref))) { left.push(f.name); return; }
+      if (!F.files.some(function(x){ return x.ref === meta.ref; })) F.files.push({ ref: meta.ref, name: s(f.name) || 'File', type: s(f.type), size: Number(f.size) || 0, category: /addend/i.test(f.name) ? 'Addenda' : /\bspec/i.test(f.name) ? 'Specs' : /scope/i.test(f.name) ? 'Scope' : 'Plans' });
+      n++;
+    }, function(e){ left.push(f.name + ' (' + s(e && e.message) + ')'); });
+  }); }, Promise.resolve()).then(function(){ redraw(); upMsg((n ? '✓ ' + n + ' file' + (n === 1 ? '' : 's') + ' ready to share' : '') + (left.length ? (n ? ' · ' : '') + 'left out: ' + left.slice(0, 3).join(', ') : '')); return n; });
+}
+function addLink(){
+  var u = val('link'); if (!u) return;
+  if (!/^https?:\/\/\S+$/i.test(u)) { setErr('Paste a full link (https://…).'); return; }
+  var lb = /dropbox\./i.test(u) ? 'Plans — Dropbox' : /drive\.google\.|docs\.google\./i.test(u) ? 'Plans — Drive' : 'Plans';
+  if (!F.links.some(function(x){ return x.url === u; })) F.links.push({ url: u, label: lb });
+  var v = keepVals(); v.link = ''; draw(); putVals(v); setErr('');
+}
+function save(){
+  var b = box(); if (!b || F.busy) return;
+  if (val('link')) { addLink(); if (val('link')) return; }
+  var trades = Object.keys(F.trades).filter(function(t){ return F.trades[t]; });
+  var title = val('title'), due = val('due');
+  if (F.existing) { setErr('This lead / job is already on the bid portal — 📂 Manage it, or unlink it.'); return; }
+  if (!title) { setErr('Give the job a title.'); return; }
+  if (!trades.length) { setErr('Pick at least one trade we need priced.'); return; }
+  if (F.vis === 'public' && !due) { setErr('A public job needs a bid due date (or post it 🔒 private).'); return; }
+  if (!canAny() && !(F.link && canFor(F.link))) { setErr('As a PM, link it to one of your own leads or jobs first.'); return; }
+  var lk = F.link, p = lk && lk.kind === 'pid' ? projAll().filter(function(x){ return s(x.id) === lk.id; })[0] : null, l = lk && lk.kind === 'leadId' ? leadsAll().filter(function(x){ return s(x.id) === lk.id; })[0] : null;
+  var pmN = s(p && p.pm) || s(l && (l.pm || l.estimator)), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
+  var body = { op: 'postjob', jobId: '', pid: p ? s(p.id) : '', leadId: l ? s(l.id) : '', estId: '', title: title, address: val('address'), visibility: F.vis, trades: trades, due: due, dueTime: val('dueTime'),
+    scope: val('scope'), specs: '', projectName: p ? [s(p.autoPO), s(p.name)].filter(Boolean).join(' · ') : '', po: s(p && p.autoPO), pmName: pmN, pmEmail: low(pmU && pmU.email) || low(p && p.pmEmail),
+    files: F.files.map(function(f){ return { ref: f.ref, name: f.name, type: f.type, size: f.size, category: f.category }; }), links: F.links.slice(), source: 'new bid job' };
+  var go = b.querySelector('[data-nb-a="save"]'); F.busy = true; setErr(''); if (go) { go.disabled = true; go.textContent = 'Posting…'; }
+  return fn('bid-hub', body).then(function(r){
+    F.busy = false;
+    if (!r || !r.jobId) throw new Error((r && r.error) || 'The bid portal did not answer with the new job.');
+    try { if (p && W._gcBidEst && W._gcBidEst.link) W._gcBidEst.link(r.jobId, s(p.id)); } catch (e) { warn(e); }
+    close();
+    toast('📢 On the bid portal — ' + (r.visibility === 'public' ? '🌐 public' : '🔒 private') + (r.files ? ' · ' + r.files + ' file(s) shared' : '') + (arr(r.notCopied).length ? ' · not copied: ' + r.notCopied.map(function(x){ return x.name; }).join(', ') : '') + ' — invite subs in 📂 Manage');
+    try { var B = BPo(); if (B && B.jobs) B.jobs(true); } catch (e) {}
+    try { if (W._gcSys && W._gcSys.bp) { W._gcSys.bp.load(true); if (W._gcSys.bp.freshFrame) W._gcSys.bp.freshFrame(); } } catch (e) {}
+    try { if (W._gcSys2 && W._gcSys2.open) W._gcSys2.open(r.jobId, 'details'); } catch (e) { warn(e); }
+    return r;
+  }).catch(function(e){ F.busy = false; var g = box() && box().querySelector('[data-nb-a="save"]'); if (g) { g.disabled = !!F.existing; g.textContent = '📢 Put on bid portal'; }
+    setErr(F.files.length && /\b50[234]\b|failed to fetch|timed? ?out|network/i.test(s(e && e.message)) ? 'The plan files took too long to copy (' + s(e && e.message) + '). The job is probably already on the bid portal — ↻ Refresh before trying again; add big plans as a Drive / Dropbox link.' : s(e && e.message) || 'Not posted.'); });
+}
+function onInput(ev){ var t = ev.target; if (t && t.getAttribute('data-nb') === 'q') { F.q = s(t.value); showHits(); } }
+function onChange(ev){
+  var t = ev.target; if (!t) return;
+  if (t.name === 'gcnb-vis') { F.vis = t.value === 'public' ? 'public' : 'private'; var b = box(); if (b) b.querySelectorAll('.vis label').forEach(function(x){ var r = x.querySelector('input'); x.classList.toggle('on', !!(r && r.checked)); }); }
+  if (t.hasAttribute('data-nb-file')) { var l = t.files; upload(l).then(function(){ try { t.value = ''; } catch (e) {} }); }
+}
+function onClick(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-nb-a]') : null; if (!t) return;
+  var a = t.getAttribute('data-nb-a'); ev.preventDefault(); ev.stopPropagation();
+  if (a === 'cancel') return close();
+  if (a === 'trade') { var k = t.getAttribute('data-t'); F.trades[k] = !F.trades[k]; t.classList.toggle('on', !!F.trades[k]); return; }
+  if (a === 'addtrade') { var v = val('trade'); if (!v) return; F.trades[v] = 1; var o = keepVals(); o.trade = ''; draw(); putVals(o); return; }
+  if (a === 'link') return pickLink({ kind: t.getAttribute('data-k') === 'pid' ? 'pid' : 'leadId', id: t.getAttribute('data-id') });
+  if (a === 'unlink') { var u0 = keepVals(), A2 = F.auto || {}; Object.keys(A2).forEach(function(k){ if (u0 && u0[k] === A2[k]) u0[k] = ''; }); F.link = null; F.existing = null; F.auto = {}; draw(); putVals(u0); return; }
+  if (a === 'manage') { var jid = t.getAttribute('data-job'); try { if (W._gcSys2 && W._gcSys2.open) return W._gcSys2.open(jid, 'details'); } catch (e) { warn(e); } return toast('The bid job manager is still loading — try again.', true); }
+  if (a === 'upload') { var fi = box() && box().querySelector('[data-nb-file]'); if (fi) fi.click(); return; }
+  if (a === 'addlink') return addLink();
+  if (a === 'rmfile') { F.files.splice(+t.getAttribute('data-i'), 1); return redraw(); }
+  if (a === 'rmlink') { F.links.splice(+t.getAttribute('data-i'), 1); return redraw(); }
+  if (a === 'save') return save();
+}
+/* the button, in the screen's top bar (the bar is redrawn with the screen; this puts it back) */
+function paint(){
+  try {
+    var bar = barOf(), old = bar && bar.querySelector('[data-nb-open]');
+    if (!bar) return;
+    if (!may()) { if (old) old.remove(); return; }
+    if (old) return;
+    css();
+    var b = D.createElement('button'); b.type = 'button'; b.className = 'b pri'; b.setAttribute('data-nb-open', '1'); b.textContent = '＋ New bid job'; b.title = 'Put a new job on the bid portal by hand — title, address, due date, trades, scope, plans';
+    b.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); open(); });
+    var ob = bar.querySelector('[data-sys="openbids"]'); bar.insertBefore(b, ob ? ob : bar.firstChild);
+  } catch (e) { warn(e); }
+}
+RI.call(W, function(){ if (!D.hidden) paint(); }, 1200); later(paint, 600);
+W._gcNewBidJob = { open: open, close: close, paint: paint, may: function(){ MAY.at = 0; return may(); }, hits: hits, save: save, upload: upload,
+  state: function(){ return { open: !!box(), vis: F.vis, trades: Object.keys(F.trades).filter(function(t){ return F.trades[t]; }), link: F.link, existing: F.existing ? F.existing.id : null, files: F.files.length, links: F.links.slice(), busy: F.busy }; } };
+try { console.log('[GC] ＋ New bid job on the 🏗 Bid portal screen — _gcNewBidJob.state()'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-portalsignup">
+/* patch PORTALSIGNUP */
+/* __GC_PATCH_PORTALSIGNUP__ (patch PORTALSIGNUP, owner 11/23: "also be able to tell customers to sign up on portal.grayco-cs.com and their
+   name will match to what we already have in our CRM system for their job address etc and that's a way they can sign up or we send them a
+   link too, let them choose customer, subcontractor, supplier and other as choices"). The CRM's side (server: netlify/functions/portal-access.js
+   s-su-* + _lib/portalsignup.js):
+   1. 🔗 Portal sign-up link on the job's 🏠 Portal card (desk and Field): a signed link for THIS job (expires in 30 days) — 📋 Copy · ✉️ E-mail
+      it · 💬 Text it (the person's own mail / text app; nothing is sent by itself). A customer who signs up through it, confirms their e-mail
+      and whose name matches the job's customer is let in to this job; otherwise it is a ✅ Approvals card. The strip also lists this job's
+      portal sign-ups (waiting / let in / removed) with 🗄 Remove access (office / admin; archived — who and when are kept).
+   2. ✅ Approvals card "<name> asks for portal access to <job> (<address>) — matched by name + address" (kind portal_signup): the evidence
+      (what they typed, the job, what matched) and ✅ Approve — let them in · ↪ Not this job (office / admin: pick another job, or ✖ Deny).
+      Who may decide is the approval list's own rule (the job's PM, the office, an admin) — checked on the server.
+   No pop-ups: everything opens inline on the card. Console: _gcPortalSignup.state(). */
+(function(){
+'use strict';
+var W = window, D = document; if (W.__gcPortalSignupUi) return; W.__gcPortalSignupUi = 1;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var FN = '/.netlify/functions/portal-access';
+var JOB = {}, OPEN = {}, NOTE = {}, CARD = {}, PICK = {}, ARM = {};
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[PORTALSIGNUP]', e && e.message || e); } catch (x) {} }
+function token(){
+  var A = W.__GC_AUTH__;
+  if (!A || typeof A.fresh !== 'function') return Promise.reject(new Error('Sign in to the CRM first.'));
+  return Promise.resolve(A.fresh()).then(function(x){ if (!x || !x.access_token) throw new Error('Sign in to the CRM first.'); return x.access_token; });
+}
+function api(body){
+  return token().then(function(t){ return W.fetch(FN, { method: 'POST', cache: 'no-store', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: 'The server answered ' + r.status + '.' }; } if (!j.ok && !j.error) j.error = 'The server answered ' + r.status + '.'; return j; }); }, function(e){ return { ok: false, error: e.message }; });
+}
+function copy(text){
+  try { if (navigator.clipboard && W.isSecureContext) return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return fb(); }); } catch (e) {}
+  return Promise.resolve(fb());
+  function fb(){ try { var ta = D.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;top:-100px;opacity:0'; D.body.appendChild(ta); ta.select(); var ok = D.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } }
+}
+function css(){
+  if (D.getElementById('gcps-css')) return;
+  var st = D.createElement('style'); st.id = 'gcps-css';
+  st.textContent = '._ap2Card[data-id^="appr_psu_"] ._ap2Yes,._ap2Card[data-id^="appr_psu_"] ._ap2No,._ap2Card[data-id^="appr_psu_"] ._ap2Prev,'
+    + '._apCard[data-id^="appr_psu_"] ._apApprove,._apCard[data-id^="appr_psu_"] ._apEditBtn,._apCard[data-id^="appr_psu_"] ._apRejBtn,'
+    + '.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|approve"],.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|deny"],.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|edit"],.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|sendedit"]{display:none!important}'
+    + '.gcps-strip{margin-top:8px;border-top:1px dashed #E2DCCD;padding-top:8px;font:14px Inter,-apple-system,Arial,sans-serif;color:#14202E;text-align:left}'
+    + '.gcps-strip button,.gcps-card button{min-height:44px;border-radius:10px;font:700 14px Inter,-apple-system,Arial,sans-serif;cursor:pointer;padding:6px 12px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F}'
+    + '.gcps-strip a.gcps-a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:10px;font:700 14px Inter,-apple-system,Arial,sans-serif;padding:6px 12px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F;text-decoration:none;box-sizing:border-box}'
+    + '.gcps-bs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.gcps-bs>*{flex:1 1 130px}'
+    + '.gcps-url{width:100%;box-sizing:border-box;min-height:40px;border:1px solid #C9C2B2;border-radius:8px;padding:6px 8px;font:13px ui-monospace,Menlo,monospace;color:#14202E;background:#FAF8F3;margin-top:8px}'
+    + '.gcps-m{font-size:12.5px;color:#55626F;margin-top:6px;line-height:1.4}.gcps-n{margin-top:6px;font-weight:700;color:#0f766e}.gcps-n.bad{color:#b91c1c}'
+    + '.gcps-row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;border-top:1px solid #EFEAE0;padding:6px 0}.gcps-row>div{min-width:0;flex:1 1 200px;overflow-wrap:anywhere}'
+    + '.gcps-card{margin-top:8px;border-top:1px dashed #cbd5e1;padding-top:8px;font:14px Inter,-apple-system,Arial,sans-serif;color:#0f172a;text-align:left;cursor:default}'
+    + '.gcps-card dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;margin:0 0 8px}.gcps-card dt{color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding-top:2px}.gcps-card dd{margin:0;overflow-wrap:anywhere}'
+    + '.gcps-card .ok{background:#16a34a;color:#fff;border-color:#16a34a}.gcps-card .no{color:#b91c1c;border-color:#b91c1c}'
+    + '.gcps-pick{display:flex;flex-direction:column;gap:6px;margin-top:8px}.gcps-pick input{min-height:44px;border:1px solid #cbd5e1;border-radius:10px;padding:6px 10px;font:15px Arial;box-sizing:border-box;width:100%}'
+    + '.gcps-res{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto}.gcps-res button{text-align:left;font-weight:600}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return p && p.id && !/lost|dead|cancel/.test(low(p.status)); }); }
+function poL(v){ v = s(v); return !v ? '' : /^po\b/i.test(v) ? v : 'PO ' + v; }
+function when(iso){ var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+/* ══ 1. the job's 🏠 Portal card: 🔗 Portal sign-up link ══ */
+var ST_LABEL = { unconfirmed: '✉️ confirming their e-mail', confirmed: 'confirmed', approval: '⏳ waiting on ✅ Approvals', granted: '🟢 let in', in: '🟢 signed in (e-mail on the job)', denied: '⛔ not approved', removed: '🗄 access removed', todo: '📝 office To-Do' };
+function stripHtml(pid){
+  var j = JOB[pid], h = '<button type="button" data-gcps="link" aria-expanded="' + (OPEN[pid] ? 'true' : 'false') + '">🔗 Portal sign-up link</button>';
+  if (!OPEN[pid]) return h;
+  if (!j) return h + '<div class="gcps-m">Making the link…</div>';
+  if (j.error) return h + '<div class="gcps-n bad">⚠ ' + esc(j.error) + '</div>';
+  var mail = 'mailto:' + encodeURIComponent(j.email || '').replace(/%40/g, '@') + '?subject=' + encodeURIComponent('Sign up for your GrayCo Portal') + '&body=' + encodeURIComponent(j.message);
+  var sms = 'sms:' + s(j.phone).replace(/[^0-9+]/g, '') + '?&body=' + encodeURIComponent(j.message);
+  h += '<input class="gcps-url" data-gcps-url readonly value="' + esc(j.url) + '" aria-label="Portal sign-up link">'
+    + '<div class="gcps-bs"><button type="button" data-gcps="copy">📋 Copy link</button><a class="gcps-a" data-gcps="mail" href="' + esc(mail) + '">✉️ E-mail it</a><a class="gcps-a" data-gcps="sms" href="' + esc(sms) + '">💬 Text it</a></div>'
+    + '<div class="gcps-m">For this job only · works until ' + esc(when(j.expires)) + '. They confirm their e-mail; if their name matches this job\'s customer they are let in, otherwise it comes to ✅ Approvals. Nothing is sent unless you send it.'
+    + (j.linkOn ? '' : ' <b>The job\'s portal link is off</b> — turn it on so they can get in.') + '</div>';
+  var L = arr(j.signups);
+  if (L.length) {
+    h += '<div style="margin-top:8px;font-weight:800;font-size:12px;color:#8A5A00">PORTAL SIGN-UPS FOR THIS JOB</div>';
+    L.forEach(function(x){
+      h += '<div class="gcps-row" data-gcps-su="' + esc(x.id) + '"><div><b>' + esc(x.name) + '</b> <span class="gcps-m">' + esc([x.email, x.phone].filter(Boolean).join(' · ')) + '</span><div class="gcps-m">' + esc(ST_LABEL[x.status] || x.status) + (x.by ? ' · by ' + esc(x.by) : '') + (x.removedBy ? ' · removed by ' + esc(x.removedBy) : '') + (x.at ? ' · ' + esc(when(x.at)) : '') + '</div></div>'
+        + (x.status === 'granted' && j.canRemove ? '<button type="button" data-gcps="remove" data-id="' + esc(x.id) + '">' + (ARM['rm' + x.id] ? 'Tap again to remove' : '🗄 Remove access') + '</button>' : '') + '</div>';
+    });
+  }
+  if (NOTE[pid]) h += '<div class="gcps-n' + (/^⚠/.test(NOTE[pid]) ? ' bad' : '') + '">' + esc(NOTE[pid]) + '</div>';
+  return h;
+}
+function paintStrip(el, pid){ var st = el.querySelector(':scope > .gcps-strip'); if (!st) return; var sig = JSON.stringify([OPEN[pid], JOB[pid], NOTE[pid], ARM]); if (st.__sig === sig) return; st.__sig = sig; st.innerHTML = stripHtml(pid); }
+function loadJob(pid){ JOB[pid] = null; repaint(pid); api({ action: 's-su-link', projectId: pid }).then(function(j){ JOB[pid] = j.ok ? j : { error: j.error }; repaint(pid); }); }
+function repaint(pid){ D.querySelectorAll('.gcq-card[data-pid]').forEach(function(el){ if (el.getAttribute('data-pid') === String(pid)) paintStrip(el, pid); }); }
+function decorateJobs(){
+  D.querySelectorAll('.gcq-card[data-pid]').forEach(function(el){
+    var pid = el.getAttribute('data-pid'); if (!pid) return;
+    var st = el.querySelector(':scope > .gcps-strip');
+    if (!st) { css(); st = D.createElement('div'); st.className = 'gcps-strip'; st.setAttribute('data-gcps-pid', pid); el.appendChild(st); wireStrip(st); }
+    paintStrip(el, pid);
+  });
+}
+function wireStrip(st){
+  st.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-gcps]'); if (!b) return;
+    var pid = st.getAttribute('data-gcps-pid'), a = b.getAttribute('data-gcps');
+    e.stopPropagation();
+    if (a === 'link') { OPEN[pid] = !OPEN[pid]; NOTE[pid] = ''; if (OPEN[pid]) loadJob(pid); else repaint(pid); return; }
+    if (a === 'copy' && JOB[pid] && JOB[pid].url) { copy(JOB[pid].url).then(function(ok){ NOTE[pid] = ok ? '✓ Link copied — paste it in a text or e-mail.' : '⚠ Could not copy — select the link above.'; repaint(pid); }); return; }
+    if (a === 'mail' && JOB[pid] && !JOB[pid].email) { NOTE[pid] = 'No customer e-mail on the job — type their address in your mail app.'; repaint(pid); return; }
+    if (a === 'sms' && JOB[pid] && !JOB[pid].phone) { NOTE[pid] = 'No customer phone on the job — type their number in your text app.'; repaint(pid); return; }
+    if (a === 'remove') {
+      var id = b.getAttribute('data-id');
+      if (!ARM['rm' + id]) { ARM['rm' + id] = 1; repaint(pid); ST.call(W, function(){ delete ARM['rm' + id]; repaint(pid); }, 6000); return; }
+      delete ARM['rm' + id]; NOTE[pid] = 'Removing…'; repaint(pid);
+      api({ action: 's-su-remove', id: id }).then(function(j){ NOTE[pid] = j.ok ? '🗄 Access removed (kept on record).' : '⚠ ' + j.error; api({ action: 's-su-link', projectId: pid }).then(function(x){ if (x.ok) JOB[pid] = x; repaint(pid); }); });
+    }
+  });
+}
+
+/* ══ 2. the ✅ Approvals card ══ */
+var HOW = { name: 'Name', address: 'Address', po: 'PO / job #', email: 'E-mail', phone: 'Phone' };
+function hosts(){
+  var out = [];
+  D.querySelectorAll('._ap2Card[data-id^="appr_psu_"],._apCard[data-id^="appr_psu_"]').forEach(function(el){ out.push({ el: el, aq: el.getAttribute('data-id') }); });
+  D.querySelectorAll('.apx-row[data-k^="ap2:appr_psu_"]').forEach(function(el){ out.push({ el: el, aq: el.getAttribute('data-k').slice(4) }); });
+  return out;
+}
+function loadCard(aq, force){
+  if (CARD[aq] && (CARD[aq].busy || (!force && Date.now() - CARD[aq].at < 60e3))) return;
+  CARD[aq] = { busy: 1, at: Date.now() };
+  api({ action: 's-su-get', id: aq }).then(function(j){ CARD[aq] = { at: Date.now(), d: j.ok ? j : null, err: j.ok ? '' : j.error }; decorateCards(); });
+}
+function cardHtml(aq){
+  var c = CARD[aq], d = c && c.d;
+  if (!c || c.busy) return '<div class="gcps-m">Loading the sign-up…</div>';
+  if (!d) return '<div class="gcps-n bad">⚠ ' + esc(c.err || 'Could not load the sign-up.') + '</div>';
+  var u = d.signup, j = d.job || {}, h = '<dl>';
+  var row = function(k, v){ if (s(v)) h += '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>'; };
+  row('They typed', [u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', [u.address, u.zip].filter(Boolean).join(' '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · '));
+  row('Job', [poL(j.po), j.name, j.address, j.client ? 'customer: ' + j.client : ''].filter(Boolean).join(' · '));
+  arr(d.evidence).forEach(function(w){ row('✓ ' + (HOW[w.k] || w.k), '"' + w.typed + '" = "' + w.crm + '"' + (w.note ? ' (' + w.note + ')' : '')); });
+  if (u.link && u.link.pid) row('Link', 'came through GrayCo\'s 🔗 sign-up link for this job');
+  if (u.link && u.link.bad) row('Link', 'a ' + u.link.bad + ' sign-up link (ignored)');
+  h += '</dl>';
+  if (u.status !== 'approval') { h += '<div class="gcps-n">' + esc(ST_LABEL[u.status] || u.status) + '</div>'; return h + (NOTE[aq] ? '<div class="gcps-n">' + esc(NOTE[aq]) + '</div>' : ''); }
+  h += '<div class="gcps-bs"><button type="button" class="ok" data-gcps-c="approve">✅ Approve — let them in</button><button type="button" data-gcps-c="other" aria-expanded="' + (PICK[aq] ? 'true' : 'false') + '">↪ Not this job</button></div>'
+    + '<div class="gcps-m">Approve adds their e-mail and mobile as an extra portal contact on this job (nothing on the job or the customer record is changed) and e-mails them that they are connected.</div>';
+  if (PICK[aq]) {
+    var qv = s(PICK[aq].q), res = [];
+    if (qv.length >= 2) { var ql = low(qv); res = projects().filter(function(p){ return String(p.id) !== String(j.id) && low([p.name, p.address, p.client, p.autoPO, p.po].join(' ')).indexOf(ql) > -1; }).slice(0, 12); }
+    h += '<div class="gcps-pick">' + (d.canMove ? '<input type="search" data-gcps-q placeholder="Find the right job: name, address, customer or PO" value="' + esc(qv) + '">'
+      + '<div class="gcps-res">' + res.map(function(p){ return '<button type="button" data-gcps-c="move" data-pid="' + esc(p.id) + '">' + esc([poL(p.autoPO || p.po), p.name, p.address, p.client].filter(Boolean).join(' · ')) + '</button>'; }).join('') + (qv.length >= 2 && !res.length ? '<div class="gcps-m">No job matches “' + esc(qv) + '”.</div>' : '') + '</div>'
+      : '<div class="gcps-m">The office or an admin picks another job.</div>')
+      + '<button type="button" class="no" data-gcps-c="deny">' + (ARM['dn' + aq] ? 'Tap again to deny (no access)' : '✖ Deny — no access') + '</button></div>';
+  }
+  if (NOTE[aq]) h += '<div class="gcps-n' + (/^⚠/.test(NOTE[aq]) ? ' bad' : '') + '">' + esc(NOTE[aq]) + '</div>';
+  return h;
+}
+function decorateCards(){
+  try {
+    var hs = hosts(); if (!hs.length) return; css();
+    hs.forEach(function(x){
+      var blk = x.el.querySelector(':scope > .gcps-card');
+      loadCard(x.aq);
+      var sig = JSON.stringify([CARD[x.aq] && CARD[x.aq].at, CARD[x.aq] && CARD[x.aq].busy, PICK[x.aq], NOTE[x.aq], ARM['dn' + x.aq]]);
+      if (blk && blk.__sig === sig) return;
+      var focused = blk && D.activeElement && blk.contains(D.activeElement) && D.activeElement.hasAttribute('data-gcps-q');
+      if (!blk) { blk = D.createElement('div'); blk.className = 'gcps-card'; blk.setAttribute('data-gcps-aq', x.aq); x.el.appendChild(blk); wireCard(blk, x.aq); }
+      blk.innerHTML = cardHtml(x.aq); blk.__sig = sig;
+      if (focused) { var qi = blk.querySelector('[data-gcps-q]'); if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) {} } }
+    });
+  } catch (e) { warn(e); }
+}
+function after(aq, j, okMsg){
+  NOTE[aq] = j.ok ? (j.scheduled ? '⏰ Approved — it goes at 7:00 AM (customers get nothing 7 PM–7 AM).' : okMsg) : '⚠ ' + (j.error || 'Try again.');
+  PICK[aq] = j.ok ? null : PICK[aq];
+  loadCard(aq, true);
+  try { if (W._gcApprovalsRefresh) ST.call(W, function(){ Promise.resolve(W._gcApprovalsRefresh()).then(decorateCards, function(){}); }, 400); } catch (e) {}
+}
+function wireCard(blk, aq){
+  blk.addEventListener('click', function(e){
+    e.stopPropagation();   /* the card around it opens its preview on a tap — not for these */
+    var b = e.target.closest && e.target.closest('[data-gcps-c]'); if (!b) return;
+    var a = b.getAttribute('data-gcps-c');
+    if (a === 'approve') { NOTE[aq] = 'Approving…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'approve' }).then(function(j){ after(aq, j, '✅ Approved — they can sign in now; their "you are connected" e-mail went out.'); }); }
+    if (a === 'other') { PICK[aq] = PICK[aq] ? null : { q: '' }; NOTE[aq] = ''; return decorateCards(); }
+    if (a === 'move') { NOTE[aq] = 'Linking to that job…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'move', pid: b.getAttribute('data-pid') }).then(function(j){ after(aq, j, '✅ Linked to the job you picked — they can sign in now.'); }); }
+    if (a === 'deny') {
+      if (!ARM['dn' + aq]) { ARM['dn' + aq] = 1; decorateCards(); ST.call(W, function(){ delete ARM['dn' + aq]; decorateCards(); }, 6000); return; }
+      delete ARM['dn' + aq]; NOTE[aq] = 'Recording…'; decorateCards();
+      return api({ action: 's-su-decide', id: aq, op: 'deny' }).then(function(j){ after(aq, j, '✖ Denied — no access; nothing was sent to them.'); });
+    }
+  });
+  blk.addEventListener('input', function(e){ if (e.target && e.target.hasAttribute('data-gcps-q')) { PICK[aq] = { q: e.target.value }; decorateCards(); } });
+  blk.addEventListener('keydown', function(e){ e.stopPropagation(); });
+}
+
+function tick(){ try { decorateJobs(); } catch (e) { warn(e); } decorateCards(); }
+var q = false;
+try { new MutationObserver(function(){ if (q) return; q = true; Promise.resolve().then(function(){ q = false; tick(); }); }).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }
+tick();
+W._gcPortalSignup = { tick: tick, state: function(){ return { jobs: Object.keys(JOB).length, cards: Object.keys(CARD).length, open: OPEN }; } };
+try { console.log('[GC] 🔗 Portal sign-up link + the sign-up ✅ Approvals card (patch PORTALSIGNUP) — _gcPortalSignup'); } catch (e) {}
+})();
 </script>

@@ -398,7 +398,7 @@ exports._papers = { bidPapersToCrm: function(){ return bidPapersToCrm.apply(null
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 } };   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 }, signup: { req: 6, bad: 10 }, suconf: { req: 20, bad: 10 } };   /* signup / suconf: the public sign-up and its confirm (patch PORTALSIGNUP) */   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -612,12 +612,15 @@ async function customerMatch(data, id, noTeam){
     const phones = [p.clientPhone, p.phone, c.phone].map(phone10).filter(Boolean);
     if ((id.kind === 'email' && emails.indexOf(id.value) > -1) || (id.kind === 'phone' && phones.indexOf(id.value) > -1)) pids.push(s(p.id));
   });
+  let suOnly = null;   /* patch PORTALSIGNUP: + the one job a portal sign-up was let into (staff link + name, or ✅ Approvals) */
+  if (!noTeam) { try { const g = await SUL().grantPids(suDeps(), id), had = pids.length; g.pids.forEach(function(x){ if (pids.indexOf(x) < 0 && liveProjects(data).some(function(p){ return s(p.id) === x; })) pids.push(x); }); if (!had && pids.length) suOnly = g; } catch (e) {} }
   if (!pids.length) return noTeam ? null : teamCustMatch(data, id);   /* patch PORTALTEAM: a household / company member */
   const live = await dbGet('gc_portal', 'select=token,project_id&revoked=eq.false&project_id=' + inq(pids));
   if (!live.length) return null;
   if (!noTeam && await teamPrimaryOff(id, function(m){ return /^cu:/.test(s(m.company)); })) return teamCustMatch(data, id);   /* patch PORTALTEAM: the account holder was taken off the team */
   const p0 = arr(data.projects).find(function(p){ return s(p.id) === s(live[0].project_id); }) || {};
   const c0 = custs.find(function(x){ return low(x.name || x.company) === low(p0.client); }) || {};
+  if (suOnly) return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: id.kind === 'email' ? id.value : suOnly.email, lang: 'en', member: { signup: true } };   /* patch PORTALSIGNUP: codes go to THEIR e-mail; their own password */
   return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: low(p0.clientEmail || p0.email || c0.email), lang: 'en' };
 }
 async function partnerMatch(data, id){
@@ -856,6 +859,7 @@ async function customerPassword(event, body){
   if (!keys.some(function(k){ return hmac(k) === (rows[0] || {}).ident; })) {   /* patch PORTALTEAM: a team member's own e-mail / mobile */
     const tm = await teamMemberBySession(sess, 'customer');
     keys.length = 0; if (tm) TEAM().identOfMember(tm).forEach(function(k){ keys.push(k); });
+    else { try { (await SUL().grantKeysForIdent(suDeps(), (rows[0] || {}).ident)).forEach(function(k){ keys.push(k); }); } catch (e) {} }   /* patch PORTALSIGNUP: a sign-up's own e-mail / mobile */
   }
   if (!keys.some(function(k){ return hmac(k) === (rows[0] || {}).ident; })) throw Fail(400, 'Sign in with your e-mail (or mobile number) and password first.');
   const now = new Date().toISOString(), hash = pwHash(pw);
@@ -2059,6 +2063,7 @@ function cleanScope(sc){
     notes: clip(d.notes, 4000), start: ymd(d.start), end: ymd(d.end), files: files(d.files), photos: files(d.photos), source: clip(d.source, 40), scId: clip(d.scId, 80) };
 }
 async function staffAction(action, body, who){
+  if (/^s-su-/.test(action)) return SUL().staff(action, body, who, suDeps());   /* patch PORTALSIGNUP: 🔗 Portal sign-up link · the ✅ Approvals card */
   const data = await crmData(true);
   const me = staffName(data, who);
   if (action === 's-sync') {
@@ -2383,6 +2388,14 @@ async function cTeam(event, action, body, pids){
   return teamAct({ keys: keys, primary: primary, me: me, canManage: com ? !!me.actor : me.meId === 'primary', kind: 'customer', household: !com, companyName: s(c0.company || c0.name || p0.client), es: low(body.lang) === 'es', crmSubId: '' }, action, body);
 }
 /* ═══ end patch PORTALTEAM (server) ═══ */
+/* ═══ patch PORTALSIGNUP — the public sign-up's helpers (the rules: _lib/portalsignup.js) ═══ */
+function SUL(){ return require('./_lib/portalsignup.js'); }
+function suDeps(){
+  return { core: function(){ return require('./portal.js')._core; }, crmData: crmData, liveProjects: liveProjects, customerMatch: customerMatch, sessionCreate: sessionCreate,
+    hmac: hmac, sendMail: sendMail, mailHtml: mailHtml, portalBase: portalBase, isAdmin: isAdmin,
+    revokeIdents: async function(ids){ ids = ids.filter(Boolean); if (ids.length) await dbPatch('gc_portal_session', 'revoked=eq.false&kind=eq.customer&ident=' + inq(ids), { revoked: true }); } };
+}
+/* ═══ end patch PORTALSIGNUP ═══ */
 /* ── the door ──────────────────────────────────────────────────────────────── */
 async function notActive(headers, t0){
   const wait = MIN_FAIL_MS + Math.floor(Math.random() * 60) - (Date.now() - t0);
@@ -2416,6 +2429,14 @@ exports.handler = async function (event) {
       if (limited(ip, 'pub')) return reply(429, { ok: false, error: 'Too many tries. Wait a few minutes.' });
       const r = await customerPassword(event, body); if (!r) return notActive(headers, t0);
       return reply(200, r);
+    }
+    if (action === 'su-start') {   /* patch PORTALSIGNUP: the public sign-up (Customer / Other) — always the same answer */
+      if (limited(ip, 'signup')) { await sleep(MIN_FAIL_MS); return reply(429, { ok: false, error: 'Too many sign-ups from here. Wait a few minutes and try again.' }); }
+      const r = await SUL().start(body, ip, suDeps()); await padTo(t0); return reply(200, r);
+    }
+    if (action === 'su-confirm') {   /* patch PORTALSIGNUP: the confirm link's button */
+      if (limited(ip, 'suconf')) return reply(429, { ok: false, error: 'Too many tries. Wait a few minutes.' });
+      try { return reply(200, await SUL().confirm(body, ip, suDeps())); } catch (e) { noteBad(ip, 'suconf'); throw e; }
     }
     if (action === 'signin-start') {
       if (limited(ip, 'signin')) return reply(429, { ok: false, error: 'Too many tries. Wait a few minutes.' });
@@ -2485,6 +2506,7 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 exports._portalpol = { CMN: CMN, questionsFor: questionsFor, custMsgNotify: custMsgNotify };   /* patch PORTALPOL: tests */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut, bidHasPdf: bidHasPdf, readAfterSave: function(){ return bidReadAfterSave.apply(null, arguments); } };   /* patch BIDSCOPE: tests */
+exports._signup = { onApproved: function(item, now){ return SUL().onApproved(item, now, suDeps()); }, onRejected: function(item, me){ return SUL().onRejected(item, me, suDeps()); } };   /* patch PORTALSIGNUP: portal.js (✅ Approvals) */
 exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch, customerMatch: customerMatch };   /* patch SUBSYNC: tests */
 /* patch SUBACCT: Admin → 🔐 Sub portal accounts (netlify/functions/sub-accounts.js) uses the same links, matcher and records */
 exports._acct = { crmData: function(f){ return crmData(f); }, crmSubs: crmSubs, subById: subById, crmSubOf: crmSubOf, bidSubId: bidSubId, linkFor: linkFor,

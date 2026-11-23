@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <script src="/gc-address.js"></script>
+<script src="/portal-signup.js"></script>   <!-- PORTALSIGNUP: "New here? Sign up" (Customer / Subcontractor / Supplier / Other) -->
 <script>
 /* patch LOGO: the GrayCo header on every document view in the portal (customer portal + sub portal): logo at the left, name, phone, licenses */
 window.gcDocHead = function(){
@@ -506,6 +507,9 @@ function signup(){
       signedIn: function(s0, kind){ session = s0; store('gc_portal_s', s0); store('gc_portal_t', ''); token = ''; route(kind); } });   /* patch SUBPEND: signed straight in after sign-up */
   });
 }
+/* PORTALSIGNUP: portal-signup.js ("New here? Sign up") uses these sign-in helpers — nothing else here changes */
+window.__gcDoor = { lang: function(){ return LANG; }, signin: function(st, w){ signin(st, w); }, subSignup: function(){ signup(); }, loadApp: loadApp, keep: SIGNUP_KEEP,
+  signedIn: function(s0, kind){ session = s0; store('gc_portal_s', s0); store('gc_portal_t', ''); token = ''; route(kind); } };   /* PORTALSIGNUP */
 /* ── a new phone opening a sub link: confirm it with a code ── */
 var lastDevice = null;
 function deviceScreen(info){
@@ -1242,6 +1246,7 @@ function sessionBoot(){
 }
 function boot(){
 if (GCG) { window.__GCG_WANT__ = true; if (window.GCGc) window.GCGc.start(); }
+else if (window.GCSignup && window.GCSignup.wants()) window.GCSignup.start();   /* PORTALSIGNUP: ?signup=… (a GrayCo sign-up link) / ?signup-confirm=… (the e-mail's button) */
 else if (token) {
   var dev = ''; try { dev = localStorage.getItem('gc_portal_dev') || ''; } catch (e) {}
   post(ACC, { action: 'open' }, { token: token, device: dev }).then(function(r){
