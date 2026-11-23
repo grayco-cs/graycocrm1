@@ -6,7 +6,8 @@
 //      · a tap opens the 🎤 sheet and starts listening at once (a mocked SpeechRecognition)
 //      · "Schedule an estimate with John Smith Tuesday at 2 at 123 Main" → 📅 New appointment (Estimate · John Smith · next
 //        Tuesday 14:00 · 123 Main) → Post → on the schedule as the New appointment tile's record (cloud too)
-//      · "New lead Jane Doe 901-555-0100 roof leak" → ➕ New lead → Post → in Leads (New Lead · Roofing · the phone)
+//      · "New lead Jane Doe 901-555-0100 roof leak" → ➕ New lead → Post → in Leads (New Lead · Roofing · the phone), and the
+//        Leads screen shows it
 //      · "Note on Druluck: tree removed" → 📝 Job notes on the Druluck job → Post → the job's notes
 //      · ✨ Smart route (the server's answer stubbed with voice-intake's own normalize): three actions, each with its place
 //      · no customer / sub contact on any Post
@@ -148,8 +149,14 @@ try {
   ok(a2.dest === 'lead' && a2.ldName === 'Jane Doe' && a2.ldPhone === '901-555-0100' && a2.ldType === 'Roofing' && /^roof leak$/i.test(a2.text), 'the card: Jane Doe · 901-555-0100 · Roofing · "Roof leak"', a2);
   await tap(c, '#_gcMicPost');
   await until(() => c.ev(() => { const r = document.querySelector('#_gcMicActs ._gcARes'); return r && /✓|⚠/.test(r.textContent); }), 8000);
-  const l2 = (await leads(c)).find(x => x.name === 'Jane Doe');
+  /* the lead list is re-read for up to 3 s (the open's first sync may still be redrawing the screen — the app's list is
+     only answered at once when no redraw is pending), then the Leads screen itself must show the lead to a person */
+  const l2 = await until(async () => (await leads(c)).find(x => x.name === 'Jane Doe'), 3000);
   ok(!!l2 && l2.stage === 'New Lead' && l2.phone === '901-555-0100' && l2.type === 'Roofing' && /roof leak/i.test(l2.notes) && l2.origin === 'voice', 'Post → in Leads (New Lead · Roofing · the phone · the words in the notes)', l2);
+  await c.ev(() => { try { window._gcAUTAI.closeMic(); } catch (e) {} const h = document.querySelector('#_gcJobPick.gc-fh'); if (h) h.remove(); window._setView('leads'); });
+  const seen = await until(() => c.ev(() => [...document.querySelectorAll('body *')].some(e => e.children.length === 0 && /Jane Doe/.test(e.textContent || '') && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden')), 15000);
+  ok(!!seen, 'the Leads screen shows "Jane Doe" (on screen, not only in the data)');
+  await c.ev(() => { try { window._gcField.open(); } catch (e) {} }); await sleep(1500);
   ok(!!(await until(() => cloud('leads').some(x => x.name === 'Jane Doe'), 25000)), 'and in the cloud leads');
 
   /* 3. a job note */
