@@ -74,19 +74,25 @@ const INIT = `(() => { const Q = window.__dt = { lt: [], ev: [] };
   if (${PHONE}) { const d = (o, k, v) => { try { Object.defineProperty(o, k, { get: () => v, configurable: true }); } catch (e) {} };
     d(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6.1 Mobile/15E148 Safari/604.1'); d(Navigator.prototype, 'maxTouchPoints', 5); }
 })()`;
-/* the left menu: clickable rows in the sidebar column */
+/* the left menu: the sidebar's buttons (aside nav), else clickable rows in a tall left column */
 const MENU = () => {
   const vis = e => { const r = e.getBoundingClientRect(); if (r.width < 30 || r.height < 14) return false; const s = getComputedStyle(e); return s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0.1; };
-  const side = [...document.querySelectorAll('nav, aside, div')].filter(e => { const r = e.getBoundingClientRect(); return r.left <= 2 && r.width >= 150 && r.width <= 330 && r.height > innerHeight * 0.6 && vis(e); }).sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
-  if (!side) return [];
+  let list = [...document.querySelectorAll('aside nav button, aside nav [role=button], aside nav a[href]')];
+  if (!list.length) { const side = [...document.querySelectorAll('nav, aside')].filter(e => { const r = e.getBoundingClientRect(); return r.left <= 2 && r.width >= 150 && r.width <= 330 && r.height > innerHeight * 0.5 && vis(e); })[0];
+    if (side) list = [...side.querySelectorAll('button,[role=button],a[href]')]; }
   const seen = new Set(), out = [];
-  side.querySelectorAll('*').forEach(e => {
-    if (!vis(e) || e.closest('[data-dt-skip]')) return;
-    const cs = getComputedStyle(e); if (cs.cursor !== 'pointer' || (e.parentElement && getComputedStyle(e.parentElement).cursor === 'pointer')) return;
-    const t = (e.innerText || '').replace(/\s+/g, ' ').trim(); if (!t || t.length > 40 || seen.has(t)) return; seen.add(t);
-    const r = e.getBoundingClientRect(); out.push({ label: t, x: r.left + Math.min(r.width / 2, 90), y: r.top + r.height / 2 });
-  });
+  list.forEach(e => { if (!vis(e) || e.closest('[data-dt-skip]')) return; const t = (e.innerText || '').replace(/\s+/g, ' ').trim(); if (!t || t.length > 40 || seen.has(t)) return; seen.add(t); out.push({ label: t }); });
   return out;
+};
+/* where a menu tab is now (scrolled into the menu's view) */
+const MENUAT = (label) => {
+  const all = [...document.querySelectorAll('aside nav button, aside nav [role=button], aside nav a[href], nav button, aside button')];
+  const nk = x => String(x || '').replace(/\s+/g, ' ').replace(/\(?\d[\d,]*\)?/g, '#').trim();   /* a count on a tab (Approvals 11, Products (3141)) changes */
+  const e = all.find(x => nk(x.innerText) === nk(label)); if (!e) return null;
+  try { e.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (x) {}
+  const r = e.getBoundingClientRect(); if (r.width < 5) return null;
+  const x = r.left + Math.min(r.width / 2, 80), y = r.top + r.height / 2, h = document.elementFromPoint(x, y);
+  return { x, y, covered: !(h && (h === e || e.contains(h))) ? String(h && (h.id || h.className || h.tagName)).slice(0, 60) : '' };
 };
 /* the main buttons of the screen now (outside the menu): the first few distinct ones */
 const BUTTONS = ([n, rxs]) => {
@@ -139,7 +145,7 @@ async function runRole(role){
     await pg.reload({ waitUntil: 'domcontentloaded', timeout: 180000 }); await throttle();
     await H.waitFor(A, () => typeof window._setView === 'function' && !!document.querySelector('#root *'), null, 150000);
     if (PHONE) { await H.waitFor(A, () => typeof window._gcChooseView === 'function', null, 60000); await pg.evaluate(() => { try { window._gcChooseView('desk'); } catch (e) {} }); }
-    await quiet(0, 6000);
+    await quiet(0, 40000);
     log('(open)', 'open the CRM' + (PHONE ? ' → desk view' : ''), await measure(0));
     let menu = await pg.evaluate(MENU);
     if (!menu.length && PHONE) {   /* the phone's desk view: the menu sits behind ☰ */
@@ -152,14 +158,19 @@ async function runRole(role){
     for (const tab of menu) {
       if ((Date.now() - T0) / 1000 > BUDGET) { log(tab.label, '(tab)', null, 'time budget used up (DT_BUDGET ' + BUDGET + ' s)'); continue; }
       const openTab = async () => {
-        let m = await pg.evaluate(MENU); let it = m.find(x => x.label === tab.label);
-        if (!it && PHONE) { const hb = await pg.evaluate(() => { const b = [...document.querySelectorAll('button,[role=button]')].find(e => /^(☰|≡|menu)$/i.test((e.innerText || e.getAttribute('aria-label') || '').trim())); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); if (hb) { await tap(hb.x, hb.y); await sleep(700); m = await pg.evaluate(MENU); it = m.find(x => x.label === tab.label); } }
+        let it = await pg.evaluate(MENUAT, tab.label);
+        if (!it && PHONE) { const hb = await pg.evaluate(() => { const b = [...document.querySelectorAll('button,[role=button]')].find(e => /^(☰|≡|menu)$/i.test((e.innerText || e.getAttribute('aria-label') || '').trim())); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); if (hb) { await tap(hb.x, hb.y); await sleep(700); it = await pg.evaluate(MENUAT, tab.label); } }
         if (!it) return null;
-        const t0 = await now(); await tap(it.x, it.y); await quiet(t0, 1500); return await measure(t0);
+        if (it.covered) {   /* something left over from the last tab is over the menu: Escape, else a reload */
+          await closeExtra(); it = await pg.evaluate(MENUAT, tab.label);
+          if (!it || it.covered) { await pg.reload({ waitUntil: 'domcontentloaded' }).catch(() => {}); await throttle(); await H.waitFor(A, () => typeof window._setView === 'function' && !!document.querySelector('#root *'), null, 150000); if (PHONE) await pg.evaluate(() => { try { window._gcChooseView('desk'); } catch (e) {} }); await quiet(0, 8000); it = await pg.evaluate(MENUAT, tab.label); if (!it) return null; }
+        }
+        const v0 = await pg.evaluate(() => { try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }).catch(() => '');
+        const t0 = await now(); await tap(it.x, it.y); await quiet(t0, 1500); const m = await measure(t0); if (m) m.from = v0; return m;
       };
       const m = await openTab().catch(() => null);
       if (!m) { log(tab.label, '(tab)', null, 'not in the menu any more'); await closeExtra(); continue; }
-      log(tab.label, '(tab) → ' + m.view, m);
+      log(tab.label, '(tab) → ' + m.view, m, m.view === m.from && m.from !== 'dashboard' ? 'the screen did not change' : '');
       const b = await pg.evaluate(BUTTONS, [BTNS, DESTRUCT.source]).catch(() => ({ out: [], skipped: [] }));
       for (const [i, btn] of b.out.entries()) {
         if (i) { const m2 = await openTab().catch(() => null); if (!m2) break; }
