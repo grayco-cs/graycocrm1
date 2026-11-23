@@ -192963,7 +192963,9 @@ try { console.log('[GC] 🛰 Outreach (RoofScout) in Leads (patch RSO) — _gcRS
    This block: (1) which pieces show on which tab; (2) the 🏢 Company outreach list inside 🛰 Outreach — Register / Reach out /
    Follow-ups, kept in gc_kv "gc_outreach_list" (a copy on this computer too), "Import list (JSON)" for admins;
    (3) the "Watched boards" card on Bids (status from the server's bid watcher; "Check now" for admins).
-   API: window._gcOutreachImport(arr) → { added, updated, skipped, total } · window._gcOutreach = { items, state, load, add }
+   HOAOUT (owner 11/23): a 🏘 HOAs tab (the "HOAs & Community Managers" sheet + CAI / VIVE) and an "Any list" (sheet) filter;
+   _gcOutreachSeedMerge(arr) adds only the seed entries that are not in the list yet (never touches one that is).
+   API: window._gcOutreachImport(arr) → { added, updated, skipped, total } · window._gcOutreachSeedMerge(arr) → { added, kept, total } · window._gcOutreach = { items, state, load, add }
    Data keys are never deleted (lg_bids, gc_leadgen_lastscan … stay where they are). */
 (function(){
 'use strict';
@@ -192994,7 +192996,7 @@ css('gc-leadscon-css',
   '#gc-ol{display:none}body.gcrso-on #gc-ol{display:block}');
 
 /* ── 2. the company outreach list ── */
-var ST = { items: [], loaded: false, loadedAt: 0, loading: false, ui: { g: 'reg', q: '', st: '', pri: '', near: false, open: {}, logAll: {}, imp: false } };
+var ST = { items: [], loaded: false, loadedAt: 0, loading: false, ui: { g: 'reg', q: '', st: '', pri: '', sh: '', near: false, open: {}, logAll: {}, imp: false } };
 function lsRead(){ try { var v = JSON.parse(W.localStorage.getItem(LS) || 'null'); return arr(v && v.items); } catch (e) { return []; } }
 function lsWrite(){ try { W.localStorage.setItem(LS, JSON.stringify({ items: ST.items, updatedAt: nowIso() })); } catch (e) {} }
 ST.items = lsRead();
@@ -193026,7 +193028,7 @@ function fromImport(o){
   var inz = (o.inZone != null && o.inZone !== '') ? truthy(o.inZone) : (o.inz != null && o.inz !== '') ? truthy(o.inz) : /^(within|in\b|inside|local|near)/i.test(s(o.zone));
   var it = {
     id: id, phase: +o.phase === 1 ? 1 : 2,
-    company: s(o.company) || s(o.title) || s(o.sheet) || id, type: s(o.type) || s(o.setup) || s(o.sheet),
+    company: s(o.company) || s(o.title) || s(o.sheet) || id, type: s(o.type) || (typeof o.setup === 'string' ? s(o.setup) : '') || s(o.sheet),   /* HOAOUT: setup true/false is a flag, not a type */
     pri: Math.min(3, Math.max(1, parseInt(o.pri, 10) || 2)),
     person: s(o.person) || rawGet(raw, ['contact', 'contactname', 'person', 'name']), contactTitle: s(o.contactTitle) || rawGet(raw, ['title', 'jobtitle', 'role', 'position']),
     email: s(o.email) || emails[0] || '', phone: s(o.phone) || phones[0] || '', emails: emails, phones: phones, links: links,
@@ -193097,19 +193099,40 @@ W._gcOutreachImport = function(a){
   if (added || updated) { persist(); redraw(); }
   return { added: added, updated: updated, skipped: skipped, total: ST.items.length };
 };
+/* patch HOAOUT: the GrayCo seed list grows (owner 11/23: "Can we add hoas too") — only the seed entries whose id is not in the list yet
+   are added. An entry already in the list is never touched (status, notes, log, follow-up, a cleared field — what a person did stays),
+   and nothing is ever removed: an entry the seed drops simply stays in the list. */
+var OL_SEED_AT = '2000-01-01T00:00:00.000Z';
+W._gcOutreachSeedMerge = function(a){
+  if (a && !Array.isArray(a) && Array.isArray(a.items)) a = a.items;
+  if (!Array.isArray(a)) return { error: 'expected an array of objects', added: 0, kept: ST.items.length, total: ST.items.length };
+  var have = {}; ST.items.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
+  var fresh = a.filter(function(o){ return o && s(o.id) && !have[s(o.id)]; });
+  var kept = ST.items.length, added = 0;
+  fresh.forEach(function(o){ var inc = fromImport(o); if (!inc || byId(inc.id)) return;
+    inc.updatedAt = OL_SEED_AT; ST.items.push(inc); added++; });   /* an untouched seed copy is "oldest": another computer's edited copy of it always wins */
+  if (added) { persist(); redraw(); }
+  return { added: added, kept: kept, total: ST.items.length };
+};
 
 /* groups */
 function isFollow(it){ return !!s(it.next) || it.status === 'In progress' || it.status === 'Submitted'; }
-function inGroup(it, g){ return g === 'reg' ? it.phase === 1 : g === 'out' ? it.phase !== 1 : isFollow(it); }
-function counts(){ var c = { reg: 0, out: 0, fu: 0, due: 0, ok: 0 }, t = today(); ST.items.forEach(function(it){ if (!it) return; if (inGroup(it, 'reg')) c.reg++; if (inGroup(it, 'out')) c.out++; if (isFollow(it)) c.fu++; if (s(it.next) && s(it.next) <= t) c.due++; if (it.status === 'Approved/on list') c.ok++; }); return c; }
+/* patch HOAOUT: the 🏘 HOAs group = the "HOAs & Community Managers" sheet + the HOA memberships under Join & Register (CAI, VIVE) */
+var HOA_SHEET = 'HOAs & Community Managers';
+function sheetOf(it){ return s(it && it.src && it.src.sheet); }
+function isHoa(it){ var r = (it && it.src && it.src.raw) || {}; return sheetOf(it) === HOA_SHEET || low(r.Segment) === 'hoas'; }
+function inGroup(it, g){ return g === 'reg' ? it.phase === 1 : g === 'out' ? it.phase !== 1 : g === 'hoa' ? isHoa(it) : isFollow(it); }
+function counts(){ var c = { reg: 0, out: 0, fu: 0, hoa: 0, due: 0, ok: 0 }, t = today(); ST.items.forEach(function(it){ if (!it) return; if (inGroup(it, 'reg')) c.reg++; if (inGroup(it, 'out')) c.out++; if (isFollow(it)) c.fu++; if (isHoa(it)) c.hoa++; if (s(it.next) && s(it.next) <= t) c.due++; if (it.status === 'Approved/on list') c.ok++; }); return c; }
+function sheets(){ var m = {}; ST.items.forEach(function(it){ var k = sheetOf(it); if (k) m[k] = (m[k] || 0) + 1; }); return Object.keys(m).sort().map(function(k){ return [k, m[k]]; }); }
 function visible(){
   var u = ST.ui, q = low(u.q), t = today();
   var list = ST.items.filter(function(it){
     if (!it || !inGroup(it, u.g)) return false;
     if (u.st && it.status !== u.st) return false;
     if (u.pri && String(it.pri) !== u.pri) return false;
+    if (u.sh && sheetOf(it) !== u.sh) return false;   /* patch HOAOUT */
     if (u.near && !it.inZone) return false;
-    if (q && low([it.company, it.type, it.person, it.contactTitle, it.email, it.phone, it.city, it.notes, it.why].join(' ')).indexOf(q) < 0) return false;
+    if (q && low([it.company, it.type, it.person, it.contactTitle, it.email, it.phone, it.city, it.notes, it.why, sheetOf(it)].join(' ')).indexOf(q) < 0) return false;
     return true;
   });
   list.sort(function(a, b){
@@ -193122,7 +193145,8 @@ function visible(){
 /* drawing */
 function rowHtml(it){
   var t = today(), od = s(it.next) && it.next < t, due = s(it.next) && it.next === t, open = !!ST.ui.open[it.id];
-  var sum = '<summary><b>' + esc(it.company) + '</b>' + (it.type ? ' <span class="ol-chip">' + esc(it.type) + '</span>' : '') + ' <span class="ol-chip p' + it.pri + '">P' + it.pri + '</span>' +
+  var ty = /^(true|false)$/.test(s(it.type)) ? sheetOf(it) : it.type;   /* patch HOAOUT: older imports carried "false" as the type */
+  var sum = '<summary><b>' + esc(it.company) + '</b>' + (ty ? ' <span class="ol-chip">' + esc(ty) + '</span>' : '') + ' <span class="ol-chip p' + it.pri + '">P' + it.pri + '</span>' +
     (it.inZone ? ' <span class="ol-chip near">≤100 mi</span>' : '') + ' <span class="ol-chip st">' + esc(it.status) + '</span>' +
     (s(it.next) ? ' <span class="ol-chip ' + (od ? 'od' : due ? 'td' : '') + '">' + (od ? 'overdue ' : due ? 'today ' : 'follow up ') + esc(it.next) + '</span>' : '') +
     (it.person || it.city ? '<span class="ol-sub"> ' + esc([it.person, it.city].filter(Boolean).join(' · ')) + '</span>' : '') + '</summary>';
@@ -193160,10 +193184,11 @@ function headHtml(){
   return '<div class="ol-top"><h3>🏢 Company outreach list</h3><span class="ol-sub">' + ST.items.length + ' companies · ' + c.due + ' follow-up' + (c.due === 1 ? '' : 's') + ' due · ' + c.ok + ' approved / on list</span><span class="ol-sp"></span>' +
     '<button type="button" class="ol-btn" data-ol-new="1">＋ Add</button>' +
     (isAdmin() ? '<button type="button" class="ol-btn" data-ol-imp="1">Import list (JSON)</button><button type="button" class="ol-btn" data-ol-exp="1">Export</button>' : '') + '</div>' +
-    '<div class="ol-tabs">' + tab('reg', 'Register', c.reg) + tab('out', 'Reach out', c.out) + tab('fu', 'Follow-ups', c.fu) + '</div>' +
+    '<div class="ol-tabs">' + tab('reg', 'Register', c.reg) + tab('out', 'Reach out', c.out) + tab('fu', 'Follow-ups', c.fu) + (c.hoa ? tab('hoa', '🏘 HOAs', c.hoa) : '') + '</div>' +
     '<div class="ol-filters"><input data-ol-q="1" type="search" placeholder="Search company, contact, city…" value="' + esc(u.q) + '">' +
     '<select data-ol-fs="1"><option value="">Any status</option>' + STATUSES.map(function(x){ return '<option' + (u.st === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>' +
     '<select data-ol-fp="1"><option value="">Any priority</option>' + [1, 2, 3].map(function(x){ return '<option value="' + x + '"' + (u.pri === String(x) ? ' selected' : '') + '>Priority ' + x + '</option>'; }).join('') + '</select>' +
+    '<select data-ol-fsh="1"><option value="">Any list</option>' + sheets().map(function(x){ return '<option value="' + esc(x[0]) + '"' + (u.sh === x[0] ? ' selected' : '') + '>' + esc(x[0]) + ' (' + x[1] + ')</option>'; }).join('') + '</select>' +
     '<label class="ol-chk"><input type="checkbox" data-ol-near="1"' + (u.near ? ' checked' : '') + '> Within 100 mi only</label></div>';
 }
 function olCss(){
@@ -193250,6 +193275,7 @@ function bind(el){
     var t = ev.target; if (!t || !t.getAttribute) return;
     if (t.hasAttribute('data-ol-fs')) { ST.ui.st = t.value; ST.ui.lim = 50; drawList(); return; }
     if (t.hasAttribute('data-ol-fp')) { ST.ui.pri = t.value; drawList(); return; }
+    if (t.hasAttribute('data-ol-fsh')) { ST.ui.sh = t.value; ST.ui.lim = 50; drawList(); return; }   /* patch HOAOUT */
     if (t.hasAttribute('data-ol-near')) { ST.ui.near = !!t.checked; drawList(); return; }
     var f = t.getAttribute('data-ol-f'); if (!f) return;
     var row = t.closest('[data-ol-id]'); if (!row) return;
@@ -253495,7 +253521,8 @@ try { console.log('[GC] ✏️ Field job info · progress means active · the jo
       name / number / address, then the big "➡ Send to PM" with the PM list (preselected: ⚙ Default PM for Google LSA leads) or the
       small "Send to admin to assign". Server: texts.js ?lsaleads / ?lsaintake / ?lsaassign / ?lsapm (admins + the office only).
    d. OUTSEED: the 🏢 Company outreach list fills itself from the 607-company GrayCo Multifamily Outreach Tracker when the cloud list is
-      empty (bid-inbox ?outreachseed=1, staff only) — merged, never over what a person typed.
+      empty (bid-inbox ?outreachseed=1, staff only) — merged, never over what a person typed. HOAOUT: later seed entries (the HOAs &
+      community managers) are added to a list that is not empty too — new ids only (_gcOutreachSeedMerge).
    API: window._gcLsaCalls = { load, items, open, intake(id), assign(id, email), chips, state } */
 (function(W){
 'use strict';
@@ -253796,17 +253823,17 @@ function fromHash(){ try { var h = s(W.location.hash), m = /[#&]lead=([^&]+)&int
 
 /* ── d. the 🏢 Company outreach list: the 607 companies when the cloud list is empty ── */
 var SEED = { tried: false };
+/* HOAOUT (owner 11/23 "Don't we have a sign up thing already … Can we add hoas too"): the seed is merged on every page load that opens
+   🛰 Outreach, not only into an empty list — entries whose id is new are added (the HOAs), an entry already there is never touched. */
 function seedOutreach(){
   try {
-    var O = W._gcOutreach; if (!O || SEED.tried) return; var st = O.state(); if (!st || !st.loaded) return;
-    if (O.items().length) { SEED.tried = true; return; }
+    var O = W._gcOutreach; if (!O || SEED.tried || typeof W._gcOutreachSeedMerge !== 'function') return; var st = O.state(); if (!st || !st.loaded) return;
     if (!D.body.classList.contains('gcrso-on')) return;
     SEED.tried = true;
     W.fetch('/.netlify/functions/bid-inbox?outreachseed=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
       if (!j || !Array.isArray(j.items) || !j.items.length) { SEED.tried = false; return; }
-      if (O.items().length) return;   /* someone else's copy arrived meanwhile */
-      var res = W._gcOutreachImport(j.items);
-      if (res && res.added) toast('🏢 Company outreach list: ' + res.added + ' companies loaded.');
+      var was = O.items().length, res = W._gcOutreachSeedMerge(j.items);
+      if (res && res.added) toast('🏢 Company outreach list: ' + res.added + (was ? ' new entries added from the GrayCo list.' : ' companies loaded.'));
     });
   } catch (e) { SEED.tried = false; }
 }
