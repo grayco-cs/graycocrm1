@@ -47,6 +47,8 @@ function notesFor(notes, hidden){
   if (!s(notes)) return notes;
   return String(notes).split('\n').filter(function(line){
     const L = line.trim();
+    /* patch NOTESCLEAN (owner 11/23 "take out they are GC"): never the GC / owner / bid # / "From GrayCo" / draft lines the Lead Inbox wrote */
+    if (/^(from grayco construction services\b|draft from the crm lead inbox|gc:|owner:|bid #:|general contractor:)/i.test(L)) return false;
     if (urls.some(function(u){ return L.indexOf(u) > -1; })) return false;
     const m = /(https?:\/\/[^\s]+)/i.exec(L);
     if (m && isSolicitation({ label: L.replace(m[1], ''), board: L.split(':')[0].trim(), url: m[1] }, 'link')) return false;
