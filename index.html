@@ -192965,6 +192965,8 @@ try { console.log('[GC] 🛰 Outreach (RoofScout) in Leads (patch RSO) — _gcRS
    (3) the "Watched boards" card on Bids (status from the server's bid watcher; "Check now" for admins).
    HOAOUT (owner 11/23): a 🏘 HOAs tab (the "HOAs & Community Managers" sheet + CAI / VIVE) and an "Any list" (sheet) filter;
    _gcOutreachSeedMerge(arr) adds only the seed entries that are not in the list yet (never touches one that is).
+   HOAOUT-2: the cloud list is saved only right after a SUCCESSFUL read of it (merged by id, never shorter than the cloud); a failed
+   read keeps the edit on this computer and saves it after the next good read. The seed merge waits for a good read (state().cloudOk).
    API: window._gcOutreachImport(arr) → { added, updated, skipped, total } · window._gcOutreachSeedMerge(arr) → { added, kept, total } · window._gcOutreach = { items, state, load, add }
    Data keys are never deleted (lg_bids, gc_leadgen_lastscan … stay where they are). */
 (function(){
@@ -193060,30 +193062,59 @@ function mergeLists(a, b){
   arr(a).concat(arr(b)).forEach(function(x){ if (!x || !x.id) return; var p = map[x.id]; if (!p) { map[x.id] = x; order.push(x.id); } else if (s(x.updatedAt) > s(p.updatedAt)) map[x.id] = x; });
   return order.map(function(id){ return map[id]; });
 }
+/* patch HOAOUT-2 (coordinator: "a failed cloud read followed by a save can overwrite the cloud outreach list"): the cloud read now
+   tells a FAILED read (no connection, an error answer — the old W._gcCloudGet said null for both) from "there is no list yet".
+   → { ok: true, items: [...] | null (no row) } or { ok: false }. Only a successful read lets the list be saved (see persist). */
 function cloudRead(){
-  try { if (typeof W._gcCloudGet !== 'function') return Promise.resolve(null);
-    return Promise.resolve(W._gcCloudGet(KEY)).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v && Array.isArray(v.items) ? v.items : null; }, function(){ return null; }); }
-  catch (e) { return Promise.resolve(null); }
+  try {
+    var u = s(W.localStorage.getItem('grayco_sb_url')).replace(/\/$/, ''), k = s(W.localStorage.getItem('grayco_sb_key'));
+    if (!u || !k || typeof W.fetch !== 'function') return Promise.resolve({ ok: false });
+    return W.fetch(u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(KEY) + '&select=value', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' })
+      .then(function(r){ return r && r.ok ? r.json() : Promise.reject(new Error('read ' + (r && r.status))); })
+      .then(function(rows){
+        if (!Array.isArray(rows)) return { ok: false };
+        if (!rows.length) return { ok: true, items: null };
+        var v = rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return { ok: false }; } }
+        if (v == null) return { ok: true, items: null };
+        return v && Array.isArray(v.items) ? { ok: true, items: v.items } : { ok: false };   /* a row we cannot read is never written over */
+      }, function(){ return { ok: false }; });
+  } catch (e) { return Promise.resolve({ ok: false }); }
 }
-function cloudWrite(){ try { return Promise.resolve(W._supaUpsert(KEY, { items: ST.items, updatedAt: nowIso() })).catch(function(){ return null; }); } catch (e) { return Promise.resolve(null); } }
+function cloudWrite(){ try { return Promise.resolve(W._supaUpsert(KEY, { items: ST.items, updatedAt: nowIso() })).then(function(){ return true; }, function(){ return false; }); } catch (e) { return Promise.resolve(false); } }
+function idCount(l){ var m = {}, n = 0; arr(l).forEach(function(x){ if (x && x.id && !m[x.id]) { m[x.id] = 1; n++; } }); return n; }
 var chain = Promise.resolve();
+ST.cloudOk = false; ST.dirty = false; ST.cloudN = 0; ST.writes = 0; ST.held = 0;
+/* a save: keep the edit on this computer first; write the cloud only right after a successful read of it, merged with it (by id —
+   nothing in the cloud is ever dropped), and never a list with fewer entries than the cloud holds. A failed read keeps the edit
+   waiting (ST.dirty) — the next good read (load, every minute while Outreach is open, and on the next visit) saves it. */
 function persist(){
-  lsWrite();
-  chain = chain.then(function(){ return cloudRead().then(function(remote){ if (remote) { ST.items = mergeLists(ST.items, remote); lsWrite(); } return cloudWrite(); }); }).catch(function(){});
+  lsWrite(); ST.dirty = true;
+  chain = chain.then(function(){ return cloudRead().then(function(res){
+    if (!res || !res.ok) { ST.cloudOk = false; ST.held++; return false; }
+    ST.cloudOk = true;
+    var remote = arr(res.items);
+    if (remote.length) { ST.items = mergeLists(ST.items, remote); lsWrite(); }
+    var n = idCount(ST.items), rn = idCount(remote);
+    if (n < rn || n < ST.cloudN || (!n && rn)) { ST.held++; return false; }   /* never shorter than the cloud (rows are archived, never purged) */
+    return cloudWrite().then(function(ok){ if (ok) { ST.dirty = false; ST.writes++; ST.cloudN = Math.max(ST.cloudN, n); } return ok; });
+  }); }).catch(function(){});
   return chain;
 }
 function load(){
   if (ST.loading) return Promise.resolve();
   ST.loading = true;
-  return cloudRead().then(function(remote){
+  return cloudRead().then(function(res){
     ST.loading = false; ST.loaded = true; ST.loadedAt = Date.now();
+    if (!res || !res.ok) { ST.cloudOk = false; return; }   /* keep the local copy, save nothing, try again on the next load */
+    ST.cloudOk = true;
+    var remote = res.items; ST.cloudN = Math.max(ST.cloudN, idCount(remote));
     if (remote) {
       var before = JSON.stringify(ST.items), rm = {}; remote.forEach(function(x){ if (x && x.id) rm[x.id] = x; });
       var push = ST.items.some(function(x){ return x && (!rm[x.id] || s(x.updatedAt) > s(rm[x.id].updatedAt)); });   /* a change made here that never reached the cloud (closed too soon, offline) */
       ST.items = mergeLists(ST.items, remote); if (JSON.stringify(ST.items) !== before) { lsWrite(); redraw(); }
-      if (push) persist();
+      if (push || ST.dirty) persist();
     } else if (ST.items.length) persist();
-  }, function(){ ST.loading = false; });
+  }, function(){ ST.loading = false; ST.cloudOk = false; });
 }
 W._gcOutreachImport = function(a){
   if (typeof a === 'string') { try { a = JSON.parse(a); } catch (e) { return { error: 'not valid JSON', added: 0, updated: 0, skipped: 0, total: ST.items.length }; } }
@@ -193104,6 +193135,7 @@ W._gcOutreachImport = function(a){
    and nothing is ever removed: an entry the seed drops simply stays in the list. */
 var OL_SEED_AT = '2000-01-01T00:00:00.000Z';
 W._gcOutreachSeedMerge = function(a){
+  if (!ST.cloudOk) return { added: 0, kept: ST.items.length, total: ST.items.length, waiting: true };   /* HOAOUT-2: only after a good cloud read this page load */
   if (a && !Array.isArray(a) && Array.isArray(a.items)) a = a.items;
   if (!Array.isArray(a)) return { error: 'expected an array of objects', added: 0, kept: ST.items.length, total: ST.items.length };
   var have = {}; ST.items.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
@@ -193297,7 +193329,7 @@ W._gcOutreachMount = function(p){
     if (!ST.loaded || Date.now() - ST.loadedAt > 60000) load();
   } catch (e) { try { console.warn('[GC] outreach list', e); } catch (x) {} }
 };
-W._gcOutreach = { items: function(){ return ST.items.slice(); }, state: function(){ return { group: ST.ui.g, counts: counts(), loaded: ST.loaded, shown: visible().map(function(i){ return i.id; }) }; }, load: load, redraw: function(){ var el = D.getElementById('gc-ol'); if (el) el.__force = true; redraw(); }, setGroup: function(g){ ST.ui.g = g; var el = D.getElementById('gc-ol'); if (el) el.__force = true; redraw(); }, ui: function(){ return ST.ui; } };
+W._gcOutreach = { items: function(){ return ST.items.slice(); }, state: function(){ return { group: ST.ui.g, counts: counts(), loaded: ST.loaded, cloudOk: ST.cloudOk, dirty: ST.dirty, writes: ST.writes, held: ST.held, cloudN: ST.cloudN, shown: visible().map(function(i){ return i.id; }) }; }, load: load, redraw: function(){ var el = D.getElementById('gc-ol'); if (el) el.__force = true; redraw(); }, setGroup: function(g){ ST.ui.g = g; var el = D.getElementById('gc-ol'); if (el) el.__force = true; redraw(); }, ui: function(){ return ST.ui; } };
 
 /* ── 3. Bids: the "Watched boards" card (status from the server's bid watcher) ── */
 var WB = { custom: [], at: 0, loading: false };
@@ -253827,12 +253859,13 @@ var SEED = { tried: false };
    🛰 Outreach, not only into an empty list — entries whose id is new are added (the HOAs), an entry already there is never touched. */
 function seedOutreach(){
   try {
-    var O = W._gcOutreach; if (!O || SEED.tried || typeof W._gcOutreachSeedMerge !== 'function') return; var st = O.state(); if (!st || !st.loaded) return;
+    var O = W._gcOutreach; if (!O || SEED.tried || typeof W._gcOutreachSeedMerge !== 'function') return; var st = O.state(); if (!st || !st.loaded || !st.cloudOk) return;   /* HOAOUT-2: only after a good cloud read */
     if (!D.body.classList.contains('gcrso-on')) return;
     SEED.tried = true;
     W.fetch('/.netlify/functions/bid-inbox?outreachseed=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
       if (!j || !Array.isArray(j.items) || !j.items.length) { SEED.tried = false; return; }
       var was = O.items().length, res = W._gcOutreachSeedMerge(j.items);
+      if (res && res.waiting) { SEED.tried = false; return; }   /* the cloud read failed meanwhile — try again after the next good one */
       if (res && res.added) toast('🏢 Company outreach list: ' + res.added + (was ? ' new entries added from the GrayCo list.' : ' companies loaded.'));
     });
   } catch (e) { SEED.tried = false; }

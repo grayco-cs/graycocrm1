@@ -99,20 +99,28 @@ await t('signed-in staff get every seed entry, the HOAs included', async () => {
 console.log('4. the CRM page: the merge');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const block = id => { const m = new RegExp('<script id="' + id + '">([\\s\\S]*?)</script>').exec(html); if (!m) throw new Error('no ' + id); return m[1]; };
-function page(saved){
+/* cloud: { items } = the gc_kv row; null = no row yet; 'fail' = the read fails (an error answer). The fake cloud takes each write. */
+function page(saved, cloud){
   const ls = new Map(), els = {};
   if (saved) ls.set('gc_outreach_list_v1', JSON.stringify({ items: saved }));
+  ls.set('grayco_sb_url', 'https://sb.test'); ls.set('grayco_sb_key', 'anon-test');
+  const C = { row: cloud === undefined ? null : cloud, reads: 0, fail: cloud === 'fail' };
   const el = tag => ({ tag, id: '', style: {}, children: [], set textContent(v){ this._t = v; }, setAttribute(){}, appendChild(c){ this.children.push(c); if (c.id) els[c.id] = c; return c; }, addEventListener(){}, remove(){} });
   const D = { head: el('head'), body: Object.assign(el('body'), { classList: { contains: () => false } }), documentElement: el('html'),
     getElementById: id => els[id] || null, createElement: el, querySelector: () => null, querySelectorAll: () => [], activeElement: null };
   const W = { document: D, localStorage: { getItem: k => ls.has(k) ? ls.get(k) : null, setItem: (k, v) => ls.set(k, String(v)), removeItem: k => ls.delete(k) },
     setTimeout, clearTimeout, setInterval: () => 0, console: { log(){}, warn(){} }, cloudWrites: 0 };
-  W._supaUpsert = () => { W.cloudWrites++; return Promise.resolve(true); };
+  W._supaUpsert = (key, value) => { W.cloudWrites++; C.row = JSON.parse(JSON.stringify(value)); return Promise.resolve(true); };
+  W.fetch = async u => { C.reads++; if (C.fail) return { ok: false, status: 503, json: async () => ({}) };
+    assert.ok(/\/rest\/v1\/gc_kv\?key=eq\.gc_outreach_list/.test(u), u);
+    return { ok: true, status: 200, json: async () => C.row && C.row !== 'fail' ? [{ value: C.row }] : [] }; };
   W.window = W;
   const ctx = vm.createContext(Object.assign(W, { window: W, document: D, Promise, JSON, Date, Math, Object, Array, String, Number, RegExp, Blob: class {}, URL }));
   vm.runInContext(block('gc-patch-leadscon'), ctx);
-  return { W, ls, saved: () => JSON.parse(ls.get('gc_outreach_list_v1') || '{"items":[]}').items };
+  return { W, ls, C, saved: () => JSON.parse(ls.get('gc_outreach_list_v1') || '{"items":[]}').items, settle: () => new Promise(r => setTimeout(r, 40)) };
 }
+/* a page whose cloud read worked (the list in the cloud = the list on this computer) */
+async function ready(saved, cloud){ const P = page(saved, cloud === undefined ? (saved ? { items: JSON.parse(JSON.stringify(saved)) } : null) : cloud); await P.W._gcOutreach.load(); await P.settle(); P.W.cloudWrites = 0; return P; }
 const OLD = [   /* made-up list the office has been working: two edited entries, one untouched, one the seed no longer has */
   { id: 'GC-demo-1', phase: 1, company: 'Demo Plan Room', type: 'Plan room', pri: 1, person: '', contactTitle: '', email: '', phone: '', emails: [], phones: [], links: [], portal: '', website: '', city: '', inZone: true, zone: '', why: 'Demo', how: 'Demo',
     status: 'Submitted', notes: 'Applied 11/02 — waiting on approval', next: '2026-12-01', log: [{ at: '2026-11-02T15:00:00.000Z', by: 'demo.office@example.test', text: 'Status: Not started → Submitted' }], src: { sheet: 'Bid Lists & Plan Rooms', raw: {} }, updatedAt: '2026-11-02T15:00:00.000Z' },
@@ -128,7 +136,7 @@ const SEEDDEMO = [   /* the seed's copy of the same ids says other things — no
   { id: 'GC-demo-3', phase: 2, sheet: 'Architects', setup: false, pri: 2, inz: true, zone: 'Within 100 mi', title: 'Demo Architect', what: 'w', how: 'h', area: 'Memphis', links: ['example.com'], emails: [], phones: [], person: '', init: '', raw: {} }
 ].concat(hoa.concat(hoaJr));
 await t('the seed is added to a list that is NOT empty: only the new ids', async () => {
-  const P = page(OLD);
+  const P = await ready(OLD);
   const before = JSON.parse(JSON.stringify(P.W._gcOutreach.items()));
   assert.strictEqual(before.length, 4);
   const r = P.W._gcOutreachSeedMerge(SEEDDEMO);
@@ -137,24 +145,87 @@ await t('the seed is added to a list that is NOT empty: only the new ids', async
   const now = P.W._gcOutreach.items();
   assert.strictEqual(now.length, 4 + hoa.length + hoaJr.length);
   assert.ok(hoa.concat(hoaJr).every(l => now.some(x => x.id === l.id)));
-  await new Promise(r => setTimeout(r, 30));
+  await P.settle();
   assert.strictEqual(P.saved().length, now.length, 'saved on this computer');
-  assert.ok(P.W.cloudWrites >= 1, 'and to the cloud');
+  assert.strictEqual(P.W.cloudWrites, 1, 'and to the cloud — once');
+  assert.strictEqual(P.C.row.items.length, now.length);
 });
-await t('an entry a person changed is never touched (status, notes, follow-up, log, renamed company, cleared phone) — byte for byte', () => {
-  const P = page(OLD);
+
+console.log('4b. saves only after a good cloud read (HOAOUT-2)');
+await t('cloud read fails → no seed merge and no save', async () => {
+  const P = page(OLD, 'fail');
+  await P.W._gcOutreach.load(); await P.settle();
+  assert.strictEqual(P.W._gcOutreach.state().loaded, true);
+  assert.strictEqual(P.W._gcOutreach.state().cloudOk, false);
+  const r = P.W._gcOutreachSeedMerge(SEEDDEMO);
+  assert.ok(r.waiting && r.added === 0, JSON.stringify(r));
+  assert.strictEqual(P.W._gcOutreach.items().length, OLD.length);
+  await P.settle();
+  assert.strictEqual(P.W.cloudWrites, 0);
+});
+await t('cloud read fails → a person\'s edit stays on this computer, nothing is written; the next good read saves it once', async () => {
+  const P = page(OLD, { items: JSON.parse(JSON.stringify(OLD)) });
+  await P.W._gcOutreach.load(); await P.settle(); P.W.cloudWrites = 0;
+  P.C.fail = true;
+  const r0 = P.W._gcOutreachImport([{ id: 'GC-demo-3', title: 'Demo Architect', phones: ['(901) 555-0199'] }]);
+  assert.strictEqual(r0.updated, 1);
+  await P.settle();
+  assert.strictEqual(P.W.cloudWrites, 0, 'no write after a failed read');
+  assert.ok(P.saved().find(x => x.id === 'GC-demo-3').phone, 'kept on this computer');
+  assert.strictEqual(P.W._gcOutreach.state().dirty, true);
+  P.C.fail = false;
+  await P.W._gcOutreach.load(); await P.settle();
+  assert.strictEqual(P.W.cloudWrites, 1, 'saved after the next good read');
+  assert.ok(P.C.row.items.find(x => x.id === 'GC-demo-3').phone);
+  assert.strictEqual(P.W._gcOutreach.state().dirty, false);
+});
+await t('cloud read ok → the seed is merged and saved once', async () => {
+  const P = await ready(OLD);
+  const r = P.W._gcOutreachSeedMerge(SEEDDEMO);
+  assert.strictEqual(r.added, hoa.length + hoaJr.length);
+  await P.settle();
+  assert.strictEqual(P.W.cloudWrites, 1);
+  assert.strictEqual(P.C.row.items.length, OLD.length + hoa.length + hoaJr.length);
+  P.W._gcOutreachSeedMerge(SEEDDEMO); await P.settle();
+  assert.strictEqual(P.W.cloudWrites, 1, 'a second run writes nothing');
+});
+await t('a cloud list of 649 rows is never replaced by a local list with fewer rows', async () => {
+  const big = leads.map(l => ({ id: l.id, phase: l.phase, company: l.title, status: 'Not started', updatedAt: '2026-11-01T00:00:00.000Z', src: { sheet: l.sheet } }));
+  assert.strictEqual(big.length, 649);
+  /* this computer has only 3 of them (stale copy) and the person edits one */
+  const P = page(big.slice(0, 3), { items: JSON.parse(JSON.stringify(big)) });
+  P.W._gcOutreachImport([{ id: big[0].id, title: big[0].company, phones: ['(901) 555-0142'] }]);   /* saved before any load */
+  await P.settle();
+  assert.ok(P.C.row.items.length === 649, 'cloud still 649: ' + P.C.row.items.length);
+  assert.ok(P.C.row.items.find(x => x.id === big[0].id).phone, 'the edit is merged in, not a shorter list');
+  await P.W._gcOutreach.load(); await P.settle();
+  assert.strictEqual(P.C.row.items.length, 649);
+  assert.strictEqual(P.W._gcOutreach.items().length, 649, 'this computer catches up');
+  /* a read that comes back with an unreadable row is never written over */
+  const Q = page(big.slice(0, 3), { items: JSON.parse(JSON.stringify(big)) });
+  Q.C.row = 'not json {'; Q.W._gcOutreachImport([{ id: big[1].id, title: 'x', phones: ['(901) 555-0143'] }]); await Q.settle();
+  assert.strictEqual(Q.W.cloudWrites, 0);
+  /* and the save itself refuses a list shorter than what this page last saw in the cloud */
+  const R2 = await ready(big.slice(0, 649));
+  R2.C.row = { items: big.slice(0, 10) };   /* someone shrank the row out of band; this page saw 649 */
+  R2.W._gcOutreachImport([{ id: big[2].id, title: 'x', phones: ['(901) 555-0144'] }]); await R2.settle();
+  assert.strictEqual(R2.W.cloudWrites, 1, 'merged union (649) is written, never fewer');
+  assert.strictEqual(R2.C.row.items.length, 649);
+});
+await t('an entry a person changed is never touched (status, notes, follow-up, log, renamed company, cleared phone) — byte for byte', async () => {
+  const P = await ready(OLD);
   P.W._gcOutreachSeedMerge(SEEDDEMO);
   const now = P.W._gcOutreach.items();
   for (const o of OLD) assert.deepStrictEqual(now.find(x => x.id === o.id), o, o.id);
 });
-await t('nothing is removed: an entry the seed no longer has (and one a person added) stays', () => {
-  const P = page(OLD);
+await t('nothing is removed: an entry the seed no longer has (and one a person added) stays', async () => {
+  const P = await ready(OLD);
   P.W._gcOutreachSeedMerge(hoa);
   const now = P.W._gcOutreach.items();
   for (const o of OLD) assert.ok(now.some(x => x.id === o.id), o.id);
 });
 await t('a second run adds nothing; a new seed copy is "oldest" so another computer\'s edited copy always wins', async () => {
-  const P = page(OLD);
+  const P = await ready(OLD);
   P.W._gcOutreachSeedMerge(SEEDDEMO);
   const r2 = P.W._gcOutreachSeedMerge(SEEDDEMO);
   assert.strictEqual(r2.added, 0);
@@ -162,13 +233,13 @@ await t('a second run adds nothing; a new seed copy is "oldest" so another compu
   assert.ok(x.updatedAt < '2001', x.updatedAt);
   assert.strictEqual(x.status, 'Not started');
 });
-await t('an empty list still fills from the whole seed (the original OUTSEED behaviour)', () => {
-  const P = page(null);
+await t('an empty list still fills from the whole seed (the original OUTSEED behaviour)', async () => {
+  const P = await ready(null);
   const r = P.W._gcOutreachSeedMerge(SEEDDEMO);
   assert.strictEqual(r.added, SEEDDEMO.length);
 });
-await t('the new entries read right in the list: company, priority, phone, website / portal, "how", the HOAs group and the sheet filter', () => {
-  const P = page(OLD);
+await t('the new entries read right in the list: company, priority, phone, website / portal, "how", the HOAs group and the sheet filter', async () => {
+  const P = await ready(OLD);
   P.W._gcOutreachSeedMerge(SEEDDEMO);
   const O = P.W._gcOutreach, items = O.items();
   const kc = items.find(x => /Keith S\. Collins/.test(x.company));
@@ -183,7 +254,7 @@ await t('the new entries read right in the list: company, priority, phone, websi
   O.ui().sh = HOA; O.setGroup('reg');
   assert.ok(O.state().shown.length >= 15 && O.state().shown.every(id => items.find(x => x.id === id).src.sheet === HOA), 'the "Any list" filter → HOAs & Community Managers on Register');
   O.ui().sh = 'Architects'; O.setGroup('out');
-  assert.deepStrictEqual(O.state().shown, ['GC-demo-3']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(O.state().shown)), ['GC-demo-3']);
 });
 
 console.log('5. patch LSALEADS');
@@ -191,6 +262,7 @@ await t('the outreach seed is merged into a non-empty list too (no "only when em
   const b = block('gc-patch-lsaleads'), f = /function seedOutreach\(\)\{[\s\S]*?\n\}/.exec(b)[0];
   assert.ok(/_gcOutreachSeedMerge\(j\.items\)/.test(f));
   assert.ok(!/O\.items\(\)\.length\)\s*\{\s*SEED\.tried = true; return;/.test(f) && !/_gcOutreachImport\(j\.items\)/.test(f));
+  assert.ok(/!st\.cloudOk\) return/.test(f) && /res\.waiting\) \{ SEED\.tried = false/.test(f), 'waits for a good cloud read');
 });
 
 console.log(failed ? 'FAILED ' + failed + ' (' + passed + ' passed)' : 'HOAOUT ' + passed + '/' + passed);
