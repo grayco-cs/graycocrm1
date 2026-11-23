@@ -98,6 +98,14 @@ CompanyCam bar with **Test Connection**, and in Admin's CompanyCam setup:
 | ⚠ No CompanyCam sync run recorded (yet) | `SUPABASE_SERVICE_KEY` missing, or no deploy since the change: Trigger deploy. |
 | ⚠ No CompanyCam sync in the last hour | Netlify → Logs → Functions → `companycam-sync`. |
 
+**How much is linked (patch CCLINKSTAT, 11/23).** The OK line also says how many CRM jobs carry a CompanyCam
+project ("· 169 jobs linked"), how many new CompanyCam projects wait on 📷 Photos because **Make new jobs** is
+OFF in ⚙ Admin → ⚡ Automations, and how many CompanyCam-made Bidding jobs are copies of a project another job
+already has. Those copies came from the old browser importers (2 and 8 September); they are counted, never
+removed by the CRM. The September placeholders (plain `PRJ…` ids, source "companycam", still Bidding with no
+contract) now count as CompanyCam-made, like `PRJcc_` jobs: when one holds a project's id, the real CRM job at
+the same address gets that project too (beside its own link, never replacing it).
+
 **📸 GrayCo Photos** shows a red banner above the photos while CompanyCam is not
 working. Without a working key its CompanyCam photos come back empty, so this
 banner is the reason the page looks empty.
