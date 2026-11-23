@@ -624,10 +624,28 @@ async function partnerMatch(data, id){
   for (const sub of subs) {
     if (subOff(data, [sub.id])) continue;   /* patch SUBACCT: turned off — no code is sent */
     if (await teamPrimaryOff(id, function(m){ return s(m.crmSubId) === s(sub.id) || s(m.company) === 'crm:' + s(sub.id); })) continue;   /* patch PORTALTEAM: taken off the team */
-    const link = await subLinkActive(sub.id);
+    let link = await subLinkActive(sub.id);
+    /* patch CODEFIX (owner 11/23: "Alec CH Plumbing cannot get into portal, he can't get his code, resend it"): a CRM sub whose portal
+       link was never made got no code and nobody heard. Now: a sub on file asking with the e-mail / phone the CRM has for them gets its
+       link made at once (the code still goes only to that address). A link staff TURNED OFF stays off — the office hears instead. */
+    if (!link) {
+      let ever = []; try { ever = await dbGet('gc_sub_link', 'select=token&sub_id=' + eq(sub.id) + '&limit=1'); } catch (e) { ever = null; }
+      if (Array.isArray(ever) && !ever.length) { try { link = await subLinkCreate(sub.id, sub.name, 'sign-in code (made by itself)'); } catch (e) { link = null; } }
+      else if (Array.isArray(ever)) codeBlocked(id, (sub.name || 'A sub') + ' asked for a portal code, but their portal link is turned off', 'Subs → ' + (sub.name || 'the sub') + ' → 🔗 Portal link → Make the link (then E-mail it to them) if they should get in.');
+    }
     if (link) return { kind: 'partner', sub: sub, links: [link.token], email: low(sub.email), lang: lang(sub.lang) };
   }
+  if (subs.length && subs.every(function(sub){ return subOff(data, [sub.id]); })) codeBlocked(id, (subs[0].name || 'A sub') + ' asked for a portal code, but their account is turned off', '🔐 Sub portal accounts → turn it back on if they should get in.');
   return teamPartnerMatch(data, id);   /* patch PORTALTEAM: a coworker on the company's team */
+}
+/* patch CODEFIX: a code request that sends nothing goes on the office To-Do (internal only — the person asking is never told whether
+   the address is on file); once per address per day */
+function codeBlocked(id, what, how){
+  try {
+    const day = new Date().toISOString().slice(0, 10), key = 'codeblk_' + hmac(id.key + '|' + day).slice(0, 16);
+    const who = id.kind === 'email' ? id.value : ('(' + id.value.slice(0, 3) + ') ' + id.value.slice(3, 6) + '-' + id.value.slice(6));
+    return require('./portal.js')._core.officeTodo(key, '🔑 Portal sign-in: ' + what + ' (' + who + ')', how).catch(function(){});
+  } catch (e) { return null; }
 }
 const SAME = { ok: true, sent: true };
 async function signinStart(body, ip){
@@ -638,6 +656,7 @@ async function signinStart(body, ip){
   if (recent.length >= 5) { await padTo(t0); return SAME; }            /* five codes an hour per address, then quiet */
   const data = await crmData(true);
   const m = (await partnerMatch(data, id)) || (await customerMatch(data, id));
+  if (!m && !(await bidSiteAccount(id))) codeBlocked(id, 'someone asked for a portal code with an e-mail / phone that is not on any sub or customer', 'If it is one of our subs, add this e-mail / phone to their record in Subs (then they ask for the code again).');   /* patch CODEFIX */
   if (m) {
     const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
     const rid = newId('C');
@@ -659,6 +678,11 @@ async function signinStart(body, ip){
   }
   await padTo(t0);
   return SAME;
+}
+/* patch CODEFIX: a bid-site sub account with this e-mail (it gets the reset e-mail below, so it is not "nobody") */
+async function bidSiteAccount(id){
+  if (id.kind !== 'email') return false;
+  try { const rows = await fetch(sbUrl() + '/rest/v1/sp_rows?select=id&collection=eq.users&email=eq.' + encodeURIComponent(id.value) + '&limit=1', { headers: H() }).then(function(x){ return x.ok ? x.json() : []; }); return rows.length > 0; } catch (e) { return true; }
 }
 async function subResetMail(email){
   const rows = await fetch(sbUrl() + '/rest/v1/sp_rows?select=data&collection=eq.users&email=eq.' + encodeURIComponent(email) + '&limit=1', { headers: H() }).then(function(x){ return x.ok ? x.json() : []; });
