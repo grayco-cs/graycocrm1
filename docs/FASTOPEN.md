@@ -221,3 +221,44 @@ guard, QBCSV `decorate`, DESKFIT `tick`, TODOPERF, the invoice matcher's `partyO
 run on a Field phone; and Field home still waits for the HTML parser to reach PMFIELD (line ~213 k of 250 k). Those are plan
 items (d) "quiet on a phone" and (c) "split index.html" above — the next step. Single-key reads at a return that remain big:
 `estimates__chunkN` (1.1–2.0 MB), `gc_office_tasks` (0.76 MB, twice), `leads` (0.75 MB), `projects` (0.57 MB).
+
+
+## 5. Quiet Field home on a phone (plan item (d), branch claude/fastopen3, tools/patch_QUIET.py)
+
+Goal: a tap on Field home answers in < 300 ms at CPU ×4 (owner-iPhone profile).
+
+Found (Field home, nobody touching it; probes in the session scratchpad `fo2/probe.mjs`, `prof2.py`):
+* 129 DOM mutations per 15 s on an idle Field home. Each one wakes ~35 page watchers on the body (PHONEUI's run, the
+  form guard's field count with its forced re-layout, NAV, AP3, QBCSV …). Most were writes that changed nothing (badges
+  re-setting the same title / aria-label / class), plus a place fight: LEADWATCH's Field card and the time-off strip both
+  wanted the spot right under the Field home top and swapped every tick (a remove + an insert each).
+* Desk-only scripts kept their 0.4–2.5 s scans running on Field home: NAV, AP3, TODOPERF, DESKFIT, PROJTBL, QBCSV,
+  MULTICO-UI, JOBFILL, ENVCOMP, ENVDOCS, EPAHUD (most through the "native" timers, so the interval governors never saw them).
+* STORECUT's kept copies of big rows (answered only on identical stamps) expired after 10 minutes, so a return after a
+  longer time away downloaded `estimates__chunkN`, `gc_office_tasks`, `leads`, `projects` again.
+
+Changed (QUIET, the page's 2nd script, before RESUME):
+* every timer / page watcher is tagged with the script that made it (a timer made inside a tagged callback inherits the
+  tag); for the desk-only scripts above, while Field HOME is on screen on a phone, a repeating timer of ≤ 5 s skips its tick
+  (the last one is kept) and a page watcher is skipped; leaving Field home runs each kept tick once (one per 40 ms). One-shot
+  and slow timers (their cloud reads / sweeps), events, a desk, a tablet, a Field job page: as before;
+* a DOM write that changes nothing is not made (title / class / aria / data / role / style attribute, className, classList,
+  an element's own text; never on <html> / <body>, where a class set again can be a signal) — the page is identical, the
+  watcher wave and re-layout go away;
+* LEADWATCH's Field card sits after the time-off strip / health button instead of fighting them for the place;
+* STORECUT's kept copies live 6 h (the stamp check decides, as before).
+Kill switch `gc_quiet_off = '1'`; `__gcQuiet.state()`.
+
+Before / after (owner-iPhone profile, CPU ×4, real-data snapshot; tap on ☰ More on an idle Field home, to the sheet drawn;
+before = main r37h + FASTOPEN + RESUME (82550ca), after = + QUIET; three before / after pairs run in turn on a shared machine):
+
+| | before | after |
+|---|---|---|
+| idle-tap response, 6 taps per run | 464–2127 (median 790) · 437–807 (565) · 374–1234 (560) ms | 209–632 (286) · 145–318 (220) · 281–568 (440) ms |
+| taps < 300 ms | 0 of 18 | 9 of 18 |
+| DOM mutations on an idle Field home | 129 / 15 s | 23 / 15 s |
+| long tasks in 20 s idle (harness) | 5.3–7.2 s | 6.4–8.6 s (unchanged within the noise: the rest is sync / guards, below) |
+
+Not touched (shared or data-critical; candidates for the next step): ROLEAPPS (it also draws Field home), PHONEUI (the
+Field UI itself), the form guard, the sync's union push (`unionPost` re-reads and merges each list it uploads), J's list
+guard, SYNCALL. Plan item (c) (Field home before the parser reaches line ~213 k) was not started.

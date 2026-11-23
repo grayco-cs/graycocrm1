@@ -201,6 +201,114 @@ try {
 } catch (e) { try { console.warn('[GC] LSGUARD not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-quiet">
+/* __GC_PATCH_QUIET__ — GrayCo Field home on a phone is quiet (tools/patch_QUIET.py). While Field home is on screen on a phone,
+   the desk-only scripts' fast repeating timers (<= 5 s) skip their ticks and their page watchers are skipped; leaving Field
+   home runs each kept tick once. Every timer / watcher is tagged with the script that made it; untagged ones, one-shot and
+   slow timers, events, a desk, a tablet and every other screen: as before. Off: localStorage gc_quiet_off = '1'.
+   Console: __gcQuiet.state() */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__gcQuiet) return;
+var LIST = {}; ["nav", "ap3", "todoperf", "deskfit", "projtbl", "qbcsv", "multico-ui", "jobfill", "envcomp", "envdocs", "epahud"].forEach(function(k){ LIST['gc-patch-' + k] = 1; });
+var off = false; try { off = W.localStorage.getItem('gc_quiet_off') === '1'; } catch (e) {}
+var S = { skips: {}, moSkips: {}, flushes: 0, flushed: 0, home: false, homeMs: 0, since: Date.now() };
+W.__gcQuiet = { off: off, list: Object.keys(LIST), state: function(){ var o = JSON.parse(JSON.stringify(S)); o.off = off; o.held = held.size; o.homeNow = home(); return o; } };
+var held = new Map();
+if (off) return;
+var nST = W.setTimeout, nSI = W.setInterval, NMO = W.MutationObserver;
+var cur = '';
+function owner(){ if (cur) return cur; try { var s = D.currentScript; return (s && s.id) || ''; } catch (e) { return ''; } }
+var hAt = 0, hV = false;
+function home(){
+  var n = Date.now(); if (n - hAt < 250) return hV; hAt = n;
+  try {
+    var h = D.documentElement;
+    hV = !!(h.classList.contains('_fieldmode') && D.visibilityState !== 'hidden' && W._gcDevice && typeof W._gcDevice.phone === 'function' && W._gcDevice.phone() &&
+      D.querySelector('#_gcJobPick.gc-fh') && !D.getElementById('_gcJobDash'));
+  } catch (e) { hV = false; }
+  return hV;
+}
+function run(o, f, self, args){ var prev = cur; cur = o; try { return f.apply(self, args); } finally { cur = prev; } }
+/* timers: tagged; a desk-only script's fast repeating timer skips its tick on Field home (the last one is kept) */
+function timer(native, repeat){
+  return function(fn, ms){
+    var o = typeof fn === 'function' ? owner() : '';
+    if (!o) return native.apply(W, arguments);
+    var a = Array.prototype.slice.call(arguments), f = fn, gate = repeat && LIST[o] && +ms <= 5000, box = {};
+    a[0] = function(){
+      if (gate && home()) { held.set(box, { o: o, f: f, self: this, args: arguments }); S.skips[o] = (S.skips[o] || 0) + 1; return; }
+      return run(o, f, this, arguments);
+    };
+    return native.apply(W, a);
+  };
+}
+var qST = timer(nST, false), qSI = timer(nSI, true);
+W.setTimeout = qST; W.setInterval = qSI;
+/* the "native" timers (the ones patches use so the interval governors leave them alone) are tagged the same way */
+try { if (!W.__GC_NATIVE_SETINTERVAL__) W.__GC_NATIVE_SETINTERVAL__ = qSI; if (!W.__GC_NATIVE_SETTIMEOUT__) W.__GC_NATIVE_SETTIMEOUT__ = qST; if (!W.__GC_NATIVE_CLEARINTERVAL__) W.__GC_NATIVE_CLEARINTERVAL__ = W.clearInterval; } catch (e) {}
+/* page watchers */
+if (typeof NMO === 'function') {
+  try {
+    var QMO = function(cb){
+      var o = owner(), g = !!LIST[o], f = cb;
+      if (o && typeof cb === 'function') f = function(muts, obs){
+        if (g && home()) { S.moSkips[o] = (S.moSkips[o] || 0) + 1; return; }
+        return run(o, cb, this, arguments);
+      };
+      return new NMO(f);
+    };
+    QMO.prototype = NMO.prototype;
+    W.MutationObserver = QMO;
+  } catch (e) {}
+}
+/* a write that changes nothing does not touch the page: a title / class / aria / data / role / style attribute set to the
+   value it already has, a class added that is there (removed that is not), a text set to the text already there. The page
+   looks and behaves the same; what goes away is the page-watcher wave (~35 watchers on the body) and the re-layout each such
+   write caused — measured on Field home: badges re-setting the same title / aria-label / class every second */
+try {
+  var EP = W.Element && W.Element.prototype, SAFE = /^(title|class|role|style|tabindex|hidden|aria-[\w-]+|data-[\w-]+)$/i;
+  S.same = 0;
+  /* not on <html> / <body>: a class set again there can be a signal other scripts watch for */
+  var top2 = function(el){ return el === D.documentElement || el === D.body; };
+  if (EP && EP.setAttribute) { var sA = EP.setAttribute; EP.setAttribute = function(n, v){ try { if (!top2(this) && SAFE.test(n) && this.getAttribute(n) === String(v)) { S.same++; return; } } catch (e) {} return sA.apply(this, arguments); }; }
+  var same = function(proto, prop){
+    var d = proto && Object.getOwnPropertyDescriptor(proto, prop); if (!d || !d.set || !d.get || !d.configurable) return;
+    Object.defineProperty(proto, prop, { configurable: true, enumerable: d.enumerable, get: d.get, set: function(v){ try { if (!top2(this) && d.get.call(this) === String(v)) { S.same++; return; } } catch (e) {} return d.set.call(this, v); } });
+  };
+  same(W.HTMLElement && W.HTMLElement.prototype, 'title');
+  same(EP, 'className');
+  same(EP, 'ariaLabel');
+  var TL = W.DOMTokenList && W.DOMTokenList.prototype;
+  if (TL && TL.add && TL.remove && TL.toggle && TL.contains) {
+    var tA = TL.add, tR = TL.remove, tT = TL.toggle, tC = TL.contains;
+    var tlTop = function(tl){ try { return tl === D.documentElement.classList || (D.body && tl === D.body.classList); } catch (e) { return true; } };
+    TL.add = function(){ try { var all = !tlTop(this); for (var i = 0; i < arguments.length; i++) if (!tC.call(this, arguments[i])) { all = false; break; } if (all && arguments.length) { S.same++; return; } } catch (e) {} return tA.apply(this, arguments); };
+    TL.remove = function(){ try { var none = !tlTop(this); for (var i = 0; i < arguments.length; i++) if (tC.call(this, arguments[i])) { none = false; break; } if (none && arguments.length) { S.same++; return; } } catch (e) {} return tR.apply(this, arguments); };
+    TL.toggle = function(t, force){ try { if (!tlTop(this) && arguments.length > 1 && force !== undefined && tC.call(this, t) === !!force) { S.same++; return !!force; } } catch (e) {} return tT.apply(this, arguments); };
+  }
+  var NP = W.Node && W.Node.prototype, dTC = NP && Object.getOwnPropertyDescriptor(NP, 'textContent');
+  if (dTC && dTC.set && dTC.get && dTC.configurable) Object.defineProperty(NP, 'textContent', { configurable: true, enumerable: dTC.enumerable, get: dTC.get, set: function(v){
+    try { if (this.nodeType === 1) { var s = v == null ? '' : String(v), c = this.childNodes;
+      if ((c.length === 1 && c[0].nodeType === 3 && c[0].data === s) || (c.length === 0 && s === '')) { S.same++; return; } } } catch (e) {}
+    return dTC.set.call(this, v); } });
+} catch (e) {}
+/* leaving Field home: every kept tick once, one per 40 ms */
+function flush(){
+  if (!held.size) return;
+  var items = []; held.forEach(function(v){ items.push(v); }); held.clear(); S.flushes++;
+  items.forEach(function(it, i){ nST.call(W, function(){ if (home()) return; S.flushed++; try { run(it.o, it.f, it.self, it.args); } catch (e) { try { nST.call(W, function(){ throw e; }, 0); } catch (x) {} } }, 40 * i); });
+}
+var t0 = 0;
+nSI.call(W, function(){
+  var h = home();
+  if (h && !S.home) t0 = Date.now();
+  if (!h && S.home) { S.homeMs += Date.now() - t0; flush(); }
+  S.home = h;
+}, 300);
+})();
+</script>
 <script id="gc-patch-resume">
 /* __GC_PATCH_RESUME__ — coming back into the app answers at once (tools/patch_RESUME.py). Owner 11/20 (GrayCo Field, iPhone):
    "Keeps lagging when I get back into it too." At a return ~90 visibilitychange / pageshow / focus / online listeners and
@@ -2800,7 +2908,7 @@ function remember(id, r){
    rows' time stamps; the next identical read first asks for the stamps only (key + updated_at, a few bytes) and,
    when every stamp is the same, answers from the kept copy. A write of one of those keys from this page drops
    the copy; a copy is never older than 10 minutes. */
-var VC = new Map(), VC_TTL = 10 * 60e3, VC_MIN = 50000, VC_MAX = 16e6, vcBytes = 0;
+var VC = new Map(), VC_TTL = 6 * 3600e3, VC_MIN = 50000, VC_MAX = 16e6, vcBytes = 0;   /* patch QUIET: 10 min -> 6 h (the stamps decide) */
 function valueRead(u){
   var q = qs(u); if (!q || /(?:^|&)(updated_at|limit|offset|order)=/.test(q)) return false;
   if (!/(?:^|&)key=(eq|in)\./.test(q) || /(?:^|&)key=(like|ilike)\./.test(q)) return false;
@@ -253613,7 +253721,11 @@ function paint(){
     var hub = D.getElementById('gc-leads-hub'), top = hub && hub.getClientRects().length ? hub.querySelector('.gclu-top') : null;
     place('gc-lw-card', top ? top.parentElement : null, top ? top.nextSibling : null, L, 'leads');
     var home = D.querySelector('#_gcJobPick.gc-fh .fh-wrap'), ra = home ? home.querySelector('.gc-ra-top') : null;
-    place('gc-lw-field', home, ra ? ra.nextSibling : (home ? home.firstChild : null), L, 'field');
+    /* patch QUIET: after the strips that also sit under the top (time off, health records), not fighting them for the place */
+    var anc = ra; while (anc && anc.nextSibling && (anc.nextSibling.id === 'gc-to-strip' || anc.nextSibling.id === 'gc-ec-minebtn')) anc = anc.nextSibling;
+    var lwb = D.getElementById('gc-lw-field');
+    if (lwb && anc && lwb.parentElement === home && lwb.previousSibling === anc) place('gc-lw-field', home, lwb.nextSibling, L, 'field');
+    else place('gc-lw-field', home, anc ? anc.nextSibling : (home ? home.firstChild : null), L, 'field');
   } catch (e) { W.__gcLwErr = String(e && e.stack || e); }
 }
 D.addEventListener('click', function(e){

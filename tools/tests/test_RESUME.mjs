@@ -17,7 +17,7 @@ console.log('A. node');
 const page0 = fs.readFileSync(path.join(build, 'index.html'), 'utf8');
 const scripts = [...page0.matchAll(/<script\b[^>]*>/g)].map(m => m[0]);
 ok((page0.match(/<script id="gc-patch-resume">/g) || []).length === 1, 'the patch is in the page once');
-ok(scripts[1] === '<script id="gc-patch-resume">', 'it is the 2nd script of the page (before any other script registers a listener or a timer)', scripts.slice(0, 3));
+ok(scripts[1] === '<script id="gc-patch-resume">' || (scripts[1] === '<script id="gc-patch-quiet">' && scripts[2] === '<script id="gc-patch-resume">'), 'it is the 2nd script of the page (3rd after QUIET: before any other script registers a listener or a timer)', scripts.slice(0, 3));
 { const tmp = path.join(os.tmpdir(), 'resume_idem_' + process.pid + '.html'); fs.writeFileSync(tmp, page0);
   const out = execFileSync('python3', [path.join(build, 'tools', 'patch_RESUME.py'), tmp]).toString(); ok(/already applied/.test(out) && fs.readFileSync(tmp, 'utf8') === page0, 'the patch is idempotent'); fs.unlinkSync(tmp); }
 const src = /<script id="gc-patch-resume">([\s\S]*?)<\/script>/.exec(page0)[1];
