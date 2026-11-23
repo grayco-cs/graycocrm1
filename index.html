@@ -232427,7 +232427,7 @@ function officeHere(){ try { return !!(W._gcIsOfficeFull && W._gcIsOfficeFull())
 
 var STAT = { pending: ['⏳', 'Pending approval', 'p'], approved: ['✅', 'Approved', 'a'], denied: ['⛔', 'Denied / revoked', 'd'], disabled: ['🔒', 'Sign-in off', 'x'], orphan: ['⚠', 'Sign-in without a profile', 'o'] };
 var PAPERN = { w9: 'W-9', insurance_general: 'GL insurance', insurance_workers_comp: 'Workers\' comp', license: 'License', other: 'Other paper' };
-var FILT = [['all', 'All'], ['pending', '⏳ Pending'], ['approved', '✅ Approved'], ['disabled', '🔒 Off'], ['denied', '⛔ Denied'], ['unlinked', 'Not in CRM'], ['orphan', '⚠ No profile'], ['joinreq', '👥 Wants to join']];   /* PORTALTEAM: + a free-mail sign-up asking to join a company */
+var FILT = [['all', 'All'], ['pending', '⏳ Pending'], ['approved', '✅ Approved'], ['disabled', '🔒 Off'], ['denied', '⛔ Denied'], ['unlinked', 'Not in CRM'], ['orphan', '⚠ No profile'], ['joinreq', '👥 Wants to join'], ['unconfirmed', '✉️ E-mail not confirmed']];   /* SIGNUPVERIFY: + sign-ups that have not confirmed their e-mail */   /* PORTALTEAM: + a free-mail sign-up asking to join a company */
 var UI = { box: null, list: null, total: 0, counts: {}, page: 1, per: 50, q: '', f: 'all', err: '', busy: false, canEdit: false, log: null, seq: 0 };
 var SH = { id: '', g: null, err: '', busy: '', temp: null, crmSubs: null, del: false };
 
@@ -232469,7 +232469,7 @@ function paint(){
   else {
     h += '<div class="tbl"><table><thead><tr><th>Company</th><th>Contact</th><th>E-mail (login)</th><th class="hide-s">Phone</th><th class="hide-s">Trades</th><th>Status</th><th>CRM sub</th><th class="hide-s">Portal link</th><th>Last sign-in</th><th class="hide-s">Created</th><th class="hide-s">Papers</th></tr></thead><tbody>'
       + UI.list.map(function(r){
-        return '<tr data-sa-row="' + esc(r.id) + '" tabindex="0"><td><b>' + esc(r.company || '—') + '</b>' + (r.mustChange ? '<div class="w">asked to change password</div>' : '') + teamTag(r) + '</td><td>' + esc(r.name || '—') + '</td><td>' + esc(r.email) + '</td><td class="hide-s">' + esc(r.phone || '—') + '</td>'
+        return '<tr data-sa-row="' + esc(r.id) + '" tabindex="0"><td><b>' + esc(r.company || '—') + '</b>' + (r.mustChange ? '<div class="w">asked to change password</div>' : '') + teamTag(r) + (r.emailUnconfirmed ? '<div class="w" data-sa-unconf>✉️ e-mail not confirmed yet</div>' : '') /* SIGNUPVERIFY */ + '</td><td>' + esc(r.name || '—') + '</td><td>' + esc(r.email) + '</td><td class="hide-s">' + esc(r.phone || '—') + '</td>'
           + '<td class="hide-s">' + esc(arr(r.trades).slice(0, 3).join(', ') || '—') + '</td><td>' + chip(r.status) + '</td><td>' + (r.crm ? esc(r.crm.name) : '<span class="w">not in CRM</span>') + '</td>'
           + '<td class="hide-s">' + (r.link && r.link.on ? '🟢 on' + (r.link.viewed ? '<div class="w">opened ' + when(r.link.viewed) + '</div>' : '') : '<span class="w">off</span>') + '</td>'
           + '<td>' + (r.lastSignInAt ? when(r.lastSignInAt, true) : '<span class="w">never</span>') + '</td><td class="hide-s">' + when(r.createdAt) + '</td><td class="hide-s">' + esc(papersTxt(r.papers)) + '</td></tr>';
@@ -232570,6 +232570,9 @@ function paintSheet(){
     + '<div class="acts"><button type="button" data-sa-act="copypw">📋 Copy</button><button type="button" class="g" data-sa-act="hidepw">Done — hide it</button></div>'
     + '<div class="w" style="margin-top:6px">' + (SH.tempMust ? 'They will be asked to pick their own password when they sign in to bids.grayco-cs.com.' : 'They keep this password until they change it.') + ' Their old sign-ins were ended.</div></div>';
   var orphan = r.status === 'orphan';
+  /* SIGNUPVERIFY: the e-mail confirm */
+  if (r.emailUnconfirmed) h += '<div class="note" data-sa-unconfirmed>✉️ <b>E-mail not confirmed yet.</b> This sign-up gets nothing (no jobs, bids, papers or approval) until they tap the link sent to ' + esc(r.email) + '. It can\'t be approved before that.'
+    + ((g.canEdit || g.teamEdit) ? '<div class="acts" style="margin-top:6px"><button type="button" class="g" data-sa-act="svresend"' + (SH.busy ? ' disabled' : '') + '>✉️ Resend confirm link</button></div>' : '') + '</div>';
   /* sign-in facts */
   h += '<div class="box"><div class="kv"><b>Login (e-mail)</b><span>' + esc(r.email) + '</span><b>Password</b><span>🔒 never readable — use 🔑 Reset below</span>'
     + '<b>Last sign-in</b><span>' + (au && au.lastSignInAt ? when(au.lastSignInAt, true) : 'never') + '</span><b>Created</b><span>' + when(r.createdAt, true) + '</span>'
@@ -232632,6 +232635,7 @@ function sheetClick(ev){
   if (a === 'close') return closeSheet();
   if (a === 'copypw') return copy(SH.temp || '').then(function(ok){ toast(ok ? 'Password copied — give it to them by phone or text' : 'Select the password and copy it', !ok); });
   if (a === 'hidepw') { SH.temp = null; return paintSheet(); }
+  if (a === 'svresend') return run('Sending the link…', 'verify-resend', {}, function(j){ toast(j.already ? 'Already confirmed' : '✉️ Confirm link sent to ' + (r.email || 'them')); });   /* SIGNUPVERIFY */
   if (a === 'team') {   /* PORTALTEAM: add / invite / remove / restore / approve / deny */
     var op = b.getAttribute('data-op'), mid = b.getAttribute('data-m') || '', body = { op: op, memberId: mid };
     if (op === 'add') { body.name = val('[data-sa-tm=name]'); body.email = val('[data-sa-tm=email]'); body.phone = val('[data-sa-tm=phone]'); if (!s(body.name) || (!s(body.email) && !s(body.phone))) { toast('Type a name and an e-mail or mobile number', true); return; } }

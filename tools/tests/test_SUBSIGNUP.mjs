@@ -84,7 +84,10 @@ const PROFILE = (co, tr) => ({ name: 'Sam ' + co.split(' ')[0], company: co, pho
 /* 1. self sign-up */
 let m0 = MAILS.length;
 let r = await spf('register', { email: 'self@sample-paint.test', password: 'Sample-pass-1', profile: PROFILE('Sample Paint Co', ['Paint']) });
-ok('1a. a self sign-up: created, NOT approved', r.status === 200 && r.data.ok && r.data.approved === false && profOf('self@sample-paint.test').approved === false, r);
+/* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): the sign-up taps the link in its confirm e-mail first */
+const svConfirm = async (email) => { const mm = MAILS.filter(x => (x.to || []).includes(email) && /signup-confirm=/.test(x.html)).slice(-1)[0]; return spf('signup-confirm', { token: mm ? decodeURIComponent(/signup-confirm=([A-Za-z0-9_%-]+)/.exec(mm.html)[1]) : '' }); };
+const sv1 = await svConfirm('self@sample-paint.test');
+ok('1a. a self sign-up: created, NOT approved (held until its e-mail is confirmed, then waits for GrayCo)', r.status === 200 && r.data.ok && r.data.verify === true && sv1.status === 200 && r.data.approved === false && profOf('self@sample-paint.test').approved === false, r);
 ok('1b. the staff e-mail: "🔨 Approve new sub — Sample Paint Co" (to the office + the owners)', MAILS.slice(m0).some(x => /Approve new sub — Sample Paint Co/.test(x.subject) && x.to.includes('desk@graycotest.test')), MAILS.slice(m0).map(x => x.subject));
 /* 2. invited sign-up */
 const invTok = crypto.randomBytes(16).toString('hex');

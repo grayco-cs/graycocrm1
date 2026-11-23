@@ -915,6 +915,7 @@ async function pendUpgrade(row, prof){
 async function subPortalAfterPassword(data, email){
   let crmId = '', prof = null;
   try { const rows = await dbGet('sp_rows', 'select=data&collection=eq.users&email=' + eq(email)); prof = rows[0] && rows[0].data; if (prof && prof.role === 'sub') crmId = s(prof.crmSubId); } catch (e) {}
+  if (prof && SVF().svUnconfirmed(prof)) throw Fail(403, SVF().SV_MSG, { unconfirmed: true });   /* SIGNUPVERIFY: nothing (no portal, no pending page) until the e-mail is confirmed */
   { const tm = await teamPartnerMatch(data, { kind: 'email', value: low(email), key: 'e:' + low(email) }); if (tm) return { sub: tm.sub, links: tm.links }; }   /* patch PORTALTEAM: a team member → their company */
   if (prof && prof.role === 'sub' && await teamPrimaryOff({ kind: 'email', value: low(email) }, function(m){ return s(m.company) === 'sp:' + s(prof.id); })) throw Fail(403, TEAM_OFF);   /* patch PORTALTEAM */
   let sub = (crmId ? subById(data, crmId) : null) || crmSubOf(data, prof) || crmSubs(data).find(function(r){ return low(r.email) === email; }) || null;   /* patch SUBSYNC: + the merged / matched CRM sub */
@@ -2017,6 +2018,7 @@ async function customerAction(action, body, pids, event){
 
 /* ═══ STAFF (the CRM) ═══════════════════════════════════════════════════════ */
 function staffName(data, who){ const u = arr(data.users).find(function(x){ return low(x.email) === who.email; }); return s(u && u.name) || who.name || who.email; }
+function SVF(){ return require('./subportal.js')._sv; }   /* SIGNUPVERIFY */
 function isAdmin(who){ return require('./_lib/staff-role.js').isAdmin(who); }   /* patch AUTHFIX: the one admin rule (an owner counts) */
 /* SUBSIGNUP: (owner 11/16) every new sub sign-up is a card in ✅ Approvals for the admins and the office — the self sign-ups (not approved
    yet) and the ones who joined from a job invite (approved at once for that job, never checked by GrayCo: vetPending, or — for sign-ups
@@ -2059,7 +2061,7 @@ async function staffAction(action, body, who){
     try { bidsReq = (await dbGet('sp_rows', 'select=id,data&collection=eq.users&order=key.asc')).map(function(r){ return r.data || {}; })
       /* owner 11/11: "when accounts are created I want to approve them from admin approvals" — every sub who signed up on the bid site
          (Request Access, or from the sub portal) and is not approved or denied yet */
-      .filter(function(u){ return u.role === 'sub' && u.bidsRevoked !== true && (u.approved !== true || vetDue(u)); })   /* SUBSIGNUP: + joined from an invite, not checked yet */
+      .filter(function(u){ return u.role === 'sub' && u.bidsRevoked !== true && (u.approved !== true || vetDue(u)) && !SVF().svUnconfirmed(u); })   /* SIGNUPVERIFY: no card before the e-mail is confirmed */   /* SUBSIGNUP: + joined from an invite, not checked yet */
       .map(function(u){ return { id: s(u.id), company: s(u.company), name: s(u.name), email: low(u.email), crmSubId: s(u.crmSubId), at: s(u.bidsRequestedAt || u.createdAt), phone: s(u.phone), trades: (Array.isArray(u.trades) ? u.trades : []).map(s).filter(Boolean).slice(0, 6) /* SUBSIGNUP: arr() keeps objects only — the trades (text) were always dropped */, selfSignup: u.bidsRequested !== true, claimed: u.papersClaimed || null, city: s(u.businessCity), state: s(u.businessState), area: s(u.serviceArea), crew: u.numEmployees || null, vet: u.approved === true, invited: !!s(u.invitedJobId) }; }); } catch (e) {}
     try { bidsReq = await withPapers(bidsReq); } catch (e) {}   /* patch SIGNUPPAPERS: 📎 Papers + ⚡ Ready for quick approval */
     return { ok: true, events: events, unread: unread, links: links, waiting: waiting, bids: bidsReq, codes: relays, text: textReady(), admin: isAdmin(who), me: me, at: new Date().toISOString() };
@@ -2168,6 +2170,7 @@ async function staffAction(action, body, who){
     if (!SR().isOfficeOrAdmin(who) && !officeUser(data, who)) throw Fail(403, 'Only an admin or the office approves new subs.');   /* SUBSIGNUP: the office too */
     const rows = await dbGet('sp_rows', 'select=key,id,data&collection=eq.users&id=' + eq(body.id));
     const r = rows[0]; if (!r || (r.data || {}).role !== 'sub') throw Fail(404, 'That request is gone.');
+    if (body.approve !== false && SVF().svUnconfirmed(r.data)) throw Fail(409, 'This sign-up has not confirmed its e-mail yet — it can be approved once they tap the link (🔐 Sub portal accounts → Resend).');   /* SIGNUPVERIFY */
     const ok = body.approve !== false, now = new Date().toISOString();
     const already = (r.data || {}).approved === true && (r.data || {}).bidsRevoked !== true;   /* SUBSIGNUP: joined from an invite — already in; this is GrayCo's check */
     const prof = Object.assign({}, r.data, ok ? { approved: true, bidsRevoked: false, bidsApprovedAt: now, bidsApprovedBy: me, vetPending: false, vettedAt: now, vettedBy: me } : { approved: false, bidsRevoked: true, bidsRevokedAt: now, bidsRevokedBy: me, vetPending: false });
