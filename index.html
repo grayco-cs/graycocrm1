@@ -118296,6 +118296,7 @@ async function oneKey(u, init, key){
   if(!txt) return [];
   try{
     var rows = JSON.parse(txt);
+    if(Array.isArray(rows)){ try{ Object.defineProperty(rows, '__nfTxt', { value: txt }); }catch(_d){} }   /* patch NICKFREEZE: kept with its text */
     return Array.isArray(rows) ? rows : null;
   }catch(e){ return null; }
 }
@@ -118305,6 +118306,7 @@ var _nfBodyOf = null, _nfBody = null;   /* patch NICKFREEZE: the text of the las
 function jsonResponse(rows){
   var body = '[]';
   if(rows && rows === _nfBodyOf && _nfBody != null) body = _nfBody;
+  else if(rows && typeof rows.__nfBody === 'string'){ body = rows.__nfBody; _nfBodyOf = rows; _nfBody = body; }
   else { try{ body = JSON.stringify(rows); }catch(e){ body = '[]'; } if(rows && typeof rows === 'object'){ _nfBodyOf = rows; _nfBody = body; } }
   try{
     return new Response(body, {status:200, headers:{'Content-Type':'application/json'}});
@@ -118358,7 +118360,7 @@ async function splitReadOnce(u, init){
   });
   stats.lastKeys = keys.slice();
 
-  var out = [], skipped = [];
+  var out = [], skipped = [], _nfTx = [];
   for(var i=0; i<keys.length; i++){
     if(Date.now() - started > TOTAL_MS){
       skipped = skipped.concat(keys.slice(i));
@@ -118367,8 +118369,10 @@ async function splitReadOnce(u, init){
     var got = await oneKey(u, init, keys[i]);
     if(got === null){ skipped.push(keys[i]); continue; }
     for(var j=0; j<got.length; j++) out.push(got[j]);
+    if(_nfTx){ var _gt = got.__nfTxt ? String(got.__nfTxt).trim() : null; if(_gt && _gt.charAt(0) === '[' && _gt.charAt(_gt.length - 1) === ']'){ _gt = _gt.slice(1, -1).trim(); if(_gt) _nfTx.push(_gt); } else if(got.length) _nfTx = null; }   /* patch NICKFREEZE */
     stats.keys++;
   }
+  if(_nfTx){ try{ Object.defineProperty(out, '__nfBody', { value: '[' + _nfTx.join(',') + ']' }); }catch(_d){} }   /* patch NICKFREEZE: the answer's text, ready */
   if(skipped.length){
     stats.skipped += skipped.length;
     try{ console.log('[GC] '+skipped.length+' of '+keys.length+' record type(s) were still too '

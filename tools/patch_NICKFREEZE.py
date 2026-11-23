@@ -497,4 +497,42 @@ once("""  var nw = nameWords(p, amap), hits = nw.filter(""", """  var nw = _nk.n
 once("""  var ck = custKey(inv.client || inv.customer || inv.sub, amap), pk = custKey(p.client || p.customer, amap), pn = custKey(p.name, amap);""",
 """  var ck = custKey(inv.client || inv.customer || inv.sub, amap), pk = _nk.pk, pn = _nk.pn;""")
 
+# ── 7b. …and the first shared answer's text is the keys' own texts joined (no JSON.stringify of the whole table) ──
+once("""  var r = await withTimeout(real.call(window, one, init), PER_KEY_MS);
+  if(!r || !r.ok) return null;
+  var txt = '';
+  try{ txt = await r.text(); }catch(e){ return null; }
+  if(!txt) return [];
+  try{
+    var rows = JSON.parse(txt);
+    return Array.isArray(rows) ? rows : null;""",
+"""  var r = await withTimeout(real.call(window, one, init), PER_KEY_MS);
+  if(!r || !r.ok) return null;
+  var txt = '';
+  try{ txt = await r.text(); }catch(e){ return null; }
+  if(!txt) return [];
+  try{
+    var rows = JSON.parse(txt);
+    if(Array.isArray(rows)){ try{ Object.defineProperty(rows, '__nfTxt', { value: txt }); }catch(_d){} }   /* patch NICKFREEZE: kept with its text */
+    return Array.isArray(rows) ? rows : null;""")
+once("""    var got = await oneKey(u, init, keys[i]);
+    if(got === null){ skipped.push(keys[i]); continue; }
+    for(var j=0; j<got.length; j++) out.push(got[j]);""",
+"""    var got = await oneKey(u, init, keys[i]);
+    if(got === null){ skipped.push(keys[i]); continue; }
+    for(var j=0; j<got.length; j++) out.push(got[j]);
+    if(_nfTx){ var _gt = got.__nfTxt ? String(got.__nfTxt).trim() : null; if(_gt && _gt.charAt(0) === '[' && _gt.charAt(_gt.length - 1) === ']'){ _gt = _gt.slice(1, -1).trim(); if(_gt) _nfTx.push(_gt); } else if(got.length) _nfTx = null; }   /* patch NICKFREEZE */""")
+once("""  var out = [], skipped = [];
+  for(var i=0; i<keys.length; i++){""",
+"""  var out = [], skipped = [], _nfTx = [];
+  for(var i=0; i<keys.length; i++){""")
+once("""  if(skipped.length){
+    stats.skipped += skipped.length;""",
+"""  if(_nfTx){ try{ Object.defineProperty(out, '__nfBody', { value: '[' + _nfTx.join(',') + ']' }); }catch(_d){} }   /* patch NICKFREEZE: the answer's text, ready */
+  if(skipped.length){
+    stats.skipped += skipped.length;""")
+once("""  if(rows && rows === _nfBodyOf && _nfBody != null) body = _nfBody;""",
+"""  if(rows && rows === _nfBodyOf && _nfBody != null) body = _nfBody;
+  else if(rows && typeof rows.__nfBody === 'string'){ body = rows.__nfBody; _nfBodyOf = rows; _nfBody = body; }""")
+
 open(p, 'w', encoding='utf-8').write(t); print('NICKFREEZE: patched', p)
