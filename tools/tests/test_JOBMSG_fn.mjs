@@ -187,11 +187,18 @@ await t('quiet hours (10 PM): nothing now — the push is held for 7 AM, the tex
   const f = await SA.flushHeld(); assert.strictEqual(f.sent, 1); assert.deepStrictEqual(texted(), ['9015550104']);
   assert.ok(/^GrayCo: Wes on Outdoor Entertainment Area \(C846\): @Glen Estimator tomorrow\? Open: crm\.test\/\?jobmsg=P846$/.test(SMS[0].body), SMS[0].body);
 });
-await t('held over a Friday night → sent Saturday 7:30 AM although the office is closed', async () => {
+await t('held over a Friday night → not Saturday or Sunday (quiet all day, owner 11/22 + 11/23) → sent Monday 7 AM', async () => {
   rig({ now: SAT_NIGHT });
   await go({ text: 'Weekend check' });
   assert.strictEqual(SMS.length, 0);
-  NOW = SAT_MORN; await SA.flushHeld();
+  NOW = SAT_MORN; await SA.flushHeld(); assert.strictEqual(SMS.length, 0, 'Saturday 7:30 AM: still held');
+  NOW = Date.parse('2026-11-22T18:00:00Z'); await SA.flushHeld(); assert.strictEqual(SMS.length, 0, 'Sunday noon: still held');
+  NOW = Date.parse('2026-11-23T13:05:00Z'); await SA.flushHeld();
+  assert.deepStrictEqual(texted(), ['9015550103']);
+});
+await t('a 🚨 message still goes on a Sunday afternoon', async () => {
+  rig({ now: Date.parse('2026-11-22T20:00:00Z') });
+  await go({ text: '🚨 roof leaking into the kitchen', tags: [] });
   assert.deepStrictEqual(texted(), ['9015550103']);
 });
 await t('a team message at 6:30 PM (after business hours, before quiet hours) goes at once', async () => {

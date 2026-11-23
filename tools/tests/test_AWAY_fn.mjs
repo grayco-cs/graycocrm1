@@ -170,6 +170,14 @@ await t('bundling: another item 3 minutes later waits (10-minute gap), then goes
   NOW += 6 * 60e3; reset(); r = await PG.run({ force: true }); assert.strictEqual(SENT.push.length, 0);
 });
 console.log('🌙 quiet hours (owner: 9 PM – 7 AM only call-outs and emergencies; all else waits until 7 AM)');
+await t('QUIETSAT + QUIETSUN: all of Saturday and Sunday are quiet (Central); Friday 8 PM and Monday 7 AM are not; an admin can turn either day off', async () => {
+  const set = SQ.DEF, P = function(iso){ return SQ.quiet(Date.parse(iso), set); };
+  assert.strictEqual(P('2026-11-28T18:00:00Z'), true, 'Sat noon'); assert.strictEqual(P('2026-11-29T18:00:00Z'), true, 'Sun noon');
+  assert.strictEqual(P('2026-11-28T02:00:00Z'), false, 'Fri 8 PM'); assert.strictEqual(P('2026-11-30T13:00:00Z'), false, 'Mon 7 AM'); assert.strictEqual(P('2026-11-30T12:59:00Z'), true, 'Mon 6:59 AM');
+  assert.strictEqual(SQ.quiet(Date.parse('2026-11-29T18:00:00Z'), SQ.clean({ sun: false })), false, 'Sunday switched off');
+  assert.strictEqual(SQ.quiet(Date.parse('2026-11-28T18:00:00Z'), SQ.clean({ sat: false })), false, 'Saturday switched off');
+  assert.strictEqual(SQ.emergency({ title: '🚨 Water loss' }), true, 'an emergency still goes');
+});
 await t('the default is 9 PM → 7 AM Central, an admin setting (admins only); 8:59 PM not quiet, 9:00 PM quiet, 6:59 AM quiet, 7:00 AM not', async () => {
   reset(); const st = await act(N, { op: 'state' }); assert.deepStrictEqual([st.out.quiet.on, st.out.quiet.from, st.out.quiet.to], [true, 21, 7]);
   const set = SQ.DEF;

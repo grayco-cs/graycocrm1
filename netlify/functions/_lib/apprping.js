@@ -44,7 +44,7 @@ const SIG_KEYS = ['gc_approval_queue', 'gc_sub_approvals', 'gc_expense_approvals
 const FEED_PREFIX = /^(f941:|td:|pay:|inv:|bp:|to:|mat:)/;   /* the CRM-only kinds an admin's page reports (ap2 / sub / exp come from the server lists) */
 const D = { now: function(){ return Date.now(); }, collect: function(now){ return require('./auto-digest.js').collect(now); },
   push: function(to, p){ return require('./staffpush.js').send(to, p, { noAway: true, noQuiet: true }); },
-  text: function(email, text, link){ return require('./smsalert.js').notify({ type: 'approvals', text: text, link: link, thread: 'apprnew', mine: [email], only: [email] }); },
+  text: function(email, text, link, em){ return require('./smsalert.js').notify({ type: 'approvals', text: text, link: link, thread: 'apprnew', mine: [email], only: [email], emergency: !!em }); },   /* QUIETSUN: em = an urgent one is in it (goes on a quiet weekend day) */
   mail: function(to, subject, html, o){ return A.staffMail(to, subject, html, o); } };   /* tests swap these */
 function AW(){ return require('./away.js'); }
 function C(){ return A.core(); }
@@ -132,7 +132,7 @@ async function deliver(email, list, base, o){
   if (held.length) { const d = await SQ().deliver(email, held, list.map(function(x){ return { title: x.title + (x.coverFor ? ' (for ' + s(x.coverFor).split(/\s+/)[0] + ')' : ''), url: linkOf(x, base) }; }), base); return { how: d.how, m: m, held: held.length }; }
   const p = await D.push([email], { title: m.title, body: m.body, url: m.url, tag: 'gc-appr', count: m.count });
   if (p && Array.isArray(p.to) && p.to.map(low).indexOf(email) >= 0) return { how: 'push', m: m };
-  let t = null; try { t = await D.text(email, m.remind ? m.title : m.title.replace(/^✅ /, '') + ': ' + m.body, m.url); } catch (e) { t = null; }
+  let t = null; try { t = await D.text(email, m.remind ? m.title : m.title.replace(/^✅ /, '') + ': ' + m.body, m.url, list.some(urgent)); } catch (e) { t = null; }
   if (t && t.sent) return { how: 'text', m: m };
   const html = A.shell(m.title, '<ul style="padding-left:18px">' + list.slice(0, 30).map(function(x){ return '<li style="margin:4px 0"><a href="' + esc(linkOf(x, base)) + '" style="color:#0F1D2F;font-weight:bold">' + esc(clip(x.title, 140)) + '</a>' + (x.sub ? ' <span style="color:#55626F">— ' + esc(x.sub) + '</span>' : '') + (x.coverFor ? ' <i>(for ' + esc(x.coverFor) + ')</i>' : '') + '</li>'; }).join('') + '</ul><p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><p style="font-size:12px;color:#55626F">Want these on your phone instead? GrayCo Field → the green 🔔 card (or ☰ More → ⚙ Settings → 🔔 Phone notifications).</p>');
   const r = await D.mail(email, m.title + ' — GrayCo CRM', html);
@@ -197,7 +197,8 @@ async function run1(opts){
   const cN = central(now);
   const sumDue = cN.hour >= 18 && Object.keys(mapQuick).some(function(e){ return mapQuick[e].summary === true && st.daily[e] !== cN.ymd; });
   const QS = await SQ().settings(), quietNow = quiet(now, QS);
-  const remindHour = !quietNow && cN.hour === REMIND_H, remindDue = remindHour && Object.keys(st.seen).some(function(e){ return st.remind[e] !== cN.ymd; });
+  const wkndOnly = quietNow && !quiet(now, Object.assign({}, QS, { sat: false, sun: false }));   /* QUIETSUN: quiet only because it is Saturday / Sunday (not night) — the 8 AM reminder still runs, for an urgent one only (below) */
+  const remindHour = (!quietNow || wkndOnly) && cN.hour === REMIND_H, remindDue = remindHour && Object.keys(st.seen).some(function(e){ return st.remind[e] !== cN.ymd; });
   if (!opts.force && sg && st.sig === sg && !anyPending && !sumDue && !remindDue && now - (Date.parse(st.at) || 0) < FULL_MS) { let mo = null; if (!quietNow) { try { mo = await SQ().flush({ now: now }); } catch (e) {} } return { ok: true, unchanged: true, morning: mo }; }
   const g = await gather(now), first = !st.at, iso = new Date(now).toISOString();
   const rep = { ok: true, first: first, people: 0, sent: [], held: [] };

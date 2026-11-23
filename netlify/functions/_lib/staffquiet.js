@@ -13,18 +13,18 @@
    Tests: D.now. */
 'use strict';
 const KEY = 'gc_staff_quiet', HELD = 'gc_staff_quiet_held';
-const DEF = { on: true, from: 21, to: 7, sat: true };   /* QUIETSAT (owner 11/22): "I shouldn't get any on Saturdays unless emergencies" — all of Saturday is quiet */
+const DEF = { on: true, from: 21, to: 7, sat: true, sun: true };   /* QUIETSAT (owner 11/22): "I shouldn't get any on Saturdays unless emergencies" — all of Saturday is quiet; QUIETSUN (owner 11/23): "Sundays quiet too" */
 const D = { now: function(){ return Date.now(); } };
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function obj(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
 function hourOk(v, d){ const n = parseInt(v, 10); return isFinite(n) && n >= 0 && n <= 23 ? n : d; }
-function clean(v){ v = obj(v); return { on: v.on !== false, from: hourOk(v.from, DEF.from), to: hourOk(v.to, DEF.to), sat: v.sat !== false }; }
+function clean(v){ v = obj(v); return { on: v.on !== false, from: hourOk(v.from, DEF.from), to: hourOk(v.to, DEF.to), sat: v.sat !== false, sun: v.sun !== false }; }
 function core(){ return require('../portal.js')._core; }
 function hourC(ms){ try { return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date(ms)), 10) % 24; } catch (e) { return new Date(ms - 6 * 3600e3).getUTCHours(); } }
 /* pure: inside the window? */
 function dayC(ms){ try { return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' }).format(new Date(ms)); } catch (e) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(ms - 6 * 3600e3).getUTCDay()]; } }
-function quiet(ms, set){ set = set || DEF; if (set.on === false) return false; if (set.sat !== false && dayC(ms) === 'Sat') return true;   /* QUIETSAT */
+function quiet(ms, set){ set = set || DEF; if (set.on === false) return false; const wd = (set.sat !== false || set.sun !== false) ? dayC(ms) : ''; if ((set.sat !== false && wd === 'Sat') || (set.sun !== false && wd === 'Sun')) return true;   /* QUIETSAT + QUIETSUN */
   if (set.from === set.to) return false; const h = hourC(ms); return set.from > set.to ? (h >= set.from || h < set.to) : (h >= set.from && h < set.to); }
 /* pure: is this an emergency / call-out (always goes)? */
 function emergency(o){
