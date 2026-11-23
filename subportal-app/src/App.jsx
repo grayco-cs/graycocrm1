@@ -1421,6 +1421,24 @@ function BidApp() {
     );
   }
 
+  /* the toast — signed in or not (patch PORTALTAPS: on the sign-in screen "Forgot password? → Send the link" said nothing, the toast was only drawn for a signed-in user) */
+  const toastEl = toast && (
+          <div className="fade-in" onClick={() => setToast(null)} style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
+            background: toast.kind === 'error' ? styles.red : styles.green,
+            color: '#fff', padding: '14px 20px', borderRadius: styles.radius,
+            boxShadow: styles.shadowLg, fontWeight: 600,
+            display: 'flex', alignItems: 'flex-start', gap: 10, maxWidth: 480,
+            cursor: 'pointer', lineHeight: 1.4, letterSpacing: '-0.01em',
+          }}>
+            <span style={{ flexShrink: 0, paddingTop: 1 }}>
+              {toast.kind === 'error' ? <AlertCircle size={18} /> : <Check size={18} />}
+            </span>
+            <span style={{ wordBreak: 'break-word' }}>{toast.msg}</span>
+            <span style={{ flexShrink: 0, opacity: 0.7, fontSize: 11, paddingLeft: 6 }}>✕</span>
+          </div>
+  );
+
   // ============ AUTH SCREENS ============
   if (!user) {
     return (
@@ -1432,6 +1450,7 @@ function BidApp() {
           onLogin={(u) => startSession(u)}
           showToast={showToast}
         />
+        {toastEl}
       </>
     );
   }
@@ -1568,7 +1587,7 @@ function BidApp() {
                 const active = view === tab.id;
                 const Icon = tab.icon;
                 return (
-                  <button key={tab.id}
+                  <button key={tab.id} type="button" role="tab" aria-selected={active} data-nav={tab.id}
                     onClick={() => { setView(tab.id); setActiveJob(null); }}
                     style={{
                       background: active ? styles.navy : 'transparent',
@@ -1718,14 +1737,14 @@ function BidApp() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Globe size={16} color={styles.text2} />
               <span style={{ fontSize: 12, color: styles.text2, marginRight: 6 }}>{t.selectLanguage}:</span>
-              <button onClick={() => setLang('en')} style={{
+              <button type="button" aria-pressed={lang === 'en'} onClick={() => setLang('en')} style={{
                 padding: '7px 16px', fontSize: 13, fontWeight: 600,
                 background: lang === 'en' ? styles.navy : 'transparent',
                 color: lang === 'en' ? '#fff' : styles.text,
                 border: `1px solid ${lang === 'en' ? styles.navy : styles.border}`,
                 borderRadius: styles.radiusFull, cursor: 'pointer', letterSpacing: '-0.01em',
               }}>English</button>
-              <button onClick={() => setLang('es')} style={{
+              <button type="button" aria-pressed={lang === 'es'} onClick={() => setLang('es')} style={{
                 padding: '7px 16px', fontSize: 13, fontWeight: 600,
                 background: lang === 'es' ? styles.navy : 'transparent',
                 color: lang === 'es' ? '#fff' : styles.text,
@@ -1737,22 +1756,7 @@ function BidApp() {
         </footer>
 
         {/* TOAST */}
-        {toast && (
-          <div className="fade-in" onClick={() => setToast(null)} style={{
-            position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
-            background: toast.kind === 'error' ? styles.red : styles.green,
-            color: '#fff', padding: '14px 20px', borderRadius: styles.radius,
-            boxShadow: styles.shadowLg, fontWeight: 600,
-            display: 'flex', alignItems: 'flex-start', gap: 10, maxWidth: 480,
-            cursor: 'pointer', lineHeight: 1.4, letterSpacing: '-0.01em',
-          }}>
-            <span style={{ flexShrink: 0, paddingTop: 1 }}>
-              {toast.kind === 'error' ? <AlertCircle size={18} /> : <Check size={18} />}
-            </span>
-            <span style={{ wordBreak: 'break-word' }}>{toast.msg}</span>
-            <span style={{ flexShrink: 0, opacity: 0.7, fontSize: 11, paddingLeft: 6 }}>✕</span>
-          </div>
-        )}
+        {toastEl}
       </div>
     </>
   );
@@ -1948,13 +1952,13 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: `1px solid ${styles.border}` }}>
-            <button onClick={() => { setMode('login'); setError(''); }} style={{
+            <button type="button" role="tab" aria-selected={mode === 'login'} onClick={() => { setMode('login'); setError(''); }} style={{
               flex: 1, padding: '12px 0', background: 'transparent', border: 'none', cursor: 'pointer',
               fontWeight: 700, fontSize: 14, color: mode === 'login' ? styles.accent : styles.text2,
               borderBottom: `3px solid ${mode === 'login' ? styles.accent : 'transparent'}`,
               marginBottom: -1, fontFamily: styles.fontBody,
             }}>{t.login}</button>
-            <button onClick={() => { setMode('register'); setError(''); }} style={{
+            <button type="button" role="tab" aria-selected={mode === 'register'} onClick={() => { setMode('register'); setError(''); }} style={{
               flex: 1, padding: '12px 0', background: 'transparent', border: 'none', cursor: 'pointer',
               fontWeight: 700, fontSize: 14, color: mode === 'register' ? styles.accent : styles.text2,
               borderBottom: `3px solid ${mode === 'register' ? styles.accent : 'transparent'}`,
@@ -1985,7 +1989,7 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
                   <input style={{ ...inputStyle, paddingRight: 40 }} type={showPw ? 'text' : 'password'} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                     value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                     onKeyDown={e => e.key === 'Enter' && handleLogin()} />
-                  <button onClick={() => setShowPw(!showPw)} style={{
+                  <button type="button" aria-label={showPw ? 'Hide password' : 'Show password'} aria-pressed={showPw} onClick={() => setShowPw(!showPw)} style={{
                     position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
                     background: 'transparent', border: 'none', cursor: 'pointer', padding: 6,
                     color: styles.text2,

@@ -749,9 +749,9 @@ function mkInvExtras(x){
   var kids = [];
   if (x.made) kids.push(h('span', { class: 'mk-badge', 'data-mk-made': x.id, text: t('mkMade') }));
   if (x.file) { var b = h('button', { type: 'button', class: 'btn sm', 'data-mk-pdf': x.id, text: t('mkPdf'), on: { click: function(){
-    var w = null; try { w = window.open('', '_blank'); } catch (e) {}
+    var app = window.GCAppOpen && window.GCAppOpen.app(), w = null; if (!app) try { w = window.open('', '_blank'); } catch (e) {}   /* patch PORTALTAPS: never a blank window in the installed app */
     busy(b, true);
-    api('p-invoice-pdf', { id: x.id }).then(function(r){ busy(b, false); if (w) { try { w.location = r.url; return; } catch (e) {} } var a = h('a', { href: r.url, target: '_blank', rel: 'noopener' }); document.body.appendChild(a); a.click(); a.remove(); },
+    api('p-invoice-pdf', { id: x.id }).then(function(r){ busy(b, false); if (app) { window.GCAppOpen.sheet(r.url, t('mkPdf')); return; } if (w) { try { w.location = r.url; return; } catch (e) {} } var a = h('a', { href: r.url, target: '_blank', rel: 'noopener' }); document.body.appendChild(a); a.click(); a.remove(); },
       function(e){ busy(b, false); if (w) try { w.close(); } catch (x2) {} toast(e.message, true); }); } } }); kids.push(b); }
   return h('div', { class: 'row', style: 'justify-content:flex-start;gap:8px;flex-wrap:wrap' }, kids);
 }
@@ -976,8 +976,8 @@ Object.assign(L.es, { measureBtn: '📐 Medir', measureErr: 'No se pudo abrir la
 function measureBtn(pid, f){
   if (!pid || !/pdf|image/.test(f.type || '')) return null;
   return h('button', { type: 'button', class: 'btn', 'data-measure': f.name, text: t('measureBtn'), on: { click: function(){
-    var w = null; try { w = window.open('', '_blank'); } catch (e) {}
-    api('p-measure', { projectId: pid, name: f.name }).then(function(r){ if (w) w.location.href = r.url; else location.href = r.url; },
+    var app = window.GCAppOpen && window.GCAppOpen.app(), w = null; if (!app) try { w = window.open('', '_blank'); } catch (e) {}   /* patch PORTALTAPS: never a blank window in the installed app */
+    api('p-measure', { projectId: pid, name: f.name }).then(function(r){ if (app) window.GCAppOpen.sheet(r.url, t('measureBtn') + ' · ' + f.name); else if (w) w.location.href = r.url; else location.href = r.url; },
       function(){ if (w) try { w.close(); } catch (e) {} toast(t('measureErr'), true); }); } } });
 }
 function ssDocs(pid, box){
