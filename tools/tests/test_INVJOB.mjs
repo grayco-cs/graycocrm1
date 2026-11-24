@@ -56,7 +56,8 @@ ok('A4 contradicting evidence: a bare "X901" but the bill\'s street is not that 
 x = await run([contra, CAMPUS], ['R&D DEMO BUILDERS LLC', 'Invoice #: 1533', 'PO #: X901', MEMO, 'Total Due: $900.00']);
 ok('A5 an explicit "PO #: X901" still wins (patch MONEY: the PO the sub wrote decides)', x.r.route === 'book' && x.r.jobId === 'P_ARMORY' && x.si.jobBy === 'po', { route: x.r.route, job: x.r.jobId, why: x.r.why });
 x = await run([ARMORY], ['R&D DEMO BUILDERS LLC', 'Invoice #: 1534', 'Grid repairs', 'Total Due: $400.00']);
-ok('A6 no street on the bill: the sub\'s only open job still places it (as before)', x.r.route === 'book' && x.r.jobId === 'P_ARMORY' && x.si.jobBy === 'sub', { route: x.r.route, why: x.r.why });
+/* BILLMATCH (owner 11/24): "the sub's only open job" alone no longer places a bill — no PO / street address / customer name → a person picks */
+ok('A6 no street on the bill: the sub\'s only open job is a suggestion (BILLMATCH: no PO, address or customer name) → 🧾 Match this invoice', x.r.route === 'match' && !x.si.certain && (x.si.top || []).some(t => t.pid === 'P_ARMORY'), { route: x.r.route, why: x.r.why });
 
 /* ════ B. the page's matchers (index.html's own code, in node) ════ */
 const html = fs.readFileSync(path.join(BUILD, 'index.html'), 'utf8');

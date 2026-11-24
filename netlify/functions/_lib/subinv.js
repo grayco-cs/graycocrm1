@@ -344,6 +344,15 @@ function addrVs(billAddr, p){
   const nameOk = a.name === pa.name || (a.name.length >= 5 && lev(a.name, pa.name) <= 1);
   return a.num === pa.num && nameOk ? 'same' : 'other';
 }
+/* patch BILLMATCH (owner 11/24: "bills or invoices need po or address or customer name to match"): which of PO / street address /
+   customer name ties this bill to this job (_lib/billmatch.js) — a job with none of them is a suggestion only, never placed by itself */
+function BM(){ return require('./billmatch.js'); }
+function billBasis(p, f, addrSure){
+  let by = [];
+  try { by = BM().basis({ text: s(f.hay), jobAddress: s(f.jobAddress), customer: s(f.customer), po: s(f.po) }, p).by.slice(); } catch (e) { by = []; }
+  if (addrSure && by.indexOf('address') < 0) by.push('address');
+  return by;
+}
 function scoreJob(p, f){
   let sc = 0; const why = [];
   const a = addrParts(f.jobAddress), pa = addrParts(jobAddr(p)), vs = addrVs(f.jobAddress, p);   /* patch INVJOB */
@@ -372,14 +381,17 @@ function scoreJob(p, f){
   if (jn && jn.length >= 8 && hay.indexOf(jn) >= 0) { sc = sc ? sc + 3 : 50; why.push('job name'); }
   if (vs === 'other' && !(f.po && s(f.po).toUpperCase() === po)) { sc = Math.min(sc, 55); why.push('the bill\'s address (' + a.num + ' ' + a.name + ') is not this job\'s (' + pa.num + ' ' + pa.name + ')'); }   /* patch INVJOB: contradicting evidence */
   if (closed(p)) sc -= 30;
-  return { pid: s(p.id), name: s(p.name), address: jobAddr(p), po: s(p.autoPO || p.po), pm: s(p.pm || p.projectManager), conf: Math.max(0, Math.min(100, sc)), why: why.join(' · ') };
+  const basis = billBasis(p, f, !!(a && pa && a.num && a.num === pa.num && (a.name === pa.name || (a.name.length >= 5 && lev(a.name, pa.name) <= 1)) && vs === 'same'));   /* patch BILLMATCH */
+  return { pid: s(p.id), name: s(p.name), address: jobAddr(p), po: s(p.autoPO || p.po), pm: s(p.pm || p.projectManager), conf: Math.max(0, Math.min(100, sc)), why: why.join(' · '), basis: basis };
 }
 function matchJob(projects, f, deleted){
   const dead = {}; (Array.isArray(deleted) ? deleted : []).forEach(function(x){ dead[s(x && typeof x === 'object' ? x.id : x)] = 1; });
   const all = arr(projects).filter(function(p){ return p.id != null && !dead[s(p.id)] && p.deleted !== true; }).map(function(p){ return scoreJob(p, f); }).filter(function(x){ return x.conf > 0; });
   all.sort(function(a, b){ return b.conf - a.conf; });
   const top = all.slice(0, 3), best = top[0] || null, second = top[1] || null;
-  const certain = !!(best && best.conf >= 85 && (!second || best.conf - second.conf >= 15));
+  /* patch BILLMATCH: certain only when the bill names THIS job's PO, street address or customer (the job name alone, a weak guess: a person picks) */
+  const certain = !!(best && best.conf >= 85 && (!second || best.conf - second.conf >= 15) && best.basis && best.basis.length);
+  if (best && best.conf >= 85 && !certain && !(best.basis && best.basis.length)) best.why = (best.why ? best.why + ' — ' : '') + 'but no PO, street address or customer name of this job on the bill';
   return { best: best, top: top, certain: certain };
 }
 
@@ -577,8 +589,11 @@ async function analyze(mail, files, deps){
     const open = subOpenJobs(data, sub, now);
     /* patch INVJOB: the bill names a street address that is not on the sub's open job (another street, or a city only) → a suggestion, never placed by itself */
     const oVs = open.length === 1 ? addrVs(read.jobAddress, open[0]) : '';
+    /* patch BILLMATCH: "the sub's only open job" alone is not enough — the bill must name its PO, street address or customer */
+    const oBasis = open.length === 1 ? billBasis(arr(data.projects).find(function(p){ return s(p.id) === open[0].pid; }) || {}, { jobAddress: read.jobAddress, po: read.po, customer: read.customer, hay: hay }) : [];
     if (open.length === 1 && (oVs === 'other' || oVs === 'none')) { const o = Object.assign({}, open[0], { conf: 60, why: open[0].why + ' — but the bill\'s address ' + s(read.jobAddress) + ' is ' + (oVs === 'other' ? 'another street' : 'not on this job') }); if (!job || job.conf < 60) job = o; jm.top = (job === o ? [o] : [job, o]).concat(arr(jm.top).filter(function(x){ return x.pid !== o.pid && (!job || x.pid !== job.pid); })).slice(0, 3); }
-    else if (open.length === 1 && (!job || job.conf < 85 || job.pid === open[0].pid)) { job = open[0]; jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'sub'; }
+    else if (open.length === 1 && !oBasis.length && (!job || job.conf < 85 || job.pid === open[0].pid)) { const o = Object.assign({}, open[0], { conf: 60, why: open[0].why + ' — but no PO, street address or customer name of this job on the bill' }); if (!job || job.conf < 60 || job.pid === o.pid) job = o; jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); }   /* patch BILLMATCH: a suggestion → 🧾 Match this invoice */
+    else if (open.length === 1 && (!job || job.conf < 85 || job.pid === open[0].pid)) { job = Object.assign({}, open[0], { basis: oBasis }); jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'sub'; }
     else if (open.length > 1) jm.top = arr(jm.top).concat(open.filter(function(o){ return !arr(jm.top).some(function(x){ return x.pid === o.pid; }); }).map(function(o){ return Object.assign({}, o, { conf: 60, why: 'one of the sub\'s open jobs' }); })).slice(0, 5);
   }
   const pay = payDateFor(recvDate, read);

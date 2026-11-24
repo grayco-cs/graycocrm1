@@ -13,6 +13,8 @@
   3. MATCH each line — (a) the CRM bill: invoice # first (2345678-00 = 2345678), then the same amount + date (±7 days) + supplier;
      (b) the job: PO / autoPO, then the ship-to address, then a job a person picked for the same text on an earlier statement, then the
      memo / customer name (patch QBCSV's matcher, window._gcQbMatch), then the bill's own job. Each line shows the job, why, and:
+     (BILLMATCH, owner 11/24: a line goes on a job by itself only by its PO, ship-to / street address or customer name; a memo / job
+     name — or a memo a person put on a job before — is a suggestion the person picks; a bill a person placed keeps its job on pay)
        ✅ matched + unpaid · ⚠ already paid (when, how, check #, which statement) — left out so nothing is paid twice ·
        ⚠ "wrong project?" (the statement's PO / address points to another job than the bill in the CRM) — the person picks ·
        ❓ no job found — pick one · ➕ not in the CRM yet — added as a bill on that job when paid · 💸 credit · 🧮 finance charge ·
@@ -379,14 +381,15 @@ function jobFor(l, X, bill){
   }
   /* c. a person put the same ship-to / PO / memo on a job on an earlier statement */
   var mk2 = memKeys(X, l);
-  for (var k = 0; k < mk2.length; k++) { var m = X.mem[mk2[k]]; if (m && X.byId[m.pid] && !X.byId[m.pid].lost) return take(X.byId[m.pid], 'remembered', 'a person put ' + (mk2[k].split(':')[0] === 'ship' ? 'this ship-to' : mk2[k].split(':')[0] === 'po' ? 'this PO' : 'this memo') + ' on this job (statement ' + (m.stmt || '—') + ')'); }
+  for (var k = 0; k < mk2.length; k++) { var m = X.mem[mk2[k]]; if (m && X.byId[m.pid] && !X.byId[m.pid].lost && mk2[k].indexOf('memo:') === 0 && !bmOk(l, X.byId[m.pid])) { cand(X.byId[m.pid], 'a person put this memo on this job before (no PO / address / customer on the line — check it)', 85); continue; }   /* BILLMATCH */
+    if (m && X.byId[m.pid] && !X.byId[m.pid].lost) return take(X.byId[m.pid], 'remembered', 'a person put ' + (mk2[k].split(':')[0] === 'ship' ? 'this ship-to' : mk2[k].split(':')[0] === 'po' ? 'this PO' : 'this memo') + ' on this job (statement ' + (m.stmt || '—') + ')'); }
   /* d. the memo / job name / customer */
   var txt = [l.memo, l.shipTo].filter(function(x){ return s(x); }).join(' · ');
   if (txt && X.QB && X.QB.scoreText && nk(txt).length >= 4) {
     var sc = [];
     for (var j = 0; j < X.idx.length; j++) { var J = X.idx[j], r = X.QB.scoreText(txt, J, 'memo'); if (r.score >= 60) sc.push({ J: J, score: r.score + (J.lost ? -12 : J.done ? -2 : 1), how: r.how, why: r.why }); }
     sc.sort(function(a, b){ return b.score - a.score; });
-    if (sc[0] && sc[0].score >= 70 && (!sc[1] || sc[0].score - sc[1].score >= 8)) return take(sc[0].J, sc[0].how === 'customer' ? 'customer' : 'memo', sc[0].why.replace(/ in the memo$/, ' in the memo / job name'));
+    if (sc[0] && sc[0].score >= 70 && (!sc[1] || sc[0].score - sc[1].score >= 8) && bmOk(l, sc[0].J)) return take(   /* BILLMATCH: the memo / job name alone is a suggestion */sc[0].J, sc[0].how === 'customer' ? 'customer' : 'memo', sc[0].why.replace(/ in the memo$/, ' in the memo / job name'));
     sc.slice(0, 3).forEach(function(x){ cand(x.J, x.why, x.score); });
   }
   /* e. the bill's own job */
@@ -394,6 +397,8 @@ function jobFor(l, X, bill){
   return out;
 }
 
+/* BILLMATCH (owner 11/24): the statement line names the job's PO, ship-to / street address or customer (window._gcBillMatch) */
+function bmOk(l, J){ var B = W._gcBillMatch; return !B || !J || B.ok({ memo: l.memo, shipTo: l.shipTo, po: l.po }, J.p || J); }
 /* ── the line's state ── */
 /* v = the line as it stands (the person's choices over the matcher's) · x = { bill, billPaid, paidHere:{amount, full}, credDone } */
 function statusOf(v, x){
@@ -468,7 +473,10 @@ function viewingAs(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.ac
 function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
 function meUser(){ var em = myEmail(); var u = em ? arr(crm().users).filter(function(x){ return low(x.email) === em; })[0] : null; if (!u) { try { u = typeof W._gcMeUser === 'function' ? W._gcMeUser() : null; } catch (e) { u = null; } } return u || {}; }
 var ACCT_ROLE = /\b(accounting|accountant|bookkeep(er|ing)?|controller|cfo|finance|accounts\s*payable|a\/p)\b/i;
-function acctRole(){ if (viewingAs()) return false; var u = meUser(); return !!u && u.active !== false && ACCT_ROLE.test(s(u.role)); }
+/* BILLMATCH (owner 11/24: "office uses those roles she will do it all"): the Office role (Office / Office Manager / Office Admin) is an
+   accounting role too — by role, never by name */
+var OFFICE_ROLE = /^\s*office(\s*(manager|admin(istrator)?|mgr))?\s*$/i;
+function acctRole(){ if (viewingAs()) return false; var u = meUser(); return !!u && u.active !== false && (ACCT_ROLE.test(s(u.role)) || OFFICE_ROLE.test(s(u.role))); }
 W._gcAcctRole = acctRole;
 function canUse(){
   if (viewingAs()) return false;
@@ -576,6 +584,8 @@ function view(rec, l){
   var bill = v.invId ? findInv(v.invId) : null; if (v.invId && !bill) v.invId = '';
   if (!bill) { bill = findInv('SSB-' + rec.id + '-' + l.id); if (bill) v.invId = s(bill.id); }   /* the bill this line became when it was paid */
   v.wrong = !!(a.stmtPid && a.invPid && a.stmtPid !== a.invPid);
+  /* BILLMATCH: a bill a PERSON put on a job keeps it — the statement's PO / address only shows "⚠ Wrong project?"; paying never moves it */
+  if (!h.pid && bill && s(bill.pid) && v.pid !== s(bill.pid) && W._gcBillMatch && W._gcBillMatch.placedByPerson(bill)) { v.pid = s(bill.pid); v.keptPerson = true; }
   var ph = paidHere(rec, l), cd = credDone(rec, l, v), full = !!(bill && C.isPaid(bill));
   var x = { bill: bill, credDone: cd, paidHere: ph && (ph.full || full) ? { full: true } : null };
   v.bill = bill; v.paidHere = ph;
