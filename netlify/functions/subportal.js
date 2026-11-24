@@ -534,11 +534,14 @@ async function supplierScope(who){
   if (who.approved) {
     jobs.forEach(function(r){
       const j = r.data || {};
-      if (isDraft(j) || isGone(j)) return;
-      if (autoOpened(j) && !invited.has(r.id) && !quoted.has(r.id)) return;   /* patch BIDAUTO */
-      const canSee = invited.has(r.id) || (j.suppliersCanQuote !== false && (j.visibility || 'public') === 'public');   /* patch SUPVIS: on unless un-ticked; an invite always opens it */
+      if (isDraft(j) || isGone(j)) return;   /* owner 11/24: "no not unpublished jobs — just the ones on the portal" */
+      if (autoOpened(j) && !quoted.has(r.id)) return;   /* patch BIDAUTO: the Lead Inbox opened it, no person put it on the portal → not on the portal */
+      /* patch SUPALL (owner 11/24: "all suppliers should see everything … every job … just the ones on the portal"): an approved supplier sees
+         every job ON THE PORTAL — public or private, the 🧱 box ticked or not, open or closed (a closed one can't be quoted). Never a draft,
+         a job no person put on the portal, or a deleted one. Still never the labour scopes, bid lines or anyone's bids (supplierJobView). */
+      const canSee = true;
       const open = CLOSED.indexOf(low(j.status)) < 0;
-      if (quoted.has(r.id) || (canSee && open)) visible[r.id] = r;
+      visible[r.id] = r;
       if (canSee && open && !j.quotesClosed) quotable[r.id] = true;
     });
   }

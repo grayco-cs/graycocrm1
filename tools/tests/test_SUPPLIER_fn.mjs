@@ -65,7 +65,7 @@ const SID = supRow.data.id;
 r = await call('tk-sup', { action: 'me' });
 ok('2 "me": role supplier', r.code === 200 && r.b.role === 'supplier' && r.b.user.role === 'supplier', r);
 r = await call('tk-sup', { action: 'load', keys: ['jobs', 'mquotes'] });
-ok('3 approved at once: the jobs open for material quotes right away', r.code === 200 && r.b.data.jobs.map(j => j.id).sort().join() === 'J_AUTOPUB,J_MAT,J_NEW,J_PINV', r.b.data.jobs.map(j => j.id));
+ok('3 approved at once: the jobs open for material quotes right away', r.code === 200 && r.b.data.jobs.map(j => j.id).sort().join() === 'J_AUTOPUB,J_CLOSED,J_LAB,J_MAT,J_NEW,J_PINV,J_PRIV', r.b.data.jobs.map(j => j.id));   /* SUPALL (owner 11/24): every job */
 /* the admin approves it (the bid site's Pending) — it stays a supplier */
 r = await call('tk-owner', { action: 'load', keys: ['users'] });
 const su = r.b.data.users.find(u => u.id === SID);
@@ -75,7 +75,7 @@ ok('4 an admin save (Pending / Suppliers) → approved, still role supplier', r.
 /* ═══ what the supplier sees ═══ */
 r = await call('tk-sup', { action: 'load', keys: ['jobs', 'bids', 'mquotes', 'plans:J_MAT', 'plans:J_LAB', 'users'] });
 const SJ = r.b.data.jobs;
-ok('5 SUPVIS: the public open jobs (ticked or never touched) + the private job they were invited to; not the un-ticked, private, draft or closed job', SJ.map(j => j.id).sort().join() === 'J_AUTOPUB,J_MAT,J_NEW,J_PINV', SJ.map(j => j.id));
+ok('5 SUPALL (owner 11/24: "all suppliers should see everything … every job"): every job ON THE PORTAL — public, private, un-ticked, closed; never a draft or a Lead Inbox job no person published', SJ.map(j => j.id).sort().join() === 'J_AUTOPUB,J_CLOSED,J_LAB,J_MAT,J_NEW,J_PINV,J_PRIV', SJ.map(j => j.id));
 const mj = SJ.find(j => j.id === 'J_MAT') || {};
 ok('6 the job: material list, quotable; never the trades\' labour scopes', mj.materialList === '4 RTUs 10-ton\n4 curbs' && mj.quotable === true && !('tradeScopes' in mj) && JSON.stringify(r.b).indexOf('LABOUR SCOPE SECRET') < 0, mj);
 ok('7 plans: no invitation to bid (BIDVIS); the plan; not the labour-only job\'s', r.b.data['plans:J_MAT'].map(p => p.name).join() === 'M-101 Plan.pdf' && (r.b.data['plans:J_LAB'] || []).length === 0);
@@ -85,10 +85,10 @@ ok('8 no bids (anyone\'s), no quotes yet; the PM\'s contact', r.b.data.bids.leng
 r = await call('tk-sup', { action: 'save', key: 'mquotes', upsert: [{ id: 'mq1', jobId: 'J_MAT', lines: [{ id: 'l1', desc: 'RTU 10 ton', qty: 4, unit: 'ea', unitPrice: 9500 }, { id: 'l2', desc: 'Curb', qty: 4, unit: 'ea', unitPrice: 450.5 }, { id: 'l3', desc: '' }], tax: 100, freight: 250, leadTime: '3 weeks', validUntil: DAY(30), total: 1 }] });
 const q = rowData('mquotes/mq1') || {};
 ok('9 the quote is saved: 2 lines, totals from the server (38,000 + 1,802 + 100 + 250 = 40,152), submitted', r.code === 200 && q.lines.length === 2 && q.subtotal === 39802 && q.total === 40152 && q.status === 'submitted' && q.userId === SID && q.userCompany === 'Demo Supply Co', q);
-r = await call('tk-sup', { action: 'save', key: 'mquotes', upsert: [{ id: 'mq2', jobId: 'J_LAB', lines: [{ desc: 'x', qty: 1, unitPrice: 1 }] }] });
-ok('10 a quote on a job not open for material quotes → 403', r.code === 403 && !rowData('mquotes/mq2'), r);
+r = await call('tk-sup', { action: 'save', key: 'mquotes', upsert: [{ id: 'mq2', jobId: 'J_CLOSED', lines: [{ desc: 'x', qty: 1, unitPrice: 1 }] }] });
+ok('10 a quote on a CLOSED job → 403', r.code === 403 && !rowData('mquotes/mq2'), r);
 r = await call('tk-sup', { action: 'save', key: 'mquotes', upsert: [{ id: 'mq3', jobId: 'J_PRIV', lines: [{ desc: 'x', qty: 1, unitPrice: 1 }] }] });
-ok('11 … a private job they were not invited to → 403', r.code === 403, r);
+ok('11 SUPALL: a private job they were not invited to → the quote goes in (they see every job)', r.code === 200 && !!rowData('mquotes/mq3'), r);
 r = await call('tk-sup', { action: 'save', key: 'bids', upsert: [{ id: 'bx', jobId: 'J_MAT', amount: 5 }] });
 ok('12 a labour bid from a supplier → 403', r.code === 403 && !rowData('bids/bx'), r);
 r = await call('tk-sub', { action: 'save', key: 'mquotes', upsert: [{ id: 'mq4', jobId: 'J_MAT', lines: [{ desc: 'x', qty: 1, unitPrice: 1 }] }] });
@@ -99,9 +99,9 @@ ok('14b PUBVIS (owner 11/24, the hunting club): a sub sees a PUBLIC job the Lead
 /* another supplier's quote on the same job is never seen */
 putRow('mquotes', 'mqX', { id: 'mqX', jobId: 'J_MAT', userId: 'u_other', userCompany: 'Rival Supply', total: 1 }, { job_id: 'J_MAT', user_id: 'u_other' });
 r = await call('tk-sup', { action: 'load', keys: ['mquotes'] });
-ok('15 the supplier sees only their own quote', r.b.data.mquotes.map(x => x.id).join() === 'mq1', r.b.data.mquotes);
+ok('15 the supplier sees only their own quote', r.b.data.mquotes.map(x => x.id).sort().join() === 'mq1,mq3', r.b.data.mquotes);   /* + mq3 (SUPALL: the private job's quote) */
 r = await call('tk-owner', { action: 'load', keys: ['mquotes'] });
-ok('16 the admin sees every quote', r.b.data.mquotes.length === 2);
+ok('16 the admin sees every quote', r.b.data.mquotes.length === 3, r.b.data.mquotes.map(x => x.id));
 r = await call('tk-owner', { action: 'save', key: 'mquotes', upsert: [Object.assign({}, rowData('mquotes/mq1'), { status: 'accepted', gcNote: 'PO coming', total: 1, lines: [] })] });
 const qa = rowData('mquotes/mq1');
 ok('17 the admin accepts it (note kept); the supplier\'s lines / total stay as sent', r.code === 200 && qa.status === 'accepted' && qa.gcNote === 'PO coming' && qa.total === 40152 && qa.lines.length === 2 && qa.decidedBy === 'owner@grayco-cs.com', qa);
