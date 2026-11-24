@@ -54,7 +54,7 @@ const est = 'st_eve';
 const J = {
   J1: { id: 'J1', title: 'Foxtrot Demo Clinic — interiors', address: '600 Foxtrot Ave, Memphis, TN 38117', bidDueDate: day(6), bidDueTime: '14:00', status: 'open', visibility: 'public', tradesSought: 'Drywall',
     scope: 'Interior build-out, 4 exam rooms.', tradeScopes: [{ id: 'ts1', trade: 'Drywall', scope: 'DRYWALL: hang, tape, Level 4.' }], crmProjectId: 'P1', estimatorId: est,
-    plansLinks: [{ id: 'pl1', url: 'https://drive.google.com/drive/folders/demo-foxtrot', label: 'Drive plan room' }], bidForm: [{ id: 'bf1', trade: 'Drywall', item: 'Walls L4', unit: 'LS' }], log: ['INTERNAL-LOG-ZZ'], internalNotes: 'INTERNAL-NOTE-ZZ', estValue: 98765 },
+    plansLinks: [{ id: 'pl1', url: 'https://drive.google.com/drive/folders/demo-foxtrot', label: 'Plans (Google Drive)' }], bidForm: [{ id: 'bf1', trade: 'Drywall', item: 'Walls L4', unit: 'LS' }], log: ['INTERNAL-LOG-ZZ'], internalNotes: 'INTERNAL-NOTE-ZZ', estValue: 98765 },
   JP: { id: 'JP', title: 'Paint Only Demo', bidDueDate: day(6), status: 'open', visibility: 'public', tradesSought: 'Paint' },
   JD: { id: 'JD', title: 'Draft Demo Job', bidDueDate: day(6), status: 'draft', draft: true, visibility: 'private', tradesSought: 'Drywall' },
   JX: { id: 'JX', title: 'Private Demo Job', bidDueDate: day(6), status: 'open', visibility: 'private', tradesSought: 'Drywall' },

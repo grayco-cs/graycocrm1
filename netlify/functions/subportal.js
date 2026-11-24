@@ -894,7 +894,7 @@ async function saveCollection(who, key, upsert, del, ctx){
           } else if (isDraft(old) || (!old && isDraft(rec))) {
             Object.assign(rec, { status: 'draft', visibility: 'private', draft: true });
           }
-          if (old && arr(rec.plansLinks).length > arr(old.plansLinks).length) notes.push({ kind: 'plans-added', jobId: rec.id });
+          if (old && arr(rec.plansLinks).filter(function(l){ return SV().visible(l, 'link'); }).length > arr(old.plansLinks).filter(function(l){ return SV().visible(l, 'link'); }).length) notes.push({ kind: 'plans-added', jobId: rec.id });   /* patch NOLINKS: a GrayCo-only link is no notice to subs */
           if (old && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime))) { rec.dueSetAt = new Date().toISOString(); rec.dueSetBy = who.email; }   /* patch BIDREMIND2: a person set it — the Lead Inbox re-sync keeps it (_lib/bid-portal.js) */
           if (old && !isDraft(old) && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime)))   /* patch PLANREQ-D: the bid due date changed on the bid site */
             notes.push({ kind: 'due-changed', jobId: rec.id, from: s(old.bidDueDate).slice(0, 10) ? s(old.bidDueDate).slice(0, 10) + (s(old.bidDueTime) ? ' ' + s(old.bidDueTime) : '') : 'no due date', who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
@@ -1713,7 +1713,7 @@ function prNeeds(v){ return Array.from(new Set((Array.isArray(v) ? v : []).map(l
 function prOpen(q){ return !!q && s(q.status) !== 'closed' && !s(q.closedAt) && !s(q.notifiedAt); }
 function prWhat(q, es){ const n = prNeeds(q && q.needs); return (n.length ? n : ['plans']).map(function(k){ return (es ? PR_NEEDS_ES : PR_NEEDS)[k]; }).join(', '); }
 function prAsk(q){ const n = prNeeds(q && q.needs); return !n.length || n.indexOf('plans') > -1 ? 'plans' : 'more info'; }
-function plansCount(job, items){ return arr(items).length + arr(job && job.plansLinks).filter(function(l){ return /^https?:\/\//i.test(s(l && l.url)); }).length; }
+function plansCount(job, items){ const V = SV(); return arr(items).length + arr(job && job.plansLinks).filter(function(l){ return /^https?:\/\//i.test(s(l && l.url)) && V.visible(l, 'link'); }).length; }   /* patch NOLINKS: only a link a sub can open is "plans posted" */
 function crmUrl(){ const v = s(process.env.CRM_URL).replace(/\/$/, ''); return (/^https:\/\//.test(v) ? v : 'https://crm.grayco-cs.com') + '/'; }
 /* what a sub sees of their own request (never who else asked) */
 function subReqView(q){ return q ? { jobId: s(q.jobId), at: s(q.at), needs: prNeeds(q.needs).length ? prNeeds(q.needs) : ['plans'], note: s(q.note), status: prOpen(q) ? 'open' : 'closed',

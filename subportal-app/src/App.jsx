@@ -2350,6 +2350,14 @@ function svSolicitation(item, kind) {
     if (/^(government|buildingconnected|bid\s*board)$/i.test(String(item.board || '').trim()) || SV_HOST.test(h)) return true; }
   return false;
 }
+/* patch NOLINKS: the same rule as _lib/subvis.js planSetLink — the only link a sub sees is GrayCo's own plan set */
+function svPlanSet(l) {
+  if (!l || !l.url || String(l.board || '').trim()) return false;
+  const own = [l.name, l.label, l.title].map(x => String(x == null ? '' : x).trim()).join(' ').replace(/[_\-.]+/g, ' ');
+  let h = ''; try { h = new URL(l.url).host; } catch (e) {}
+  if (/\b(plan\s*-?\s*rooms?|planrooms?|bid\s*rooms?|bid\s*boards?|solicitations?|bidding\s+documents?|bid\s+documents?|documents?\s+for\s+bid)\b/i.test(own) || svSolicitation(l, 'link') || SV_HOST.test(h)) return false;
+  return SV_PLAN.test(own);
+}
 function subsVisible(item, kind) { return item && item.subsVisible === true ? true : item && item.subsVisible === false ? false : !svSolicitation(item, kind); }
 function VisToggle({ t, item, kind, onChange }) {
   const on = subsVisible(item, kind);
@@ -4020,14 +4028,14 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           {/* patch SYS2: plan-room links (a plan room or a shared folder) */}
           {job.plansLinks && job.plansLinks.length > 0 && (
             <Card style={{ marginBottom: 16 }}>
-              <h3 style={sectionTitleStyle} id="bid-planlinks"><FileText size={18} /> {t.planLinks}</h3>
+              <h3 style={sectionTitleStyle} id="bid-planlinks"><FileText size={18} /> {isAdmin ? t.planLinks : t.docPlans}</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {job.plansLinks.map((l, i) => (
                   <div key={l.id || i} data-planlink={i} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
                     🔗 {t.openPlans || 'Open plans'} ↗ — {l.label || t.openLink}{l.version ? ` · ${t.versionL} ${l.version}` : ''}{l.date ? ` · ${new Date(l.date + 'T12:00:00').toLocaleDateString()}` : ''}
                   </a>
-                  {isAdmin && <VisToggle t={t} item={l} kind="link" onChange={v => setVis('plansLinks', l, v)} />}
+                  {isAdmin && <span data-linkvis={i} style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>{svPlanSet(l) ? '👁 Subs see this plan set' : '🔒 GrayCo only — subs never see plan-room links'}</span>}   {/* patch NOLINKS */}
                   </div>
                 ))}
               </div>

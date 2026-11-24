@@ -50,9 +50,9 @@ const V = require(path.join(BUILD, 'netlify/functions/_lib/subvis.js'));
 ok('V1 hidden by default: the solicitation link, a bid board page, the invitation to bid, a bid form, instructions to bidders',
   !V.visible({ url: SOL, label: 'Solicitation & documents (Demo City)', board: 'Government' }, 'link') && !V.visible({ url: 'https://app.buildingconnected.com/o/1', label: 'Open on BuildingConnected' }, 'link')
   && !V.visible({ name: 'Invitation to Bid.pdf' }, 'plan') && !V.visible({ name: 'Bid Form.pdf', category: 'scope' }, 'plan') && !V.visible({ name: 'Instructions to Bidders.pdf' }, 'spec'));
-ok('V2 shown by default: plans, a plan set named after the ITB, addenda, specs, a plan room link, GrayCo\'s scope files',
+ok('V2 shown by default: plans, a plan set named after the ITB, addenda, specs, GrayCo\'s own plan-set link (NOLINKS: never a plan room link), GrayCo\'s scope files',
   V.visible({ name: 'M-101 HVAC Plan.pdf' }, 'plan') && V.visible({ name: 'ITB_26-014_Drawings.pdf' }, 'plan') && V.visible({ name: 'Addendum 2.pdf' }, 'plan')
-  && V.visible({ name: 'Project Manual.pdf' }, 'spec') && V.visible({ url: 'https://files.demo.test/x', label: 'Plan room' }, 'link') && V.visible({ name: 'Bid Form.pdf' }, 'scope'));
+  && V.visible({ name: 'Project Manual.pdf' }, 'spec') && !V.visible({ url: 'https://files.demo.test/x', label: 'Plan room' }, 'link') && V.visible({ url: 'https://files.demo.test/x', label: 'Plans (Google Drive)' }, 'link') && V.visible({ name: 'Bid Form.pdf' }, 'scope'));
 ok('V3 the admin tick wins both ways', V.visible({ name: 'Invitation to Bid.pdf', subsVisible: true }, 'plan') && !V.visible({ name: 'M-1.pdf', subsVisible: false }, 'plan'));
 
 /* ═══ admin load ═══ */
@@ -75,7 +75,7 @@ r = await call('tk-sub', { action: 'load', keys: ['users', 'jobs', 'plans:J1'] }
 ok('S0 sub load 200', r.code === 200, r);
 const SJ = r.b.data.jobs.find(j => j.id === 'J1'), est = r.b.data.users.find(u => u.id === SJ.estimatorId), pm = r.b.data.users.find(u => u.id === SJ.pmId);
 ok('S1 the sub sees the estimator (Est Beta) with phone + e-mail next to the PM', est && est.name === 'Est Beta' && est.phone === '901-555-0122' && est.email === 'estb@grayco-cs.com' && pm && pm.phone === '901-555-0100', { est, pm });
-ok('S2 no solicitation link; the plan link and the ticked BuildingConnected link are there', SJ.plansLinks.map(l => l.label).join('|') === 'Plans|Open on BuildingConnected', SJ.plansLinks);
+ok('S2 no solicitation link; the plan link is there; NOLINKS (owner 11/24): the ticked BuildingConnected link is NOT (no tick opens a bid board to subs)', SJ.plansLinks.map(l => l.label).join('|') === 'Plans', SJ.plansLinks);
 ok('S3 plans: no Invitation to Bid, no Bid Form, not the one ticked hidden; M-101 + Addendum 1', SJ.plans.map(p => p.name).join('|') === 'M-101 HVAC Plan.pdf|Addendum 1.pdf', SJ.plans);
 ok('S4 plans:J1 (the files) the same two', r.b.data['plans:J1'].map(p => p.name).join('|') === 'M-101 HVAC Plan.pdf|Addendum 1.pdf', r.b.data['plans:J1']);
 ok('S5 specs: the project manual, not the instructions to bidders; GrayCo\'s scope doc, the HVAC trade scope file, the addendum files', SJ.specDocs.map(d => d.name).join() === 'Project Manual.pdf' && SJ.scopeDocs.length === 1 && SJ.tradeScopes[0].files.length === 1 && SJ.addenda[0].files.length === 1);
