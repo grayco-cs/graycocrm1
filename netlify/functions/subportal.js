@@ -550,7 +550,7 @@ async function supplierScope(who){
 /* what a supplier sees of a job: the sub view without the trades' labour scopes / bid form, plus the material list */
 function supplierJobView(j){
   const v = subJobView(j, []);
-  delete v.tradeScopes; delete v.bidForm; delete v.bidLines; delete v.bidResultsSharing;
+  delete v.bidForm; delete v.bidLines; delete v.bidResultsSharing;   /* patch SUPSCOPE (owner 11/24, ABC's Tom: "unable to download … the scope of work attachments" — "all suppliers should see everything"): the trades' scopes of work and their files stay, so a supplier can quote the materials; never the bid form lines, anyone's bid or a price */
   v.materialList = noPrices(j.materialList);   /* patch BIDSITE3: never a price */
   return v;
 }

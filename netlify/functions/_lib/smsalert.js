@@ -671,6 +671,14 @@ async function leads(list, raw, isEm){
        send to admin to assign PM, or send to PM directly"): the office gets "📞 Google call — fill in the lead" (an office To-Do + a phone
        push) at the same moment; nothing waits on it. After hours the text waits for 7:00 AM (notify: LSAHOLD). */
     if (lsaL) { try { out.push({ intake: await _D.intakeTodo({ leadId: s(x.id), code: lsaCode(x.id), name: clip(name, 60), phone: callPh, said: clip(s(msg).replace(/\s+/g, ' '), 200), em: !!em }) }); } catch (e) { out.push({ intakeError: s(e && e.message) }); } }
+    /* LSAMKT (owner 11/24: "google lsa calls need to notify marketing manager too when they come in on his crm"): every Google LSA call →
+       one To-Do in the CRM for the marketing people (by role) — in the CRM only: no text, no phone push (MKTNOTEXT) */
+    if (lsaL) { try { let pp = {}; try { pp = await _D.people(); } catch (er) {}
+      const mk = arr(pp.users).filter(u => u && isActiveUser(u) && /marketing/i.test([u.role, u.title, u.profile].map(s).join(' ')) && low(u.email)).map(u => low(u.email));
+      if (mk.length) out.push({ mkt: await _D.officeTask({ id: 'LSAMKT_' + s(x.id), kind: 'lsa_mkt', leadId: s(x.id), code: lsaCode(x.id), assignees: mk, prio: 'low', personal: false,
+        label: (em ? '🚨 ' : '') + '📞 Google LSA call came in ' + lsaCode(x.id) + ': ' + clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''),
+        note: 'For marketing: a Google Local Services call just came in.' + (s(msg) ? ' ' + clip(s(msg).replace(/\s+/g, ' '), 200) : '') + ' Nothing to do unless it is junk — the owners and the office have it.' }) });
+    } catch (e) { out.push({ mktError: s(e && e.message) }); } }
     if (lwK !== 'sub' && (lsaL || (!em && !only && (cust || !bidLike(r, x))))) {   /* SUBSEEK: never a sub / supplier · LSATEXT: owner 11/10 — Google LSA leads to the owners' cells; they text back GOOD or BAD */
       const code = lsaCode(x.id), who = clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : '');
       /* LSAWORD (owner 11/10: "google lsa lead from 9016927255 wesley says blah blah blah, reply with if the lead is good and who is the PM") */
@@ -1798,7 +1806,7 @@ async function lsaDisputed(o){
   if (!r.item) return Object.assign(out, { ok: false, error: 'Lead not found.' });
   if (!r.already) {
     const crm = 'LEADIN-' + leadId.replace(/^LI-/, '');
-    try { out.closed = await _D.tasksDone(['LSADISPUTE_' + leadId, 'LSABADMKT_' + leadId, 'LSA25_' + leadId, 'LSAIN_' + leadId, 'LSACHECK_' + leadId, 'LSADISPUTE_' + crm, 'LSADISPUTE2_' + crm], 'disputed in Google by ' + byName); } catch (e) {}
+    try { out.closed = await _D.tasksDone(['LSADISPUTE_' + leadId, 'LSABADMKT_' + leadId, 'LSAMKT_' + leadId, 'LSA25_' + leadId, 'LSAIN_' + leadId, 'LSACHECK_' + leadId, 'LSADISPUTE_' + crm, 'LSADISPUTE2_' + crm], 'disputed in Google by ' + byName); } catch (e) {}
     await _D.kvCas(SKEY, v => { const st = loadState(v); lsaMarkDone(st, leadId, 'disputed'); st.lsaEsc = obj(st.lsaEsc); if (st.lsaEsc[leadId]) st.lsaEsc[leadId].closed = true; return st; }).catch(() => {});   /* LEADWATCH: the ladder stops */
   }
   if (o.via === 'text' && phone10(o.ph).length === 10) { try { out.conf = await sendL(o.ph, 'GrayCo: ' + code + ' ' + nm + (r.already ? ' was already marked disputed in Google (' + s(x.lsaDisputedBy) + ').' : ' marked ✓ disputed in Google — closed for everyone.'), leadNum(), undefined, { who: byName, leadId, code, type: 'lead' }); } catch (e) {} }

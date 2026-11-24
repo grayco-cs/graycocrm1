@@ -34,7 +34,7 @@ DB.gc_staff.push({ email: 'owner@grayco-cs.com', name: 'Demo Owner', role: 'admi
 putRow('users', 'st_owner', { id: 'st_owner', email: 'owner@grayco-cs.com', name: 'Demo Owner', phone: '901-555-0100', role: 'admin', approved: true }, { user_id: 'st_owner', email: 'owner@grayco-cs.com' });
 putRow('users', 'u_sub', { id: 'u_sub', role: 'sub', approved: true, email: 'sub@demo.test', name: 'Demo Sub', company: 'Demo Sub LLC', trades: ['HVAC'], authUserId: 'auth-sub', crmSubId: 'S9' }, { user_id: 'u_sub', email: 'sub@demo.test' });
 const job = (id, x) => putRow('jobs', id, Object.assign({ id, status: 'open', visibility: 'public', draft: false, bidDueDate: DAY(20), pmId: 'st_owner', estimatorId: 'st_owner', grayCoRole: 'gc', tradesSought: 'HVAC', createdAt: now }, x), { job_id: id });
-job('J_MAT', { title: 'School HVAC (materials)', suppliersCanQuote: true, materialList: '4 RTUs 10-ton\n4 curbs', tradeScopes: [{ id: 't1', trade: 'HVAC', scope: 'LABOUR SCOPE SECRET' }],
+job('J_MAT', { title: 'School HVAC (materials)', suppliersCanQuote: true, materialList: '4 RTUs 10-ton\n4 curbs', tradeScopes: [{ id: 't1', trade: 'HVAC', scope: 'HVAC SCOPE OF WORK', files: [{ name: 'HVAC Scope.pdf', fileRef: 'staff/x/hvac-scope.pdf' }] }], bidForm: [{ id: 'bf1', trade: 'HVAC', item: 'BID FORM LINE SECRET' }],
   plans: [{ name: 'Invitation to Bid.pdf' }, { name: 'M-101 Plan.pdf' }] });
 job('J_LAB', { title: 'Labour only job', suppliersCanQuote: false });   /* SUPVIS: an admin UN-TICKED it */
 job('J_NEW', { title: 'New public job (box never touched)' });   /* SUPVIS (owner 11/24): on unless un-ticked */
@@ -77,7 +77,7 @@ r = await call('tk-sup', { action: 'load', keys: ['jobs', 'bids', 'mquotes', 'pl
 const SJ = r.b.data.jobs;
 ok('5 SUPALL (owner 11/24: "all suppliers should see everything … every job"): every job ON THE PORTAL — public, private, un-ticked, closed; never a draft or a Lead Inbox job no person published', SJ.map(j => j.id).sort().join() === 'J_AUTOPUB,J_CLOSED,J_LAB,J_MAT,J_NEW,J_PINV,J_PRIV', SJ.map(j => j.id));
 const mj = SJ.find(j => j.id === 'J_MAT') || {};
-ok('6 the job: material list, quotable; never the trades\' labour scopes', mj.materialList === '4 RTUs 10-ton\n4 curbs' && mj.quotable === true && !('tradeScopes' in mj) && JSON.stringify(r.b).indexOf('LABOUR SCOPE SECRET') < 0, mj);
+ok('6 the job: material list, quotable; SUPSCOPE (owner 11/24): the scope of work + its file (a download link); never the bid form lines', mj.materialList === '4 RTUs 10-ton\n4 curbs' && mj.quotable === true && (mj.tradeScopes || []).some(ts => ts.scope === 'HVAC SCOPE OF WORK' && (ts.files || []).some(f => f.name === 'HVAC Scope.pdf' && /^https:/.test(f.dataUrl || f.url || ''))) && JSON.stringify(r.b).indexOf('BID FORM LINE SECRET') < 0, mj);
 ok('7 plans: no invitation to bid (BIDVIS); the plan; not the labour-only job\'s', r.b.data['plans:J_MAT'].map(p => p.name).join() === 'M-101 Plan.pdf' && (r.b.data['plans:J_LAB'] || []).length === 0);
 ok('8 no bids (anyone\'s), no quotes yet; the PM\'s contact', r.b.data.bids.length === 0 && r.b.data.mquotes.length === 0 && r.b.data.users.some(u => u.id === 'st_owner' && u.phone));
 

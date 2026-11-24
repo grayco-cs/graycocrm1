@@ -217,6 +217,8 @@ const ALL_CUST = [];
     T += 3600e3; await txt(PAT, 'BAD ' + cB + ' wrong area');
     for (let h = 1; h <= 3; h++) { T += 61 * 60e3; await SA.lsaEscTick(); }
     ok(!toPh(MKT).length, 'MKTNOTEXT: BAD lead ladder — marketing gets no text', SMS.map(x => [x.To, x.Body.slice(0, 50)]));
+    const mc = task('LSAMKT_LI-f11');
+    ok(mc && !mc.done && (mc.assignees || []).includes(MKE) && /Google LSA call came in/.test(mc.label) && mc.prio === 'low', 'LSAMKT (owner 11/24): every Google LSA call → a To-Do in the CRM for marketing (no text)', mc);
     const mt = task('LSABADMKT_LI-f11');
     ok(mt && !mt.done && (mt.assignees || []).includes(MKE) && /Bad Google LSA lead/.test(mt.label), 'MKTNOTEXT: marketing gets a To-Do in the CRM for the BAD lead', mt);
     ok(toPh(O1).some(x => /BAD lead/.test(x.Body)), 'the BAD ladder still reaches the owners after the office', SMS.map(x => [x.To, x.Body.slice(0, 50)]));
@@ -224,7 +226,7 @@ const ALL_CUST = [];
     for (let h = 1; h <= 4; h++) { T += 61 * 60e3; await SA.lsaEscTick(); }
     ok(!toPh(MKT).length && !task('LSABADMKT_LI-f12'), 'MKTNOTEXT: "has not answered" — nothing to marketing', SMS.map(x => [x.To, x.Body.slice(0, 50)]));
     SMS.length = 0; await txt(PAT, 'DISPUTED ' + cB); const mt2 = task('LSABADMKT_LI-f11');
-    ok(mt2 && mt2.done, 'disputed → the marketing To-Do closes too', mt2); }
+    ok(mt2 && mt2.done && task('LSAMKT_LI-f11').done, 'disputed → the marketing To-Dos close too', [mt2, task('LSAMKT_LI-f11')]); }
   console.log('7. Google\'s 48 hours (LEADWATCH: replaces day 25 / 30)');
   world(); SMS.length = 0;
   ok(SA.LSA_DISPUTE_WINDOW_H === 48 && SA.LSA_WARN_LEFT_H === 8, 'LSA_DISPUTE_WINDOW_H = 48, warn with 8 h left (constants)');
