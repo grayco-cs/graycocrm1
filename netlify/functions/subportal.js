@@ -471,7 +471,7 @@ async function subScope(who){
       const canSee = ((j.visibility || 'public') === 'public' && tradeFit(j, who.profile)) || invited.has(r.id);   /* patch TRADEVIS */
       const open = CLOSED.indexOf(low(j.status)) < 0, past = dueOver(j);
       /* patch LATEBID: past the due date → only a sub who had it on their list sees it (decided below, one read for all of them) */
-      if (past && !bidOn.has(r.id) && !invited.has(r.id)) { if (canSee && open) lateCand.push(r); return; }
+      if (past && !bidOn.has(r.id)) { if (canSee && open) lateCand.push(r); return; }   /* patch LATECODE: an invite alone no longer keeps it (owner 11/24) */
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
       if (canSee && open && !j.biddingClosed) { biddable[r.id] = true; if (past) late[r.id] = true; }   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids · patch LATEBID: past due → a ⏰ late bid */
     });
@@ -486,19 +486,30 @@ async function subScope(who){
    list in their portal from invite or they put it on their list to keep up with then they can send a late bid in but if they missed it
    completely it should never show to them"): a past-due job is on a sub's list when they were invited or bid on it (checked by the caller),
    tapped ✋ I'm bidding, asked for plans / info (📩), or opened it / downloaded a plan BEFORE the due date (activity 'view' / 'download' rows:
-   the server stamps their time, the browser never sends it). Never anyone else's rows. */
+   the server stamps their time, the browser never sends it). Never anyone else's rows.
+   patch LATECODE (owner 11/24: "late bids can come in after due date but not for people that didn't save or start working on the bid
+   already"): only a sub who SAVED the job or STARTED WORKING on a bid keeps it after the due date —
+     · ✋ I'm bidding (the bid site's / sub portal's "save it to my list": intents 'yes'),
+     · a bid already sent (checked by the caller), a bid draft with something typed in (bid-draft, first saved before the due date),
+     · a 📩 plan / info request, a question on the job (Q&A), a message to GrayCo on the job, a 📐 takeoff on its plans.
+   A mere view / plan download, 🚫 Not bidding, or an invite they never acted on no longer counts — they get the same "not found" as anyone.
+   Every row but the draft can only be written while the job is open to the sub (scope-checked on the server), so its time is not checked;
+   the draft is saved by key, so its server-stamped first time must be at or before the due moment (an older draft without one counts). */
+function draftHasWork(v){ v = v || {}; return !!(s(v.amount) || s(v.scope) || s(v.notes)); }
 async function onTheirList(me, rows){
   const ids = rows.map(function(r){ return r.id; }), due = {}, out = new Set();
   rows.forEach(function(r){ due[r.id] = dueAt(r.data || {}); });
-  const [ints, reqs, acts] = await Promise.all([
-    listRows([eq('collection', 'intents'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }),
-    listRows([eq('collection', 'planreqs'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }),
-    listRows([eq('collection', 'activity'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; })
-  ]);
-  ints.forEach(function(r){ const d = r.data || {}; if (d.intent === 'yes' && s(d.userId) === me) out.add(s(r.job_id || d.jobId)); });
-  reqs.forEach(function(r){ const d = r.data || {}; if (s(d.userId) === me) out.add(s(r.job_id || d.jobId)); });
-  acts.forEach(function(r){ const d = r.data || {}, id = s(r.job_id || d.jobId), at = Date.parse(s(d.at));
-    if (s(d.userId) === me && (d.kind === 'view' || d.kind === 'download') && at && due[id] && at <= due[id]) out.add(id); });
+  const mine = function(c){ return listRows([eq('collection', c), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }); };
+  const [ints, reqs, qs, msgs, drafts, tks] = await Promise.all(['intents', 'planreqs', 'questions', 'messages', 'bid-draft', 'takeoffs'].map(mine));
+  const job = function(r){ return s(r.job_id || (r.data && r.data.jobId)); };
+  ints.forEach(function(r){ const d = r.data || {}; if (d.intent === 'yes' && s(d.userId) === me) out.add(job(r)); });
+  reqs.forEach(function(r){ const d = r.data || {}; if (s(d.userId) === me) out.add(job(r)); });
+  qs.forEach(function(r){ const d = r.data || {}; if (s(d.userId) === me && s(d.body)) out.add(job(r)); });
+  msgs.forEach(function(r){ const d = r.data || {}; if (d.senderRole === 'sub' && s(d.senderId) === me) out.add(job(r)); });
+  drafts.forEach(function(r){ const d = r.data || {}, id = s(r.job_id), at = Date.parse(s(d.firstAt));
+    if (s(r.user_id) === me && draftHasWork(d.value) && (!s(d.firstAt) || (at && due[id] && at <= due[id]))) out.add(id); });
+  tks.forEach(function(r){ if (s(r.user_id) === me) out.add(job(r)); });
+  out.delete('');
   return out;
 }
 
@@ -1075,6 +1086,12 @@ async function saveKeyed(who, key, value, ctx){
   } else if (head === 'bid-draft' && parts.length === 3 && okId(parts[1]) && okId(parts[2])) {
     if (!who.isAdmin) { needSub(who, true); if (parts[2] !== who.profile.id) throw Fail(403, 'Not your draft.'); }
     row = { collection: 'bid-draft', id: parts[1] + ':' + parts[2], user_id: parts[2], job_id: parts[1], data: { value: value } };
+    if (value != null) {   /* patch LATECODE: the server's time of the first draft with something in it (a late bid needs work started before the due date) */
+      const old = await getRow('bid-draft', row.id), had = old && old.data && s(old.data.firstAt);
+      const at = new Date().toISOString();
+      const legacy = old && old.data && !had && draftHasWork(old.data.value);   /* a draft from before this stamp keeps counting as it did */
+      row.data.at = at; if (had) row.data.firstAt = had; else if (!legacy && draftHasWork(value)) row.data.firstAt = at;
+    }
   } else throw Fail(400, 'Unknown record: ' + key);
   if (value == null) await deleteKeys([row.collection + '/' + row.id]);
   else await upsertRows([row], who.email);
@@ -1104,7 +1121,7 @@ async function register(body){
   if (await staffByEmail(email)) throw Fail(409, 'That is a GrayCo staff e-mail. Sign in with your CRM password instead.');
   const users = await listRows([eq('collection', 'users')]);
   { const ux = users.find(function(r){ return low(r.email) === email; });
-    if (ux && svUnconfirmed(ux.data)) return svResend(email);   /* SIGNUPVERIFY: not confirmed yet → a fresh link to that mailbox (same answer) */
+    if (ux && svUnconfirmed(ux.data)) return svResend(email, { text: true });   /* SIGNUPVERIFY: not confirmed yet → a fresh link to that mailbox (same answer) */
     if (ux) throw Fail(409, 'That e-mail already has a portal account. Sign in, or use "Forgot password".'); }
   /* patch PORTALTEAM: a business e-mail on an approved company's domain joins that company at once (its access, its jobs); a free-mail
      sign-up naming an approved company asks to join it (the office decides in 🔐 Sub portal accounts) and keeps its own sign-up meanwhile */
@@ -1176,10 +1193,11 @@ async function register(body){
      every other sign-up is held — no approval, no invited job, no papers token, no office card — until the confirm link is used */
   const svProven = !!(body.invite && invited && inv && low(inv.data && inv.data.email) === email);
   const svTok = svProven ? '' : svHold(profile, invited ? inv : null);
+  const svCode = svTok ? svCodeIssue(profile) : '';   /* patch LATECODE: a 6-digit code for their cell (only when it can be texted) */
   if (svProven) { profile.emailVerifiedAt = profile.createdAt; profile.emailVerifiedVia = 'invite-link'; }
   try { await upsertRows([rowFor('users', profile)], email); }
   catch (e) { if (profile.authUserId) await deleteAuthUser(profile.authUserId); throw e; }
-  if (svTok) { const sent = await svMail(profile, svTok); return { ok: true, approved: false, verify: true, sent: !!sent, message: SV_MSG }; }   /* SIGNUPVERIFY */
+  if (svTok) { const sent = await svMail(profile, svTok); await svText(profile, svCode); return { ok: true, approved: false, verify: true, sent: !!sent, message: SV_MSG }; }   /* SIGNUPVERIFY · LATECODE: + the code by GrayCo text */
   if (tmatch.ask) { try { await TEAM().add(TEAM().keySub(tmatch.ask.id), { name: p.name, email: email, phone: p.phone }, { email: email, name: s(p.name), role: 'signup' }, { kind: 'sub', companyName: tmatch.ask.company, status: 'requested', via: 'request', primary: { email: tmatch.ask.email, phone: tmatch.ask.phone } }); } catch (e) { console.warn('[subportal] join request', e.message); } }
   if (invited) await upsertRows([rowFor('invites', Object.assign({}, inv.data, { usedAt: new Date().toISOString(), usedBy: profile.id }))], email);
   try { await notify({ kind: 'registered', user: profile }); } catch (e) { console.warn('[subportal] mail', e.message); }
@@ -1206,17 +1224,55 @@ async function svMail(prof, token){   /* tagged 'trade': a sub's own sign-up mai
   try { return await require('./_lib/custquiet.js').run('trade', function(){ return sendMail(low(prof.email), es ? 'Confirme su correo para GrayCo' : 'Confirm your e-mail for GrayCo', html); }); } catch (e) { return false; }
 }
 const SV_SEEN = new Map();
-async function svResend(email){
+async function svResend(email, opt){   /* patch LATECODE: opt.text — the person asked (sign-up again / Resend); staff's resend never texts */
   email = low(email); const same = { ok: true, approved: false, verify: true, message: SV_MSG };
   if (!okEmail(email)) return same;
   const last = SV_SEEN.get(email) || 0; if (Date.now() - last < 60e3) return same;   /* one link a minute per address */
   SV_SEEN.set(email, Date.now()); if (SV_SEEN.size > 2000) SV_SEEN.clear();
   const row = (await listRows([eq('collection', 'users'), eq('email', email)]))[0], prof = row && row.data;
   if (!svUnconfirmed(prof)) return same;
-  const v = TEAM().verifyToken(), next = Object.assign({}, prof, { emailVerify: { hash: v.hash, exp: v.exp } });
+  const v = TEAM().verifyToken(), ov = prof.emailVerify || {}, next = Object.assign({}, prof, { emailVerify: { hash: v.hash, exp: v.exp } });
+  if (ov.codeHash) Object.assign(next.emailVerify, { codeHash: ov.codeHash, codeExp: ov.codeExp, codeTries: ov.codeTries || 0 });   /* patch LATECODE: a code already texted keeps working */
+  const code = opt && opt.text ? svCodeIssue(next) : '';   /* patch LATECODE: a fresh text code with the fresh link (an older code stays until it runs out) */
   await upsertRows([rowFor('users', next)], email);
   await svMail(next, v.token);
+  await svText(next, code);
   return same;
+}
+/* ── patch LATECODE (owner 11/24: "i liked earlier the code was sent from grayco text for confirmation also thats how ch plumbing signed
+   up"): a sign-up with a cell number also gets a 6-digit code by GrayCo text and may confirm by typing it (the e-mail link keeps working).
+   Only the cell THEY typed on the sign-up; only on the sign-up / its Resend (one a minute); the code lives 10 minutes, 5 wrong tries end
+   it; only its keyed hash is kept; a wrong / used / run-out code, or an e-mail that is not waiting, all get the same answer. Twilio not
+   set up → no code (the e-mail link only, as before). ── */
+const SV_CODE_MIN = 10, SV_CODE_TRIES = 5;
+const SV_CODE_BAD = 'That code is not right or has run out. Check the text from GrayCo, tap "Resend" for a new one, or use the link in the e-mail.';
+function svCodeHash(id, code){ return crypto.createHmac('sha256', s(process.env.SUPABASE_SERVICE_KEY) || 'gc-signup-code').update('svcode:' + s(id) + ':' + s(code)).digest('hex'); }
+function svCodeIssue(prof){
+  const CT = require('./_lib/codetext.js');
+  if (!prof || !prof.emailVerify || !CT.ready() || !CT.cell(prof.phone)) { if (prof && prof.emailVerify) { delete prof.emailVerify.codeHash; delete prof.emailVerify.codeExp; delete prof.emailVerify.codeTries; } return ''; }
+  const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+  Object.assign(prof.emailVerify, { codeHash: svCodeHash(prof.id, code), codeExp: new Date(Date.now() + SV_CODE_MIN * 60e3).toISOString(), codeTries: 0 });
+  return code;
+}
+async function svText(prof, code){
+  if (!code) return false;
+  try { return (await require('./_lib/codetext.js').sendCode(prof.phone, code, { lang: prof.lang, what: 'signup', min: SV_CODE_MIN })).ok; } catch (e) { return false; }
+}
+async function svConfirmCode(email, code){
+  const t0 = Date.now(), pad = async function(){ const w = 400 + Math.floor(Math.random() * 100) - (Date.now() - t0); if (w > 0) await new Promise(function(r){ setTimeout(r, w); }); };
+  email = low(email); code = s(code).replace(/\s+/g, '');
+  const bad = async function(){ await pad(); return Fail(400, SV_CODE_BAD); };
+  if (!okEmail(email) || !/^\d{6}$/.test(code)) throw await bad();
+  const row = (await listRows([eq('collection', 'users'), eq('email', email)]))[0], u = row && row.data, v = u && u.emailVerify;
+  if (!svUnconfirmed(u) || !v || s(v.codeHash).length !== 64 || !(Date.parse(s(v.codeExp)) > Date.now()) || (Number(v.codeTries) || 0) >= SV_CODE_TRIES) throw await bad();
+  const h = svCodeHash(u.id, code);
+  if (!crypto.timingSafeEqual(Buffer.from(s(v.codeHash)), Buffer.from(h))) {
+    await upsertRows([rowFor('users', Object.assign({}, u, { emailVerify: Object.assign({}, v, { codeTries: (Number(v.codeTries) || 0) + 1 }) }))], email);
+    throw await bad();
+  }
+  const prof = await svConfirmRow(u, 'text-code');
+  await pad();
+  return prof;
 }
 async function svConfirm(token){
   token = s(token); if (!/^[A-Za-z0-9_-]{30,80}$/.test(token)) throw Fail(400, 'That confirm link is not right. Tap "Resend link" to get a new one.');
@@ -1225,8 +1281,11 @@ async function svConfirm(token){
   if (!row || !svUnconfirmed(row.data)) throw Fail(400, 'That confirm link was already used or is not right. Sign in, or tap "Resend link".');
   const u = row.data;
   if (Date.parse(s(u.emailVerify.exp)) < Date.now()) throw Fail(410, 'That confirm link has run out (24 hours). Tap "Resend link" to get a new one.');
+  return svConfirmRow(u, 'link');
+}
+async function svConfirmRow(u, via){   /* patch LATECODE: the confirm itself — the link or the texted code */
   const oc = u.onConfirm || {}, now = new Date().toISOString();
-  const prof = Object.assign({}, u, { emailVerifiedAt: now, emailVerifiedVia: 'link' });
+  const prof = Object.assign({}, u, { emailVerifiedAt: now, emailVerifiedVia: via });
   delete prof.emailVerify; delete prof.onConfirm;
   if (oc.approved === true) { prof.approved = true; ['approvedAuto', 'invitedJobId', 'vetPending'].forEach(function(k){ if (oc[k] !== undefined) prof[k] = oc[k]; }); }
   await upsertRows([rowFor('users', prof)], low(prof.email));
@@ -2696,9 +2755,14 @@ exports.handler = async function (event) {
       const pf = await svConfirm(body.token);
       return J(200, { ok: true, approved: pf.approved === true });
     }
+    if (action === 'signup-confirm-code') {   /* patch LATECODE: the 6-digit code from the GrayCo text */
+      if (limited(ipOf(event), 10)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
+      const pf = await svConfirmCode(body.email, body.code);
+      return J(200, { ok: true, approved: pf.approved === true });
+    }
     if (action === 'signup-resend') {   /* SIGNUPVERIFY: "Resend link" (the same answer whether or not the address is waiting) */
       if (limited(ipOf(event), 8)) return J(429, { error: 'Please wait a minute before asking for another e-mail.' });
-      return J(200, await svResend(body.email));
+      return J(200, await svResend(body.email, { text: true }));   /* patch LATECODE: + a fresh text code to the cell on the sign-up */
     }
     if (action === 'team-confirm') {   /* patch PORTALTEAM (security): the domain sign-up's e-mail confirm → access */
       if (limited(ipOf(event), 20)) return J(429, { error: 'Too many tries. Wait a few minutes and try again.' });
@@ -2836,7 +2900,7 @@ exports.handler = async function (event) {
   }
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
-exports._sv = { svUnconfirmed, svConfirm, svResend, SV_MSG };   /* SIGNUPVERIFY: portal-access / sub-accounts / tests */
+exports._sv = { svUnconfirmed, svConfirm, svResend, SV_MSG, svConfirmCode };   /* + patch LATECODE */   /* SIGNUPVERIFY: portal-access / sub-accounts / tests */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
 exports._hub = { autoOpened: autoOpened, crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */

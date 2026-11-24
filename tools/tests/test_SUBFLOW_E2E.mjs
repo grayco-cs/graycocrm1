@@ -64,9 +64,10 @@ const J = {
   JC: { id: 'JC', title: 'Closed Demo Job', bidDueDate: day(6), status: 'open', visibility: 'public', tradesSought: 'Drywall', biddingClosed: true, crmProjectId: 'P1' } };
 Object.values(J).forEach(j => T.sp_rows.push(spRow('jobs', j.id, j, { job_id: j.id })));
 T.sp_rows.push(spRow('invites', 'inv_ai', { id: 'inv_ai', jobId: 'JI', email: U.A.email }, { job_id: 'JI', email: U.A.email }));
-/* patch LATEBID: A opened JL on the bid site before its due date (so it is on A's list → a ⏰ late bid); C opened it only AFTER the due date
-   (does not count) and E never had it — neither ever sees it */
-T.sp_rows.push(spRow('activity', 'a_pv_JL_u_a', { id: 'a_pv_JL_u_a', jobId: 'JL', userId: 'u_a', kind: 'view', via: 'bidsite', at: new Date(Date.now() - 3 * 864e5).toISOString() }, { job_id: 'JL', user_id: 'u_a' }),
+/* patch LATEBID · LATECODE: A tapped ✋ I'm bidding on JL before its due date (so A started on it → a ⏰ late bid); C only opened it, before AND
+   after the due date (a view does not count, owner 11/24) and E never had it — neither ever sees it */
+T.sp_rows.push(spRow('intents', 'JL__u_a', { id: 'JL__u_a', jobId: 'JL', userId: 'u_a', intent: 'yes', via: 'bidsite', at: new Date(Date.now() - 3 * 864e5).toISOString() }, { job_id: 'JL', user_id: 'u_a' }),
+  spRow('activity', 'a_pv_JL_u_c0', { id: 'a_pv_JL_u_c0', jobId: 'JL', userId: 'u_c', kind: 'view', via: 'bidsite', at: new Date(Date.now() - 3 * 864e5).toISOString() }, { job_id: 'JL', user_id: 'u_c' }),
   spRow('activity', 'a_pv_JL_u_c', { id: 'a_pv_JL_u_c', jobId: 'JL', userId: 'u_c', kind: 'view', via: 'bidsite', at: new Date().toISOString() }, { job_id: 'JL', user_id: 'u_c' }));
 T.sp_rows.push(spRow('plans', 'JL', { items: [{ name: 'LATE-PLAN.pdf', fileRef: 'staff/2026-11/ee55-L.pdf', size: 10, type: 'application/pdf' }] }, { job_id: 'JL' }));
 /* plan files (bytes in the bucket) */
@@ -193,13 +194,13 @@ await t('1b sub portal 📋 Jobs to bid: the same five for A, the same details; 
   const c = await portal('C', 'p-bidjobs'); yes(c.j.jobs.some(x => x.id === 'JP') && c.j.jobs.some(x => x.id === 'J1'), 'C: ' + c.j.jobs.map(x => x.id));
 });
 /* patch LATEBID: past due → off the list for a sub who never had it; on their list (opened before the due date) → a ⏰ late bid */
-await t('1c past due: JL is a ⏰ late bid for A (opened it before the due date) on both sites; ⏸ bidding closed (JC) stays closed', async () => {
+await t('1c past due: JL is a ⏰ late bid for A (✋ I’m bidding before the due date) on both sites; ⏸ bidding closed (JC) stays closed', async () => {
   const r = await bid(U.A.email, 'load', { keys: ['jobs'] }); const jl = r.j.data.jobs.find(x => x.id === 'JL'), jc = r.j.data.jobs.find(x => x.id === 'JC');
   eq([!!jl.biddingClosed, !!jl.pastDue, !!jl.lateBid, !!jc.biddingClosed, !!jc.lateBid], [false, true, true, true, false]);
   const p = await portal('A', 'p-bidjobs'); const pl = p.j.jobs.find(x => x.id === 'JL');
   eq([pl.canBid, pl.pastDue, pl.lateBid, p.j.jobs.find(x => x.id === 'JC').canBid], [true, true, true, false]);
 });
-await t('1d a sub who never had JL never sees it: not in the list on either site, plans by direct load empty, a bid refused (C opened it only after the due date; E never)', async () => {
+await t('1d a sub who never had JL never sees it: not in the list on either site, plans by direct load empty, a bid refused (C only opened it, before and after the due date; E never)', async () => {
   for (const e of [U.C.email, U.E.email]) {
     const r = await bid(e, 'load', { keys: ['jobs', 'plans:JL'] }); eq(r.code, 200, r.raw); yes(!r.j.data.jobs.some(x => x.id === 'JL'), e + ' list'); eq(r.j.data['plans:JL'], [], e + ' plans');
     yes(!r.raw.includes('Late Demo Job') && !r.raw.includes('LATE-PLAN'), e + ' saw JL');
@@ -211,14 +212,14 @@ await t('1d a sub who never had JL never sees it: not in the list on either site
   for (const [act, extra] of [['p-bid-save', { amount: 500, uploadIds: ['EupC'] }], ['p-bid-zip', {}], ['p-bid-ask', { text: 'hi' }], ['p-bid-request', { needs: ['plans'] }], ['p-bid-intent', { intent: 'yes' }]]) {
     const x = await portal('C', act, Object.assign({ jobId: 'JL' }, extra)); eq(x.code, 403, act + ' ' + x.raw); }
 });
-await t('1e what puts a past-due job on a sub\'s list: ✋ I\'m bidding, a 📩 request, a view / download BEFORE the due date (not after, not 🚫 not bidding, never another sub\'s row)', async () => {
+await t('1e what puts a past-due job on a sub\'s list: ✋ I\'m bidding, a 📩 request (LATECODE: a view / download no longer does; not 🚫 not bidding, never another sub\'s row)', async () => {
   const H = SP._hub, jr = T.sp_rows.find(x => x.key === 'jobs/JL'), before = new Date(Date.now() - 3 * 864e5).toISOString(), after = new Date().toISOString();
   const add = (c, id, d) => { const r = spRow(c, id, Object.assign({ id, jobId: 'JL' }, d), { job_id: 'JL', user_id: d.userId }); T.sp_rows.push(r); return r; };
   const tmp = [add('intents', 'JL__u_x1', { userId: 'u_x1', intent: 'yes', at: after }), add('intents', 'JL__u_x2', { userId: 'u_x2', intent: 'no', at: before }),
     add('planreqs', 'JL__u_x3', { userId: 'u_x3', at: after }), add('activity', 'a_dl_x4', { userId: 'u_x4', kind: 'download', at: before }), add('activity', 'a_pv_x5', { userId: 'u_x5', kind: 'view', at: after })];
   const got = []; for (const u of ['u_x1', 'u_x2', 'u_x3', 'u_x4', 'u_x5', 'u_x6']) got.push((await H.onTheirList(u, [jr])).has('JL'));
   tmp.forEach(r => T.sp_rows.splice(T.sp_rows.indexOf(r), 1));
-  eq(got, [true, false, true, true, false, false]);
+  eq(got, [true, false, true, false, false, false]);   /* patch LATECODE: u_x4's download before the due date no longer counts */
   eq([H.dueOver({ bidDueDate: '2026-11-03' }, Date.parse('2026-11-04T05:59:00Z')), H.dueOver({ bidDueDate: '2026-11-03' }, Date.parse('2026-11-04T06:00:01Z')), H.dueOver({ bidDueDate: '2026-11-03', bidDueTime: '14:00' }, Date.parse('2026-11-03T20:00:01Z'))], [false, true, true], 'Central, end of day / the due time');
 });
 

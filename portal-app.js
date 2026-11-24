@@ -347,8 +347,8 @@ Object.assign(L.es, { jobsToBid: '📋 Trabajos para licitar', bidsJoin: 'Unirse
 /* patch PLANREQ (owner 11/12): 📩 Request plans / more info on a job — what they need + a note; the job's PM + estimator get an e-mail,
    a CRM message and a To-Do (portal-access p-bid-request → subportal.js). A big button when the job has no plans, a small link otherwise. */
 /* patch SUBFLOW: ⬇ All plans (ZIP) · 💬 Messages with GrayCo on a bid job · past due */
-Object.assign(L.en, { sfLate: '⏰ Late bid', sfLateOk: 'The bid due date has passed. Because this job is on your list, you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brUndo: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', sfAddUpd: 'Updated', sfNowDue: 'Now due:', sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
-Object.assign(L.es, { sfLate: '⏰ Oferta tardía', sfLateOk: 'La fecha límite ya pasó. Como este trabajo está en su lista, todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brUndo: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', sfAddUpd: 'Actualizada', sfNowDue: 'Ahora vence:', sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
+Object.assign(L.en, { sfLate: '⏰ Late bid', sfLateOk: 'The bid due date has passed. Because you saved this job or started your bid before then (✋ I’m bidding, a draft, a question or request), you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brUndo: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', sfAddUpd: 'Updated', sfNowDue: 'Now due:', sfAddenda: 'Addenda', sfAddN: 'Addendum #', sfDueTo: 'Bid due date changed to', sfZip: '⬇ All plans (ZIP)', sfZipBusy: 'Making the ZIP…', sfMsgs: 'Messages with GrayCo', sfYou: 'You', sfPastDue: 'The bid due date has passed — GrayCo is not taking new bids or changes. Call GrayCo if you need more time.' });
+Object.assign(L.es, { sfLate: '⏰ Oferta tardía', sfLateOk: 'La fecha límite ya pasó. Como usted guardó este trabajo o empezó su oferta antes (✋ Voy a ofertar, un borrador, una pregunta o solicitud), todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brUndo: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', sfAddUpd: 'Actualizada', sfNowDue: 'Ahora vence:', sfAddenda: 'Adendas', sfAddN: 'Adenda #', sfDueTo: 'La fecha límite cambió a', sfZip: '⬇ Todos los planos (ZIP)', sfZipBusy: 'Preparando el ZIP…', sfMsgs: 'Mensajes con GrayCo', sfYou: 'Usted', sfPastDue: 'La fecha límite ya pasó — GrayCo no recibe ofertas ni cambios nuevos. Llame a GrayCo si necesita más tiempo.' });
 Object.assign(L.en, { prBtn: '📩 Request plans / more info', prSmall: '📩 Request more info', prNoPlans: 'No plans posted yet. Ask GrayCo for them — the job’s PM / estimator gets your request right away.', prWhat: 'What do you need?',
   prPlans: 'Plans', prSpecs: 'Specs', prSitewalk: 'Site walk / access', prOther: 'Other', prNote: 'Note (optional)', prNotePh: 'e.g. which sheets, your trade, best time for a walk', prFrom: 'From (your profile)',
   prSend: 'Send request', prPickOne: 'Tick what you need.', prOtherNote: 'Write what you need.', prSent: 'Request sent — the job’s PM / estimator will get back to you.', prOpen: 'Request sent {d}',
@@ -1723,7 +1723,7 @@ function signup(opts){
         return;
       }
       if (r.status !== 200 || !d.ok) { err.textContent = d.error || t('failed'); return; }
-      if (d.verify) return svCheckMail(body.email, d.message);   /* SIGNUPVERIFY: confirm the e-mail first — nothing else until then */
+      if (d.verify) return svCheckMail(body.email, d.message, String(body.profile && body.profile.phone || '').replace(/\D/g, '').length >= 10);   /* + patch LATECODE: they gave a cell → the texted code box */   /* SIGNUPVERIFY: confirm the e-mail first — nothing else until then */
       if (picked.items.length && d.paperToken) {
         busy(go, true); err.textContent = t('ppUp');
         return uploadPapers(d.paperToken, picked).then(function(u){ pendAfterSignup(opts, body.email, body.password, keep, function(){ busy(go, false); done(!!d.approved, body.email, u); }); });   /* patch SUBPEND */
@@ -1873,17 +1873,34 @@ Object.assign(L.es, { pdIn: '✅ Ya entró a su cuenta.', pdWhy: 'GrayCo está r
 /* right after sign-up: sign in with the password they just made (portal-access signin-password → the pending session, or the full
    portal when an invite already approved them). Anything else → fallback() (the old "Account created → Sign in" screen). */
 /* SIGNUPVERIFY (owner 11/23: "Yes subs should confirm their email"): after a sign-up — "Check your e-mail" + Resend link (one a minute) */
-function svCheckMail(email, msg){
+function svCheckMail(email, msg, cell){
   var main = document.getElementById('main'); if (!main) return;
   var es = LANG === 'es', note = h('p', { class: 'muted', id: 'svNote' });
+  /* patch LATECODE (owner 11/24: "i liked earlier the code was sent from grayco text for confirmation"): or type the 6-digit code GrayCo texted */
+  var codeBox = null;
+  if (cell) {
+    var ci = h('input', { id: 'svCode', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '7', placeholder: '123456', style: 'font-size:22px;letter-spacing:4px;text-align:center' });
+    var cb = h('button', { type: 'button', class: 'btn gold', id: 'svCodeGo', text: es ? 'Confirmar con el código' : 'Confirm with the code', on: { click: function(){
+      var code = String(ci.value || '').replace(/\D/g, '');
+      if (code.length !== 6) { note.textContent = es ? 'Escriba los 6 dígitos del texto.' : 'Type the 6 digits from the text.'; return; }
+      cb.disabled = true; fetch('/.netlify/functions/subportal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify({ action: 'signup-confirm-code', email: email, code: code }) })
+        .then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(j){ cb.disabled = false;
+          if (j && j.ok) { main.innerHTML = ''; main.appendChild(h('section', { class: 'card signin signup', id: 'svDone' }, [h('div', { class: 'big', text: es ? '✅ Confirmado' : '✅ Confirmed' }),
+            h('p', { text: j.approved ? (es ? 'Ya puede entrar con su correo y contraseña.' : 'You can sign in now with your e-mail and password.') : (es ? 'GrayCo revisa las cuentas nuevas (normalmente el mismo día) y le avisa por correo cuando esté aprobada.' : 'GrayCo reviews new accounts (usually the same day) and e-mails you when you are approved.') }),
+            h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn gold', text: es ? 'Entrar' : 'Sign in', on: { click: function(){ location.reload(); } } })])])); return; }
+          note.textContent = (j && j.error) || (es ? 'Ese código no es correcto o ya venció.' : 'That code is not right or has run out.'); }, function(){ cb.disabled = false; note.textContent = t('loadFail'); });
+    } } });
+    codeBox = h('div', { id: 'svCodeBox' }, [h('p', { text: es ? '¿Recibió el texto de GrayCo? Escriba el código de 6 dígitos:' : 'Got the GrayCo text? Type the 6-digit code:' }), ci, h('div', { class: 'btns' }, [cb])]);
+  }
   var b = h('button', { type: 'button', class: 'btn gold', id: 'svResend', text: es ? 'Reenviar el enlace' : 'Resend link', on: { click: function(){
     b.disabled = true; fetch('/.netlify/functions/subportal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', body: JSON.stringify({ action: 'signup-resend', email: email }) })
-      .then(function(){ note.textContent = es ? '✓ Enviado — revise su correo (y la carpeta de spam).' : '✓ Sent — check your e-mail (and the spam folder).'; setTimeout(function(){ b.disabled = false; }, 60000); }, function(){ b.disabled = false; note.textContent = t('loadFail'); });
+      .then(function(){ note.textContent = cell ? (es ? '✓ Enviado — revise su correo y sus textos.' : '✓ Sent — check your e-mail and your texts.') : (es ? '✓ Enviado — revise su correo (y la carpeta de spam).' : '✓ Sent — check your e-mail (and the spam folder).'); setTimeout(function(){ b.disabled = false; }, 60000); }, function(){ b.disabled = false; note.textContent = t('loadFail'); });
   } } });
   main.innerHTML = '';
   main.appendChild(h('section', { class: 'card signin signup', id: 'svCheck' }, [h('div', { class: 'big', text: es ? '✉️ Revise su correo' : '✉️ Check your e-mail to confirm' }),
     h('p', { text: es ? 'Le enviamos un enlace a ' + email + '. Tóquelo para confirmar su correo (sirve por 24 horas). Después GrayCo revisa su cuenta; podrá subir sus documentos al entrar.' : (msg || 'We sent a link to ' + email + '. Tap it to confirm your e-mail (it works for 24 hours).') + ' After that, GrayCo reviews your account; you can add your papers when you sign in.' }),
-    h('div', { class: 'muted', text: email }), h('div', { class: 'btns' }, [b]), note]));
+    h('div', { class: 'muted', text: email }), codeBox, h('div', { class: 'btns' }, [b]), note].filter(Boolean)));
 }
 function pendAfterSignup(opts, email, pw, keep, fallback){
   if (!opts || !opts.signedIn) return fallback();

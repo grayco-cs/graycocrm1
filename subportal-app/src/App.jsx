@@ -260,7 +260,8 @@ const T = {
     signupOptionalInfo: 'Optional but Helpful',
     signupDocsInfo: 'Company Documents',
     openPlans: 'Open plans', linkNeed: 'Paste the share link.', linkBad: 'That is not a link.', linkAdded: 'Plan link added — subs see "Open plans ↗".', driveBig: 'Upload big file to Google Drive', linkOr: 'Or paste a Drive / Dropbox link', linkBig: 'Over 50 MB? Paste a Drive/Dropbox link', linkLabelPh: 'Name (e.g. Full plan set)', linkAddBtn: 'Add plan link',
-    lateBid: 'Late bid', lateBidOk: 'The bid due date has passed. Because this job is on your list, you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', pastDueTab: '⏰ Past due', openTab: 'Open', jobNotFound: 'That job was not found.',   /* patch LATEBID */
+    svTitle: '✉️ Confirm your sign-up', svBody: 'We sent a link to {e} — tap it to confirm (it works for 24 hours). If you gave a cell number, GrayCo also texted you a 6-digit code.', svCodeLbl: 'Got the GrayCo text? Type the code:', svCodeBtn: 'Confirm with the code', svCodeNeed: 'Type the 6 digits from the text.', svCodeBad: 'That code is not right or has run out. Tap Resend for a new one, or use the link in the e-mail.', svDone: 'Confirmed — sign in.', svResend: 'Resend link', svResendBoth: 'Resend link + code', svSent: 'Sent — check your e-mail (and the spam folder).', svSentBoth: 'Sent — check your e-mail and your texts.',   /* patch LATECODE */
+    lateBid: 'Late bid', lateBidOk: 'The bid due date has passed. Because you saved this job or started your bid before then (✋ I’m bidding, a draft, a question or request), you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', pastDueTab: '⏰ Past due', openTab: 'Open', jobNotFound: 'That job was not found.',   /* patch LATEBID */
     noDueDate: 'No due date', archivedJobs: 'Archived', showArchived: 'Show archived', hideArchived: 'Hide archived', archivedBadge: 'Archived',
     ppLater: 'I have it — will send later', ppUpload: 'Upload', ppExemptS: 'Exempt (sole proprietor)', ppLicOpt: 'License (optional)', cellPhone: 'Cell phone', crewSize: 'Crew size', tradesTap: 'Your trade(s) — tap all that fit', tradeOther: 'Other trade(s) — type them here', optional: 'optional',
     ppT: 'Your papers — optional', ppWhy: 'Upload these now for faster approval — a PDF or a phone photo is fine. With your W-9, general liability and workers’ comp on file, GrayCo can approve you and you can bid right away. No files handy? Tick “I have it — will send later”.',
@@ -566,7 +567,8 @@ const T = {
     signupOptionalInfo: 'Opcional pero Útil',
     signupDocsInfo: 'Documentos de la Compañía',
     openPlans: 'Abrir planos', linkNeed: 'Pegue el enlace.', linkBad: 'Eso no es un enlace.', linkAdded: 'Enlace agregado — los subcontratistas ven "Abrir planos ↗".', driveBig: 'Subir archivo grande a Google Drive', linkOr: 'O pegue un enlace de Drive / Dropbox', linkBig: '¿Más de 50 MB? Pegue un enlace de Drive/Dropbox', linkLabelPh: 'Nombre (p. ej. Juego completo)', linkAddBtn: 'Agregar enlace',
-    lateBid: 'Oferta tardía', lateBidOk: 'La fecha límite ya pasó. Como este trabajo está en su lista, todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', pastDueTab: '⏰ Vencidos', openTab: 'Abiertos', jobNotFound: 'No se encontró ese trabajo.',   /* patch LATEBID */
+    svTitle: '✉️ Confirme su registro', svBody: 'Le enviamos un enlace a {e} — tóquelo para confirmar (sirve por 24 horas). Si dio un número de celular, GrayCo también le mandó un código de 6 dígitos por texto.', svCodeLbl: '¿Recibió el texto de GrayCo? Escriba el código:', svCodeBtn: 'Confirmar con el código', svCodeNeed: 'Escriba los 6 dígitos del texto.', svCodeBad: 'Ese código no es correcto o ya venció. Toque Reenviar para uno nuevo, o use el enlace del correo.', svDone: 'Confirmado — inicie sesión.', svResend: 'Reenviar el enlace', svResendBoth: 'Reenviar enlace + código', svSent: 'Enviado — revise su correo (y la carpeta de spam).', svSentBoth: 'Enviado — revise su correo y sus textos.',   /* patch LATECODE */
+    lateBid: 'Oferta tardía', lateBidOk: 'La fecha límite ya pasó. Como usted guardó este trabajo o empezó su oferta antes (✋ Voy a ofertar, un borrador, una pregunta o solicitud), todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', pastDueTab: '⏰ Vencidos', openTab: 'Abiertos', jobNotFound: 'No se encontró ese trabajo.',   /* patch LATEBID */
     noDueDate: 'Sin fecha límite', archivedJobs: 'Archivados', showArchived: 'Ver archivados', hideArchived: 'Ocultar archivados', archivedBadge: 'Archivado',
     ppLater: 'Lo tengo — lo envío después', ppUpload: 'Subir', ppExemptS: 'Exento (propietario único)', ppLicOpt: 'Licencia (opcional)', cellPhone: 'Celular', crewSize: 'Cuadrilla', tradesTap: 'Su(s) oficio(s) — toque todos los que hace', tradeOther: 'Otro(s) oficio(s) — escríbalos aquí', optional: 'opcional',
     ppT: 'Sus documentos — opcional', ppWhy: 'Súbalos ahora para una aprobación más rápida. Con el W-9, el seguro de responsabilidad general y el de compensación de trabajadores, GrayCo puede aprobarlo y usted puede licitar de inmediato. También puede agregarlos después en Mis Documentos.',
@@ -1795,6 +1797,11 @@ function LangToggle({ lang, setLang }) {
 function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
   // An invite link (?invite=…&job=…): invited subs are approved right away and pre-linked to the job
   const [inviteInfo, setInviteInfo] = useState(null);
+  /* patch LATECODE: after a sign-up that must confirm — the e-mail link, or the 6-digit code GrayCo texted to the cell they typed */
+  const [svWait, setSvWait] = useState(null);   // { email, cell }
+  const [svCode, setSvCode] = useState('');
+  const [svMsg, setSvMsg] = useState('');
+  const [svBusy, setSvBusy] = useState(false);
   const inviteParams = (() => {
     try {
       const p = new URLSearchParams(window.location.search);
@@ -1904,11 +1911,10 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
       return;
     }
     setDuplicateWarning(null);
-    /* patch PORTALTAPS (SIGNUPVERIFY on the bid site): the server holds a self sign-up until its e-mail is confirmed — say so
-       plainly (it used to try to sign in and say "Account created! You can bid on public jobs immediately") */
-    if (result.verify) {
-      setVerifyNote({ email: form.email, msg: result.message || t.svCheck });
-      setMode('login'); setForm({ ...form, username: form.email, password: '' });
+    /* patch PORTALTAPS (SIGNUPVERIFY on the bid site): no more "Account created!" — LATECODE's confirm screen (link or texted code) */
+    if (result.verify) {   /* SIGNUPVERIFY · patch LATECODE: confirm first — the e-mail link or the code texted to their cell */
+      setSvWait({ email: String(form.email || '').trim().toLowerCase(), cell: String(form.phone || '').replace(/\D/g, '').length >= 10 });
+      setSvCode(''); setSvMsg('');
       return;
     }
     // Signed up: sign straight in
@@ -1925,6 +1931,45 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
     setMode('login');
     setForm({ ...form, username: form.email, password: '' });
   }
+  /* patch LATECODE */
+  async function svConfirmCode() {
+    const code = svCode.replace(/\D/g, '');
+    if (code.length !== 6) { setSvMsg(t.svCodeNeed); return; }
+    setSvBusy(true); setSvMsg('');
+    try {
+      const r = await api('signup-confirm-code', { email: svWait.email, code }, { anonymous: true });
+      setSvBusy(false);
+      if (!r || !r.ok) { setSvMsg(t.svCodeBad); return; }
+      const login = await authSignIn(form.email, form.password);
+      if (login.user) { showToast(r.approved ? t.signupComplete : t.accountPending); onLogin(login.user); return; }
+      setSvWait(null); showToast(t.svDone); setMode('login'); setForm({ ...form, username: form.email, password: '' });
+    } catch (e) { setSvBusy(false); setSvMsg((e && e.message) || t.svCodeBad); }
+  }
+  async function svResend() {
+    setSvBusy(true);
+    try { await api('signup-resend', { email: svWait.email }, { anonymous: true }); setSvMsg(svWait.cell ? t.svSentBoth : t.svSent); }
+    catch (e) { setSvMsg((e && e.message) || t.svCodeBad); }
+    setTimeout(() => setSvBusy(false), 60000);
+  }
+  if (svWait) return (
+    <div id="sv-wait" style={{ minHeight: '100vh', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: styles.fontBody, padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 440, border: `1px solid ${styles.border}`, borderRadius: 12, padding: 20, lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 8 }}>{t.svTitle}</div>
+        <div style={{ fontSize: 14, marginBottom: 6 }}>{t.svBody.replace('{e}', svWait.email)}</div>
+        {svWait.cell && <>
+          <div style={{ fontSize: 14, margin: '12px 0 6px', fontWeight: 700 }}>{t.svCodeLbl}</div>
+          <input id="sv-code" inputMode="numeric" autoComplete="one-time-code" maxLength={7} value={svCode} onChange={e => setSvCode(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') svConfirmCode(); }} placeholder="123456" style={{ ...inputStyle, fontSize: 22, letterSpacing: 4, textAlign: 'center' }} />
+          <Btn data-sv-confirm="1" onClick={svConfirmCode} disabled={svBusy} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>{t.svCodeBtn}</Btn>
+        </>}
+        {svMsg && <div id="sv-msg" style={{ fontSize: 13, marginTop: 10, color: styles.text2 }}>{svMsg}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+          <Btn variant="secondary" data-sv-resend="1" onClick={svResend} disabled={svBusy}>{svWait.cell ? t.svResendBoth : t.svResend}</Btn>
+          <Btn variant="ghost" onClick={() => { setSvWait(null); setMode('login'); setForm({ ...form, username: form.email, password: '' }); }}>{t.login}</Btn>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{

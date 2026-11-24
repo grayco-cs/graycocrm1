@@ -668,7 +668,17 @@ async function signinStart(body, ip){
     await dbPost('gc_portal_code', { id: rid, purpose: 'signin', ident: hmac(id.key), code_hash: hmac(rid + ':' + code), link_token: m.kind === 'partner' ? m.links[0] : null,
       sub_id: m.kind === 'partner' ? s(m.sub.id) : null, expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0, ip: clip(ip, 60) });
     const L = MAIL[m.lang];
-    if (id.kind === 'phone' && textReady()) await require('./_lib/custquiet.js').run('reply', () => sendText(id.value, 'GrayCo Portal code: ' + code + ' (10 min)'));   /* patch CUSTQUIET: a sign-in code they just asked for goes at once */
+    /* patch LATECODE (owner 11/24: "i liked earlier the code was sent from grayco text"): a sub / supplier also gets the code by GrayCo text —
+       to the number they typed, or (asked with their e-mail) the cell on THEIR record (a team member's own, never the company's); STOP /
+       opt-out, the per-number limit and "Twilio not set up" are checked in _lib/codetext.js. The e-mail goes as before; a typed number that
+       cannot be texted (opted out, too soon) falls back to the e-mail on file. Customers: unchanged. */
+    let texted = false;
+    if (m.kind === 'partner') {
+      const cellTo = id.kind === 'phone' ? id.value : (m.member ? s(m.member.phone) : s(m.sub && m.sub.phone));
+      if (cellTo) { try { texted = (await require('./_lib/codetext.js').sendCode(cellTo, code, { lang: m.lang, min: CODE_MIN })).ok; } catch (e) { texted = false; } }
+    }
+    if (texted && id.kind === 'phone') { /* typed their number: the text is the answer (as before) */ }
+    else if (id.kind === 'phone' && m.kind !== 'partner' && textReady()) await require('./_lib/custquiet.js').run('reply', () => sendText(id.value, 'GrayCo Portal code: ' + code + ' (10 min)'));   /* patch CUSTQUIET: a sign-in code they just asked for goes at once */
     else if (id.kind === 'email' || okEmail(m.email)) await require('./_lib/custquiet.js').run('reply', () => sendMail(id.kind === 'email' ? id.value : m.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL: goes in data-entry mode too */
     else {
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
@@ -1013,8 +1023,9 @@ async function deviceStart(event){
   await dbPost('gc_portal_code', { id: rid, purpose: 'device', ident: hmac(key), code_hash: hmac(rid + ':' + code), link_token: token, sub_id: s(sub.id),
     expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0 });
   const L = MAIL[lang(sub.lang)];
-  if (textReady() && phone10(sub.phone)) await require('./_lib/custquiet.js').run('reply', () => sendText(phone10(sub.phone), 'GrayCo: ' + code));   /* patch CUSTQUIET: the sign-in code goes at once */
-  else await require('./_lib/custquiet.js').run('reply', () => sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL */
+  /* patch LATECODE: the cell on their record by GrayCo text (STOP / limits in _lib/codetext.js) AND the e-mail, as the screen says */
+  let texted = false; try { texted = (await require('./_lib/codetext.js').sendCode(sub.phone, code, { lang: lang(sub.lang), min: CODE_MIN })).ok; } catch (e) { texted = false; }
+  if (okEmail(low(sub.email)) || !texted) await require('./_lib/custquiet.js').run('reply', () => sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code)));   /* patch RESETMAIL */
   return { ok: true, sent: true, to: maskEmail(sub.email) };
 }
 async function deviceVerify(event, body){
