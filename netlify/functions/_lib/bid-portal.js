@@ -51,7 +51,10 @@ function personOpened(j){
   return false;
 }
 /* opened (not a draft) by the old automatic way, and no person since */
-function autoOpened(j){ return !!j && j.draft !== true && bs(j.status).toLowerCase() !== 'draft' && (j.autoPrivate === true || bs(j.openedBy) === 'auto') && !personOpened(j); }
+/* patch PUBVIS (owner 11/24: "a sub says they can't see the hunting club but it's public — shouldn't they see it"): the old automatic way only
+   ever opened a job PRIVATE, so a job that is Public now was made public by a person (✎ Edit Job Details → Visibility: Public did not stamp
+   personOpenedAt) — it is never "auto-opened" */
+function autoOpened(j){ return !!j && j.draft !== true && bs(j.status).toLowerCase() !== 'draft' && bs(j.visibility).toLowerCase() !== 'public' && (j.autoPrivate === true || bs(j.openedBy) === 'auto') && !personOpened(j); }
 /* k: { invites, bids, questions, planreqs, mquotes } (counts) */
 function subTouched(k){ k = k || {}; return ['invites', 'bids', 'questions', 'planreqs', 'mquotes'].some(x => +k[x] > 0); }
 function autoDraft(j, k){ return autoOpened(j) && !subTouched(k); }

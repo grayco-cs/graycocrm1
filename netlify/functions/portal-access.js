@@ -840,6 +840,13 @@ async function passwordSignin(body, ip){
   }
   if (email) {   /* patch SUBPEND: the sub's own (bid-site) password is checked too when the e-mail is also a customer's with a saved password (was skipped → "don't match") */
     const sp = await subPasswordLogin(data, email, String(body.password || ''));   /* patch PORTALTEAM: a team member → their company's portal; a removed one → 403 */
+    if (sp && sp.noPortal && sp.prof && sp.prof.role === 'supplier') {   /* patch SUPPORTAL (owner 11/24, ABC's Tom: "it says I'm not turned on yet"): the partner portal is for subs; a
+         supplier's jobs to quote, POs and bills are on the bid site — the password was right, so say where to go (was "not turned on yet") */
+      await padTo(t0);
+      throw Fail(403, lang(sp.prof.lang) === 'es'
+        ? 'Su cuenta es de proveedor — entre en bids.grayco-cs.com con este mismo correo y contraseña. Ahí están los trabajos para cotizar, sus órdenes de compra y sus facturas.'
+        : 'Your account is a supplier account — sign in at bids.grayco-cs.com with this same e-mail and password. Jobs to quote, your POs and your bills are there.', { supplier: true, bids: BIDS_DEFAULT });
+    }
     if (sp && sp.noPortal) {
       const pend = await pendStart(sp.prof, id, keys);   /* patch SUBPEND: signed up, not approved / not linked yet → the limited "waiting for approval" session (was 403) */
       if (pend) return pend;

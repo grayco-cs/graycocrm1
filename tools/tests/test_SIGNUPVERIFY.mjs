@@ -197,6 +197,18 @@ const EXP = 'late@slowpaint.test';
   ok('6 … an old / confirmed account: "already confirmed", nothing sent', a2.st === 200 && a2.b.already === true, a2.b);
 }
 
+/* 7. patch SUPPORTAL (owner 11/24, ABC's Tom: "it says I'm not turned on yet"): a supplier's right password on the partner portal →
+   "sign in at bids.grayco-cs.com" (the portal is for subs), never "not turned on yet"; a wrong one is still just wrong */
+{
+  const SUP = 'tom@sample-supply.test';
+  await reg(SUP, {}, { acctType: 'supplier', trades: ['Roofing materials'] }); await confirm(tokOf(SUP));
+  const p0 = prof(SUP);
+  const r = await pw(SUP);
+  ok('7 SUPPORTAL: a supplier on the portal → 403 "supplier account — sign in at bids.grayco-cs.com with this same e-mail and password" (+ supplier flag)', p0 && p0.role === 'supplier' && r.st === 403 && r.b.supplier === true && /supplier account/.test(r.b.error) && /bids\.grayco-cs\.com/.test(r.b.error) && !/not turned on/.test(r.b.error), { role: p0 && p0.role, r });
+  const w = await pw(SUP, 'Wrong-Pass-0000');
+  ok('7 … a wrong password: no supplier hint (nothing is told before the password is right)', w.st !== 200 && !w.b.supplier, w);
+}
+
 const n = R.length, f = R.filter(x => !x).length;
 console.log('\n' + (n - f) + '/' + n + ' passed' + (f ? ' — ' + f + ' FAILED' : ''));
 process.exit(f ? 1 : 0);

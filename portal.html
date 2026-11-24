@@ -443,7 +443,9 @@ function signin(step, who){
       enter.disabled = true;
       post(ACC, { action: 'signin-password', email: em.value.trim(), password: pw.value, app: APPMODE || undefined }).then(function(r){
         enter.disabled = false;
-        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); if (r.data.unconfirmed) svOffer(); else resetOffer(); return; }   /* SIGNUPVERIFY: not confirmed → "Resend link" */
+        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode');
+          if (r.data.supplier) { if (!$('siBidsGo')) err.parentNode.insertBefore(h('a', { id: 'siBidsGo', class: 'btn gold', href: 'https://bids.grayco-cs.com', text: '🏗 ' + (document.documentElement.lang === 'es' ? 'Abrir bids.grayco-cs.com' : 'Open bids.grayco-cs.com') }), err.nextSibling); return; }   /* patch SUPPORTAL: a supplier → the bid site */
+          if (r.data.unconfirmed) svOffer(); else resetOffer(); return; }   /* SIGNUPVERIFY: not confirmed → "Resend link" */
         session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
         if (APPMODE && r.data.kind === 'customer') store('gc_portal_app', session);   /* patch PORTALAPP: the app remembers this phone */
         store('gc_portal_starter', r.data.starter ? '1' : '');
