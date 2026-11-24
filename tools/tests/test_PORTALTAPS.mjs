@@ -664,21 +664,24 @@ async function portalApp(){
   }
   /* the approved sub's bid with a real PDF, end to end (the bid site's bid row = what GrayCo's 📊 All bids shows) */
   async function subFlows(kind, sub){
-    const out = [], ctx = await newContext(sub.SESSION)(kind), pg = await ctx.newPage(), errs = [];
+    /* a fresh session: the crawl ended with Sign out, which ended the old one */
+    const SESS = W.tok(); TB('gc_portal_session').push({ id: sha(SESS), kind: 'partner', sub_id: SUB.id, links: [TB('gc_sub_link').find(l => l.sub_id === SUB.id).token], expires_at: new Date(Date.now() + 864e5).toISOString(), last_seen_at: now() });
+    const out = [], ctx = await newContext(SESS)(kind), pg = await ctx.newPage(), errs = [];
     pg.on('pageerror', e => errs.push(e.message));
     const step = async (flow, name, fn) => { const t0 = Date.now(); let ok = false, why = ''; try { const r = await fn(); ok = r !== false; why = typeof r === 'string' ? r : ''; } catch (e) { why = String(e.message).split('\n')[0].slice(0, 200); }
       out.push({ user: 'sub', kind, screen: 'Flow: ' + flow, control: name, result: ok && !errs.length ? 'OK' : 'FAIL', why: (why || (ok ? 'done' : 'did not happen')) + ' (' + ((Date.now() - t0) / 1000).toFixed(1) + ' s)' + (errs.length ? ' · JS ERROR: ' + errs.splice(0).join(' | ') : ''), at: Date.now() });
       console.log('  ' + (ok ? '✓' : '✗') + ' [sub/' + kind + '] Flow: ' + flow + ' · ' + name + ' · ' + why); if (!ok) await pg.screenshot({ path: path.join(OUT, 'flow_sub_' + kind + '_' + out.length + '.png') }).catch(() => {}); return ok; };
     const tap = async sel => { const b = await pg.waitForSelector(sel, { timeout: 15000 }); await b.scrollIntoViewIfNeeded().catch(() => {}); if (kind === 'phone') await b.tap(); else await b.click(); };
     await pg.goto(ORIGIN + '/', { waitUntil: 'domcontentloaded' });
-    await pg.waitForFunction(() => !!(window.GCPartner && window.GCPartner._state && window.GCPartner._state().home), null, { timeout: 30000 });
-    await step('bid with a PDF', 'Bids → Open & bid → the bid form', async () => { await tap('#tabs button[data-tab="bids"], #tabs button:has-text("Bids")'); await tap('button:has-text("Open & bid")'); await pg.waitForSelector('#bidSend', { timeout: 15000 }); return 'open'; });
+    await step('bid with a PDF', 'the sub portal opens (a new sign-in)', async () => { await pg.waitForFunction(() => !!(window.GCPartner && window.GCPartner._state && window.GCPartner._state().home), null, { timeout: 30000 }); return 'open'; });
+    await step('bid with a PDF', 'Bids → Open & bid → the bid form', async () => { await tap('#tabs button[data-tab="bids"], #tabs button:has-text("Bids")'); await tap('button:has-text("Open & bid"), button:has-text("See my bid")'); await pg.waitForSelector('#bidSend', { timeout: 15000 }); return 'open (' + (await pg.innerText('#bidSend')) + ')'; });   /* the crawl may have sent one already: then it is "See my bid" → Update bid */
     await step('bid with a PDF', 'amount + the bid PDF → Submit bid → sent to GrayCo', async () => {
       const amt = await pg.$('.bidform input[type=number]:not([data-bidline])'); await amt.fill('9800');
-      await pg.setInputFiles('#bidFiles', TESTFILES.bid.path); const n0 = (W.TABLES.sp_rows || []).filter(r => r.collection === 'bids').length;
+      await pg.setInputFiles('#bidFiles', TESTFILES.bid.path);
+      const bidOf = () => (W.TABLES.sp_rows || []).filter(r => r.collection === 'bids' && r.data && +r.data.amount === 9800).pop();
       await tap('#bidSend');
-      for (let i = 0; i < 60 && (W.TABLES.sp_rows || []).filter(r => r.collection === 'bids').length === n0; i++) await sleep(250);
-      const b = (W.TABLES.sp_rows || []).filter(r => r.collection === 'bids').pop();
+      for (let i = 0; i < 60 && !bidOf(); i++) await sleep(250);
+      const b = bidOf();
       const msg = await pg.evaluate(() => [...document.querySelectorAll('[role=alert],.err,.toast')].map(e => e.innerText.trim()).filter(Boolean).join(' / ')).catch(() => '');
       if (!b) throw new Error('no bid saved — the page says: "' + msg + '"');
       const d = b.data || {}; return 'the bid on the bid site: $' + d.amount + ' · its PDF: ' + JSON.stringify((d.docs || d.files || []).map(f => f.name)).slice(0, 80) + (msg ? ' · page: "' + msg.slice(0, 60) + '"' : ''); });
@@ -724,7 +727,7 @@ async function portalApp(){
     } else if (user === 'sub') {
       rows = await crawl({ kind, user, label: 'the sub portal', startName: 'Home', newContext: newContext(sub.SESSION), isPortalPage, isLocal, signedOut, okError: portalErr,
         start: async pg => { await pg.goto(ORIGIN + '/', { waitUntil: 'domcontentloaded' }).catch(() => {}); return !!(await pg.waitForFunction(() => !!(window.GCPartner && window.GCPartner._state && window.GCPartner._state().home) && document.querySelector('#tabs button'), null, { timeout: 30000 }).catch(() => null)); } });
-      rows.push(...await subFlows(kind, sub));
+      rows.push(...await (subFlows(kind, sub).catch(e => [{ user: 'sub', kind, screen: 'Flow', control: '(flow)', result: 'FAIL', why: 'threw: ' + String(e && e.message).slice(0, 200), at: Date.now() }])));
       /* the CRM side: what the sub sent is waiting for the CRM (s-sync, as an admin's CRM asks every minute) — and only this sub's */
       const ev2 = (W.TABLES.gc_sub_event || []).filter(e => e.sub_id === SUB.id), kinds = {}; ev2.forEach(e => { kinds[e.kind] = (kinds[e.kind] || 0) + 1; });
       const sy = await call('portal-access', { action: 's-sync' }, { authorization: 'Bearer good-admin' });
@@ -742,7 +745,7 @@ async function portalApp(){
       a.forEach(r => { r.screen = 'Sign-in: ' + r.screen; });
       /* 1b. the two flows end to end with good input: sign up (→ signed straight in, waiting for approval) and forgot password
          (→ a code by e-mail → signed in) */
-      a.push(...await portalFlows(kind));
+      a.push(...await (portalFlows(kind).catch(e => [{ user: 'subnew', kind, screen: 'Flow', control: '(flow)', result: 'FAIL', why: 'threw: ' + String(e && e.message).slice(0, 200), at: Date.now() }])));
       /* 2. signed up, waiting for approval */
       const pend = await seedPending();
       const b = await crawl({ kind, user, label: 'the waiting-for-approval page', startName: 'Pending', newContext: newContext(pend), isPortalPage, isLocal, signedOut, okError: portalErr,
@@ -877,11 +880,11 @@ async function bidsApp(){
     let rows;
     const signedOut = async pg => !!(await pg.waitForSelector('input[type=email]', { timeout: 8000 }).catch(() => null));
     if (user === 'bidsub') { rows = await crawl({ kind, user, label: 'the bid site', startName: 'Bids', newContext, isPortalPage, isLocal, fnHost, signedOut, start: pg => login(pg, 'sam@sampledrywall.test', 'Sam-Pass-1') });
-      rows.push(...await bidDocFlow(kind, login)); }
+      rows.push(...await (bidDocFlow(kind, login).catch(e => [{ user: 'bidsub', kind, screen: 'Flow', control: '(flow)', result: 'FAIL', why: 'threw: ' + String(e && e.message).slice(0, 200), at: Date.now() }]))); }
     else {
       const a = await crawl({ kind, user, label: 'the bid site sign-in', startName: 'Sign-in', newContext, isPortalPage, isLocal, fnHost, signedOut, okError: (n) => n.st === 400 || n.st === 401 || n.st === 422, start: pg => login(pg) });
       a.forEach(r => { r.screen = 'Sign-in: ' + r.screen; });
-      a.push(...await bidFlows(kind));
+      a.push(...await (bidFlows(kind).catch(e => [{ user: 'bidnew', kind, screen: 'Flow', control: '(flow)', result: 'FAIL', why: 'threw: ' + String(e && e.message).slice(0, 200), at: Date.now() }])));
       const b = await crawl({ kind, user, label: 'the bid site (not approved yet)', startName: 'Waiting', newContext, isPortalPage, isLocal, fnHost, signedOut, start: pg => login(pg, 'nina@samplenewtile.test', 'Nina-Pass-22') });
       rows = a.concat(b);
     }
