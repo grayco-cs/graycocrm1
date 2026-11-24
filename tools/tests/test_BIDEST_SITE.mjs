@@ -63,7 +63,9 @@ try {
   await A.waitForSelector('[data-subvis]', { timeout: 10000 });
   const vis = await A.evaluate(() => [...document.querySelectorAll('[data-subvis]')].map(x => x.closest('div[style]').parentElement.textContent.replace(/\s+/g, ' ').slice(0, 80) + '=' + x.getAttribute('data-subvis')));
   ok('4 admin: the invitation to bid and the solicitation link are "Hidden from subs"; the plans, addendum, scope and plan set "Visible to subs"',
-    vis.some(v => /Invitation to Bid/.test(v) && /=off$/.test(v)) && vis.some(v => /Solicitation/.test(v) && /=off$/.test(v)) && vis.some(v => /M-101/.test(v) && /=on$/.test(v)) && vis.some(v => /GrayCo HVAC Scope/.test(v) && /=on$/.test(v)) && vis.filter(v => /=off$/.test(v)).length === 2, vis);
+    vis.some(v => /Invitation to Bid/.test(v) && /=off$/.test(v)) && vis.some(v => /M-101/.test(v) && /=on$/.test(v)) && vis.some(v => /GrayCo HVAC Scope/.test(v) && /=on$/.test(v)) && vis.filter(v => /=off$/.test(v)).length === 1, vis);
+  const lv = await A.evaluate(() => [...document.querySelectorAll('[data-linkvis]')].map(x => x.closest('[data-planlink]').textContent.replace(/\s+/g, ' ')));
+  ok('4b NOLINKS (owner 11/24): the solicitation link says "GrayCo only", the plan set link "Subs see this plan set" — no tick on links', lv.length === 2 && lv.some(v => /Solicitation/.test(v) && /GrayCo only/.test(v)) && lv.some(v => /Plan set/.test(v) && /Subs see this plan set/.test(v)), lv);
   ok('5 admin still sees the "Solicitation & documents" link', /Solicitation & documents/.test(await A.evaluate(() => document.body.innerText)));
   await A.locator('[data-planlink="0"]').scrollIntoViewIfNeeded().catch(() => {}); await shot(A, 'bidvis_admin');
   /* the residential job: no estimator → "— Select —" and the honest ask */
