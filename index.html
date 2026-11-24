@@ -2197,6 +2197,106 @@ try {
 } catch (e) { try { console.warn('[GC] FIELDLAG not installed:', e && e.message || e); } catch (x) {} }
 })();
 </script>
+<script id="gc-patch-fieldlag2-early">
+/* __GC_PATCH_FIELDLAG2_EARLY__ — FIELDLAG2: no phone or computer is bogged down by its own browser storage (tools/patch_FIELDLAG2.py).
+   Owner 11/24: "make sure no one's phone or computer is bogged down by storage lags". The devices' own reports (gc_perfrep_*,
+   hb.lsw = localStorage writes in one idle minute): the owner's iPhone wrote gc_tombstones 54 times (9.2M characters),
+   gc_office_tasks 6 times (4.1M), gc_decisions_v1 10 times (3.1M) … ~18M characters a minute, each one a synchronous copy on the
+   page's only thread; office computers held 4.4-5.0M characters (full: saves refused).
+   This layer sits on localStorage writes (every role, every device, under every older wrapper):
+   1. a write of the value that is already there is not made (nothing changed — the browser would store the same thing);
+   2. a big value (≥ 30K characters) written again within 8 s of its last write waits and only its NEWEST value is written when
+      the 8 s are up (a list rewritten 54 times a minute is written at most 7-8 times); this page reads the waiting value back at
+      once (getItem), and everything waiting is written right away when the page is hidden, closed or frozen;
+   3. a waiting write the browser refuses (storage full, after the storage guard has cleared what it may) is never dropped: it stays
+      what this page reads, it is kept in IndexedDB (gc_lsdiet / held) and written on the next try or the next open;
+   (the backup / snapshot copies and the removed-rows log already live in IndexedDB — patch LSSIDE — this layer does not move them.)
+   Console: __gcLSD.state()   Off: localStorage gc_lsdiet_off = '1'. */
+(function(){
+'use strict';
+var W = window, D = document;
+try {
+  if (W.__gcLSD) return;
+  var LS = null; try { LS = W.localStorage; } catch (e) {}
+  var SP = W.Storage && W.Storage.prototype;
+  if (!LS || !SP || typeof SP.setItem !== 'function') return;
+  var pSet = SP.setItem, pGet = SP.getItem, pRem = SP.removeItem, pClr = SP.clear;
+  try { if (pGet.call(LS, 'gc_lsdiet_off') === '1') return; } catch (e) {}
+  var NST = W.setTimeout, BIG = 30000, GAP = 8000, HELDK = 'gc_lsdiet_held';
+  var S = { same: 0, sameChars: 0, held: 0, heldChars: 0, flushed: 0, failed: 0, kept: 0, restored: 0, real: 0, realChars: 0 };
+  var PEND = Object.create(null), LASTW = Object.create(null), FAILED = Object.create(null), T = null, TAT = 0;
+  function now(){ return Date.now(); }
+
+  /* ── IndexedDB: the writes the browser refused, until they are in localStorage ── */
+  var dbp = null;
+  function db(){
+    if (dbp) return dbp;
+    dbp = new Promise(function(res){ try { var r = W.indexedDB.open('gc_lsdiet', 1); r.onupgradeneeded = function(){ try { r.result.createObjectStore('held'); } catch (e) {} }; r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ res(null); }; } catch (e) { res(null); } });
+    return dbp;
+  }
+  function heldIdx(){ try { var o = JSON.parse(pGet.call(LS, HELDK) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+  function heldIdxSet(o){ try { if (Object.keys(o).length) pSet.call(LS, HELDK, JSON.stringify(o)); else pRem.call(LS, HELDK); } catch (e) {} }
+  function keep(k, v){
+    S.kept++;
+    db().then(function(d){ if (!d) return; try { var tx = d.transaction('held', 'readwrite'); tx.objectStore('held').put({ v: v, at: now() }, k); tx.oncomplete = function(){ var o = heldIdx(); o[k] = now(); heldIdxSet(o); }; } catch (e) {} });
+  }
+  function unkeep(k){
+    if (!FAILED[k]) return; delete FAILED[k];
+    var o = heldIdx(); if (o[k]) { delete o[k]; heldIdxSet(o); }
+    db().then(function(d){ if (!d) return; try { d.transaction('held', 'readwrite').objectStore('held').delete(k); } catch (e) {} });
+  }
+
+  /* ── the real write (through the storage guard, which makes room from its list on a full storage) ── */
+  function realSet(k, v){ var r = pSet.call(LS, k, v); LASTW[k] = now(); S.real++; S.realChars += v.length; return r; }
+  function flushOne(k){
+    if (!(k in PEND)) return true;
+    var v = PEND[k];
+    try { realSet(k, v); delete PEND[k]; S.flushed++; unkeep(k); return true; }
+    catch (e) { S.failed++; if (!FAILED[k]) { FAILED[k] = 1; keep(k, v); } return false; }
+  }
+  function flushAll(){ var left = false; Object.keys(PEND).forEach(function(k){ if (!flushOne(k)) left = true; }); return left; }
+  function schedule(){
+    var ks = Object.keys(PEND); if (!ks.length) return;
+    var due = Infinity; ks.forEach(function(k){ due = Math.min(due, (LASTW[k] || 0) + (FAILED[k] ? 30000 : GAP)); });
+    var at = Math.max(due, now() + 50);
+    if (T && TAT <= at) return;
+    if (T) clearTimeout(T);
+    TAT = at; T = NST.call(W, function(){ T = null; TAT = 0; var n = now(); Object.keys(PEND).forEach(function(k){ if (n >= (LASTW[k] || 0) + (FAILED[k] ? 30000 : GAP)) { if (!flushOne(k)) LASTW[k] = n; } }); schedule(); }, at - now());
+  }
+  function cur(k){ if (k in PEND) return PEND[k]; return pGet.call(LS, k); }
+
+  SP.setItem = function(k, v){
+    if (this !== LS) return pSet.apply(this, arguments);
+    k = String(k); v = String(v);
+    var old = null; try { old = cur(k); } catch (e) {}
+    if (old === v) { S.same++; S.sameChars += v.length; return; }
+    if (v.length >= BIG && (k in PEND || now() - (LASTW[k] || 0) < GAP)) { PEND[k] = v; S.held++; S.heldChars += v.length; schedule(); return; }
+    delete PEND[k];
+    return realSet(k, v);   /* the first write of a quiet key goes at once, and a refusal reaches the caller as before */
+  };
+  SP.getItem = function(k){
+    if (this === LS) { var key = String(k); if (key in PEND) return PEND[key]; }
+    return pGet.apply(this, arguments);
+  };
+  SP.removeItem = function(k){ if (this === LS) { var key = String(k); delete PEND[key]; unkeep(key); } return pRem.apply(this, arguments); };
+  SP.clear = function(){ if (this === LS) { PEND = Object.create(null); } return pClr.apply(this, arguments); };
+
+  /* everything waiting goes now when the page is hidden, closed or frozen */
+  var now2 = function(){ try { flushAll(); } catch (e) {} };
+  try { D.addEventListener('visibilitychange', function(){ if (D.visibilityState === 'hidden') now2(); }, true); } catch (e) {}
+  try { W.addEventListener('pagehide', now2, true); W.addEventListener('beforeunload', now2, true); D.addEventListener('freeze', now2, true); } catch (e) {}
+
+  /* the writes a full storage refused last time: written now (this page reads them meanwhile) */
+  try {
+    var idx = heldIdx(), ks0 = Object.keys(idx);
+    if (ks0.length) db().then(function(d){ if (!d) return; ks0.forEach(function(k){ try { var rq = d.transaction('held', 'readonly').objectStore('held').get(k); rq.onsuccess = function(){ var x = rq.result; if (!x || typeof x.v !== 'string') { var o = heldIdx(); delete o[k]; heldIdxSet(o); return; } if (pGet.call(LS, k) !== x.v && !(k in PEND)) { PEND[k] = x.v; FAILED[k] = 1; S.restored++; LASTW[k] = 0; schedule(); } else { FAILED[k] = 1; unkeep(k); } }; } catch (e) {} }); });
+  } catch (e) {}
+
+  function usage(){ var chars = 0, keys = 0; try { for (var i = 0, n = LS.length; i < n; i++) { var k = LS.key(i); if (k == null) continue; var v = pGet.call(LS, k); chars += k.length + (v == null ? 0 : v.length); keys++; } } catch (e) {} return { chars: chars, keys: keys }; }
+  W.__gcLSD = { state: function(){ var u = usage(); return Object.assign({}, S, { waiting: Object.keys(PEND), lsChars: u.chars, lsKeys: u.keys }); }, flush: flushAll };
+} catch (e) { try { console.warn('[GC FIELDLAG2] storage layer', e && e.message || e); } catch (x) {} }
+})();
+</script>
 <script id="gc-patch-fastopen-dirty">
 /* patch FASTOPEN (part 1, the write watch): every write of this device's CRM store (IndexedDB grayco_crm / kv) that is not the
    sync's own apply marks that list "changed here" (IndexedDB gc_fastopen / m / 'dirty' — not localStorage: the owner's phone has
@@ -7908,7 +8008,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.338-2026-11-24-r39a -->
+<!-- GrayCo CRM Build: 33.339-2026-11-24-r39b -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -8880,7 +8980,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.338-2026-11-24-r39a");
+  console.log("[GC] Build 33.339-2026-11-24-r39b");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -8928,7 +9028,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.338-2026-11-24-r39a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.339-2026-11-24-r39b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -94113,12 +94213,90 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
      The last to land won, and the 120 copies were back on the board. So purges
      queue: each one reads only after the one before it has finished writing. */
   var _purgeChain = Promise.resolve();
+  /* FIELDLAG2: the records asked for while a batch runs (a cloud sync names hundreds at once) wait and go together in the next one:
+     the delete list is read and written once, each list / snapshot / today's backup read and written once, for the whole batch */
+  var _purgeQ = [], _purgeOn = false;
   window._gcPurgeEverywhere = function(type, id){
-    var run = function(){ return _gcPurgeOne(type, id); };
-    var p = _purgeChain.then(run, run);
-    _purgeChain = p.catch(function(){});
-    return p;
+    if(!type || id==null) return Promise.resolve();
+    var job = { type: type, id: String(id) };
+    var pr = new Promise(function(res){ job.res = res; });
+    _purgeQ.push(job);
+    if(!_purgeOn){
+      _purgeOn = true;
+      var drain = function(){
+        if(!_purgeQ.length){ _purgeOn = false; return; }
+        var batch = _purgeQ.splice(0, _purgeQ.length);
+        var done = function(r){ batch.forEach(function(j){ try{ j.res((r && r[j.type+':'+j.id]) || []); }catch(e){} }); };
+        _purgeChain = _purgeChain.then(function(){ return _gcPurgeBatch(batch); }).then(done, function(){ done(null); }).then(drain, drain);
+      };
+      Promise.resolve().then(drain);   /* the rest of this burst (a forEach of calls) joins the batch */
+    }
+    return pr;
   };
+  async function _gcPurgeBatch(batch){
+    var out = {}, by = {}, now = Date.now();
+    batch.forEach(function(j){ out[j.type+':'+j.id] = []; (by[j.type] = by[j.type] || {})[j.id] = 1; });
+    var note = function(type, sid, what){ var r = out[type+':'+sid]; if(r && r.indexOf(what) < 0) r.push(what); };
+    // 1) permanent tombstones, shared with every computer — one read, one write
+    try{
+      var t = readTombs();
+      batch.forEach(function(j){
+        t[tombKey(j.type, j.id)] = now;
+        if(j.type==='invoices') t[tombKey('invs', j.id)] = now;
+        if(j.type==='invs')     t[tombKey('invoices', j.id)] = now;
+        note(j.type, j.id, 'tombstone');
+      });
+      writeTombs(t);
+    }catch(e){}
+    var keysOf = function(type){ return [type, type==='invs'?'invoices':(type==='invoices'?'invs':null)].filter(Boolean); };
+    // 2) the rolling safety snapshots
+    try{
+      Object.keys(by).forEach(function(type){
+        keysOf(type).forEach(function(k){
+          var raw = localStorage.getItem(SNAP_PREFIX+k); if(!raw) return;
+          var arr = JSON.parse(raw); if(!Array.isArray(arr)) return;
+          var hit = {}, out1 = arr.filter(function(x){ var i = String(idOf(x)); if(by[type][i]){ hit[i] = 1; return false; } return true; });
+          if(out1.length !== arr.length){ localStorage.setItem(SNAP_PREFIX+k, JSON.stringify(out1)); Object.keys(hit).forEach(function(i){ note(type, i, 'safety snapshot'); }); }
+        });
+      });
+    }catch(e){}
+    // 3) the live lists + IndexedDB
+    var types = Object.keys(by);
+    for(var ti=0; ti<types.length; ti++){
+      var type = types[ti], keys = [type]; if(type==='invoices') keys.push('invs'); if(type==='invs') keys.push('invoices');
+      for(var i=0; i<keys.length; i++){
+        try{
+          var k = keys[i], cur = await window.idbGet(k);
+          if(Array.isArray(cur)){
+            var hit2 = {}, out2 = cur.filter(function(x){ var s0 = String(idOf(x)); if(by[type][s0]){ hit2[s0] = 1; return false; } return true; });
+            if(out2.length !== cur.length){
+              await window.idbSet(k, out2);
+              try{ if(window._gcApplySync) window._gcApplySync(k, out2); }catch(e){}
+              try{ if(window._supaUpsert) window._supaUpsert(k, out2); }catch(e){}
+              Object.keys(hit2).forEach(function(s1){ note(type, s1, k); });
+            }
+          }
+        }catch(e){}
+      }
+    }
+    // 4) today's daily backup, so tomorrow's recovery cannot resurrect them (every list in it, as before)
+    try{
+      var all = {}; batch.forEach(function(j){ all[j.id] = j.type; });
+      var today='gc_dailybackup_'+new Date().toISOString().slice(0,10);
+      var snap=await window.idbGet(today);
+      if(snap && snap.lists){
+        var changed=false;
+        Object.keys(snap.lists).forEach(function(k){
+          if(!Array.isArray(snap.lists[k])) return;
+          var out3=snap.lists[k].filter(function(x){ var s2 = String(idOf(x)); if(all[s2] !== undefined){ note(all[s2], s2, 'today\'s backup'); return false; } return true; });
+          if(out3.length!==snap.lists[k].length){ snap.lists[k]=out3; changed=true; }
+        });
+        if(changed){ await window.idbSet(today, snap); }
+      }
+    }catch(e){}
+    try{ console.warn('[GC] Deleted for good ('+batch.length+': '+batch.slice(0, 6).map(function(j){ return j.type+' '+j.id; }).join(', ')+(batch.length > 6 ? ' …' : '')+') — cleared from: '+(batch.length === 1 ? (out[batch[0].type+':'+batch[0].id].join(', ')||'nothing found') : 'tombstones and the copies that held them')); }catch(e){}
+    return out;
+  }
   async function _gcPurgeOne(type, id){
     if(!type || id==null) return;
     var sid=String(id);
@@ -149244,15 +149422,16 @@ function build(){
   if (!vas()) try {   /* patch VAS: a preview neither reads nor marks "cleared on their own" (that list is the admin's) */
     if (!seenMap) seenMap = obj(lsGet('gc_td2_seen'));
     var nowKeys = {}; vis.forEach(function(g){ nowKeys[g.key] = 1; (g.children || []).forEach(function(c){ nowKeys[c.key] = 1; }); });
-    var cleared = [];
+    var cleared = [], seenDirty = false;   /* FIELDLAG2: written when it changed */
     Object.keys(seenMap).forEach(function(k){
       var x = seenMap[k];
-      if (!nowKeys[k] && !metaGet(k) && x && x.last && Date.now() - x.last < 36 * 3600e3 && Date.now() - lastBuild < 120000 && !x.gone) { x.gone = Date.now(); cleared.push(x); }
-      if (x && x.gone && Date.now() - x.gone > 86400e3) delete seenMap[k];
+      if (!nowKeys[k] && !metaGet(k) && x && x.last && Date.now() - x.last < 36 * 3600e3 && Date.now() - lastBuild < 120000 && !x.gone) { x.gone = Date.now(); cleared.push(x); seenDirty = true; }
+      if (x && x.gone && Date.now() - x.gone > 86400e3) { delete seenMap[k]; seenDirty = true; }
     });
-    vis.forEach(function(g){ [g].concat(g.children || []).forEach(function(c){ if (c.src === 'st' || c.src === 'roll') return; seenMap[c.key] = { t: c.title, last: Date.now() }; }); });
-    var ks = Object.keys(seenMap); if (ks.length > 1500) ks.slice(0, ks.length - 1500).forEach(function(k){ delete seenMap[k]; });
-    lsSet('gc_td2_seen', JSON.stringify(seenMap));
+    var seenNow = Date.now();   /* FIELDLAG2: "last seen" moves at most every 10 min (it is only compared to 36 h) */
+    vis.forEach(function(g){ [g].concat(g.children || []).forEach(function(c){ if (c.src === 'st' || c.src === 'roll') return; var o = seenMap[c.key]; if (o && !o.gone && o.t === c.title && o.last && seenNow - o.last < 600000 && seenNow >= o.last) return; seenMap[c.key] = { t: c.title, last: seenNow }; seenDirty = true; }); });
+    var ks = Object.keys(seenMap); if (ks.length > 1500) { ks.slice(0, ks.length - 1500).forEach(function(k){ delete seenMap[k]; }); seenDirty = true; }
+    if (seenDirty) lsSet('gc_td2_seen', JSON.stringify(seenMap));
     Object.keys(seenMap).forEach(function(k){ var x = seenMap[k]; if (x && x.gone && day10(new Date(x.gone).toISOString()) === t0) doneToday.push({ title: x.t, by: 'fixed — cleared on its own', at: new Date(x.gone).toISOString() }); });
   } catch (e) {}
   autoLog.forEach(function(a){ if (day10(a.at) === t0) doneToday.push({ title: a.title, by: 'auto — ' + a.why, at: a.at }); });
@@ -215890,7 +216069,8 @@ function fieldLayout(on){
 }
 function tileHtml(id, cls){ var n = count(id); return '<button type="button" class="' + (cls || 'gc-ra-tile') + '" data-ra-a="' + id + '"><span class="e">' + A[id].ic + '</span><span class="l">' + esc(label(id)) + '</span>' + (A[id].sub ? '<small class="gc-ra-sub">' + esc(A[id].sub) + '</small>' : '') /* SPEAKTILE: */ + (n ? '<b class="gc-ra-n">' + n + '</b>' : '') + '</button>'; }
 function fieldTop(a){
-  var ids = actions(a, 'home');
+  var _flTake = false; try { _flTake = typeof W._gcRaFieldTop === 'function' && typeof W._gcRaFieldTop.takes === 'function' && !!W._gcRaFieldTop.takes(a); } catch (e) {}   /* FIELDLAG2: the dashboard drops this row — not built (tile counts, the money numbers, every 0.9 s) */
+  var ids = _flTake ? [] : actions(a, 'home');
   var h = '<div class="gc-ra-q" data-app="' + a + '" data-n="' + ids.length + '">' + ids.map(function(id){ return tileHtml(id, 'gc-ra-qb'); }).join('') + '</div>';
   if (a === 'ins' || a === 'mit' || a === 'dual') {   /* patch MITWS: mitigation too (CERTROLE: and dual) */
     var E = emergLeads(); if (E.length) h += '<div class="fh-sec"><span>🚨 Emergency leads (' + E.length + ')</span></div>' + emergHtml(E.slice(0, 3));
@@ -216172,6 +216352,11 @@ function wrapSetView(){
 
 /* ═════ keep it right: role (View as…), device, data ═════ */
 var last = { app: null, mode: null, rk: null }, busy = false;
+/* FIELDLAG2: a finger down / up in the last 0.8 s, or a scroll still moving: the Home is not rebuilt under it (the tap would land on a
+   replaced button, the scroll would stutter) — it is looked at again right after */
+function flBusy(){ try { if (W.__gcFpTouch && Date.now() - W.__gcFpTouch() < 800) return true; if (W.__gcFL && W.__gcFL.scrolling && W.__gcFL.scrolling()) return true; } catch (e) {} return false; }
+var flT = null;
+function flLater(){ if (flT) return; flT = later(function(){ flT = null; if (flBusy()) { flLater(); return; } try { fieldInject(); } catch (e) { warn(e); } }, 400); }
 function sync(){
   if (busy) return; busy = true;
   try {
@@ -216184,7 +216369,7 @@ function sync(){
     if ((relaid || changed) && F() && D.querySelector('#_gcJobPick.gc-fh')) { try { F().render(); } catch (e) {} }
     else if (changed && last.seen && a && m === 'field' && inField() && phone() && F() && !D.getElementById('_gcJobPick')) { try { F().open(); } catch (e) {} }   /* 👁 View as… on a phone: the new role's home */
     if (a) last.seen = true;
-    fieldBar(a); fieldInject(); crewDesk(a);
+    fieldBar(a); if (!flBusy()) fieldInject(); else flLater(); crewDesk(a);   /* FIELDLAG2: not under a finger / a moving scroll */
     /* the desk */
     if (m === 'desk' && noDeskApp(a)) { if (deskEl() || D.getElementById('gc-ra-dock')) { deskRemove(); try { if (typeof W._setView === 'function' && !curView()) W._setView('dashboard'); } catch (e) {} } }   /* patch OFFICEDESK */
     else if (m === 'desk') {
@@ -216651,6 +216836,7 @@ W._gcRaFieldTop = function(a, h0, kit){
   css(); flags();
   try { return dashHtml(a, h0); } catch (e) { warn(e); return h0; }
 };
+W._gcRaFieldTop.takes = function(a){ try { return !!KIT && dashApp(a); } catch (e) { return false; } };   /* FIELDLAG2: the role's quick-button row is not shown under the dashboard */
 
 /* ═════ sheets ═════ */
 function sheet(title, html, cls){
