@@ -7742,7 +7742,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.332-2026-11-24-r38t -->
+<!-- GrayCo CRM Build: 33.333-2026-11-24-r38v -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -8714,7 +8714,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.332-2026-11-24-r38t");
+  console.log("[GC] Build 33.333-2026-11-24-r38v");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -8762,7 +8762,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.332-2026-11-24-r38t"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.333-2026-11-24-r38v"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -215454,6 +215454,7 @@ function clockLabel(){ try { if (W._gcPayEm && W._gcPayEm.openPunch && W._gcPayE
 var A = {
   appr:      { ic: '✅', l: 'Approvals', n: apprCount, run: openApprovals },
   leads:     { ic: '📥', l: 'Leads', view: 'leads', run: function(){ go('leads'); } },
+  bidportal: { ic: '🏗', l: 'Bid portal', view: 'bidportal', run: function(){ go('bidportal'); } },   /* BIDTILE: owner 11/24 — the Bid portal screen from the Field home */
   myleads:   { ic: '📥', l: 'My leads', view: 'leads', n: function(){ return myLeads().length; }, run: function(){ go('leads'); } },
   money:     { ic: '💵', l: 'Money', show: function(){ return !!moneyNums(); }, run: function(){ moneySheet(); } },
   viewas:    { ic: '👁', l: 'View as…', show: realAdmin, run: function(){ if (W._gcVASOpen) W._gcVASOpen(); } },
@@ -216390,8 +216391,8 @@ function insJobs(){ return myJobs().some(function(p){ return kindOf(p) === 'ins'
 function mitJobsMine(){ return myJobs().some(function(p){ try { return W._gcCo && W._gcCo.ofJob(p) === 'mitigation'; } catch (e) { return false; } }); }
 function extrasOf(a, k){
   var L = [];
-  if (a === 'admin') L = ['leads', 'speak', 'systems', 'addjob', 'todo']   /* SPEAKTILE: 🎤 Speak where 👁 View as… was (View as… is in 💎) */.concat(alsoPm() ? ['log', 'sendest'] : []);   /* 🧾 Snap a receipt: a quick action */   /* 💵 Money: ☰ More (owner 11/16) */
-  else if (a === 'pm') L = ['speak', 'log', 'todo', 'sendest'];   /* SPEAKTILE: 🎤 Speak */   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
+  if (a === 'admin') L = ['leads', 'speak', 'systems', 'addjob', 'todo']   /* BIDTILE2: 🏗 Bid portal is the big tile */   /* SPEAKTILE: 🎤 Speak where 👁 View as… was (View as… is in 💎) */.concat(alsoPm() ? ['log', 'sendest'] : []);   /* 🧾 Snap a receipt: a quick action */   /* 💵 Money: ☰ More (owner 11/16) */
+  else if (a === 'pm') L = ['speak', 'log', 'todo', 'sendest', 'bidportal'];   /* BIDTILE: shown only when the role may open the Bid portal */   /* SPEAKTILE: 🎤 Speak */   /* ☐ Punch list: on each job page; 💬 Messages: on each job page */
   else if (a === 'mit' || a === 'dual') L = ['emerg', 'drying', 'equip'].concat(insJobs() ? ['tpa'] : []);   /* owner 11/16: 🚨 new losses · 💧 readings due · 🌀 equipment out · 📆 TPA (insurance) — the drying / env tools are on each job page */
   else if (a === 'env') L = ['emerg'];   /* 🚨 Emergency leads (trauma / biohazard calls included — no "trauma" button, owner 11/16) + 🧪 lab results · 📋 paperwork · 🚧 blocked (below) */
   else { try { L = arr(k.actions(a, 'home')).filter(function(id){ return !DUPE[id]; }); } catch (e) { L = []; }
@@ -216433,6 +216434,9 @@ function dashHtml(a, h0){
   var com = !hourly();
   h += '<div class="gc-pmf-q">' + QUICK.map(function(q){
     var l = q[2], sm = q[3];
+    /* BIDTILE2: the clock slot — admin 🏗 Bid portal, PM 💬 Messages (an hourly person keeps ⏱ Clock in) */
+    if (q[0] === 'clock' && com && a === 'admin' && k.shown('bidportal')) return '<button type="button" class="gc-pmf-t" data-pmf-a="bidportal"><span class="e">🏗</span><span class="l">Bid portal</span><small>Bid jobs · invites · sub bids</small></button>';
+    if (q[0] === 'clock' && com && a === 'pm' && k.shown('msgs')) return '<button type="button" class="gc-pmf-t" data-pmf-a="msgs"><span class="e">💬</span><span class="l">Messages</span><small>Customers · subs · the team</small></button>';
     if (q[0] === 'clock') { try { l = RA() && RA().label ? RA().label('clock') || l : l; } catch (e) {} sm = com ? 'Optional — only if you want to log it' : 'Start / end my day'; }
     return '<button type="button" class="gc-pmf-t" data-pmf-a="' + q[0] + '"><span class="e">' + q[1] + '</span><span class="l">' + esc(l) + '</span>' + (sm ? '<small>' + esc(sm) + '</small>' : '') + '</button>';
   }).join('') + '</div>';
@@ -216778,6 +216782,7 @@ function quick(a, b){
   if (a === 'receipt') { closeSheets(); if (typeof W._gcFieldLogExpense === 'function') { var cj = null; try { if (D.getElementById('_gcJobDash') && W._gcCurrentJob) cj = proj(W._gcCurrentJob.id); } catch (e) {} W._gcFieldLogExpense(cj || undefined); } else toast('The receipt reader is not on this phone yet.'); return; }
   if (a === 'clock') { closeSheets(); return k && k.run('clock'); }
   if (a === 'msgs') { closeSheets(); return k && k.run('msgs'); }
+  if (a === 'bidportal') { closeSheets(); return k && k.run('bidportal'); }   /* BIDTILE2 */
   if (a === 'lead') return newLead();
 }
 function onClick(ev){
@@ -216789,7 +216794,7 @@ function onClick(ev){
   ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
   var a = b.getAttribute('data-pmf-a'), o = b.closest('.gc-pmf-sheet');
   try {
-    if (QUICK.some(function(q){ return q[0] === a; })) return quick(a, b);
+    if (QUICK.some(function(q){ return q[0] === a; }) || a === 'bidportal' || a === 'msgs') return quick(a, b);   /* BIDTILE2 */
     if (/^m-/.test(a)) return lessTap(a);
     if (a === 'testkit') { var tp = proj(b.getAttribute('data-pid')); return tp ? tkSheet(tp, b.getAttribute('data-bid')) : null; }
     if (a === 'tktype') { var tq = proj(b.getAttribute('data-pid')); return tq ? tkTypeSheet(tq) : null; }

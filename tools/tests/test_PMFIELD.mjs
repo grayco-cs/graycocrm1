@@ -181,14 +181,14 @@ try {
   console.log('    PM home: ' + JSON.stringify({ secs: d1 && d1.secs, today: d1 && d1.today, quick: d1 && d1.quick, extra: d1 && d1.extra, nums: d1 && d1.nums }));
   ok(d1 && d1.app === 'pm', 'PM: 🏠 Home is the dashboard', d1);
   ok(d1 && d1.today.includes('SCHa') && !d1.today.includes('SCHb'), 'PM Today: the work on my job today, not another PM\'s job', d1 && d1.today);
-  ok(d1 && d1.quick.join() === 'appt,work,update,photo,receipt,clock,lead,sched', 'PM quick actions in order: New appointment · Schedule work · Update job · Photo · 🧾 Snap a receipt · Clock · New lead · My Schedule (💬 Messages is on each job page)', d1 && d1.quick);
+  ok(d1 && d1.quick.join() === 'appt,work,update,photo,receipt,msgs,lead,sched', 'PM quick actions in order: New appointment · Schedule work · Update job · Photo · 🧾 Snap a receipt · 💬 Messages (BIDTILE2: where ⏱ Clock was) · New lead · My Schedule', d1 && d1.quick);
   ok(d1 && d1.quickH >= 72, 'PM: the quick actions are big tap targets (≥ 72 px)', d1 && d1.quickH);
   ok(d1 && ['log', 'todo'].every(k => d1.extra.includes(k)) && !d1.extra.includes('punch') && !d1.extra.includes('msgs') && !d1.extra.includes('money'), 'PM: 📒 Daily log · ☑ To-dos on Home; ☐ Punch / 💬 Messages are on the job page, not Home', d1 && d1.extra);
   ok(d1 && /Bids due|bids? due/i.test(d1.need), 'PM Needs you: ⏰ Bids due', d1 && d1.need);
   ok(d1 && /Today/.test(d1.secs[0]) && d1.secs.some(x => /Needs you/.test(x)) && d1.secs.some(x => /This week/.test(x)) && d1.order.every((v, i, a) => v >= 0 && (i === 0 || v > a[i - 1])), 'PM: Today → quick actions → Needs you → This week, in that order', d1 && { s: d1.secs, o: d1.order });
   ok(d1 && /1 overdue follow-up/.test(d1.need), 'PM Needs you: the overdue lead follow-up', d1 && d1.need);
   ok(d1 && d1.nums.length === 6 && d1.nums.some(x => /^jobs=2$/.test(x)), 'PM This week: my numbers (my 2 active jobs …)', d1 && d1.nums);
-  ok(d1 && !/clock in to|haven.?t clocked|log your hours|timesheet (is )?(due|missing|overdue)|forgot to clock/i.test(d1.text) && /Optional/.test(d1.text), 'PM: no clock / hours nag — ⏱ is marked optional', d1 && d1.text.slice(0, 400));
+  ok(d1 && !/clock in to|haven.?t clocked|log your hours|timesheet (is )?(due|missing|overdue)|forgot to clock/i.test(d1.text) && !/Clock in/.test(d1.text), 'PM: no clock / hours nag — no ⏱ Clock in tile (BIDTILE2)', d1 && d1.text.slice(0, 400));
   ok(await pm.ev(() => document.documentElement.classList.contains('gc-pmf-comm')) && (await visibleSick(pm)) === 0, 'PM (commission): no 🤒 Call in sick / ⏰ Running late on Home');
   await pm.page().screenshot({ path: SHOTS + 'pm_home.png' });
   await pm.page().screenshot({ path: SHOTS + 'pm_home_full.png', fullPage: true }).catch(() => {});
@@ -320,7 +320,7 @@ try {
     r.ok = (r.add.length > 0 || r.view || r.photos || r.home) && !BAD_TOAST.test(r.toast);
     await home(pm); return r;
   };
-  const tiles = ['appt', 'work', 'update', 'photo', 'receipt', 'clock', 'lead', 'sched'];
+  const tiles = ['appt', 'work', 'update', 'photo', 'receipt', 'msgs', 'lead', 'sched'];   /* BIDTILE2 */
   const tr = []; for (const k of tiles) tr.push([k, await tryOpen('.gc-pmf [data-pmf-a="' + k + '"]')]);
   ok(tr.every(x => x[1].ok), 'PM: every quick tile opens its screen (' + tiles.join(', ') + ')', tr.filter(x => !x[1].ok));
   const br = []; for (const k of ['appr', 'jobs', 'ra-sched', 'more']) br.push([k, await tryOpen('#gc-fh-tabs [data-t="' + k + '"]')]);
@@ -389,7 +389,7 @@ try {
     if (r.cover !== 'ok') console.log('    ⚠ after ' + sel + ' the bar is covered by: ' + r.cover);
     if (nk.errs.length > e0) { r.err = nk.errs.slice(e0); console.log('    ⚠ page error after ' + sel + ': ' + r.err.join(' | ')); }
     return r; };
-  const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'receipt', 'clock', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
+  const nr = []; for (const k of ['appt', 'work', 'update', 'photo', 'receipt', 'bidportal', 'lead', 'sched']) nr.push([k, await tryN('.gc-pmf [data-pmf-a="' + k + '"]')]);
   for (const k of (d2 ? d2.extra : [])) nr.push([k, await tryN('.gc-pmf-x [data-ra-a="' + k + '"]')]);
   for (const k of ['appr', 'jobs', 'ra-sched', 'more']) nr.push(['bar:' + k, await tryN('#gc-fh-tabs [data-t="' + k + '"]')]);
   await home(nk); await tap(nk, '#gc-fh-tabs [data-t="more"]');
