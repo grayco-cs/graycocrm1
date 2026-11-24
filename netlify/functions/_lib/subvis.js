@@ -34,8 +34,16 @@ function isSolicitation(item, kind){
   }
   return false;
 }
+/* patch NOLINKS: a link a sub may see — only GrayCo's own plan set (too big to upload), never a plan room, a bid board or a solicitation */
+const ROOM = /\b(plan\s*-?\s*rooms?|planrooms?|bid\s*rooms?|bid\s*boards?|solicitations?|bidding\s+documents?|bid\s+documents?|documents?\s+for\s+bid)\b/i;
+function planSetLink(item){
+  const own = [item.name, item.label, item.title].map(s).join(' ').replace(/[_\-.]+/g, ' ');
+  if (!s(item.url) || s(item.board) || ROOM.test(own) || isSolicitation(item, 'link') || HOST.test(hostOf(item.url))) return false;
+  return PLANWORD.test(own);
+}
 function visible(item, kind){
   if (!item || typeof item !== 'object') return false;
+  if (kind === 'link') return item.subsVisible !== false && planSetLink(item);   /* patch NOLINKS (owner 11/24): no tick opens a plan room / solicitation link to subs (a 'hidden' tick still hides) */
   if (item.subsVisible === true) return true;
   if (item.subsVisible === false) return false;
   return !isSolicitation(item, kind);
@@ -55,4 +63,4 @@ function notesFor(notes, hidden){
     return true;
   }).join('\n');
 }
-module.exports = { visible, isSolicitation, list, notesFor, _re: { HIDE, PLANWORD } };
+module.exports = { visible, isSolicitation, planSetLink, list, notesFor, _re: { HIDE, PLANWORD } };

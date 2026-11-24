@@ -139,12 +139,24 @@ await t('⏸ data-entry mode: the request e-mail to staff still goes (staff only
   yes(r.ok && !r.already, JSON.stringify(r));
   eq(MAIL.length, 1, 'sent while paused'); eq(MAIL[0].to.slice().sort(), ['gestimator@grayco-cs.com', 'pplanner@grayco-cs.com']);
 });
-await t('a 🔗 plan link added (bid-hub op plans) → both requests close, To-Dos done, each sub gets a bid-site notice; the sub e-mail is HELD (⏸ on)', async () => {
+await t('NOLINKS (owner 11/24): a 🔗 plan-room link added → GrayCo only: the requests stay open, no notice to subs', async () => {
+  MAIL.length = 0;
+  const hub = require(path.join(FN, 'bid-hub.js'));
+  const H = { httpMethod: 'POST', headers: {}, body: JSON.stringify({ op: 'plans', jobId: 'j_noplans', addLink: { url: 'https://www.bartlett.example/solicitation', label: 'Solicitation & documents (City of Bartlett)' } }) };
+  const BI = require(path.join(FN, 'bid-inbox.js')); const realAuth = BI._test.staffAuth; BI._test.staffAuth = async () => Object.assign({}, ADMIN);
+  const out = await hub.handler(H); BI._test.staffAuth = realAuth;
+  eq(out.statusCode, 200, out.body);
+  eq([row('planreqs/j_noplans__u_sam').status, row('planreqs/j_noplans__u_otto').status], ['open', 'open']);
+  eq(MAIL.filter(m => !m.to.every(a => /@grayco-cs\.com$/.test(a))).length, 0, 'no e-mail to a sub');
+  const SVL = require(path.join(FN, '_lib', 'subvis.js'));
+  eq([SVL.visible({ label: 'Solicitation & documents', url: 'https://x.gov/a', subsVisible: true }, 'link'), SVL.visible({ label: 'Plan room', url: 'https://drive.google.com/x' }, 'link'), SVL.visible({ label: 'Plans (Google Drive)', url: 'https://drive.google.com/x' }, 'link')], [false, false, true], 'no tick opens a plan room; GrayCo\'s own plan set does');
+});
+await t('a 🔗 plan set link added (bid-hub op plans) → both requests close, To-Dos done, each sub gets a bid-site notice; the sub e-mail is HELD (⏸ on)', async () => {
   MAIL.length = 0;
   const r = await BH.manageView('j_noplans'); eq(r.planreqs.filter(x => x.open).length, 2, 'two open before');
   const jl = await BH.jobsList(); eq((jl.find(j => j.id === 'j_noplans') || {}).openReq, 2, 'jobsList openReq');
   const hub = require(path.join(FN, 'bid-hub.js'));
-  const H = { httpMethod: 'POST', headers: {}, body: JSON.stringify({ op: 'plans', jobId: 'j_noplans', addLink: { url: 'https://drive.google.com/sample-clinic', label: 'Full set' } }) };
+  const H = { httpMethod: 'POST', headers: {}, body: JSON.stringify({ op: 'plans', jobId: 'j_noplans', addLink: { url: 'https://drive.google.com/sample-clinic', label: 'Full plan set' } }) };
   const BI = require(path.join(FN, 'bid-inbox.js')); const realAuth = BI._test.staffAuth; BI._test.staffAuth = async () => Object.assign({}, ADMIN);
   const out = await hub.handler(H); BI._test.staffAuth = realAuth;
   eq(out.statusCode, 200, out.body);
