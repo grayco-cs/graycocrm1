@@ -46,9 +46,10 @@ function tomb(l){ try { return typeof W._gcIsTombstoned === 'function' && W._gcI
 function leads(){ return arr(W._crm && W._crm.leads).filter(function(l){ return l && l.id && !tomb(l); }); }
 var LAST = { at: 0, list: [] };
 function list(){
-  var t = now(); if (LAST.at && Math.abs(t - LAST.at) < 3000 && LAST.n === arr(W._crm && W._crm.leads).length) return LAST.list;
+  var t = now(), rt = Date.now(), ref = W._crm && W._crm.leads;   /* patch LWCACHE: real time, and the same leads list (not only the same count) */
+  if (LAST.at && Math.abs(rt - LAST.at) < 3000 && LAST.ref === ref && LAST.n === arr(ref).length) return LAST.list;
   var L = C.atRisk(leads(), [], t).filter(function(z){ var id = s(z.l.id); return !LR.done[id] && !(LR.clr[id] && LR.clr[id] === C.clearSig(z.l)); });   /* patch LEADRISK: what was just ✓ / ✕ here, before the synced copy has it */
-  LAST = { at: t, n: arr(W._crm && W._crm.leads).length, list: L }; return L;
+  LAST = { at: rt, ref: ref, n: arr(ref).length, list: L }; return L;
 }
 function riskOf(l){ try { return C.risk(l, now(), { maxDays: C.CARD_DAYS }); } catch (e) { return null; } }
 var KC = { nopm: ['👤', '#9a3412', '#ffedd5'], nopm24: ['👤', '#991b1b', '#fee2e2'], pm24: ['⏰', '#92400e', '#fef3c7'], pm48: ['⚠️', '#991b1b', '#fee2e2'] };
