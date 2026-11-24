@@ -184,7 +184,7 @@ function toggleMenu(){
     : h('button', { type: 'button', id: 'gca-m-push', text: '🔔 ' + T('Turn on notifications', 'Activar avisos'), on: { click: function(){ closeMenu(); pushOn(); } } }));
   var m = main();
   if (m && m.session) items.push(h('button', { type: 'button', id: 'gca-m-out', text: '↩ ' + T('Sign out of this device', 'Salir en este equipo'), on: { click: function(){ closeMenu(); var so = $('signOut'); if (so) so.click(); } } }));
-  if (!items.length) return;
+  if (!items.length) items.push(h('div', { class: 'ok', id: 'gca-m-none', text: T('To use GrayCo Portal like an app, open this page on your phone and add it to your Home Screen.', 'Para usar el Portal GrayCo como una app, abra esta página en su teléfono y agréguela a la pantalla de inicio.') }));   /* patch PORTALTAPS: the tap always shows something */
   var menu = h('div', { class: 'gca-menu', id: 'gca-menu', role: 'menu' }, items);
   document.querySelector('header').appendChild(menu);
 }

@@ -207,7 +207,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
   nav.tabs button[aria-selected="true"]{background:var(--navy);color:#fff;box-shadow:none;border-color:var(--navy)}
   .two{display:grid;grid-template-columns:minmax(320px,400px) minmax(0,1fr);gap:20px;align-items:start}
   .col-l,.col-r{display:flex;flex-direction:column;gap:14px;min-width:0}
-  .col-l{position:sticky;top:12px}
+  .col-l{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto;overscroll-behavior:contain}   /* patch PORTALTAPS: a sticky column taller than the window hid its bottom */
   footer.lic{padding-bottom:24px}
   .sheet{align-items:center}
   .sheet-in{border-radius:16px;max-height:90vh}
@@ -318,6 +318,37 @@ try { session = localStorage.getItem('gc_portal_s') || ''; } catch (e) {}
 /* patch PORTALAPP: opened from the home-screen app — its own long device session (gc_portal_app) signs it in; a link
    opened inside the app still wins. The app's session is copied to gc_portal_s so every card of the page uses it. */
 var APPMODE = (function(){ try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; } })();
+/* patch PORTALTAPS: in the installed app (Add to Home Screen) a window opened before its address is known (window.open('')),
+   or a blob: window, is a black screen on the iPhone with no way back (the CRM's SENDEST2 bug). There the portals open no
+   early window: a file opens from a small sheet with a real link (a fresh tap → the iPhone's own viewer with Done); an HTML
+   page shows over the portal with ✕. In a browser tab nothing changes. Used by portal.html and portal-app.js. */
+window.GCAppOpen = {
+  app: function(){ try { return window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches; } catch (e) { return false; } },
+  sheet: function(url, title){
+    var es = LANG === 'es', old = document.getElementById('gcAppOpen'); if (old) old.remove();
+    var ov = document.createElement('div'); ov.id = 'gcAppOpen'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', title || 'File');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,20,35,.55);display:flex;align-items:flex-end;justify-content:center;padding:12px';
+    var box = document.createElement('div'); box.style.cssText = 'background:#fff;color:#14213d;border-radius:16px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:12px;font:16px system-ui,-apple-system,Arial';
+    var hd = document.createElement('b'); hd.textContent = title || (es ? 'Su archivo' : 'Your file');
+    var a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'btn gold'; a.setAttribute('data-app-open', '1'); a.style.cssText = 'text-align:center;text-decoration:none';
+    a.textContent = '📄 ' + (es ? 'Abrir' : 'Open'); a.addEventListener('click', function(){ setTimeout(function(){ ov.remove(); }, 300); });
+    var x = document.createElement('button'); x.type = 'button'; x.className = 'btn'; x.textContent = es ? 'Cerrar' : 'Close'; x.addEventListener('click', function(){ ov.remove(); });
+    ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+    box.appendChild(hd); box.appendChild(a); box.appendChild(x); ov.appendChild(box); document.body.appendChild(ov); try { a.focus(); } catch (e) {}
+    return ov;
+  },
+  /* a PDF made in the page (bytes): the share sheet (Save to Files / Print) where the phone has one, else shown over the portal */
+  pdf: function(blob, name){
+    try { var f = new File([blob], name || 'GrayCo.pdf', { type: 'application/pdf' }); if (navigator.canShare && navigator.canShare({ files: [f] })) return navigator.share({ files: [f], title: name }).catch(function(){}); } catch (e) {}
+    var u = URL.createObjectURL(blob), ov = document.createElement('div'); ov.id = 'gcAppOpen'; ov.setAttribute('role', 'dialog');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#0b1626;display:flex;flex-direction:column';
+    var top = document.createElement('div'); top.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 14px;color:#fff;font:16px system-ui,Arial';
+    var t = document.createElement('span'); t.textContent = name || 'PDF'; var x = document.createElement('button'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.textContent = '✕'; x.style.cssText = 'font-size:22px;background:none;border:0;color:#fff;min-width:44px;min-height:44px';
+    x.addEventListener('click', function(){ ov.remove(); try { URL.revokeObjectURL(u); } catch (e) {} });
+    var fr = document.createElement('iframe'); fr.title = name || 'PDF'; fr.src = u; fr.style.cssText = 'flex:1 1 auto;border:0;background:#fff;width:100%';
+    top.appendChild(t); top.appendChild(x); ov.appendChild(top); ov.appendChild(fr); document.body.appendChild(ov);
+  }
+};
 try { var appS0 = localStorage.getItem('gc_portal_app') || ''; if (APPMODE && appS0 && !/(?:^#|&)t=/.test(location.hash || '')) { session = appS0; token = ''; localStorage.setItem('gc_portal_s', appS0); localStorage.removeItem('gc_portal_t'); } } catch (e) {}
 window.GCPortalMain = { cur: function(){ return { variant: V && V.variant || 'home', pid: PID, tab: TAB, shown: !!V && !window.GCPartner, session: session, token: token, preview: PREVIEW, app: APPMODE }; }, go: function(t){ if (V && !window.GCPartner) go(t); } };
 
@@ -487,7 +518,7 @@ function signin(step, who){
 /* patch SUBSIGNUP: "New subcontractor? Create your account" — the form lives in portal-app.js (GCPartner.signup) and posts to the
    bid site's register (subportal.js): the account sees nothing until GrayCo approves it. A job invite (?invite=…&job=… or #invite=…)
    is passed through (invited sign-ups are approved at once) and fills in the e-mail. */
-var APP_JS = '/portal-app.js?v=33.251-subflow', SIGNUP_KEEP = {};
+var APP_JS = '/portal-app.js?v=33.252-portaltaps', SIGNUP_KEEP = {};
 function loadApp(cb){
   if (window.GCPartner) return cb();
   var s = document.createElement('script'); s.src = APP_JS; s.onload = cb; s.onerror = function(){ notActive(tr('loadFail')); };
@@ -958,13 +989,15 @@ function invRow(x){
        below is the PDF file. */
     var openInv = function(printIt){
       msg.textContent = 'Opening…';
-      var w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
+      var w = null; if (!window.GCAppOpen.app()) try { w = window.open('', '_blank'); } catch (e) { w = null; }   /* patch PORTALTAPS: never a blank window in the installed app */
       try { if (w) { w.document.title = 'GrayCo invoice'; w.document.body.style.cssText = 'font:16px Arial;padding:24px;background:#060b16;color:#e8eefb'; w.document.body.textContent = 'Opening your invoice…'; } } catch (e) {}
       post(FN, { action: 'invoice', id: x.id, view: true, projectId: PID || undefined }, cred()).then(function(r){
         var j = r.data || {}; if (!j.ok || !j.html) throw new Error(j.error || 'not available');
         msg.textContent = '';
         /* "⬇️ Download PDF" is the CRM's own: its print → "Save as PDF" (the white paper version of the same design) */
-        var html = j.html + (printIt ? '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print()}catch(e){}},1600)});<\/script>' : '');
+        var html = String(j.html).replace(/<link[^>]+fonts\.googleapis\.com[^>]*>/gi, '').replace(/try\{fetch\("[^"]*invoice-track[^"]*",\{mode:"no-cors"\}\);\}catch\(e\)\{\}/g, '')
+          /* patch PORTALTAPS: shown inside the portal (its CSP: no outside styles / connections) the font link and the view ping's fetch were console errors;
+             the invoice has its own fallback fonts and the view still counts (its 1-pixel image and this request) */ + (printIt ? '<script>window.addEventListener("load",function(){setTimeout(function(){try{window.print()}catch(e){}},1600)});<\/script>' : '');
         if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); return; }
         var ov = h('div', { class: 'lb', role: 'dialog', 'aria-label': 'Invoice' }, [h('div', { class: 'top' }, [h('span', { text: 'Invoice ' + (j.number || '') }), h('button', { type: 'button', 'aria-label': 'Close', text: '✕', on: { click: function(){ ov.remove(); } } })])]);
         var fr = h('iframe', { title: 'Invoice', style: 'flex:1 1 auto;width:100%;border:0;background:#060b16' }); fr.srcdoc = html; ov.appendChild(fr); document.body.appendChild(ov);
@@ -2239,9 +2272,10 @@ function act(k, body, okText){
   });
 }
 function openFile(action, id){
-  var w = null; try { w = window.open('', '_blank'); } catch (e) {}
+  var app = window.GCAppOpen && window.GCAppOpen.app();   /* patch PORTALTAPS: no blank window in the installed app — a sheet with the link */
+  var w = null; if (!app) try { w = window.open('', '_blank'); } catch (e) {}
   gcApi({ action: action, id: id }).then(function(r){
-    if (r.data.ok && r.data.url) { if (w) w.location = r.data.url; else location.href = r.data.url; }
+    if (r.data.ok && r.data.url) { if (app) window.GCAppOpen.sheet(r.data.url); else if (w) w.location = r.data.url; else location.href = r.data.url; }
     else { if (w) w.close(); alert(r.data.error || 'That file is not available just now.'); }
   });
 }
@@ -2391,6 +2425,7 @@ function cPaint(){
       r.mfr ? h('div', { class: 'muted', text: 'Manufacturer: ' + r.mfr.name + (r.mfr.product ? ' — ' + r.mfr.product : '') + ' · ' + (r.mfr.status === 'registered' ? 'registered' + (r.mfr.number ? ' #' + r.mfr.number : '') : 'GrayCo is registering it for you') }) : null,
       h('button', { type: 'button', class: 'btn', text: '📄 Download (PDF)', on: { click: function(){ var b = this; b.disabled = true; cApi({ action: 'cust-registry' }).then(function(x){ b.disabled = false; if (!x.data.ok) return alert(x.data.error || 'Not available yet.');
         var bin = atob(x.data.pdf), u8 = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        if (window.GCAppOpen && window.GCAppOpen.app()) return window.GCAppOpen.pdf(new Blob([u8], { type: 'application/pdf' }), x.data.filename || 'GrayCo warranty registry.pdf');   /* patch PORTALTAPS */
         var url = URL.createObjectURL(new Blob([u8], { type: 'application/pdf' })), a = document.createElement('a'); a.href = url; a.download = x.data.filename || 'GrayCo warranty registry.pdf'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 60000); }); } } })], 'gcp-registry');
     rc.setAttribute('data-gcp-end', '1'); CU.cards.push(rc);
   }
