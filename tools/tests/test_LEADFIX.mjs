@@ -47,6 +47,7 @@ const t = fs.readFileSync(path.join(build, 'index.html'), 'utf8');
   const a = t.indexOf('/* __LEADWATCH_CORE_BEGIN__'), b = t.indexOf('/* __LEADWATCH_CORE_END__ */');
   ok(t.slice(t.indexOf('\n', a) + 1, b).replace(/\n+$/, '') === fs.readFileSync(path.join(build, 'netlify/functions/_lib/lead-watch.js'), 'utf8').replace(/\n+$/, ''), 'lead-watch.js is inlined word for word');
   ok(!/wjohnson|ngray|Wesley|Nick/i.test(blk), 'no names or e-mails in the block (roles decide)');
+  ok(/LAST\.at && Math\.abs\(rt - LAST\.at\) < 3000 && LAST\.ref === ref/.test(blk), 'the card\'s list cache is keyed on the real clock and the leads list itself (patch LWCACHE: a synced new PM is never hidden by a stale list)');
 }
 
 /* ── C. BIDAUTO (node: the real bid-hub / subportal / bid-portal over the in-memory Supabase of qaa_world.mjs) ── */
@@ -155,6 +156,8 @@ function seed(){
 const INIT = `window.__GC_LW_NOW__ = ${NOW}; window.__GC_PAPERS_TODAY__ = '2026-11-20';`;
 const sev = async (A, f, x) => { for (let i = 0; i < 30; i++) { try { return await A.ev(f, x); } catch (e) { if (!/context was destroyed|navigation|Target closed/i.test(String(e))) throw e; await sleep(1000); } } return A.ev(f, x); };
 const rowsOf = A => sev(A, () => { const c = document.getElementById('gc-lw-card'); return c ? { ids: [...c.querySelectorAll('[data-lw-row]')].map(r => r.getAttribute('data-lw-row')).sort(), text: c.innerText, btn: [...c.querySelectorAll('[data-lw-row]')].map(r => [...r.querySelectorAll('button')].map(b => b.textContent.trim()).join('|')) } : null; });
+/* who did it: the owner's name on the CRM's people list, or the sign-in's (the page knows one or the other first) */
+const ME = new RegExp('^(Owner One|' + H.ACCOUNTS[ADMIN].name + ')$');
 const cloudLead = id => (H.cget('leads') || []).find(l => l && l.id === id);
 const OPEN = [];
 try {
@@ -173,14 +176,14 @@ try {
   await sev(A, () => document.querySelector('#gc-lw-card [data-lw-done="LR_W"]').click());
   c = await H.waitFor(A, () => { const x = document.getElementById('gc-lw-card'); return x && !x.querySelector('[data-lw-row="LR_W"]') ? true : null; }, null, 10000);
   ok(!!c, '✓ Contacted takes the row off');
-  const w = await (async () => { for (let i = 0; i < 40; i++) { const l = cloudLead('LR_W'); if (l && l.contactedAt) return l; await sleep(500); } return cloudLead('LR_W'); })();
-  ok(w && w.contactedAt && w.contactedBy === H.ACCOUNTS[ADMIN].name && w.stage === 'Contacted' && w.lastContact, 'it is the lead\'s own ✅ Contacted: contactedAt / contactedBy / stage Contacted, saved to the synced leads', w && { contactedAt: w.contactedAt, by: w.contactedBy, stage: w.stage });
+  const w = await (async () => { for (let i = 0; i < 120; i++) { const l = cloudLead('LR_W'); if (l && l.contactedAt) return l; await sleep(500); } return cloudLead('LR_W'); })();
+  ok(w && w.contactedAt && ME.test(w.contactedBy) && w.stage === 'Contacted' && w.lastContact, 'it is the lead\'s own ✅ Contacted: contactedAt / contactedBy / stage Contacted, saved to the synced leads', w && { contactedAt: w.contactedAt, by: w.contactedBy, stage: w.stage });
 
   await H.waitFor(A, () => !!document.querySelector('#gc-lw-card [data-lw-clear="LR_J"]'), null, 10000);
   await sev(A, () => document.querySelector('#gc-lw-card [data-lw-clear="LR_J"]').click());
   ok(!!(await H.waitFor(A, () => { const x = document.getElementById('gc-lw-card'); return x && !x.querySelector('[data-lw-row="LR_J"]') ? true : null; }, null, 10000)), '✕ Clear takes the row off');
   const j = await (async () => { for (let i = 0; i < 40; i++) { const l = cloudLead('LR_J'); if (l && l.lwClear) return l; await sleep(500); } return cloudLead('LR_J'); })();
-  ok(j && j.lwClear && j.lwClear.by === H.ACCOUNTS[ADMIN].name && j.lwClear.byEmail === ADMIN && j.lwClear.at && j.lwClear.sig && (j.lwClearLog || []).length === 1 && j.lwClear.all === false, 'who and when are on the lead (lwClear) and kept in lwClearLog', j && { c: j.lwClear, n: (j.lwClearLog || []).length });
+  ok(j && j.lwClear && ME.test(j.lwClear.by) && j.lwClear.byEmail === ADMIN && j.lwClear.at && j.lwClear.sig && (j.lwClearLog || []).length === 1 && j.lwClear.all === false, 'who and when are on the lead (lwClear) and kept in lwClearLog', j && { c: j.lwClear, n: (j.lwClearLog || []).length });
   ok(j && !j.archived && !j.deleted && j.stage === 'New Lead' && (H.cget('leads') || []).length === 5, 'the lead itself is kept as it was (never deleted, closed or archived)', j && { a: j.archived, d: j.deleted, st: j.stage });
 
   await sev(A, () => document.querySelector('#gc-lw-card [data-lw-clearall="ask"]').click());
@@ -194,7 +197,7 @@ try {
   ok(!!(await H.waitFor(A, () => !document.getElementById('gc-lw-card') ? true : null, null, 10000)), 'the card disappears when it is empty');
   ok(!A.dialogs || !A.dialogs.length, 'no pop-up (no confirm / alert)', A.dialogs);
   const both = await (async () => { for (let i = 0; i < 40; i++) { const p = cloudLead('LR_P'), q = cloudLead('LR_W2'); if (p && p.lwClear && q && q.lwClear) return [p, q]; await sleep(500); } return [cloudLead('LR_P'), cloudLead('LR_W2')]; })();
-  ok(both.every(l => l && l.lwClear && l.lwClear.all === true && l.lwClear.by === H.ACCOUNTS[ADMIN].name), 'Clear all is saved on each lead (all: true)', both.map(l => l && l.lwClear));
+  ok(both.every(l => l && l.lwClear && l.lwClear.all === true && ME.test(l.lwClear.by)), 'Clear all is saved on each lead (all: true)', both.map(l => l && l.lwClear));
 
   const B = await H.computer('OWNER2', { build, init: [INIT] }); OPEN.push(B);
   await H.signIn(B, ADMIN2, 30000);

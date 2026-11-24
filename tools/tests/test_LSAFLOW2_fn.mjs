@@ -196,6 +196,19 @@ const ALL_CUST = [];
   SMS.length = 0; T += 2 * 3600e3; await SA.lsaEscTick();
   ok(!SMS.some(x => /GOOD lead: Cus Tomer2/.test(x.Body)), 'qualified → the GOOD ladder stops', SMS.map(x => x.Body));
 
+  console.log('6b. REPLYOFF (owner 11/24): the owners never get "has not answered"; nothing after hours');
+  world(); T = DAY; SMS.length = 0;
+  const L9 = lead('LI-f9', 6); await arrive(L9); await txt(O1, 'GOOD ' + SA._lsaCode('LI-f9') + ' Pat'); SMS.length = 0;
+  const notAns = ph => toPh(ph).filter(x => /has not answered the lead text/.test(x.Body));
+  for (let h = 1; h <= 6; h++) { T = DAY + h * 61 * 60e3; await SA.lsaEscTick(); }   /* Thu 11 AM → 4 PM, open hours: every step it can take */
+  ok(notAns(OFF).length >= 1, 'REPLYOFF: the office still gets "Pat Miller has not answered" in open hours', SMS.map(x => [x.To, x.Body.slice(0, 60)]));
+  ok(!notAns(O1).length && !notAns(O2).length, 'REPLYOFF: the owners never get "has not answered" (the ladder ends before them)', SMS.map(x => [x.To, x.Body.slice(0, 60)]));
+  world(); T = Date.parse('2026-11-23T23:30:00Z'); SMS.length = 0;   /* Mon 5:30 PM Central — assigned just before closing */
+  const L10 = lead('LI-f10', 7); await arrive(L10); await txt(O1, 'GOOD ' + SA._lsaCode('LI-f10') + ' Pat');
+  SMS.length = 0; T += 61 * 60e3; let e10 = await SA.lsaEscTick(); T += 2 * 3600e3; e10 = await SA.lsaEscTick();   /* 6:31 PM, 8:31 PM: closed */
+  ok(!SMS.some(x => /has not answered the lead text/.test(x.Body)), 'REPLYOFF: after hours (6:31 PM, 8:31 PM) no "has not answered" text to anyone', { e10, sms: SMS.map(x => [x.To, x.Body.slice(0, 60)]) });
+  T = Date.parse('2026-11-24T13:05:00Z'); e10 = await SA.lsaEscTick();   /* Tue 7:05 AM: open again → the office step goes */
+  ok(notAns(OFF).length === 1 && !notAns(O1).length && !notAns(O2).length, 'REPLYOFF: the next morning (open hours) the office step goes, not the owners', { e10, sms: SMS.map(x => [x.To, x.Body.slice(0, 60)]) });
   console.log('7. Google\'s 48 hours (LEADWATCH: replaces day 25 / 30)');
   world(); SMS.length = 0;
   ok(SA.LSA_DISPUTE_WINDOW_H === 48 && SA.LSA_WARN_LEFT_H === 8, 'LSA_DISPUTE_WINDOW_H = 48, warn with 8 h left (constants)');

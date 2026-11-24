@@ -1670,6 +1670,9 @@ async function escTargets(step, x){
   return { only: lsaAdmins(), direct: [] };
 }
 async function escSend(leadId, step, e){
+  /* REPLYOFF (owner 11/24: "I don't care what an estimator does I shouldn't get these alerts and definitely not at 9pm"): the
+     "has not answered the lead text" ladder never reaches the owners — it ends with the office / marketing steps */
+  if (obj(e).kind === 'reply' && step === 'owners') return { nobody: true, why: 'owners are not told about a PM reply (owner 11/24)' };
   const tg = await escTargets(step, e.item || {});
   { let pp = {}; try { pp = await _D.people(); } catch (er) {} let set = { people: {} }; try { set = await load(); } catch (er) {} const cell = {};   /* a step with nobody who has a cell on file is skipped */
     staffList(pp).forEach(x => { if (x.phone) cell[x.email] = 1; }); Object.keys(set.people || {}).forEach(k => { if (set.people[k] && set.people[k].phone) cell[k] = 1; });
@@ -1711,6 +1714,10 @@ async function lsaEscTick(){
     let done = escClosed(e.kind, x);
     if (!done && e.kind === 'reply') { try { if (await _D.leadCleared(e.leadId)) done = true; } catch (er) {} }   /* patch LEADRISK: an owner cleared the lead — the "has not answered" texts stop */
     let step = e.step, res = null;
+    /* REPLYOFF: the "has not answered" reminders only in open hours (⚙ call order hours, default Mon–Fri 7 AM–6 PM Central): after hours
+       the next step waits for the morning (nothing is sent, the step is not used up) */
+    if (!done && e.kind === 'reply') { let open = true; try { const hrs = await _D.hours(); open = hrs ? require('./callorder.js').isOpen(t, { hours: hrs }) : true; } catch (er) { open = true; } if (!open) { out.sent.push({ leadId: e.leadId, kind: e.kind, step: 'waits for open hours' }); continue; } }
+    if (!done && e.kind === 'reply' && ESC_STEPS[e.step + 1] === 'owners') done = true;   /* REPLYOFF: nobody after marketing */
     if (!done) { while (++step < ESC_STEPS.length) { res = await escSend(e.leadId, ESC_STEPS[step], Object.assign({}, e, { item: x || {} })); if (!(res && res.nobody)) break; } }
     await _D.kvCas(SKEY, v => { const st = loadState(v); st.lsaEsc = obj(st.lsaEsc); const c = st.lsaEsc[e.key]; if (!c) return undefined; if (done) c.closed = true; else { c.step = Math.min(step, ESC_STEPS.length - 1); c.last = new Date(t).toISOString(); } return st; }).catch(() => {});
     out.sent.push({ leadId: e.leadId, kind: e.kind, step: done ? 'closed' : ESC_STEPS[Math.min(step, ESC_STEPS.length - 1)] });
