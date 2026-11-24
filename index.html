@@ -1,6 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+<script id="gc-patch-synccpu-early">
+/* __GC_PATCH_SYNCCPU_EARLY__ (tools/patch_SYNCCPU.py): a count of the writes of each IndexedDB "kv" key on this page, so a background
+   job can tell "this list was not written since I last looked" without reading and serialising it again. The first script on the
+   page: every later wrapper of IDBObjectStore put / add / delete / clear ends here. Console: __gcKvVer('projects') */
+(function(){
+'use strict';
+var W = window; if (W.__gcKvVer) return;
+var V = {}, ALL = 0;
+W.__gcKvVer = function(k){ return ALL + ':' + (V[k] || 0); };
+try {
+  var P = W.IDBObjectStore && W.IDBObjectStore.prototype; if (!P) return;
+  var bump = function(st, k){ try { if (st && st.name === 'kv') { if (typeof k === 'string') V[k] = (V[k] || 0) + 1; else ALL++; } } catch (e) { ALL++; } };
+  ['put', 'add'].forEach(function(m){ var o = P[m]; if (typeof o !== 'function') return; P[m] = function(v, k){ var r = o.apply(this, arguments); bump(this, arguments.length > 1 ? k : undefined); return r; }; });
+  var od = P['delete']; if (typeof od === 'function') P['delete'] = function(k){ var r = od.apply(this, arguments); bump(this, k); return r; };
+  var oc = P.clear; if (typeof oc === 'function') P.clear = function(){ var r = oc.apply(this, arguments); bump(this, undefined); return r; };
+  /* a database deleted or opened at a new version: everything counts as written */
+  var F = W.IDBFactory && W.IDBFactory.prototype, odb = F && F.deleteDatabase; if (typeof odb === 'function') F.deleteDatabase = function(){ ALL++; return odb.apply(this, arguments); };
+} catch (e) {}
+})();
+</script>
 <script id="gc-patch-lsguard">
 /* __GC_PATCH_LSGUARD__ — a full browser storage never fails a save silently (tools/patch_LSGUARD.py).
    The ACCTGATE run (11/03) filled localStorage to 5,242,855 of ~5,242,880 characters (the estimate mirror gc_ests_v2 alone
@@ -383,6 +403,19 @@ var S = { skips: {}, moSkips: {}, flushes: 0, flushed: 0, home: false, homeMs: 0
 W.__gcQuiet = { off: off, list: Object.keys(LIST), state: function(){ var o = JSON.parse(JSON.stringify(S)); o.off = off; o.held = held.size; o.homeNow = home(); return o; } };
 var held = new Map();
 if (off) return;
+/* SYNCCPU (IDLEPACE): the screens' fast re-check timers (badges, the Home's top, the To-Do decorations, the approval chips —
+   each re-reads saved data and redraws only what changed; measured as most of an idle phone's main thread) run at most
+   every max(3 s, 2 x their period) while nobody has touched the screen for 3 s. A tap, a key, a wheel or a finger on the
+   screen puts them back on their own period at once. Saves, uploads, pulls and every other timer: as before. */
+var PACE = {}; ["roleapps", "ap2", "adm", "plan", "est3", "jobmention", "datafull", "addr2", "apx", "ap4", "ccs", "supplierstmt", "coleak2",
+  "officefix-mm", "leads", "x10", "auto6", "tabvis", "newproj", "jobfill-punch", "apprnosend", "invlink", "leadwatch", "acctfix2", "phoneui", "timeoff"].forEach(function(k){ PACE['gc-patch-' + k] = 1; });
+PACE['gc-fix-apprset'] = 1;
+var lastIn = Date.now(), IDLE_MS = 3000;
+try { ['pointerdown', 'touchstart', 'keydown', 'wheel', 'input'].forEach(function(t){ W.addEventListener(t, function(e){ if (!e || e.isTrusted !== false) lastIn = Date.now(); }, { capture: true, passive: true }); }); } catch (e) {}
+try { W.addEventListener('click', function(){ lastIn = Date.now(); }, { capture: true, passive: true }); } catch (e) {}   /* a click made by code for a person (a button's .click()) counts too */
+S.paced = {};
+W.__gcQuiet.paceList = Object.keys(PACE);
+W.__gcQuiet.idleMs = function(){ return Date.now() - lastIn; };   /* how long nobody has touched the screen */
 var nST = W.setTimeout, nSI = W.setInterval, NMO = W.MutationObserver;
 var cur = '';
 function owner(){ if (cur) return cur; try { var s = D.currentScript; return (s && s.id) || ''; } catch (e) { return ''; } }
@@ -403,8 +436,10 @@ function timer(native, repeat){
     var o = typeof fn === 'function' ? owner() : '';
     if (!o) return native.apply(W, arguments);
     var a = Array.prototype.slice.call(arguments), f = fn, gate = repeat && LIST[o] && +ms <= 5000, box = {};
+    var pace = repeat && +ms > 0 && +ms <= 2000 && !!PACE[o], slow = Math.max(3000, 2 * ms), ranAt = 0;   /* SYNCCPU (IDLEPACE) */
     a[0] = function(){
       if (gate && home()) { held.set(box, { o: o, f: f, self: this, args: arguments }); S.skips[o] = (S.skips[o] || 0) + 1; return; }
+      if (pace) { var pn = Date.now(); if (pn - lastIn > IDLE_MS && pn - ranAt < slow - 50) { S.paced[o] = (S.paced[o] || 0) + 1; return; } ranAt = pn; }
       return run(o, f, this, arguments);
     };
     return native.apply(W, a);
@@ -4468,9 +4503,13 @@ function spRows(u, init){
     /* the same text sent again (an unchanged list re-saved) is not taken apart again: a one-row upload is
        remembered by a hash of its text without the save time at the end */
     var one = /^\{"key":"((?:[^"\\]|\\.)*)","value":/.exec(init.body), rawH = null;
+    var spT = null;
     if (one) {
+      /* SYNCCPU (SPTEXT): the text without the save time at the end, cut where that field starts (not a regex over the whole text) */
+      var spI = init.body.lastIndexOf(',"updated_at":"'); spT = spI > 0 && /"\}$/.test(init.body.slice(-2)) && init.body.indexOf('"', spI + 15) === init.body.length - 2 ? init.body.slice(0, spI) : init.body;
+      var mm = SP_MEMO[one[1]]; if (mm && typeof mm.t === 'string' && mm.t === spT) return [{ key: mm.k, sig: mm.s }];   /* the same text as last time: no hash */
       rawH = spHash(init.body.replace(/,"updated_at":"[^"]*"\}$/, '}'));
-      var mm = SP_MEMO[one[1]]; if (mm && mm.h === rawH) return [{ key: mm.k, sig: mm.s }];
+      if (mm && mm.h === rawH) { if (spT.length <= 2000000) mm.t = spT; return [{ key: mm.k, sig: mm.s }]; }
     }
     var b = JSON.parse(init.body), rows = Array.isArray(b) ? b : [b], out = [];
     for (var i = 0; i < rows.length; i++) {
@@ -4480,7 +4519,7 @@ function spRows(u, init){
       var sg = spSig(r.value); if (!sg) return null;
       out.push({ key: r.key, sig: sg });
     }
-    if (rawH && out.length === 1) SP_MEMO[one[1]] = { h: rawH, k: out[0].key, s: out[0].sig };
+    if (rawH && out.length === 1) SP_MEMO[one[1]] = { h: rawH, k: out[0].key, s: out[0].sig, t: spT && spT.length <= 2000000 ? spT : null };   /* SYNCCPU (SPTEXT) */
     return out.length ? out : null;
   } catch (e) { return null; }
 }
@@ -23426,9 +23465,12 @@ if (!localStorage.getItem("_helpShown")) {
   // We maintain a cache that refreshes periodically so readers can be synchronous.
   window.GC._cache = { projects: [], invs: [], cos: [], expenses: [], schedule: [], leads: [], vendors: [], customers: [], subs: [], _lastRefresh: 0 };
 
+  var _rcVer = {}, _rcAt = 0;   /* SYNCCPU (KVSKIP): a list not written since its last read gives the same copy — not read again */
   function refreshCache(){
     // Pause during typing AND during recent clicks (within 2.5s of last interaction)
     if (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__) return;
+    var _rcK = ["projects","invs","cos","expenses","schedule","leads","vendors","customers","subs"], _rcNow = {};
+    try { if (window.__gcKvVer && Date.now() - _rcAt < 300000) { var _rcAny = false; _rcK.forEach(function(k){ _rcNow[k] = window.__gcKvVer(k); if (_rcVer[k] !== _rcNow[k]) _rcAny = true; }); if (!_rcAny) return; } else _rcAt = Date.now(); } catch (e) {}
     try {
       var req = indexedDB.open("grayco_crm");
       req.onerror = function(){};
@@ -23438,11 +23480,13 @@ if (!localStorage.getItem("_helpShown")) {
         try {
           var tx = db.transaction("kv", "readonly");
           var store = tx.objectStore("kv");
-          var keys = ["projects","invs","cos","expenses","schedule","leads","vendors","customers","subs"];
+          var keys = _rcK.filter(function(k){ return !_rcNow[k] || _rcVer[k] !== _rcNow[k]; });   /* SYNCCPU (KVSKIP) */
+          if (!keys.length) { db.close(); return; }
           var done = 0;
           keys.forEach(function(k){
             var r = store.get(k);
             r.onsuccess = function(){
+              if (_rcNow[k]) _rcVer[k] = _rcNow[k];
               if (r.result && r.result.v) {
                 try {
                   var parsed = JSON.parse(r.result.v);
@@ -48922,8 +48966,11 @@ function hashArr(arr){
 }
 
 // ── Main sync function ────────────────────────────────────────────────────
+var _secV = { e: '', c: '', ok: false, at: 0 };   /* SYNCCPU (KVSKIP): estimates and change orders not written since a pass that found nothing new */
 async function syncEstimateToContract(){
   if(_processing) return;
+  var _ve = window.__gcKvVer ? window.__gcKvVer('estimates') : '', _vc = window.__gcKvVer ? window.__gcKvVer('cos') : '';
+  if(_ve && _secV.ok && _secV.e === _ve && _secV.c === _vc && Date.now() - _secV.at < 300000) return;
   _processing = true;
   try {
     var estimates = await idb('estimates') || [];
@@ -49031,10 +49078,12 @@ async function syncEstimateToContract(){
       if(window._crm && window._crm.projects){
         window._crm.projects = projects;
       }
+      _ve = '';   /* SYNCCPU: written — the next pass looks again */
       try{ if(window._setProjects){ var _fill={}; projects.forEach(function(p){ if(p && p._lastEstId && parseFloat(p.contract)) _fill[p.id]=p.contract; });
         window._setProjects(function(prev){ return (prev||[]).map(function(p){ return (p && _fill[p.id] && !(parseFloat(p.contract)||0)) ? Object.assign({}, p, {contract:_fill[p.id], _lastEstId:p._lastEstId||true, updatedAt:new Date().toISOString()}) : p; }); }); } }catch(e){}
     }
 
+    _secV = { e: _ve, c: _vc, ok: !!_ve && estHash === _lastEstHash && coHash === _lastCOHash, at: Date.now() };   /* SYNCCPU (KVSKIP) */
   } catch(e){
     console.warn('Estimate sync error:', e);
   }
@@ -76135,10 +76184,18 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
 
   // Ensure every money event is in the accounting register with correct status.
   // Runs periodically; idempotent (dedupes by srcInvId/_id via _gcAddToRegister).
+  /* SYNCCPU (REGRECON): every 2 minutes this offered every invoice, sub bill, change order and expense to the register again
+     (~760 rows on the real data, each through the de-dup chain: ~100 reads of the register and of the expenses from disk, 5-10 s of
+     a phone's main thread) although nothing had changed. The rows are now gathered first and offered — all of them, in the same
+     order — only when they differ from the last offer or the register changed since the last pass began (or 30 minutes went by). */
+  var _recLast = { sig: '', reg: '', at: 0 };
+  function _recHash(str){ var h1 = 0x811c9dc5, h2 = 5381; for(var i = 0; i < str.length; i++){ var c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = (Math.imul(h2, 33) + c) | 0; } return str.length + ':' + (h1 >>> 0).toString(36) + ':' + (h2 >>> 0).toString(36); }
+  function _recRegSig(rows){ if(!Array.isArray(rows)) return 'none'; var a = new Array(rows.length); for(var i = 0; i < rows.length; i++){ var r = rows[i]; a[i] = r && typeof r === 'object' ? [r._id, r.id, r.srcInvId, r.status, r.amt, r.paidDate, r.date, r.pid, r.type, r._dupOf, r.deleted, r.archived, r.updatedAt].join('|') : String(r); } return _recHash(a.join('|~|')); }
   window._gcReconcileAccounting = async function(){
     if(window.__GC_IS_TYPING__ || document.hidden) return;
     if(!window._gcAddToRegister) return;
     try{
+      var _offers = [], _offer = function(o){ _offers.push(o); };   /* SYNCCPU (REGRECON) */
       var invoices=(window._crm&&window._crm.invoices)||[];
       var projects=(window._crm&&window._crm.projects)||[];
       var changeOrders=(window._crm&&window._crm.changeOrders)||[];
@@ -76152,7 +76209,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
         var st=(iv.status||'').toLowerCase();
         if(st!=='sent' && st!=='paid') return; // drafts don't post
         var p=projects.find(function(x){return x.id===iv.pid;});
-        window._gcAddToRegister({
+        _offer({
           srcInvId: iv.id,
           pid: iv.pid, type:'income', category:(iv.drawType==='change_order'?'Change Order':'Invoice'),
           desc: iv.desc||('Invoice '+iv.id),
@@ -76173,7 +76230,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
         var _amt = parseFloat(iv.amt||iv.amount);
         if(!isFinite(_amt) || _amt<=0) return;
         if(st==='draft' || st==='void' || st==='deleted' || st==='denied' || st==='rejected') return;
-        window._gcAddToRegister({
+        _offer({
           srcInvId:'SUB_'+iv.id,
           pid: iv.pid, type:'expense', category:'Subcontractor',
           desc: (iv.sub||'Sub')+' \u2014 '+(iv.desc||'work'),
@@ -76190,7 +76247,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
         // only if it has no linked invoice already (those handled above)
         var hasInv=invoices.some(function(iv){return iv&&iv.drawType==='change_order'&&iv.pid===co.pid&&Math.abs((parseFloat(iv.amt)||0)-(parseFloat(co.amt)||0))<1;});
         if(hasInv) return;
-        window._gcAddToRegister({
+        _offer({
           srcInvId:'CO_'+(co.id||''),
           pid: co.pid, type:'income', category:'Change Order',
           desc: co.desc||'Change order',
@@ -76224,7 +76281,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
           var _d = String(ex.desc||ex.description||'').toLowerCase();
           if(/^client payment|^client invoice|payment received|retainage release|^draw \d/.test(_d)) return;
         }catch(e){}
-        window._gcAddToRegister({
+        _offer({
           srcInvId:'EXPENSE_'+(ex.id||''),
           pid: ex.pid, type:'expense', category: ex.category||ex.cat||'Expense',
           desc: ex.desc||ex.vendor||'Expense',
@@ -76242,13 +76299,19 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
         var truck=parseFloat(u.truckAllowance||u.truck)||0;
         var gas=parseFloat(u.gasAllowance||u.gas)||0;
         if(truck>0){
-          window._gcAddToRegister({ srcInvId:'TRUCK_'+(u.name||u.email||'pm')+'_'+_mo, pid:'', type:'expense', category:'Vehicle \u2014 Truck', desc:'Truck expense \u2014 '+(u.name||''), amt:truck, date:_mo+'-01', status:'owed', recurring:true });
+          _offer({ srcInvId:'TRUCK_'+(u.name||u.email||'pm')+'_'+_mo, pid:'', type:'expense', category:'Vehicle \u2014 Truck', desc:'Truck expense \u2014 '+(u.name||''), amt:truck, date:_mo+'-01', status:'owed', recurring:true });
         }
         if(gas>0){
-          window._gcAddToRegister({ srcInvId:'GAS_'+(u.name||u.email||'pm')+'_'+_mo, pid:'', type:'expense', category:'Vehicle \u2014 Gas', desc:'Gas expense \u2014 '+(u.name||''), amt:gas, date:_mo+'-01', status:'owed', recurring:true });
+          _offer({ srcInvId:'GAS_'+(u.name||u.email||'pm')+'_'+_mo, pid:'', type:'expense', category:'Vehicle \u2014 Gas', desc:'Gas expense \u2014 '+(u.name||''), amt:gas, date:_mo+'-01', status:'owed', recurring:true });
         }
       });
 
+      /* SYNCCPU (REGRECON) */
+      var _sig = ''; try{ _sig = _recHash(JSON.stringify(_offers)); }catch(e){}
+      var _reg = ''; try{ _reg = _recRegSig(await window.idbGet('gcAcctRegister')); }catch(e){ _reg = ''; }
+      if(_sig && _reg && _sig === _recLast.sig && _reg === _recLast.reg && Date.now() - _recLast.at < 30 * 60e3){ window._gcRecSkipped = (window._gcRecSkipped || 0) + 1; return; }
+      _offers.forEach(function(o){ window._gcAddToRegister(o); });
+      _recLast = { sig: _sig, reg: _reg, at: Date.now() };   /* the next pass runs again if these offers changed the register, and then rests */
       console.log('[GC] Accounting reconciled.');
     }catch(e){ console.warn('[GC] reconcile error', e); }
   };
@@ -126651,7 +126714,7 @@ function primeLastPut(k, list){
   /* two older scripts replaced localStorage.setItem on the object itself with a copy bound to the original,
      which the prototype never sees (and the object cannot be wrapped again safely: it is storage). The few
      shared office lists are therefore also looked at every 2 seconds — a string compare, nothing more. */
-  var lsLast = {};
+  var lsLast = {}, lsRawPrev = {};
   RI.call(window, function(){
     try{
       if(document.hidden || !snapDone) return;
@@ -126659,6 +126722,8 @@ function primeLastPut(k, list){
       for(var i=0;i<ks.length;i++){
         var s = window.localStorage.getItem(ks[i]);
         if(s == null) continue;
+        if(lsRawPrev[ks[i]] === s) continue;   /* SYNCCPU (LSCMP): the same text as 2 s ago — not hashed again (gc_office_tasks alone is 630K characters) */
+        lsRawPrev[ks[i]] = s;
         var g = s.length + ':' + sigOf(s);
         if(lsLast[ks[i]] && lsLast[ks[i]] !== g) noteDirty(ks[i]);
         lsLast[ks[i]] = g;
@@ -128255,10 +128320,10 @@ async function fixRow(row){
   var k = String(row.key), v = row.value, asText = false;
   if(typeof v === 'string' && /^\s*[\[{]/.test(v)){ var pv = jparse(v, undefined); if(pv !== undefined){ v = pv; asText = true; } }
   if(k === TK){
-    absorbMap(v);
-    var c; try{ c = await cloudRow(TK); absorbMap(c); }catch(e){}
+    var _sc = absorbMap(v);
+    var c; try{ c = await cloudRow(TK); _sc += absorbMap(c); }catch(e){}
     var out = Object.assign({}, (c && typeof c==='object' && !Array.isArray(c)) ? c : {}, (v && typeof v==='object' && !Array.isArray(v)) ? v : {}, M);
-    ST.call(window, changed, 0);
+    if(_sc) ST.call(window, changed, 0);   /* SYNCCPU: only when this upload or the cloud brought marks this computer did not have (its own upload asked for the next one: every ~2 s for ever while the cloud did not take it) */
     return Object.assign({}, row, { value: out });                          /* an object, never shorter than the cloud's */
   }
   if(k === CK){ absorbMap(v, CL); var c2; try{ c2 = await cloudRow(CK); absorbMap(c2, CL); }catch(e){} return Object.assign({}, row, { value: Object.assign({}, c2||{}, CL) }); }
@@ -143857,9 +143922,11 @@ function peekLeads(){
   var S = W._setLeads; if (typeof S !== 'function') return;
   try { S(function(prev){ if (Array.isArray(prev) && prev !== LEADS) onLeads(prev); return prev; }); } catch (e) {}
   /* this computer's copy: the sync writes there first (the screen can follow later) — new leads are noticed from it too */
-  try { if (typeof W.idbGet === 'function') Promise.resolve(W.idbGet('leads')).then(function(d){ d = arr(d && !Array.isArray(d) && Array.isArray(d.v) ? d.v : d); var have = {}; arr(LEADS).forEach(function(l){ if (l && l.id) have[l.id] = 1; }); DISK = d.filter(function(l){ return l && l.id && !have[l.id]; }); if (DISK.length) track(); }, function(){}); } catch (e) {}
+  var pv = W.__gcKvVer ? W.__gcKvVer('leads') : '', pm = LEADS;   /* SYNCCPU (KVSKIP): the saved list and the screen's list both as last time — the same DISK */
+  if (pv && PEEK.v === pv && PEEK.m === pm && Date.now() - PEEK.at < 60000) return;
+  try { if (typeof W.idbGet === 'function') Promise.resolve(W.idbGet('leads')).then(function(d){ PEEK = { v: pv, m: pm, at: Date.now() }; d = arr(d && !Array.isArray(d) && Array.isArray(d.v) ? d.v : d); var have = {}; arr(LEADS).forEach(function(l){ if (l && l.id) have[l.id] = 1; }); DISK = d.filter(function(l){ return l && l.id && !have[l.id]; }); if (DISK.length) track(); }, function(){}); } catch (e) {}
 }
-var DISK = [];
+var DISK = [], PEEK = { v: '', m: null, at: 0 };
 function allLeads(){ return DISK.length ? arr(LEADS).concat(DISK.filter(function(l){ return !findLead(l.id); })) : arr(LEADS); }
 
 /* ── seen / new, per person ───────────────────────────────────────────────── */
@@ -149266,6 +149333,11 @@ function srcProgGate(out){   /* gate fix_3 */
 }
 /* ═══ BUILD: read, auto-complete, de-duplicate, roll up, file ═════════════════════════════════════ */
 var dirty = true, ST8 = null, lastBuild = 0, seenMap = null, autoLog = [], lastAuto = 0;
+/* SYNCCPU (TD2SEEN): the first change is written at once, later ones at most every 30 s; whatever waits is written when the page is hidden / left */
+var seenT = 0, seenAt = 0;
+function seenFlush(){ if (seenT) { try { clearTimeout(seenT); } catch (e) {} seenT = 0; } if (seenMap) { seenAt = Date.now(); lsSet('gc_td2_seen', JSON.stringify(seenMap)); } }
+function seenSave(){ if (seenT) return; var wait = 30000 - (Date.now() - seenAt); if (wait <= 0) { seenFlush(); return; } seenT = (W.__GC_NATIVE_SETTIMEOUT__ || setTimeout).call(W, function(){ seenT = 0; seenFlush(); }, wait); }
+try { W.addEventListener('pagehide', function(){ if (seenT) seenFlush(); }); D.addEventListener('visibilitychange', function(){ if (D.hidden && seenT) seenFlush(); }); } catch (e) {}
 function memberDone(r){
   var m = metaGet(r.key);
   if (m && m.del) return 'del';
@@ -149431,7 +149503,7 @@ function build(){
     var seenNow = Date.now();   /* FIELDLAG2: "last seen" moves at most every 10 min (it is only compared to 36 h) */
     vis.forEach(function(g){ [g].concat(g.children || []).forEach(function(c){ if (c.src === 'st' || c.src === 'roll') return; var o = seenMap[c.key]; if (o && !o.gone && o.t === c.title && o.last && seenNow - o.last < 600000 && seenNow >= o.last) return; seenMap[c.key] = { t: c.title, last: seenNow }; seenDirty = true; }); });
     var ks = Object.keys(seenMap); if (ks.length > 1500) { ks.slice(0, ks.length - 1500).forEach(function(k){ delete seenMap[k]; }); seenDirty = true; }
-    if (seenDirty) lsSet('gc_td2_seen', JSON.stringify(seenMap));
+    if (seenDirty) seenSave();   /* SYNCCPU (TD2SEEN) */
     Object.keys(seenMap).forEach(function(k){ var x = seenMap[k]; if (x && x.gone && day10(new Date(x.gone).toISOString()) === t0) doneToday.push({ title: x.t, by: 'fixed — cleared on its own', at: new Date(x.gone).toISOString() }); });
   } catch (e) {}
   autoLog.forEach(function(a){ if (day10(a.at) === t0) doneToday.push({ title: a.title, by: 'auto — ' + a.why, at: a.at }); });
@@ -167109,7 +167181,8 @@ W._gcApprShared = { key: K, has: has, mark: mark, take: take, seen: seen, push: 
   /* always the live set (To-Do's own approval rows are taken from its last build), so the chip, the badge and
      the panel are painted from the same numbers in the same second */
   var memo = null;
-  function current(){ if (memo && Date.now() - memo.at < 800) return memo; memo = window._gcApprovalSet(); return memo; }
+  function current(){ var ttl = 800; try { var q = window.__gcQuiet; if (q && q.idleMs && q.idleMs() > 3000) ttl = 2500; } catch (e) {}   /* SYNCCPU (APPRMEMO) */
+    if (memo && Date.now() - memo.at < ttl) return memo; memo = window._gcApprovalSet(); return memo; }
   window._gcApprovalSetFresh = function(){ memo = null; };   /* patch APPRCOUNT */
   window._gcApprovalCurrent = function(){ return current(); };   /* patch APPRSYNC */
   function chipSync(set){
@@ -167573,7 +167646,7 @@ wrapUnionPJX(); (function(){ var n = 0, iv = (window.__GC_NATIVE_SETINTERVAL__ |
 
 /* a job that reached this computer's disk (another computer, the CompanyCam server job) but not the open page is drawn
    now — not at the next view change. Each job is tried once; the job-board rule still decides what is on the board. */
-var TRIED = {};
+var TRIED = {}, NOADD = { v: '', scr: null, at: 0 };   /* SYNCCPU (KVSKIP) */
 /* only what the job board shows: a job kept as a job, or one no importer made (an untouched import is kept off the board) */
 function boardOK(r){ if(r.keepAsJob === true || r.countsAnyway === true || r.promoted === true) return true; var src = s(r.source).toLowerCase(); return !(r._ccImported === true || r.ccamId || r.ccProjectId || r.qbId || r.qbCustomerId || src === 'companycam' || src === 'quickbooks'); }
 (window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){
@@ -167582,12 +167655,16 @@ function boardOK(r){ if(r.keepAsJob === true || r.countsAnyway === true || r.pro
     if(Date.now() - (window.__GC_LAST_INPUT__ || 0) < 5000) return;
     try{ if(document.visibilityState === 'hidden') return; }catch(e){}
     var scr = window._crm && window._crm.projects; if(!Array.isArray(scr) || !scr.length) return;
+    /* SYNCCPU (KVSKIP): the saved jobs and the screen's jobs both as at a look that found nothing to draw — nothing to draw now either
+       (time, the delete marks and the tried list only take candidates away); the saved jobs were read every 5 s */
+    var pv = window.__gcKvVer ? window.__gcKvVer('projects') : '';
+    if(pv && NOADD.v === pv && NOADD.scr === scr && Date.now() - NOADD.at < 60000) return;
     Promise.resolve(window.idbGet('projects')).then(function(d){
       if(!Array.isArray(d)) return;
       var on = {}; scr.forEach(function(r){ if(r && r.id != null) on[s(r.id)] = 1; });
       var dead = deadIds(), aside = asideIds(), cut = new Date(Date.now() - 3 * 3600e3).toISOString();
       var add = d.filter(function(r){ if(!r || r.id == null) return false; var id = s(r.id); return !on[id] && !TRIED[id] && !dead[id] && !aside[id] && stampOf(r) > cut && boardOK(r); });
-      if(!add.length) return;
+      if(!add.length){ NOADD = { v: pv, scr: scr, at: Date.now() }; return; }
       add.forEach(function(r){ TRIED[s(r.id)] = 1; });
       S.drawn = (S.drawn || 0) + add.length;
       window._setProjects(function(prev){ if(!Array.isArray(prev)) return prev; var have = {}; prev.forEach(function(r){ if(r && r.id != null) have[s(r.id)] = 1; }); var more = add.filter(function(r){ return !have[s(r.id)]; }); return more.length ? prev.concat(more) : prev; });
@@ -174911,7 +174988,8 @@ function css(){ if (D.getElementById('gcgp-css')) return; var st = D.createEleme
 /* ── which jobs ─────────────────────────────────────────────────────────────── */
 /* the customers list is only in the page's memory once Customers was opened: read this computer's copy too */
 var CUST = [];
-function loadCust(){ try { if (typeof W.idbGet === 'function') Promise.resolve(W.idbGet('customers')).then(function(v){ CUST = arr(v); }, function(){}); } catch (e) {} }
+var CVER = '', CVAT = 0;   /* SYNCCPU (KVSKIP) */
+function loadCust(){ try { if (typeof W.idbGet !== 'function') return; var cv = W.__gcKvVer ? W.__gcKvVer('customers') : ''; if (CUST.length && cv && cv === CVER && Date.now() - CVAT < 60000) return; Promise.resolve(W.idbGet('customers')).then(function(v){ CUST = arr(v); CVER = cv; CVAT = Date.now(); }, function(){}); } catch (e) {} }
 var custAt = 0;
 loadCust(); RI.call(W, function(){ if (!CUST.length || Date.now() - custAt > 20000) { custAt = Date.now(); loadCust(); } }, 2000);
 function custOf(p){ var n = low(p.client || p.customer || p.clientName); var list = arr(crm().customers); return (list.length ? list.concat(CUST) : CUST).filter(function(c){ return c && ((s(c.id) && s(c.id) === s(p.customerId)) || (n && low(c.name || c.company) === n)); })[0] || null; }
@@ -182173,9 +182251,12 @@ function toast(t){
 
 /* ── the lead list (this computer's saved copy, as the Leads hub reads it) ─────────────────────── */
 var LEADS = null, LBUSY = false, SEEN = {};
+var LVER = '', LVAT = 0;   /* SYNCCPU (KVSKIP): the saved list was not written since this copy was read — not read again (it was every 1.5 s) */
 function pull(){
-  if (LBUSY || typeof W.idbGet !== 'function') return; LBUSY = true;
-  try { Promise.resolve(W.idbGet('leads')).then(function(v){ LBUSY = false; if (Array.isArray(v)) LEADS = v; }, function(){ LBUSY = false; }); } catch (e) { LBUSY = false; }
+  if (LBUSY || typeof W.idbGet !== 'function') return;
+  var lv = W.__gcKvVer ? W.__gcKvVer('leads') : ''; if (LEADS && lv && lv === LVER && Date.now() - LVAT < 60000) return;
+  LBUSY = true;
+  try { Promise.resolve(W.idbGet('leads')).then(function(v){ LBUSY = false; if (Array.isArray(v)) { LEADS = v; LVER = lv; LVAT = Date.now(); } }, function(){ LBUSY = false; }); } catch (e) { LBUSY = false; }
 }
 /* both copies merged by id (the newer edit wins), so the list never flips between them */
 function leads(){
@@ -183043,10 +183124,12 @@ function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gc
 /* the CRM's lead list: this computer's saved copy (IndexedDB 'leads', which every save writes — as patch LEADS reads it),
    window._crm.leads when there is one; our own saves update it at once */
 var LEADS_NOW = null, LEADS_AT = 0, LEADS_BUSY = false;
+var LEADS_VER = '', LEADS_VAT = 0;   /* SYNCCPU (KVSKIP) */
 function pullLeads(force){
   if (LEADS_BUSY || (!force && Date.now() - LEADS_AT < 4000) || typeof W.idbGet !== 'function') return Promise.resolve(LEADS_NOW);
+  var lv = W.__gcKvVer ? W.__gcKvVer('leads') : ''; if (!force && LEADS_NOW && lv && lv === LEADS_VER && Date.now() - LEADS_VAT < 60000) return Promise.resolve(LEADS_NOW);   /* not written since read */
   LEADS_AT = Date.now(); LEADS_BUSY = true;
-  return Promise.resolve(W.idbGet('leads')).then(function(v){ LEADS_BUSY = false; if (Array.isArray(v)) LEADS_NOW = v; return LEADS_NOW; }, function(){ LEADS_BUSY = false; return LEADS_NOW; });
+  return Promise.resolve(W.idbGet('leads')).then(function(v){ LEADS_BUSY = false; if (Array.isArray(v)) { LEADS_NOW = v; LEADS_VER = lv; LEADS_VAT = Date.now(); } return LEADS_NOW; }, function(){ LEADS_BUSY = false; return LEADS_NOW; });
 }
 function leads(){ var c = arr(crm().leads); var a = LEADS_NOW && LEADS_NOW.length >= c.length ? LEADS_NOW : c; return a.filter(function(l){ return !dead(l); }); }
 function leadById(id){ return leads().filter(function(l){ return s(l.id) === s(id); })[0] || null; }
@@ -257399,7 +257482,8 @@ function decide(list, idOrRec, fields, opt){
   if (n) { STATS.explicit += n; dirty(); }
   return n;
 }
-function dirty(){ DIRTY = true; saveLocal(); schedulePush(); }
+var saveSoon = false;   /* SYNCCPU (DECSAVE): the ledger is in memory; written once when this burst of decisions is over (same task) */
+function dirty(){ DIRTY = true; if (!saveSoon) { saveSoon = true; Promise.resolve().then(function(){ saveSoon = false; saveLocal(); }); } schedulePush(); }
 
 /* ── a list corrected to the decisions (the same array when nothing to do) ── */
 function fixRec(L, r){

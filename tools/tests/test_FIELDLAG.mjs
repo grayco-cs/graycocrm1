@@ -31,7 +31,7 @@ const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? 
 console.log('A. node');
 const src = fs.readFileSync(path.join(build, 'index.html'), 'utf8');
 ok(/_purgeQ = \[\]/.test(src) && /async function _gcPurgeBatch\(batch\)/.test(src), 'delete-for-good: the records named together are purged in one batch (one delete-list write)');
-ok(/if \(seenDirty\) lsSet\('gc_td2_seen'/.test(src), 'To-Do "cleared on its own" memory: written when it changed');
+ok(/if \(seenDirty\) (lsSet\('gc_td2_seen'|seenSave\(\))/.test(src), 'To-Do "cleared on its own" memory: written when it changed (SYNCCPU: at most every 30 s)');
 ok(/W\._gcRaFieldTop\.takes = function/.test(src) && /var ids = _flTake \? \[\] : actions\(a, 'home'\)/.test(src), 'Home: the tile row the dashboard drops is not built every 0.9 s');
 ok(/if \(!flBusy\(\)\) fieldInject\(\); else flLater\(\);/.test(src), 'Home: not rebuilt under a finger or a moving scroll');
 
