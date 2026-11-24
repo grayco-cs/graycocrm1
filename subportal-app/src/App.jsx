@@ -3230,7 +3230,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
       bidResultsSharing: job.bidResultsSharing || 'private',
       grayCoRole: job.grayCoRole || 'gc',
       tradesSought: job.tradesSought || '',
-      suppliersCanQuote: job.suppliersCanQuote === true, materialList: job.materialList || '',   /* patch SUPPLIER */
+      suppliersCanQuote: job.suppliersCanQuote !== false, materialList: job.materialList || '',   /* patch SUPPLIER · SUPVIS: on unless un-ticked */
       showSupplierMaterials: job.showSupplierMaterials === true,   /* patch BIDSITE3 */
       tradeScopes: job.tradeScopes || [],
       scope: job.scope || '',
@@ -4049,14 +4049,14 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
           )}
 
           {/* patch SUPPLIER: the material list (suppliers + admins) and the suppliers' quotes (admins) */}
-          {(isAdmin || isSupplier) && job.suppliersCanQuote && job.materialList && (
+          {(isAdmin || isSupplier) && job.suppliersCanQuote !== false && job.materialList && (
             <Card style={{ marginBottom: 16 }}>
               <h3 style={sectionTitleStyle}><ClipboardList size={18} /> {t.materialList}</h3>
               <div data-material-list="1" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{job.materialList}</div>
             </Card>
           )}
           {!isAdmin && !isSupplier && <SubMaterials t={t} job={job} user={user} bids={bids} showToast={showToast} />}
-          {isAdmin && (job.suppliersCanQuote || (mquotes || []).some(q => q.jobId === job.id)) && (
+          {isAdmin && (job.suppliersCanQuote !== false || (mquotes || []).some(q => q.jobId === job.id)) && (
             <MaterialQuotesAdmin t={t} job={job} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           )}
 

@@ -36,7 +36,10 @@ putRow('users', 'u_sub', { id: 'u_sub', role: 'sub', approved: true, email: 'sub
 const job = (id, x) => putRow('jobs', id, Object.assign({ id, status: 'open', visibility: 'public', draft: false, bidDueDate: DAY(20), pmId: 'st_owner', estimatorId: 'st_owner', grayCoRole: 'gc', tradesSought: 'HVAC', createdAt: now }, x), { job_id: id });
 job('J_MAT', { title: 'School HVAC (materials)', suppliersCanQuote: true, materialList: '4 RTUs 10-ton\n4 curbs', tradeScopes: [{ id: 't1', trade: 'HVAC', scope: 'LABOUR SCOPE SECRET' }],
   plans: [{ name: 'Invitation to Bid.pdf' }, { name: 'M-101 Plan.pdf' }] });
-job('J_LAB', { title: 'Labour only job' });
+job('J_LAB', { title: 'Labour only job', suppliersCanQuote: false });   /* SUPVIS: an admin UN-TICKED it */
+job('J_NEW', { title: 'New public job (box never touched)' });   /* SUPVIS (owner 11/24): on unless un-ticked */
+job('J_PINV', { title: 'Private job, supplier invited', visibility: 'private' });
+putRow('invites', 'inv_sup', { id: 'inv_sup', jobId: 'J_PINV', email: 'sales@supply.test', as: 'supplier' }, { job_id: 'J_PINV', email: 'sales@supply.test' });   /* SUPVIS: an invite always opens it */
 job('J_PRIV', { title: 'Private materials job', suppliersCanQuote: true, visibility: 'private' });
 job('J_DRAFT', { title: 'Draft materials job', suppliersCanQuote: true, draft: true, status: 'draft' });
 job('J_CLOSED', { title: 'Closed materials job', suppliersCanQuote: true, status: 'closed' });
@@ -60,7 +63,7 @@ const SID = supRow.data.id;
 r = await call('tk-sup', { action: 'me' });
 ok('2 "me": role supplier', r.code === 200 && r.b.role === 'supplier' && r.b.user.role === 'supplier', r);
 r = await call('tk-sup', { action: 'load', keys: ['jobs', 'mquotes'] });
-ok('3 approved at once: the jobs open for material quotes right away', r.code === 200 && r.b.data.jobs.map(j => j.id).join() === 'J_MAT', r.b);
+ok('3 approved at once: the jobs open for material quotes right away', r.code === 200 && r.b.data.jobs.map(j => j.id).sort().join() === 'J_MAT,J_NEW,J_PINV', r.b.data.jobs.map(j => j.id));
 /* the admin approves it (the bid site's Pending) — it stays a supplier */
 r = await call('tk-owner', { action: 'load', keys: ['users'] });
 const su = r.b.data.users.find(u => u.id === SID);
@@ -70,8 +73,8 @@ ok('4 an admin save (Pending / Suppliers) → approved, still role supplier', r.
 /* ═══ what the supplier sees ═══ */
 r = await call('tk-sup', { action: 'load', keys: ['jobs', 'bids', 'mquotes', 'plans:J_MAT', 'plans:J_LAB', 'users'] });
 const SJ = r.b.data.jobs;
-ok('5 only the public, open job open for material quotes (no labour-only, private, draft or closed job)', SJ.map(j => j.id).join() === 'J_MAT', SJ.map(j => j.id));
-const mj = SJ[0] || {};
+ok('5 SUPVIS: the public open jobs (ticked or never touched) + the private job they were invited to; not the un-ticked, private, draft or closed job', SJ.map(j => j.id).sort().join() === 'J_MAT,J_NEW,J_PINV', SJ.map(j => j.id));
+const mj = SJ.find(j => j.id === 'J_MAT') || {};
 ok('6 the job: material list, quotable; never the trades\' labour scopes', mj.materialList === '4 RTUs 10-ton\n4 curbs' && mj.quotable === true && !('tradeScopes' in mj) && JSON.stringify(r.b).indexOf('LABOUR SCOPE SECRET') < 0, mj);
 ok('7 plans: no invitation to bid (BIDVIS); the plan; not the labour-only job\'s', r.b.data['plans:J_MAT'].map(p => p.name).join() === 'M-101 Plan.pdf' && (r.b.data['plans:J_LAB'] || []).length === 0);
 ok('8 no bids (anyone\'s), no quotes yet; the PM\'s contact', r.b.data.bids.length === 0 && r.b.data.mquotes.length === 0 && r.b.data.users.some(u => u.id === 'st_owner' && u.phone));

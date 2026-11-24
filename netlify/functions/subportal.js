@@ -536,7 +536,7 @@ async function supplierScope(who){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;
       if (autoOpened(j) && !invited.has(r.id) && !quoted.has(r.id)) return;   /* patch BIDAUTO */
-      const canSee = j.suppliersCanQuote === true && ((j.visibility || 'public') === 'public' || invited.has(r.id));
+      const canSee = invited.has(r.id) || (j.suppliersCanQuote !== false && (j.visibility || 'public') === 'public');   /* patch SUPVIS: on unless un-ticked; an invite always opens it */
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (quoted.has(r.id) || (canSee && open)) visible[r.id] = r;
       if (canSee && open && !j.quotesClosed) quotable[r.id] = true;
