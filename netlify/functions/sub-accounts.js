@@ -286,7 +286,7 @@ async function resetLink(prof){
   link = s(j.action_link || (j.properties && j.properties.action_link));
   if (!r.ok || !link) throw Fail(502, 'The sign-in service could not make a reset link (' + r.status + '). Use "Set a temporary password" instead.');
   const es = s(prof.lang) === 'es', H2 = SP();
-  const subj = es ? 'Cambie su contraseña de GrayCo Bids' : 'Reset your GrayCo Bids password';
+  const subj = es ? 'Cambie su contraseña de GrayCo' : 'Reset your GrayCo password';
   const html = H2.mailHtml(es ? 'Cambiar la contraseña' : 'Reset your password', es
     ? ['GrayCo le envía un enlace para elegir una contraseña nueva para ' + H2.esc(email) + ' (bids.grayco-cs.com y el portal de GrayCo).', 'Toque el botón para elegir una contraseña nueva. El enlace sirve una sola vez.', '¿Preguntas? Llame a GrayCo ' + OFFICE_PHONE + '.']
     : ['GrayCo sent you a link to choose a new password for ' + H2.esc(email) + ' (bids.grayco-cs.com and the GrayCo Portal).', 'Tap the button to choose a new password. The link works once.', 'Questions? Call GrayCo ' + OFFICE_PHONE + '.'],

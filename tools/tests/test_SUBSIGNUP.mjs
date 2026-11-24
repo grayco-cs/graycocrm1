@@ -88,7 +88,7 @@ let r = await spf('register', { email: 'self@sample-paint.test', password: 'Samp
 const svConfirm = async (email) => { const mm = MAILS.filter(x => (x.to || []).includes(email) && /signup-confirm=/.test(x.html)).slice(-1)[0]; return spf('signup-confirm', { token: mm ? decodeURIComponent(/signup-confirm=([A-Za-z0-9_%-]+)/.exec(mm.html)[1]) : '' }); };
 const sv1 = await svConfirm('self@sample-paint.test');
 ok('1a. a self sign-up: created, NOT approved (held until its e-mail is confirmed, then waits for GrayCo)', r.status === 200 && r.data.ok && r.data.verify === true && sv1.status === 200 && r.data.approved === false && profOf('self@sample-paint.test').approved === false, r);
-ok('1b. the staff e-mail: "🔨 Approve new sub — Sample Paint Co" (to the office + the owners)', MAILS.slice(m0).some(x => /Approve new sub — Sample Paint Co/.test(x.subject) && x.to.includes('desk@graycotest.test')), MAILS.slice(m0).map(x => x.subject));
+ok('1b. the staff e-mail: "🔨 Approve new sub — Sample Paint Co" to the owners — not the office mailbox (it has the ✅ Approvals card; patch OFFICEMAIL)', MAILS.slice(m0).some(x => /Approve new sub — Sample Paint Co/.test(x.subject) && x.to.includes('owner@graycotest.test') && !x.to.includes('desk@graycotest.test')), MAILS.slice(m0).map(x => [x.subject, x.to]));
 /* 2. invited sign-up */
 const invTok = crypto.randomBytes(16).toString('hex');
 T.sp_rows.push({ key: 'invites/i1', collection: 'invites', id: 'i1', job_id: 'J1', data: { id: 'i1', token: invTok, email: 'invited@sample-roof.test', jobId: 'J1' } });

@@ -15,10 +15,14 @@
         no PM 4 hours after it came in            → 'nopm'   (the owners are texted to assign it; the 5 PM default assign follows)
         no PM 24 hours after it came in           → 'nopm24' (the owners again)
         a PM, not contacted 24 h after assignment → 'pm24'   (the PM's reminder)
-        a PM, not contacted 48 h after assignment → 'pm48'   (the owners are told)
+        a PM, not contacted 48 h after assignment → 'pm48'   (the card only: the owners' 48 h text is OFF for good — QUIETSAT, owner 11/22)
       "Contacted" = the stage moved past New Lead, ✅ Contacted (contactedAt), a call / follow-up / comment a person logged, or
       on a Google LSA lead the PM's own 👍 GOOD / 👎 BAD (an owner's GOOD when assigning is not the PM's call).
    3. The card lists the open customer leads past those times from the last CARD_DAYS days.
+   4. patch LEADRISK (owner 11/23, "be able to clear this"): an owner's ✕ Clear on the card (l.lwClear = { at, by, byEmail, sig },
+      every clear kept in l.lwClearLog) takes the lead off the clock for good — the card, the To-Do, the speed-to-lead texts and the
+      PM-reply ladder — UNLESS something new happens on the lead (clearSig changes: a new PM / assignment, the stage or status moved,
+      it came in again, a call / follow-up / comment was logged). The lead itself is never deleted or closed.
    Pure: no I/O, no names, no e-mails. Nothing here contacts anyone.
    ========================================================================== */
 (function(root){
@@ -137,6 +141,7 @@ function contacted(l){
 function risk(l, now, o){
   o = o || {};
   if (!l || closed(l) || !isCustomer(l)) return null;
+  if (!o.withCleared && cleared(l)) return null;   /* patch LEADRISK */
   var t = typeof now === 'number' ? now : Date.now(), born = bornAt(l);
   if (!isFinite(born)) return null;
   if (o.maxDays && t - born > o.maxDays * 864e5) return null;
@@ -152,6 +157,15 @@ function risk(l, now, o){
   if (b >= PM_H) return { k: 'pm24', h: Math.floor(b), since: from, label: assignee(l) + ' has not contacted them — assigned ' + ago(b) + ' ago' };
   return null;
 }
+/* patch LEADRISK: what "something new on the lead" is — the fingerprint kept with an owner's ✕ Clear (never the clear itself, never
+   updatedAt or the CRM's own activity lines) */
+function clearSig(l){
+  l = l || {}; var ex = obj(l.leadExtra), a = asgAt(l), b = bornAt(l);
+  return [low(assignee(l)), isFinite(a) ? a : '', low(l.stage), low(l.status), low(l.inboxState), isFinite(b) ? b : '', s(l.reopenedAt || ex.reopenedAt), s(l.lastInboundAt || ex.lastInboundAt),
+    arr(l.calls).length, arr(l.followUps).length, arr(l.comments).length, arr(l.contactLog).length, l.archived ? 1 : 0, l.deleted ? 1 : 0].join('|');
+}
+/* an owner cleared it and nothing new happened since */
+function cleared(l){ var c = obj(l && l.lwClear); return !!(s(c.at) && s(c.sig) && c.sig === clearSig(l)); }
 function ago(h){ h = Math.floor(h); return h >= 48 ? Math.floor(h / 24) + ' days' : h + ' h'; }
 /* the CRM leads + the Lead Inbox items not on the CRM list yet → the leads at risk, worst first */
 function atRisk(leads, items, now, o){
@@ -187,7 +201,7 @@ function defaultDue(items, crmLeads, now, holdUntil){
 
 var API = { V: 1, NOPM_H: NOPM_H, NOPM2_H: NOPM2_H, PM_H: PM_H, OWNER_H: OWNER_H, CARD_DAYS: CARD_DAYS, LABEL: LABEL,
   kindOf: kindOf, subWhy: subWhy, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
-  contacted: contacted, risk: risk, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
+  contacted: contacted, risk: risk, clearSig: clearSig, cleared: cleared, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else root._gcLeadWatchCore = API;
 })(typeof window !== 'undefined' ? window : this);

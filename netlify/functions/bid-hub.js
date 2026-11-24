@@ -24,6 +24,7 @@
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const BI = require('./bid-inbox.js');
+const BPX = require('./_lib/bid-portal.js');   /* patch BIDAUTO: personOpened / autoOpened / autoDraft */
 const L = BI._lib, T = BI._test;
 const SP = require('./subportal.js')._hub;
 const SM = require('../../sub-match.js');   /* patch SUBSYNC: the one sub matcher (the CRM page loads the same file) */
@@ -69,21 +70,26 @@ function langOf(spUser, crmRaw){ return low((spUser && spUser.lang) || (crmRaw &
 
 /* ── the bid jobs ── */
 async function jobsList(){
-  const [jobs, invites, bids, plans, qs] = await Promise.all([
+  const [jobs, invites, bids, plans, qs, mq] = await Promise.all([
     SP.listRows([SP.eq('collection', 'jobs')]), SP.listRows([SP.eq('collection', 'invites')]).catch(() => []), SP.listRows([SP.eq('collection', 'bids')]).catch(() => []),
-    SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => [])]);
+    SP.listRows([SP.eq('collection', 'plans')]).catch(() => []), SP.listRows([SP.eq('collection', 'questions')]).catch(() => []), SP.listRows([SP.eq('collection', 'mquotes')]).catch(() => [])]);
   const mail = arr(await L.kvGet(T.KV_SUBBIDS).catch(() => []));
-  const reqN = {}, reqAt = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (SP.prOpen && SP.prOpen(r.data)) { reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; const a = s(r.data && r.data.at); if (a && (!reqAt[r.job_id] || a < reqAt[r.job_id])) reqAt[r.job_id] = a; } });   /* + the oldest open one (patch BPAPPR) */   /* patch PLANREQ: 📩 open plan / info requests */
+  const prAll = {}, mqN = {}; mq.forEach(r => { if (r && r.job_id) mqN[r.job_id] = (mqN[r.job_id] || 0) + 1; });   /* patch BIDAUTO: every plan / info request and material quote a sub ever sent */
+  const reqN = {}, reqAt = {}; (await SP.listRows([SP.eq('collection', 'planreqs')]).catch(() => [])).forEach(r => { if (r && r.job_id) prAll[r.job_id] = (prAll[r.job_id] || 0) + 1; if (SP.prOpen && SP.prOpen(r.data)) { reqN[r.job_id] = (reqN[r.job_id] || 0) + 1; const a = s(r.data && r.data.at); if (a && (!reqAt[r.job_id] || a < reqAt[r.job_id])) reqAt[r.job_id] = a; } });   /* + the oldest open one (patch BPAPPR) */   /* patch PLANREQ: 📩 open plan / info requests */
   const c = counts(invites, bids, mail, plans, qs);
   const ps = await SP.poSync(jobs.map(r => r.data || {}), { by: 'bidpo-sync' }).catch(() => ({ jobs: jobs.map(r => r.data || {}) }));   /* patch BIDPO: the CRM's PO on every bid job */
   return ps.jobs.filter(j => j.id && (!GONE.test(s(j.status)) || restorable(j))).map(j => {
     const k = c(j.id);
+    /* patch BIDAUTO: opened by the old automatic way, never touched by a person or a sub → a draft (hidden from subs, not "on the bid portal") */
+    const ao = !GONE.test(s(j.status)) && BPX.autoOpened(j), touch = { invites: k.invites, bids: k.bids, questions: k.questions, planreqs: prAll[s(j.id)] || 0, mquotes: mqN[s(j.id)] || 0 }, ad = ao && !BPX.subTouched(touch);
     return {
+    autoDraft: ad, autoOpenedTouched: ao && !ad, subTouch: ao ? touch : undefined, personOpened: BPX.personOpened(j),
     deleted: GONE.test(s(j.status)), deletedAt: s(j.archivedAt), deletedBy: s(j.archivedBy),   /* patch SYS2: 🗑 Deleted (n), restorable for 30 days */
     archived: GONE.test(s(j.status)) && /^(auto|taken off)$/.test(s(j.archivedReason)), archivedReason: s(j.archivedReason),   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
-    id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft',
-    visibility: j.draft === true || low(j.status) === 'draft' ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
+    id: s(j.id), title: s(j.title), address: s(j.address), po: s(j.poNumber), status: s(j.status), draft: j.draft === true || low(j.status) === 'draft' || ad,
+    visibility: j.draft === true || low(j.status) === 'draft' || ad ? 'draft' : (s(j.visibility) || 'public'), due: validDay(j.bidDueDate), dueTime: s(j.bidDueTime), trades: tradesPicked(j) ? s(j.tradesSought) : '', tradesSuggested: tradesPicked(j) ? '' : s(j.tradesSought),   /* patch PLANREQ-H */
     invited: k.invites, bids: k.bids, plans: k.plans, openQ: k.openQ, openReq: reqN[s(j.id)] || 0, reqSince: reqAt[s(j.id)] || '', leadId: s(j.leadInbox && j.leadInbox.id), source: s(j.leadInbox && j.leadInbox.source), autoPrivate: !!j.autoPrivate, updatedAt: s(j.updatedAt),
+    pastDue: !!(SP.dueOver && SP.dueOver(j)), lateBids: k.late || 0,   /* patch LATEBID: past the sub due date (Central, the server's rule) → off the default Open list; ⏰ late bids */
     biddingClosed: !!j.biddingClosed, projectType: s(j.projectType), ourDue: validDay(j.ourDue), ourDueTime: s(j.ourDueTime), crmProjectId: s(j.crmProjectId), crmProjectName: s(j.crmProjectName),   /* patch BIDEST: the CRM project this job's awarded bids go into */
     crmLeadId: s(j.crmLeadId), crmEstId: s(j.crmEstId), postedBy: s(j.postedBy), postedByName: s(j.postedByName), postedAt: s(j.postedAt), pmEmail: s(j.pmEmail), pmName: s(j.pmName),   /* patch BIDPOST */
     auto: !GONE.test(s(j.status)) && autoAdded(j, k)
@@ -101,17 +107,17 @@ function tradesPicked(j){ if (!j) return false; if (j.tradesPicked === true) ret
 function tradeSplit(v){ const seen = {}; return s(v).split(/\s*[,;]\s*/).map(x => s(x)).filter(x => { const k = low(x); if (!x || seen[k]) return false; seen[k] = 1; return true; }); }
 function validDay(v){ const d = s(v).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || s(v).length > 10 && !/^[T ]/.test(s(v).slice(10, 11))) return ''; const x = new Date(d + 'T12:00:00Z'); return !isNaN(x) && x.toISOString().slice(0, 10) === d ? d : ''; }
 function counts(invites, bids, mail, plans, qs){
-  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 }); o[k] += v == null ? 1 : v; };
+  const n = {}; const add = (id, k, v) => { if (!id) return; const o = n[id] || (n[id] = { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0, late: 0 }); o[k] += v == null ? 1 : v; };
   invites.forEach(r => add(r.job_id, 'invites'));
-  bids.forEach(r => { if (!(r.data && r.data.fromEmailBid)) add(r.job_id, 'bids'); });
+  bids.forEach(r => { if (!(r.data && r.data.fromEmailBid)) { add(r.job_id, 'bids'); if (r.data && r.data.late) add(r.job_id, 'late'); } });   /* patch LATEBID: + ⏰ late bids */
   mail.forEach(x => { if (x && x.jobId) add(x.jobId, 'bids'); });
   plans.forEach(r => { const it = arr(r.data && r.data.items); add(r.job_id || r.id, 'plans', it.length); add(r.job_id || r.id, 'leadPlans', it.filter(leadFile).length); });   /* patch QAA: the bid-board files the Lead Inbox copied in */
   qs.forEach(r => { add(r.job_id, 'questions'); if (!s(r.data && r.data.answer)) add(r.job_id, 'openQ'); });
-  return id => n[id] || { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0 };
+  return id => n[id] || { invites: 0, bids: 0, plans: 0, leadPlans: 0, questions: 0, openQ: 0, late: 0 };
 }
 function postedOnPurpose(j){
   const person = v => !!s(v) && s(v) !== 'auto' && s(v) !== 'lead-inbox';
-  return !!(s(j.postedAt) || (s(j.publishedAt) && person(j.publishedBy)) || (s(j.openedPrivateAt) && !j.autoPrivate && person(j.openedBy)));
+  return !!(s(j.postedAt) || s(j.personOpenedAt) /* patch BIDAUTO */ || (s(j.publishedAt) && person(j.publishedBy)) || (s(j.openedPrivateAt) && !j.autoPrivate && person(j.openedBy)));
 }
 /* patch QAA (owner 11/12: "start fresh — bid portal empty"): a plan / spec file the Lead Inbox copied in from the bid-board e-mail
    (fromLead, or its staff/lead-inbox/ path) was put there by the old automatic sync, not by a person — it does not make an auto-added
@@ -306,7 +312,8 @@ async function subBids(jobId){
       trade: s(b.trade) || tradeOf(u, crmByEmail, b.userEmail || u.email), amount: b.amount == null || b.amount === '' ? null : Number(b.amount),
       files: arr(b.docs).map(fileOut), at: s(b.submittedAt || b.updatedAt), awarded: !!b.accepted, notSelected: !b.accepted && !!b.rejected, scope: s(b.scope).slice(0, 3000),
       notes: s(b.notes).slice(0, 3000), awardMailedAt: s(b.awardMailedAt), lang: langOf(u, crmByEmail[low(b.userEmail || u.email)]),
-      phone: s(b.userPhone || u.phone), read: readOut(b.read), hasPdf: arr(b.docs).some(d => d && (/pdf/i.test(s(d.type)) || /\.pdf$/i.test(s(d.name || d.fileName)))) };   /* patch SUBSIMPLE: what GrayCo's reader got from the bid PDF (staff only) */   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
+      phone: s(b.userPhone || u.phone), late: !!b.late, lateAt: s(b.lateAt), lateChangedAt: s(b.lateChangedAt), read: readOut(b.read),   /* patch LATEBID: ⏰ Late bid */
+      hasPdf: arr(b.docs).some(d => d && (/pdf/i.test(s(d.type)) || /\.pdf$/i.test(s(d.name || d.fileName)))) };   /* patch SUBSIMPLE: what GrayCo's reader got from the bid PDF (staff only) */   /* patch BIDSCOPE: included (scope) / notes-exclusions, for the scope comparison */
   });
   arr(await L.kvGet(T.KV_SUBBIDS).catch(() => [])).filter(x => x && x.jobId === jobId).forEach(x => {
     const sub = x.sub || {};
@@ -419,8 +426,8 @@ async function invite(who, b){
   if (!b.resend) targets = targets.filter(x => !x.invited);
   targets = targets.slice(0, 300);
   if (!targets.length) return { ok: true, invited: 0, mailed: 0, skipped: 'everyone picked is already invited (or there was no one in those trades)' };
-  if (job.draft === true || low(job.status) === 'draft') {   /* an invite opens a draft as PRIVATE: only invited subs see it */
-    Object.assign(job, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email, updatedAt: nowIso() });
+  if (job.draft === true || low(job.status) === 'draft' || BPX.autoOpened(job)) {   /* an invite opens a draft as PRIVATE: only invited subs see it (patch BIDAUTO: + a job the old automatic way opened — a person puts it on now) */
+    Object.assign(job, { draft: false, visibility: 'private', status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email, autoPrivate: false, personOpenedAt: job.personOpenedAt || nowIso(), personOpenedBy: who.email, updatedAt: nowIso() });
     await SP.upsertRows([SP.rowFor('jobs', job)], who.email);
   }
   const have = await SP.listRows([SP.eq('collection', 'invites'), SP.eq('job_id', jobId)]).catch(() => []);
@@ -457,7 +464,7 @@ async function visibility(who, b){
   if (mode === 'public') {
     if (!s(job.bidDueDate)) return { code: 400, error: 'Add a bid due date first — a public bid job needs one.' };
     Object.assign(job, { status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', visibility: 'public', draft: false, publishedAt: job.publishedAt || nowIso(), publishedBy: who.email, madePublicAt: nowIso() });
-  } else Object.assign(job, { status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email });
+  } else Object.assign(job, { autoPrivate: false, personOpenedAt: job.personOpenedAt || nowIso(), personOpenedBy: who.email }, { status: /^(closed|won|lost|awarded)$/i.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: who.email });
   job.updatedAt = nowIso();
   await SP.upsertRows([SP.rowFor('jobs', job)], who.email);
   return { ok: true, jobId: job.id, visibility: job.visibility };
@@ -610,23 +617,11 @@ async function award(who, b){
   return out;
 }
 
-/* the backfill: every estimator lead's DRAFT bid job → PRIVATE (a public job is never touched) */
+/* the old backfill (every estimator lead's DRAFT bid job → PRIVATE, openedBy 'auto') — patch BIDAUTO (owner 11/23: "all these jobs shouldn't
+   be on bid portal only if we put them on there"): gone for good; nothing goes on the bid portal by itself, whatever BID_PORTAL_AUTO says.
+   The op answers so an old page that still calls it gets "nothing opened". */
 async function sweep(who){
-  if (!(who.admin || who.estimator)) return { ok: true, opened: 0 };
-  if (process.env.BID_PORTAL_AUTO !== '1') return { ok: true, opened: 0, off: true };   /* patch BIDPOST: nothing goes on the bid portal by itself */
-  const jobs = await SP.listRows([SP.eq('collection', 'jobs')]);
-  const items = arr(await L.kvGet(L.KV).catch(() => [])); const byId = {}; items.forEach(x => { if (x && x.id) byId[x.id] = x; });
-  const todo = jobs.map(r => r.data || {}).filter(j => (j.draft === true || low(j.status) === 'draft') && j.leadInbox && s(j.leadInbox.id)).filter(j => {
-    const it = byId[s(j.leadInbox.id)];
-    if (it && /^(dismissed|merged)$/.test(s(it.status))) return false;
-    return L.isCommercial({ type: j.leadInbox.type, source: j.leadInbox.source, origin: it && it.origin }) || !!(it && (it.estimatorEmail || it.estimator));
-  }).slice(0, 50);
-  const at = nowIso();
-  todo.forEach(j => Object.assign(j, { draft: false, visibility: 'private', status: 'open', autoPrivate: true, openedPrivateAt: j.openedPrivateAt || at, openedBy: 'auto', updatedAt: at }));
-  if (todo.length) await SP.upsertRows(todo.map(j => SP.rowFor('jobs', j)), 'bid-hub');
-  const marks = {}; todo.forEach(j => { marks[s(j.leadInbox.id)] = { jobId: j.id, state: 'private', visibility: 'private', at }; });
-  if (todo.length) { try { await L.kvCas(L.KV, v => { const l = arr(v); let ch = false; l.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? l : undefined; }); } catch (e) {} }
-  return { ok: true, opened: todo.length };
+  return { ok: true, opened: 0, off: true, why: 'nothing goes on the bid portal by itself — a person puts a job on it' };
 }
 
 /* ═══ patch SYS2 ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -779,10 +774,12 @@ function noticeMail(job, what, o, es){
   const tag = [s(job.poNumber), s(job.address)].filter(Boolean).join(' · ');
   if (what === 'addendum') {
     const due = o.dueTo ? (es ? 'Nueva fecha límite: <b>' : 'The bid due date changed to <b>') + SP.esc(o.dueTo) + '</b>' + (o.dueFrom ? (es ? ' (antes ' : ' (was ') + SP.esc(o.dueFrom) + ')' : '') + '.' : '';
-    const subject = (es ? 'Adenda #' : 'Addendum #') + o.num + ' — ' + title + (tag ? ' — ' + tag : '') + (o.dueTo ? (es ? ' · fecha límite cambiada' : ' · due date changed') : '');
-    const lines = [(es ? 'GrayCo publicó la <b>adenda #' : 'GrayCo posted <b>addendum #') + o.num + '</b> ' + (es ? 'para ' : 'for ') + '<b>' + SP.esc(title) + '</b>' + (o.title ? ': ' + SP.esc(o.title) : '') + '.',
+    const upd = !!s(o.updatedAt);   /* patch ADDEDIT: an edited addendum says "updated" and asks for a new acknowledgement */
+    const subject = (es ? 'Adenda #' : 'Addendum #') + o.num + (upd ? (es ? ' actualizada' : ' updated') : '') + ' — ' + title + (tag ? ' — ' + tag : '') + (o.dueTo ? (es ? ' · fecha límite cambiada' : ' · due date changed') : '');
+    const lines = [(upd ? (es ? 'GrayCo actualizó la <b>adenda #' : 'GrayCo updated <b>addendum #') : (es ? 'GrayCo publicó la <b>adenda #' : 'GrayCo posted <b>addendum #')) + o.num + '</b> ' + (es ? 'para ' : 'for ') + '<b>' + SP.esc(title) + '</b>' + (o.title ? ': ' + SP.esc(o.title) : '') + '.',
       due, o.text ? SP.esc(s(o.text).slice(0, 1500)).replace(/\n/g, '<br>') : '', arr(o.files).length ? (es ? 'Archivos en el sitio de licitaciones: ' : 'Files on the bid site: ') + arr(o.files).map(f => SP.esc(f.name)).join(', ') : '',
-      es ? 'Entre al sitio y marque <b>Acuso recibo de la adenda</b>.' : 'Open the job on the bid site and tap <b>Acknowledge addendum #' + o.num + '</b>.'];
+      upd ? (es ? 'Entre al sitio y marque otra vez <b>Acuso recibo de la adenda</b>.' : 'Open the job on the bid site and tap <b>Acknowledge addendum #' + o.num + '</b> again.')
+        : es ? 'Entre al sitio y marque <b>Acuso recibo de la adenda</b>.' : 'Open the job on the bid site and tap <b>Acknowledge addendum #' + o.num + '</b>.'];
     return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? 'Adenda #' + o.num : 'Addendum #' + o.num, lines.filter(Boolean), { href: link, label: es ? 'Ver la adenda' : 'See the addendum' }) };
   }
   const subject = (es ? 'Novedad de GrayCo — ' : 'Update from GrayCo — ') + title + (tag ? ' — ' + tag : '');
@@ -812,13 +809,72 @@ async function addendum(who, b){
   const num = want >= 1 && want <= 99 && used.indexOf(want) < 0 ? want : Math.max(0, ...used) + 1;   /* patch SUBFLOW: the number the file says (Addendum #2), else the next */
   const a = { num, date: s(b.date).slice(0, 10) || nowIso().slice(0, 10), title, text, files, publishedAt: nowIso(), by: who.email };
   const nd = s(b.newDue).slice(0, 10);
-  if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd) && nd !== s(job.bidDueDate)) { a.dueFrom = s(job.bidDueDate) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); job.bidDueDate = nd; if (s(b.newDueTime)) job.bidDueTime = s(b.newDueTime).slice(0, 5); a.dueTo = nd + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
+  if (nd && /^\d{4}-\d{2}-\d{2}$/.test(nd) && nd !== s(job.bidDueDate)) { a.dueFrom = s(job.bidDueDate) + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); job.bidDueDate = nd; job.dueSetAt = nowIso(); job.dueSetBy = who.email; if (s(b.newDueTime)) job.bidDueTime = s(b.newDueTime).slice(0, 5); a.dueTo = nd + (s(job.bidDueTime) ? ' ' + s(job.bidDueTime) : ''); }
   const to = b.notify === false ? [] : await audience(job);
   a.notice = await queueNotice(who, job, 'addendum', num, a, to);
   job.addenda = arr(job.addenda).concat([a]);
   logTo(job, who, '📎 Addendum #' + num + ' posted' + (a.dueTo ? ' — bid due changed to ' + a.dueTo : '') + ' · e-mail: ' + a.notice.status + (a.notice.n ? ' (' + a.notice.n + ')' : ''));
   await saveJob(job, who);
   return { ok: true, num, notice: a.notice, due: job.bidDueDate };
+}
+
+/* patch ADDEDIT (owner 11/23: "I need to be able to edit an addendum there too"): ✎ Edit a posted addendum — the bid site's Addenda card
+   (admin) and the CRM's 📂 Manage → 📎 Addenda. The same people who post one (an admin, an estimator, the office). Title, date, what changed,
+   files (add / take off) and the bid due date change. Every edit keeps the addendum as it was in its history (who, when, the old text and
+   files) — archived, never purged: a file taken off stays in the history and in storage. A due-date change moves the job's bid due date.
+   The addendum's updatedAt asks every sub who acknowledged it before to acknowledge it again ("Updated <date>"). The e-mail to the subs
+   about the update is off unless ticked (notify: true) and then the posting rule: it waits on ✅ Approvals, held in ⏸ data-entry mode. */
+const ADD_KEEP = ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt', 'by', 'notice', 'updatedAt', 'updatedBy'];
+async function addendumEdit(who, b){
+  if (!who.canInvite) return { code: 403, error: 'Only an admin, an estimator or the office edits addenda.' };
+  const job = await jobRow(b.jobId); if (!job || GONE.test(s(job.status))) return { code: 404, error: 'No such bid job.' };
+  const list = arr(job.addenda).slice(), i = list.findIndex(x => x && x.publishedAt && String(x.num) === String(b.num));
+  if (i < 0) return { code: 404, error: 'No such addendum.' };
+  const old = list[i], a = Object.assign({}, old), at = nowIso(), changed = [];
+  if (b.title !== undefined) a.title = s(b.title).slice(0, 200);
+  if (b.text !== undefined) a.text = s(b.text).slice(0, 8000);
+  if (b.date !== undefined) a.date = validDay(b.date) || s(old.date);
+  if (Array.isArray(b.files)) {
+    const had = {}; arr(old.files).forEach(f => { if (f) had[s(f.fileRef) || 'n:' + s(f.name)] = f; });
+    a.files = b.files.filter(Boolean).slice(0, 20).map(f => {
+      const k = s(f.fileRef) || 'n:' + s(f.name); if (had[k]) return had[k];   /* a file it already had: kept as it was */
+      return /^staff\/[A-Za-z0-9._\/-]{3,300}$/.test(s(f.fileRef)) && s(f.fileRef).indexOf('..') < 0 ? { name: s(f.name).slice(0, 200) || 'addendum.pdf', size: Number(f.size) || 0, type: s(f.type).slice(0, 80), fileRef: s(f.fileRef) } : null;
+    }).filter(Boolean);
+  }
+  if (!s(a.text) && !s(a.title) && !arr(a.files).length) return { code: 400, error: 'Write what the addendum changes, or attach its files.' };
+  if (s(a.title) !== s(old.title)) changed.push('title');
+  if (s(a.date) !== s(old.date)) changed.push('date');
+  if (s(a.text) !== s(old.text)) changed.push('what changed');
+  const fk = l => arr(l).map(f => s(f && (f.fileRef || f.name))).join('|');
+  if (fk(a.files) !== fk(old.files)) {
+    const gone = arr(old.files).filter(f => !arr(a.files).some(x => x === f)), added = arr(a.files).filter(f => !arr(old.files).some(x => x === f));
+    changed.push('files' + (added.length ? ' +' + added.map(f => s(f.name)).join(', +') : '') + (gone.length ? ' −' + gone.map(f => s(f.name)).join(', −') : ''));
+  }
+  const nd = validDay(b.newDue), ntm = /^\d{2}:\d{2}$/.test(s(b.newDueTime)) ? s(b.newDueTime) : '';
+  if (s(b.newDue) && !nd) return { code: 400, error: 'The new bid due date is not a date.' };
+  let dueMoved = false;
+  if (nd) {
+    const from = dueText(validDay(job.bidDueDate), s(job.bidDueTime)), tm = ntm || s(job.bidDueTime), to = dueText(nd, tm);
+    if (to !== from || (s(a.dueTo) && s(a.dueTo) !== to)) {
+      if (!s(a.dueTo)) a.dueFrom = from === 'no due date' ? '' : from;   /* the date before the addendum moved it (kept from the first change) */
+      a.dueTo = to;
+      if (to !== from) { job.bidDueDate = nd; job.bidDueTime = tm; job.dueSetAt = at; job.dueSetBy = who.email; dueMoved = true; }
+      changed.push('bid due → ' + to);
+    }
+  }
+  if (!changed.length) return { ok: true, num: a.num, unchanged: true, due: job.bidDueDate };
+  const snap = {}; ADD_KEEP.forEach(k => { if (old[k] !== undefined) snap[k] = old[k]; });
+  a.history = arr(old.history).concat([Object.assign(snap, { replacedAt: at, replacedBy: who.email, replacedByName: s(who.name), changed })]).slice(-50);
+  a.updatedAt = at; a.updatedBy = who.email; a.edits = (Number(old.edits) || 0) + 1;
+  if (b.notify === true) a.notice = await queueNotice(who, job, 'addendum', a.num, a, await audience(job));
+  list[i] = a; job.addenda = list;
+  /* patch BIDREMIND2: a due date moved by the edit with "E-mail the subs" NOT ticked → the same automatic update as ✎ Edit Job Details and
+     📂 Manage → 📝 Details ("Bid due date changed to …": on the bid site at once, its e-mail waits on ✅ Approvals, held in ⏸) — never silent */
+  let dueNotice = null;
+  if (dueMoved && b.notify !== true) dueNotice = await subNotice(who, job, 'Bid due date changed to ' + dueText(job.bidDueDate, job.bidDueTime) + ' (addendum #' + a.num + ' was updated).');
+  logTo(job, who, '✎ Addendum #' + a.num + ' edited: ' + changed.join(' · ') + (dueMoved ? ' — the job\'s bid due date is now ' + dueText(job.bidDueDate, job.bidDueTime) : '') + ' · e-mail: ' + (b.notify === true ? a.notice.status + (a.notice.n ? ' (' + a.notice.n + ')' : '') : 'not sent'));
+  await saveJob(job, who);
+  return { ok: true, num: a.num, changed, notice: b.notify === true ? a.notice : { status: 'not sent', n: 0 }, dueNotice, due: job.bidDueDate, dueTime: job.bidDueTime, updatedAt: at };
 }
 
 async function post(who, b){
@@ -929,7 +985,8 @@ async function details(who, b){
     const from = dueText(validDay(job.bidDueDate), s(job.bidDueTime));
     job.bidDueDate = d; job.bidDueTime = d ? (/^\d{2}:\d{2}$/.test(s(b.dueTime)) ? s(b.dueTime) : (b.dueTime === '' ? '' : s(job.bidDueTime))) : '';
     const to = dueText(job.bidDueDate, job.bidDueTime);
-    if (to !== from) { log.push('⏰ bid due ' + from + ' → ' + to); subs.unshift(d ? 'Bid due date changed to ' + to + ' (was ' + from + ')' : 'The bid due date was taken off (was ' + from + ')'); }
+    if (to !== from) { job.dueSetAt = nowIso(); job.dueSetBy = who.email;   /* patch BIDREMIND2: a person set it (the Lead Inbox re-sync keeps it) */
+      log.push('⏰ bid due ' + from + ' → ' + to); subs.unshift(d ? 'Bid due date changed to ' + to + ' (was ' + from + ')' : 'The bid due date was taken off (was ' + from + ')'); }
     out.due = job.bidDueDate; out.dueTime = job.bidDueTime;
   }
   if (log.length) logTo(job, who, '📝 Details changed: ' + log.join(' · '));
@@ -1094,6 +1151,11 @@ exports.handler = async function(event){
   const who = await whoIs(event); if (!who.ok) return J(who.code || 401, { error: who.error }, C);
   try {
     if (event.httpMethod === 'GET') {
+      if (q.autoopen) {   /* patch BIDAUTO: what the old automatic opening put on the bid portal (admins; read only, nothing changes) */
+        if (!who.admin) return J(403, { error: 'Only an admin sees this.' }, C);
+        const all = (await jobsList()).filter(j => !j.deleted && (j.autoDraft || j.autoOpenedTouched));
+        return J(200, { ok: true, autoOpened: all.length, nowDrafts: all.filter(j => j.autoDraft).length, subTouched: all.filter(j => j.autoOpenedTouched).map(j => ({ id: j.id, title: j.title, po: j.po, visibility: j.visibility, touch: j.subTouch })) }, C);
+      }
       if (q.jobs) return J(200, { ok: true, jobs: await jobsList(), me: { email: who.email, admin: who.admin, estimator: who.estimator, office: who.office, canInvite: who.canInvite, canPublic: who.canPublic } }, C);
       if (q.subbids || q.lead) {
         const jobId = s(q.subbids) || L.portalApi().jobIdFor({ id: s(q.lead) });
@@ -1131,6 +1193,7 @@ exports.handler = async function(event){
     else if (b.op === 'plans') r = await plans(who, b);
     else if (b.op === 'scope') r = await scope(who, b);
     else if (b.op === 'addendum') r = await addendum(who, b);
+    else if (b.op === 'addendumedit') r = await addendumEdit(who, b);   /* patch ADDEDIT: ✎ Edit a posted addendum */
     else if (b.op === 'post') r = await post(who, b);
     else if (b.op === 'answer') r = await answer(who, b);
     else if (b.op === 'notice') r = await noticeAgain(who, b);
@@ -1146,7 +1209,7 @@ exports.handler = async function(event){
     return J(e.status || 502, { error: e.status ? e.message : 'The bid portal could not be reached: ' + s(e && e.message) }, C);
   }
 };
-exports._test = { addendum, subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
+exports._test = { addendum, addendumEdit, subReply, canAnswer, bidRead, scopeAsk, scopeReview, readOut, papersSum, postjob, unpost, cleanup, postedView, posterRole, autoAdded, postedOnPurpose, validDay, jobsList, sentScope, awardMail, notSelectedMail, mailGate, pmOf, link, fileOut, amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs, archive, restore, manageView, audience, noticeMail, planreq, details, dueChanged, bidding, duplicate, subNotice, tradesPicked, resort, resortCount };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

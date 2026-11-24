@@ -35,9 +35,17 @@ const PER_PAGE = 50, MAX_PAGES = 400, OVERLAP = 3600;
 const STATE_KEY = 'gc_cc_sync_state';
 const ID_FIELDS = ['ccProjectId', 'companyCamId', 'companycamId', 'ccId', 'ccamId', 'ccProjectUrl', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'sourceUrl'];
 const CLOSED_JOB = /^(completed?|closed|lost|cancell?ed|done|archived|dead|declined)$/;
-const LINK_V = 3;   /* patch PHOTOLINK: a new linking rule reads every 2026 project again once (3: patch CCPHOTOS — the PO in the name, archived projects) */
+const LINK_V = 4;   /* patch PHOTOLINK: a new linking rule reads every 2026 project again once (3: patch CCPHOTOS — the PO in the name, archived projects;
+                       4: patch CCLINKSTAT — the September browser imports count as CompanyCam-made placeholders) */
 const CM = require('./_lib/cc-match.js');
 /* every CompanyCam id a CRM record carries (its own fields + the extra photo projects, patch PHOTOLINK) */
+/* patch CCLINKSTAT (owner 11/23: "I'm not so sure my CompanyCam has been linking jobs into the CRM"): the old browser importers
+   (turned off in October) left Bidding placeholders with plain PRJ… ids (source "companycam", _ccImported), not PRJcc_<id>. The
+   server took them for CRM jobs, so when one held a project's id the real job at the same address never got that project.
+   Such an untouched placeholder (Bidding, no contract) now counts as CompanyCam-made, the same as a PRJcc_ job. */
+function legacyPlaceholder(r){
+  return !!r && low(r.source) === 'companycam' && r._ccImported === true && low(r.status) === 'bidding' && !(+r.contract > 0);
+}
 function ccIdsOf(r){
   const out = []; if (!r || typeof r !== 'object') return out;
   ID_FIELDS.forEach(f => { const id = ccIdFromAny(r[f]); if (id && out.indexOf(id) < 0) out.push(id); });
@@ -253,7 +261,8 @@ function knownIndex(projects, leads, customers){
     const ap = kind === 'job' ? CM.addrParts(r.address || r.jobAddress || r.street || r.siteAddress || '') : null;
     const label = { kind, id: s(r.id), name: s(r.name || r.company || r.client), status: low(r.status), end: secOf(r.completionDate || r.endDate || r.closedAt || r.completedAt),
       address: s(r.address || r.jobAddress || ''), ap: ap, created: secOf(r.createdAt || r.created || r.dateCreated),
-      auto: !!own || r._ccAuto === true, hasCc: ids.length > 0, ids: ids };   /* patch CCSYNC */
+      auto: !!own || r._ccAuto === true || legacyPlaceholder(r), hasCc: ids.length > 0, ids: ids,   /* patch CCSYNC (+ CCLINKSTAT: legacy placeholders) */
+      fromCc: !!own || r._ccAuto === true || low(r.source) === 'companycam' };   /* patch CCLINKSTAT: made from CompanyCam (for the counts only) */
     ids.forEach(id => { if (!idx.id[id]) idx.id[id] = label; });
     if (kind !== 'job') return;
     idx.jobs[label.id] = label;
@@ -322,6 +331,22 @@ function decide(idx, p, no){
   if (cands.length === 1 && cands[0].addr && !cands[0].job.hasCc && cands[0].job.end && p.created_at <= cands[0].job.end + DAY)
     return { kind: 'attach', job: cands[0].job, by: 'address', why: 'same address as the finished job "' + cands[0].job.name + '"' };
   return { kind: 'ask', jobs: jobs, why: 'same name/address as the finished job "' + jobs[0].name + '"' };
+}
+/* patch CCLINKSTAT: { jobsLinked: CRM jobs with a CompanyCam project, ccJobs: jobs made from CompanyCam, ccDupes: CompanyCam-made
+   Bidding jobs whose project(s) another job already has } over the live jobs, after this run's links */
+function linkCounts(idx, dead, attach){
+  const jobs = Object.keys(idx.jobs).map(k => idx.jobs[k]).filter(j => j && !(dead && dead[j.id]));
+  const idsOf = j => arr(j.ids).concat(arr(attach && attach[j.id]).map(p => String(p.id)));
+  const onReal = {}; jobs.filter(j => !j.fromCc).forEach(j => idsOf(j).forEach(id => { onReal[id] = 1; }));
+  const seenCc = {}; let ccJobs = 0, ccDupes = 0, jobsLinked = 0;
+  jobs.forEach(j => {
+    const ids = idsOf(j);
+    if (!j.fromCc) { if (ids.length) jobsLinked++; return; }
+    ccJobs++;
+    if (j.status === 'bidding' && ids.length && ids.every(id => onReal[id] || seenCc[id])) ccDupes++;   /* a Bidding copy only */
+    ids.forEach(id => { seenCc[id] = 1; });
+  });
+  return { jobsLinked, ccJobs, ccDupes };
 }
 function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } }
 /* patch CC2: a project its creator made is their lead */
@@ -542,6 +567,9 @@ async function run(opts){
     return true;
   }).sort((a, b) => (s(b.at) > s(a.at) ? 1 : s(b.at) < s(a.at) ? -1 : 0)).slice(0, 200);
   R.reviewCount = reviewList.length;
+  /* patch CCLINKSTAT: what the CRM shows in one line — jobs tied to CompanyCam, jobs made from CompanyCam, and how many of those are
+     a second copy of a project another job already has (counted only; nothing is changed or removed) */
+  Object.assign(R, linkCounts(idx, dead, attach), { waitingNew: reviewList.filter(x => x.kind === 'new' || x.kind === 'contact').length, newJobsOn: !!newJobsOn });
   if (!opts.dry) await kvWrite([{ key: STATE_KEY, value: st }, { key: 'gc_cc_review', value: reviewList }], epoch);
   return R;
 }
@@ -563,6 +591,9 @@ function healthOf(r, err){
   /* patch CCSYNC: every project read is accounted for */
   Object.assign(h, { pages: +r.pages || 0, linked: +r.linked || 0, attached: (r.attached || []).length, review: +r.reviewCount || 0, ask: (r.ask || []).length,
     senior: (r.senior || []).length, old: +r.old || 0, archived: +r.archived || 0, ignored: +r.ignored || 0, deleted: +r.deleted || 0, full: !!r.full });
+  /* patch CCLINKSTAT */
+  ['jobsLinked', 'ccJobs', 'ccDupes', 'waitingNew'].forEach(k => { if (r[k] != null) h[k] = +r[k] || 0; });
+  if (r.newJobsOn != null) h.newJobsOn = !!r.newJobsOn;
   return withDiag(h);
 }
 /* patch CCS2: + which request form worked, CompanyCam's own error text, the /company check, the token's shape */
@@ -607,4 +638,4 @@ exports.handler = async function(event){
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) };
   }
 };
-exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, saveHealth, HEALTH_KEY, LINK_V, posIn, poKey };
+exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, legacyPlaceholder, linkCounts, pmFinder, listChanged, rsNear, CUT, healthOf, saveHealth, HEALTH_KEY, LINK_V, posIn, poKey };

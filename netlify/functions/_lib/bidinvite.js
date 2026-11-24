@@ -41,7 +41,7 @@ function signupMail(link, es, name){
   const subject = es ? 'Su enlace para el sitio de licitaciones de GrayCo' : 'Your sign-up link for the GrayCo bid site';
   const lines = es ? [(first ? 'Hola ' + H.esc(first) + ', ' : '') + 'GrayCo Construction Services le invita al sitio de licitaciones de GrayCo (bids.grayco-cs.com): los trabajos abiertos, los planos y sus ofertas.', 'Toque el botón para crear su cuenta — queda aprobada.']
     : [(first ? 'Hi ' + H.esc(first) + ', ' : '') + 'GrayCo Construction Services invites you to the GrayCo bid site (bids.grayco-cs.com): open jobs, plans and your bids in one place.', 'Tap the button to make your account — it is approved.'];
-  return { subject, html: H.mailHtml(es ? 'Únase a GrayCo Bids' : 'Join GrayCo Bids', lines, { href: link, label: es ? 'Crear mi cuenta' : 'Make my account' }) };
+  return { subject, html: H.mailHtml(es ? 'Únase a la lista de licitaciones de GrayCo' : 'Join GrayCo\'s bid list' /* MAILHEAD */, lines, { href: link, label: es ? 'Crear mi cuenta' : 'Make my account' }) };
 }
 function link(inv, hasAccount, supplier){
   const O = SP().PORTAL_ORIGIN;

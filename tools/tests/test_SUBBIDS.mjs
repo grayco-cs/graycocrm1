@@ -199,9 +199,10 @@ await t('papers: missing or expired W-9 / GL / WC refuse the bid and name the pa
     const r3 = await call('B', 'p-bid-save', { jobId: 'j_inv', amount: 100 }); eq(r3.code, 403, 'B is not invited to the private job');
     T.sp_rows.find(x => x.key === 'jobs/j_dec').data.status = 'open';
     const r4 = await call('B', 'p-bid-save', { jobId: 'j_dec', amount: 5150, uploadIds: ['EuplPdfSB'] }); eq(r4.code, 200, r4.raw); eq(r4.j.created, true);
-    yes(MAIL.length === 1 && /New bid — Sample Office \(decided\) — Other Paint Co/.test(MAIL[0].subject), JSON.stringify(MAIL.map(x => x.subject)));
-    yes(MAIL[0].to.includes('office@grayco-cs.com'), JSON.stringify(MAIL[0].to));
-    const r5 = await call('B', 'p-bid-save', { jobId: 'j_dec', amount: 5100 }); eq(r5.code, 200); eq(MAIL.length, 1, 'an update is not a new bid');
+    /* patch OFFICEMAIL: the office mailbox is never e-mailed about a new bid (it is in the CRM: 🔔 For you / 📨 Bids); the job's PM / poster still are */
+    const n4 = MAIL.length; yes(MAIL.every(x => !(x.to || []).includes('office@grayco-cs.com')), 'no e-mail to the office: ' + JSON.stringify(MAIL.map(x => [x.subject, x.to])));
+    yes(MAIL.every(x => /New bid — Sample Office \(decided\) — Other Paint Co/.test(x.subject)), JSON.stringify(MAIL.map(x => x.subject)));
+    const r5 = await call('B', 'p-bid-save', { jobId: 'j_dec', amount: 5100 }); eq(r5.code, 200); eq(MAIL.length, n4, 'an update is not a new bid');
   } finally { process.env.PORTAL_MAIL_OFF = '1'; delete process.env.RESEND_API_KEY; }
   const a = await call('A', 'p-bidjobs'); yes(!/5150|5100|Other Paint/.test(a.raw), 'A never sees B\'s new bid'); eq(a.j.jobs.find(j => j.id === 'j_dec').myBid.amount, 12000);
 });

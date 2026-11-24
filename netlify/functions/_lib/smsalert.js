@@ -138,6 +138,10 @@ const _D = {
   },
   /* LSAFLOW2 (owner 11/19): the lead inbox item (read only) */
   inboxLead: async id => { try { return arr(await _D.kvGet('gc_lead_inbox')).find(y => y && s(y.id) === s(id)) || null; } catch (e) { return null; } },
+  /* patch LEADRISK: the CRM lead of a Lead Inbox item an owner ✕ Cleared on 🚨 Leads at risk (and nothing new since) → true */
+  leadCleared: async id => { try { id = s(id); const crm = /^LI-/.test(id) ? 'LEADIN-' + id.slice(3) : id; const d = await core().kvRead(['leads']);
+    const l = arr(d && d.leads).find(x => x && (s(x.id) === crm || s(x.id) === id || (s(x.inboxId) && s(x.inboxId) === id)));
+    return !!(l && LWc().cleared(l)); } catch (e) { return false; } },
   inboxAll: async () => { try { return arr(await _D.kvGet('gc_lead_inbox')); } catch (e) { return []; } },
   /* LSAFLOW2: "Disputed in Google ✓" on the inbox item (first one wins) + gc_lsa_decisions (the CRM page marks its lead) → { already, item } */
   lsaDisputed: async d => {
@@ -1704,7 +1708,8 @@ async function lsaEscTick(){
   await _D.kvCas(SKEY, v => { const st = loadState(v); st.lsaEsc = obj(st.lsaEsc); due = Object.keys(st.lsaEsc).map(k => Object.assign({ leadId: k.split('|')[0], key: k, kind: k.split('|')[1] || 'bad' }, st.lsaEsc[k], { key: k })).filter(e => !e.closed && e.step < ESC_STEPS.length - 1 && t - Date.parse(e.last || 0) >= LSA_ESC_STEP_MS); return undefined; }).catch(() => { due = []; });
   for (const e of due) {
     let x = null; try { x = await _D.inboxLead(e.leadId); } catch (er) {}
-    const done = escClosed(e.kind, x);
+    let done = escClosed(e.kind, x);
+    if (!done && e.kind === 'reply') { try { if (await _D.leadCleared(e.leadId)) done = true; } catch (er) {} }   /* patch LEADRISK: an owner cleared the lead — the "has not answered" texts stop */
     let step = e.step, res = null;
     if (!done) { while (++step < ESC_STEPS.length) { res = await escSend(e.leadId, ESC_STEPS[step], Object.assign({}, e, { item: x || {} })); if (!(res && res.nobody)) break; } }
     await _D.kvCas(SKEY, v => { const st = loadState(v); st.lsaEsc = obj(st.lsaEsc); const c = st.lsaEsc[e.key]; if (!c) return undefined; if (done) c.closed = true; else { c.step = Math.min(step, ESC_STEPS.length - 1); c.last = new Date(t).toISOString(); } return st; }).catch(() => {});

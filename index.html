@@ -7742,7 +7742,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.320-2026-11-23-r38h -->
+<!-- GrayCo CRM Build: 33.331-2026-11-23-r38s -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -8714,7 +8714,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.320-2026-11-23-r38h");
+  console.log("[GC] Build 33.331-2026-11-23-r38s");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -8762,7 +8762,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.320-2026-11-23-r38h"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.331-2026-11-23-r38s"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -10886,7 +10886,7 @@ if(_savedOrdIds&&Array.isArray(_savedOrdIds)){
   Ar.forEach(function(t){if(!_savedOrdIds.includes(t.id))_savedAr.push(t);});
   Ar=_savedAr;
 }
-try{window.__gcLiveEstimate={get:function(){return Object.assign({},g,{mats:(Ln&&Ln.length?Ln:g.mats)});},id:(g&&g.id)};}catch(_e){}return e.jsxs("div",{children:[e.jsx("button",{style:{...ot,fontSize:11,padding:"4px 10px",marginBottom:10},onClick:()=>{Pe(null),_("overview")},children:"← All Projects"}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10},children:[e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"},children:[e.jsx("h1",{style:{fontSize:20,fontWeight:800,margin:0},children:j.name}),(window._gcInsBadge?window._gcInsBadge(j,e):null),j.autoPO&&e.jsxs("span",{onClick:()=>{navigator.clipboard.writeText(j.autoPO).then(()=>se("PO "+j.autoPO+" copied to clipboard")).catch(()=>{})},title:"PO number (click to copy)",style:{fontSize:15,fontWeight:700,color:u.tx2,letterSpacing:.5,cursor:"text",userSelect:"all"},children:["PO ",j.autoPO]})]}),e.jsxs("div",{style:{fontSize:12,color:u.tx2},children:[j.client," · ",j.type," · ",j.address?e.jsxs("a",{href:`https://maps.google.com/?q=${encodeURIComponent(j.address)}`,target:"_blank",rel:"noreferrer",style:{color:u.acc2},children:["📍 ",j.address]}):"No address"," · PM: ",j.pm||"Unassigned",j.startDate&&` · Started: ${Ut(j.startDate)}`,j.endDate&&e.jsx("span",{style:{color:"#7c3aed",fontWeight:600},children:` · End: ${Ut(j.endDate)}`})]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx(Wa,{s:j.status}),qe&&e.jsxs("div",{style:{color:qe.c,fontWeight:700,fontSize:12,marginTop:2},children:[qe.pct,"% budget"]}),e.jsxs("div",{style:{display:"flex",gap:4,justifyContent:"flex-end",marginTop:4},children:[e.jsx("button",{style:{...ht,background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",fontSize:10,padding:"3px 10px"},onClick:()=>ls(j),children:"📄 Generate Proposal"}),e.jsx("button",{style:{...ot,fontSize:10,padding:"3px 10px"},onClick:()=>{De({...j}),ke(!0)},children:"✏️ Edit Project"})]})]})]}),q&&e.jsxs("div",{style:{...Ke,marginBottom:12,borderLeft:`3px solid ${u.acc}`},children:[e.jsx("b",{style:{fontSize:14},children:"Edit Project"}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginTop:8},children:[e.jsx(re,{l:"Name",children:e.jsx("input",{style:R,value:z.name||"",onChange:G=>De({...z,name:G.target.value})})}),e.jsx(re,{l:"Client",children:Po(z.client||"",G=>{var _pm=z.pm;if(!_pm){var _s=(G||"").toLowerCase();if(/ean.?holding|\bean\b|msr|mid.?south|midsouth|vanderbilt/.test(_s))_pm=""/* DUPJOB3: never an owner by name — the owners assign the PM */;else if(/a\s*&\s*b|a and b|shawn.?evanson|evanson/.test(_s))_pm=""/* DUPJOB3 */;}De({...z,client:G,pm:_pm||z.pm||""})},G=>{De(St=>({...St,client:G.name,clientPhone:G.phone||St.clientPhone,clientEmail:G.email||St.clientEmail}))},"Type or select customer")}),e.jsx(re,{l:"Client Phone",children:e.jsx("input",{style:R,value:z.clientPhone||"",onChange:G=>De({...z,clientPhone:G.target.value}),placeholder:"901-555-0000"})}),e.jsx(re,{l:"Client Email",children:e.jsx("input",{style:R,value:z.clientEmail||"",onChange:G=>De({...z,clientEmail:G.target.value}),placeholder:"client@email.com"})}),e.jsx(re,{l:"Type",children:e.jsx("select",{style:R,value:z.type||"Residential Reno",onChange:G=>De({...z,type:G.target.value}),children:nd.map(G=>e.jsx("option",{children:G},G))})}),e.jsx(re,{l:"Property"/* patch ENVLEAD */,children:e.jsx("select",{style:R,value:z.sector||"",onChange:G=>De({...z,sector:G.target.value}),children:[["","— pick —"],["Residential","Residential"],["Commercial","Commercial"],["Industrial","Industrial"]].map(o=>e.jsx("option",{value:o[0],children:o[1]},o[0]))})}),e.jsx(re,{l:"Company"/* patch MULTICO */,children:e.jsx("select",{style:R,value:(window._gcCo?window._gcCo.ofLead(z):"construction"),onChange:G=>De({...z,companyId:G.target.value}),children:(window._gcCo?window._gcCo.list():[{id:"construction",short:"Construction",icon:"🏗"}]).map(o=>e.jsx("option",{value:o.id,children:o.icon+" "+o.short},o.id))})}),window._gcCoShareField?window._gcCoShareField(e,re,z,function(v){De(function(q){return {...q,sharedWith:v}})}):null/* patch DONEPCT */,e.jsx(re,{l:"Status",children:e.jsx("select",{style:R,value:z.status||"bidding",onChange:G=>De({...z,status:G.target.value}),children:["bidding","estimating","approved","active","on_hold","completed","lost"].map(G=>e.jsx("option",{children:G},G))})}),e.jsx(re,{l:"Address",children:e.jsx("input",{style:R,value:z.address||"",onChange:G=>De({...z,address:G.target.value})})}),e.jsx(re,{l:"PM",children:e.jsxs("select",{style:R,value:z.pm||"",onChange:G=>De({...z,pm:G.target.value}),children:[e.jsx("option",{value:"",children:"Unassigned"}),(window._gcPeopleOnce?window._gcPeopleOnce(An):An).filter(G=>G.active).map(G=>e.jsx("option",{value:G.name,children:G.name},G.id))]})}),e.jsx(re,{l:"Contract $",children:e.jsx("input",{style:R,type:"number",step:"0.01",value:z.contract||"",onChange:G=>De({...z,contract:parseFloat(G.target.value)||0})})}),e.jsx(re,{l:"Auto PO #",children:e.jsx("input",{style:R,value:z.autoPO||"",onChange:G=>De({...z,autoPO:G.target.value}),placeholder:"e.g. A123"})}),e.jsx(re,{l:"Start Date",children:e.jsx("input",{style:R,type:"date",value:z.startDate||"",onChange:G=>De({...z,startDate:G.target.value})})}),e.jsx(re,{l:"End Date",children:e.jsx("input",{style:R,type:"date",value:z.endDate||"",onChange:G=>De({...z,endDate:G.target.value})})}),e.jsx(re,{l:"Draw Schedule",children:e.jsxs("div",{style:{display:"flex",flexDirection:"column",gap:4},children:[e.jsx("input",{style:R,value:z.drawSchedule||"",onChange:G=>De({...z,drawSchedule:G.target.value}),placeholder:"e.g. 25/25/50"}),e.jsxs("div",{style:{display:"flex",gap:3,flexWrap:"wrap"},children:[e.jsx("button",{type:"button",style:{background:z.drawSchedule==="25/25/50"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"25/25/50"}),children:"25/25/50"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="20/35/35/10"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"20/35/35/10"}),children:"20/35/35/10"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="50/50"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"50/50"}),children:"50/50"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="100"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"100"}),children:"100%"}),z.drawSchedule&&e.jsx("button",{type:"button",style:{background:"transparent",border:"1px solid #ef444444",borderRadius:3,color:"#ef4444",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:""}),children:"Clear"})]})]})}),e.jsx(re,{l:"Who Sourced This Job",children:e.jsxs("select",{style:R,value:(z.commissionSource==="self"?(z.broughtInBy||z.leadSource||z.pm||""):"__grayco__"),onChange:G=>{var v=G.target.value;try{window.__GC_MANUAL_SAVE__=true;}catch(_e){}var _stamp=new Date().toISOString();if(v==="__grayco__"){De({...z,commissionSource:"company",leadSource:"GrayCo",broughtInBy:"",pmSourced:!1,updatedAt:_stamp,savedAt:_stamp});}else if(v===""){De({...z,commissionSource:"",leadSource:"",broughtInBy:"",pmSourced:!1,updatedAt:_stamp,savedAt:_stamp});}else{De({...z,commissionSource:"self",leadSource:v,broughtInBy:v,pmSourced:!0,pm:z.pm||v,updatedAt:_stamp,savedAt:_stamp});}try{setTimeout(function(){if(window.idbGet&&window.idbSet){window.idbGet("leads").then(function(L){if(!Array.isArray(L))return;var found=false;L=L.map(function(x){if(x&&x.id===z.id){found=true;return Object.assign({},x,{commissionSource:(v==="__grayco__"?"company":(v===""?"":"self")),leadSource:(v==="__grayco__"?"GrayCo":v),broughtInBy:(v==="__grayco__"||v===""?"":v),pmSourced:(v!=="__grayco__"&&v!==""),updatedAt:_stamp,savedAt:_stamp});}return x;});if(found){if(window._gcSaveForGood){window._gcSaveForGood("leads",L);}else{window.idbSet("leads",L);try{window.__GC_FORCE_PUSH__=true;if(window._gcPushAll)window._gcPushAll();setTimeout(function(){window.__GC_FORCE_PUSH__=false;},3000);}catch(_p){}}}}).catch(function(){});}},50);}catch(_s){}setTimeout(function(){try{window.__GC_MANUAL_SAVE__=false;}catch(_e){}},2000);},children:[e.jsx("option",{value:"__grayco__",children:"GrayCo (company lead) — default"}),(window._gcPeopleOnce?window._gcPeopleOnce(An):An).filter(G=>G.active).map(G=>e.jsx("option",{value:G.name,children:G.name+" brought it in"},G.id))]})}),e.jsx(re,{l:"Completion Date (for 30-day tracking)",children:e.jsx("input",{style:R,type:"date",value:z.completionDate||"",onChange:G=>De({...z,completionDate:G.target.value})})}),e.jsx(re,{l:"Scope of Work",s:3,children:e.jsx("textarea",{style:{...R,minHeight:80,fontFamily:"monospace",fontSize:11,whiteSpace:"pre-wrap"},value:z.scope||"",onChange:G=>De({...z,scope:G.target.value}),placeholder:"Enter or edit scope of work..."})})]}),e.jsxs("div",{style:{display:"flex",gap:6,marginTop:8},children:[e.jsx("button",{style:ht,onClick:(__adE)=>{/* patch ACTIVEDATES */if(window._gcAD&&window._gcAD.form(j,z,function(d){De(Object.assign({},z,d))},__adE))return;const G=j.startDate,St=z.startDate,un=j.endDate,vt=z.endDate;if(Wn(qt=>qt.map(Dt=>Dt.id===j.id?{...Dt,...z}:Dt)),Pe({...j,...z}),(function(){try{if(z.status&&z.status!==j.status&&window._gcSyncScheduleToStatus){window._gcSyncScheduleToStatus(j.id,z.status);}}catch(_e){}})(),z.status==="lost"&&j.status!=="lost"){try{var _lostInvs=(window._crm&&window._crm.invoices||[]).filter(function(iv){return iv.pid===j.id;});_lostInvs.forEach(function(iv){try{if(window._gcTombstoneInv)window._gcTombstoneInv(iv.id);}catch(e){}});if(window._setInvoices)window._setInvoices(function(list){return (list||[]).filter(function(iv){return iv.pid!==j.id;});});if(window._setExpenses)window._setExpenses(function(list){return (list||[]).filter(function(x){return x.pid!==j.id;});});if(window._gcPurgeJobFromRegister)window._gcPurgeJobFromRegister(j.id);}catch(_lp){}const qt=la.filter(Dt=>Dt.pid===j.id).length;se(qt>0?`Project marked LOST — schedule KEPT (${qt} items preserved), accounting cleared`:"Project marked as lost — accounting cleared"),ke(!1);return}if(z.status&&z.status!=="bidding"&&z.status!=="lost"&&j.status==="bidding"){const _prj={...j,...z};const _ts=_prj.tentativeSchedule;if(_ts&&_ts.length>0){const _existSch=la.filter(Dt=>Dt.pid===j.id);if(_existSch.length===0){const _base=_prj.startDate?new Date(_prj.startDate+"T12:00:00"):new Date();const _newSch=_ts.map(function(_it,_i){const _d=new Date(_base);_d.setDate(_base.getDate()+(_it.week-1)*7);const _ds=_d.getFullYear()+"-"+String(_d.getMonth()+1).padStart(2,"0")+"-"+String(_d.getDate()).padStart(2,"0");return{id:$t("SCH"),pid:j.id,title:String(_it.title||"Phase "+(_i+1)),date:_ds,time:"08:00",endTime:"17:00",assignee:_prj.pm||n.name,vendor:"",type:"work",address:_prj.address||"",notes:String(_it.desc||""),scope:"company",by:n.name}});rn(Dt=>[...Dt,..._newSch]);se("✅ "+_newSch.length+" tentative phases promoted to schedule — job accepted!")}else{se("Job accepted! "+_existSch.length+" existing schedule items kept")}}}if(St&&St!==G&&(la.some(Dt=>{var ut;return Dt.pid===j.id&&((ut=Dt.title)==null?void 0:ut.includes("Project Start"))})?(rn(Dt=>Dt.map(ut=>{var Xt;return ut.pid===j.id&&((Xt=ut.title)!=null&&Xt.includes("Project Start"))?{...ut,date:St}:ut})),se("Project updated · Schedule updated")):(rn(Dt=>[...Dt,{id:$t("SCH"),title:`${z.name||j.name} — Project Start`,pid:j.id,date:St,time:"08:00",endTime:"17:00",assignee:z.pm||j.pm||"",vendor:"",type:"work",address:z.address||j.address||"",notes:"Auto-created from project start date",by:n.name}]),se("Project updated · Start date added to schedule"))),vt&&vt!==un){const qt=la.some(Dt=>{var ut;return Dt.pid===j.id&&((ut=Dt.title)==null?void 0:ut.includes("End Date"))});rn(qt?Dt=>Dt.map(ut=>{var Xt;return ut.pid===j.id&&((Xt=ut.title)!=null&&Xt.includes("End Date"))?{...ut,date:vt}:ut}):Dt=>[...Dt,{id:$t("SCH"),title:`${z.name||j.name} — End Date`,pid:j.id,date:vt,time:"08:00",endTime:"17:00",assignee:z.pm||j.pm||"",vendor:"",type:"meeting",address:z.address||j.address||"",notes:"Project end date",by:n.name}]),(!St||St===G)&&se("Project updated · Finish date added to schedule")}(!St||St===G)&&(!vt||vt===un)&&se("Project updated"),ke(!1)},children:"Save"}),e.jsx("button",{style:ot,onClick:()=>ke(!1),children:"Cancel"}),e.jsx("button",{style:{...ot,fontSize:13,padding:"6px 14px",fontWeight:600,color:u.red},onClick:()=>{confirm("Delete project "+j.name+"?")&&(window._gcTombstoneProject&&window._gcTombstoneProject(j.id),(window.__GC_DELETING_AT__=Date.now()),ga(G=>G.map(St=>St&&St.pid===j.id?{...St,pid:"",autoPO:"",projPO:"",projName:"",_unlinkedFrom:j.id,updatedAt:new Date().toISOString()}:St)),Wn(G=>G.filter(St=>St.id!==j.id)),Pe(null),se("Project deleted — its estimates are kept (unassigned); change orders and invoices are kept"))},children:"Delete Project"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:6,marginBottom:10},children:[...(window._gcJobMoneyTiles?window._gcJobMoneyTiles(j,kt,ue,u,(sr.role==="Admin"||(window._gcIsOfficeFull&&window._gcIsOfficeFull())||j.pm===sr.name)):[...[{l:kt.cos?"Contract + COs":"Contract",v:ue(kt.contract)},{l:"Spent",v:ue(kt.spent)}],...((sr.role==="Admin"||(window._gcIsOfficeFull&&window._gcIsOfficeFull())||j.pm===sr.name)?[{l:"Profit",v:ue(kt.profit),c:kt.profit>=0?u.grn:u.red},{l:"Margin",v:kt.margin+"%"}]:[])]),{l:"Estimates",v:Pt.length},{l:"Change Orders",v:at.length}].map(G=>e.jsxs("div",{style:{flex:1,minWidth:80,padding:"10px 12px",borderRight:"1px solid "+u.bdr,textAlign:"center"},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,fontWeight:600,textTransform:"uppercase"},children:G.l}),e.jsx("div",{style:{fontSize:15,fontWeight:700,color:G.c||u.tx},children:G.v})]},G.l))}),e.jsx("div",{style:{display:"flex",gap:0,marginBottom:12,borderBottom:`2px solid ${u.bdr}`,overflowX:"auto"},children:[(window._gcInsTabBtn?window._gcInsTabBtn(e,j,H,_,u):null)].concat((_tabOrd||Ar).map(function(G,_gi){return e.jsx("button",{draggable:true,onDragStart:function(ev){ev.dataTransfer.effectAllowed="move";window._stDrag=_gi},onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="2px solid #d4a017"},onDragLeave:function(ev){ev.currentTarget.style.borderTop="none"},onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="none";var _from=window._stDrag;if(_from===undefined||_from===_gi)return;var _arr=[].concat(_tabOrd||Ar);var _item=_arr.splice(_from,1)[0];_arr.splice(_gi,0,_item);_setTabOrd(_arr);try{localStorage.setItem("gc_taborg_v2_"+j.id,JSON.stringify(_arr.map(function(t){return t.id;})))}catch(_e){}},onClick:function(){_( G.id)},style:{padding:"6px 12px",border:"none",background:"none",borderBottom:H===G.id?"2px solid "+u.acc:"2px solid transparent",color:H===G.id?u.acc:u.tx2,fontWeight:H===G.id?700:400,fontSize:11,cursor:"grab",fontFamily:"inherit",marginBottom:-2,whiteSpace:"nowrap"},children:G.l},G.id)}))}),H==="claim"&&e.jsx("div",{key:"gc-ins-claim-"+j.id,id:"gc-ins-claim-mount","data-pid":j.id,style:{width:"100%",marginBottom:12}}),H==="overview"&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},children:[e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Project Info"}),[["Name",j.name],["Client",j.client],["Phone",j.clientPhone||"—"],["Email",j.clientEmail||"—"],["Type",j.type],["Address",j.address||"—"],["PM",j.pm||"Unassigned"],["Status",j.status],["PO #",j.autoPO||"—"],["Follow-Ups",`${(j.followUps||[]).length} total`],["Start Date",j.startDate?Ut(j.startDate):"—"],["End Date",j.endDate?Ut(j.endDate):"—"],["Draw Schedule",j.drawSchedule||"—"],["Created",Ut(j.created)]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:G==="Address"&&j.address?e.jsxs("a",{href:`https://maps.google.com/?q=${encodeURIComponent(j.address)}`,target:"_blank",rel:"noreferrer",style:{color:u.acc2},children:["📍 ",j.address]}):G==="End Date"&&j.endDate?e.jsx("span",{style:{color:"#7c3aed"},children:St}):G==="Phone"&&j.clientPhone?e.jsxs("a",{href:`tel:${j.clientPhone}`,style:{color:u.acc2},children:["📱 ",St]}):G==="Email"&&j.clientEmail?e.jsxs("a",{href:`mailto:${j.clientEmail}`,style:{color:u.acc2},children:["📧 ",St]}):G==="Follow-Ups"?e.jsxs("span",{style:{cursor:"pointer",color:u.acc2},onClick:()=>_("followups"),children:[St," →"]}):St})]},G)),j.completionDate&&e.jsx("div",{style:{marginTop:6,padding:6,borderRadius:4,background:oa(j.completionDate)<-30?"#fef2f2":"#f0fdf4",border:`1px solid ${oa(j.completionDate)<-30?"#fca5a5":"#bbf7d0"}`},children:e.jsx("div",{style:{fontSize:11,fontWeight:700,color:oa(j.completionDate)<-30?u.red:u.grn},children:oa(j.completionDate)<-30?`⚠️ PAST 30 DAYS — ${Math.abs(oa(j.completionDate))} days since completion`:`✓ ${Math.abs(oa(j.completionDate))} days since completion`})})]}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Financial Summary"}),[["Contract",kt.cos?ue(kt.base)+" + COs "+ue(kt.cos)+" = "+ue(kt.contract):ue(kt.contract)],["Total Spent",ue(kt.spent)],...((sr.role==="Admin"||(window._gcIsOfficeFull&&window._gcIsOfficeFull())||j.pm===sr.name)?[["Profit",ue(kt.profit)],["Margin",kt.margin+"%"]]:[]),["Open COs",ue(at.filter(G=>!G.status||G.status==="pending").reduce((G,St)=>G+(parseFloat(St.amt)||0),0))],["Pending Invoices",ue(Mt.filter(G=>G.status!=="paid").reduce((G,St)=>G+(parseFloat(St.amt)||0),0))]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:St})]},G))]}),va.length>0&&e.jsxs("div",{style:{...Ke,gridColumn:"span 2"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsxs("b",{style:{fontSize:13},children:["Subs & Vendors (",va.length,")"]}),e.jsx("button",{style:{...ot,fontSize:10,padding:"2px 8px"},onClick:()=>_("projsubs"),children:"View All →"})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:6},children:va.slice(0,6).map((G,St)=>e.jsxs("div",{style:{padding:"6px 8px",borderRadius:4,border:`1px solid ${u.bdr}`,borderLeft:`3px solid ${{Bidding:"#f59e0b",Awarded:"#2563eb","In Progress":"#7c3aed",Complete:"#22c55e",Rejected:"#ef4444"}[G.status]||u.bdr}`,fontSize:11},children:[e.jsx("div",{style:{fontWeight:700},children:G.name}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",marginTop:2},children:[e.jsx("span",{style:{color:u.tx2},children:G.trade}),e.jsx("span",{style:{fontWeight:700},children:G.bidAmt?ue(parseFloat(G.bidAmt)):"—"})]})]},St))}),va.length>6&&e.jsxs("div",{style:{fontSize:10,color:u.tx2,marginTop:4},children:["+",va.length-6," more..."]})]}),j.checklist&&j.checklist.length>0&&e.jsxs("div",{style:{...Ke,gridColumn:"span 2"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsxs("b",{style:{fontSize:13},children:["✅ Walkthrough Checklist (",j.checklist.filter(G=>G.done).length,"/",j.checklist.length,")"]}),e.jsxs("span",{style:{fontSize:10,color:u.tx2},children:[Math.round(j.checklist.filter(G=>G.done).length/j.checklist.length*100),"% complete"]})]}),e.jsx("div",{style:{background:u.bdr,borderRadius:4,height:6,marginBottom:8},children:e.jsx("div",{style:{background:"linear-gradient(90deg,#16a34a,#22c55e)",borderRadius:4,height:6,width:`${j.checklist.filter(G=>G.done).length/j.checklist.length*100}%`,transition:"width 0.3s"}})}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:2},children:j.checklist.map((G,St)=>e.jsxs("label",{style:{display:"flex",gap:6,alignItems:"center",padding:"3px 6px",borderRadius:4,cursor:"pointer",fontSize:11,background:G.done?"#f0fdf4":"transparent",color:G.done?u.grn:u.tx},children:[e.jsx("input",{type:"checkbox",checked:G.done,onChange:()=>{const un=[...j.checklist];un[St]={...un[St],done:!un[St].done},Wn(vt=>vt.map(qt=>qt.id===j.id?{...qt,checklist:un}:qt))}}),e.jsx("span",{style:{textDecoration:G.done?"line-through":"none"},children:G.text})]},St))})]}),e.jsxs("div",{style:{...Ke,gridColumn:"span 2",borderLeft:"3px solid #7c3aed"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsx("b",{style:{fontSize:13},children:"📝 Customer Notes"}),e.jsx("button",{style:{...ot,fontSize:10,padding:"2px 8px"},onClick:()=>_("custnotes"),children:"Edit Notes →"})]}),j.customerNotes?e.jsx("div",{style:{fontSize:12,whiteSpace:"pre-wrap",color:u.tx,lineHeight:1.5,maxHeight:120,overflow:"auto"},children:j.customerNotes}):e.jsx("div",{style:{fontSize:11,color:u.tx3,fontStyle:"italic"},children:"No customer notes yet — click Edit Notes to add wants, needs, preferences"})]}),(j.followUps||[]).length>0&&e.jsxs("div",{style:{...Ke,gridColumn:"span 2"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsxs("b",{style:{fontSize:13},children:["📞 Recent Follow-Ups (",(j.followUps||[]).length,")"]}),e.jsx("button",{style:{...ot,fontSize:10,padding:"2px 8px"},onClick:()=>_("followups"),children:"View All →"})]}),[...j.followUps||[]].sort((G,St)=>(St.date||"").localeCompare(G.date||"")).slice(0,3).map(G=>e.jsxs("div",{style:{display:"flex",gap:8,alignItems:"center",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:11},children:[e.jsx("span",{style:{fontWeight:600,minWidth:70},children:Ut(G.date)}),e.jsxs("span",{style:{padding:"1px 6px",borderRadius:6,fontSize:9,fontWeight:600,background:{phone:"#2563eb15",text:"#22c55e15",email:"#f59e0b15",inperson:"#7c3aed15",walkthrough:"#06b6d415"}[G.method]||"#f1f5f9",color:{phone:"#2563eb",text:"#22c55e",email:"#f59e0b",inperson:"#7c3aed",walkthrough:"#06b6d4"}[G.method]||u.tx},children:[{phone:"📱",text:"💬",email:"📧",inperson:"🤝",walkthrough:"📷"}[G.method]||""," ",G.method]}),e.jsx("span",{style:{color:u.tx2,flex:1},children:G.notes})]},G.id))]})]}),(H==="overview"||H==="invoices")&&j.contract>0&&e.jsxs("div",{style:{...Ke,marginTop:10},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:[e.jsx("b",{style:{fontSize:13},children:"💵 Draw Payment Tracker"}),e.jsx("div",{style:{fontSize:11,color:u.tx2},children:"Contract: "+ue(j.contract)+(kt.cos?" (+ COs "+ue(kt.cos)+", billed on their own invoices)":"")}),e.jsx("button",{onClick:()=>{const _s=prompt("Draw schedule \u2014 percentages separated by / (must total 100, e.g. 20/35/35/10):",j.drawSchedule||"50/50");if(_s===null)return;if(window._gcDrawsError){const _e2=window._gcDrawsError(_s);if(_e2){alert(_e2);return}}Wn(_ps=>_ps.map(_p=>_p.id===j.id?{..._p,drawSchedule:_s.trim()}:_p))},style:{fontSize:10,padding:"2px 8px",borderRadius:6,border:"1px solid "+u.bdr,background:"transparent",color:u.acc2,cursor:"pointer"},children:"\u270E Set draws"})]}),(()=>{const _draws=(j.drawSchedule||"50/50").split("/").map(parseFloat).filter(Boolean);const _total=_draws.reduce((_a,_d)=>_a+_d,0)||100;const _pmts=j.drawPayments||[];return e.jsxs("div",{children:[e.jsx("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr 120px",gap:"6px 10px",alignItems:"center",fontSize:11,borderBottom:`1px solid ${u.bdr}`,paddingBottom:6,marginBottom:6,fontWeight:700,color:u.tx2},children:["Draw","Expected","Paid","Remaining",""]}),..._draws.map((_pct,_i)=>{const _drawNum=_i+1;const _expected=Math.round(j.contract*(_pct/_total)*100)/100;const _paid=_pmts.filter(_p=>_p.draw===_drawNum).reduce((_a,_p)=>_a+(parseFloat(_p.amt)||0),0);const _remaining=Math.max(0,_expected-_paid);const _pctLeft=_expected>0?Math.round(_remaining/_expected*100):0;const _done=_remaining<=0;return e.jsxs("div",{key:_i,style:{display:"contents"},children:[e.jsx("div",{style:{fontWeight:700,fontSize:12},children:"Draw "+_drawNum+" ("+_pct+"%)"}), e.jsx("div",{children:ue(_expected)}),e.jsxs("div",{style:{color:_paid>0?u.grn:u.tx2},children:[_paid>0?ue(_paid):"—",_pmts.filter(_p=>_p.draw===_drawNum).map((_p,_pi)=>e.jsx("div",{key:_pi,style:{fontSize:9,color:u.tx3},children:Ut(_p.date)+((_p.note)?" · "+_p.note:"")}))]}),e.jsxs("div",{style:{color:_done?"#15803d":_pctLeft>50?u.red:"#d97706",fontWeight:_done?700:400},children:[_done?e.jsx("span",{style:{color:"#15803d"},children:"✅ Paid"}):[ue(_remaining),e.jsx("span",{style:{marginLeft:4,fontSize:9,background:_pctLeft>50?"#fee2e2":"#fef3c7",color:_pctLeft>50?"#dc2626":"#92400e",padding:"1px 4px",borderRadius:3},children:_pctLeft+"% left"})]]}),e.jsxs("div",{style:{display:"flex",gap:3},children:[e.jsx("button",{style:{...ht,fontSize:10,padding:"3px 8px",background:_done?"#dcfce7":u.acc,color:_done?"#15803d":"#fff",border:_done?"1px solid #86efac":"none"},onClick:()=>{const _a=prompt("Payment amount for Draw "+_drawNum+":");if(!_a||isNaN(parseFloat(_a)))return;const _n=prompt("Note (optional):") || "";Wn(_ps=>_ps.map(_p=>_p.id===j.id?{..._p,drawPayments:[...(_p.drawPayments||[]),{draw:_drawNum,amt:parseFloat(_a),date:Lt(),note:_n}]}:_p))},children:_done?"+ More":"+ Pay"}),e.jsx("button",{title:"Create a draft invoice for this draw",style:{...ht,fontSize:10,padding:"3px 6px",background:"transparent",border:"1px solid "+(u.acc||"#3498db"),color:u.acc||"#3498db"},onClick:()=>{if(window._gcBillDraw)window._gcBillDraw(j.id,_drawNum)},children:(window._gcDrawInvoiced&&window._gcDrawInvoiced(j.id,_drawNum))?"\u2713 Inv":"\uD83E\uDDFE Invoice"})]})]})}),(()=>{const _totalPaid=_pmts.reduce((_a,_p)=>_a+(parseFloat(_p.amt)||0),0);const _totalOwed=Math.max(0,j.contract-_totalPaid);const _overallPct=j.contract>0?Math.round(_totalPaid/j.contract*100):0;return e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr 120px",gap:"6px 10px",borderTop:`2px solid ${u.bdr}`,paddingTop:8,marginTop:6,fontWeight:700,fontSize:12},children:[e.jsx("div",{children:"TOTAL"}),e.jsx("div",{children:ue(j.contract)}),e.jsx("div",{style:{color:u.grn},children:ue(_totalPaid)}),e.jsxs("div",{style:{color:_totalOwed>0?u.red:"#15803d"},children:[_totalOwed>0?[ue(_totalOwed),e.jsx("span",{style:{marginLeft:4,fontSize:9,background:"#fee2e2",color:"#dc2626",padding:"1px 4px",borderRadius:3},children:(100-_overallPct)+"% left"})]:"✅ Paid in Full"]}),e.jsx("div",{})]})})()]})})()]}),H==="followups"&&e.jsxs("div",{children:[e.jsx("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:14},children:"📞 Follow-Up Log"}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:["Track every contact — phone, text, email, in-person. ",(j.followUps||[]).length," total follow-ups"]})]})}),e.jsxs("div",{style:{...Ke,marginBottom:12,borderLeft:"3px solid #2563eb"},children:[e.jsx("b",{style:{fontSize:12,marginBottom:6,display:"block"},children:"Log a Follow-Up"}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"120px 120px 1fr",gap:8,alignItems:"end"},children:[e.jsx(re,{l:"Method",children:e.jsxs("select",{id:"fu_method",style:R,children:[e.jsx("option",{value:"phone",children:"📱 Phone Call"}),e.jsx("option",{value:"text",children:"💬 Text"}),e.jsx("option",{value:"email",children:"📧 Email"}),e.jsx("option",{value:"inperson",children:"🤝 In Person"}),e.jsx("option",{value:"walkthrough",children:"📷 Walkthrough"})]})}),e.jsx(re,{l:"Date",children:e.jsx("input",{id:"fu_date",type:"date",style:R,defaultValue:Lt()})}),e.jsx(re,{l:"Notes — what was discussed?",children:e.jsx("input",{id:"fu_notes",style:R,placeholder:"Customer wants hardwood floors, asked about timeline..."})})]}),e.jsx("button",{style:{...ht,marginTop:8},onClick:()=>{const G=document.getElementById("fu_method").value,St=document.getElementById("fu_date").value||Lt(),un=document.getElementById("fu_notes").value;if(!un){se("Add notes about what was discussed");return}const vt={id:$t("FU"),method:G,date:St,notes:un,by:n.name,at:new Date().toLocaleTimeString()};Wn(qt=>qt.map(Dt=>Dt.id===j.id?{...Dt,followUps:[...Dt.followUps||[],vt]}:Dt)),document.getElementById("fu_notes").value="",se(`Follow-up logged — ${(j.followUps||[]).length+1} total`)},children:"+ Log Follow-Up"})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:12},children:[{m:"phone",ic:"📱",l:"Phone"},{m:"text",ic:"💬",l:"Text"},{m:"email",ic:"📧",l:"Email"},{m:"inperson",ic:"🤝",l:"In Person"},{m:"walkthrough",ic:"📷",l:"Walkthrough"}].map(G=>{const St=(j.followUps||[]).filter(un=>un.method===G.m).length;return e.jsxs("div",{style:{...Ke,padding:"8px",textAlign:"center"},children:[e.jsx("div",{style:{fontSize:18},children:G.ic}),e.jsx("div",{style:{fontSize:18,fontWeight:800,color:St>0?u.acc:u.tx3},children:St}),e.jsx("div",{style:{fontSize:9,color:u.tx2,fontWeight:600},children:G.l})]},G.m)})}),(j.followUps||[]).length===0?e.jsx(Zn,{t:"No follow-ups yet",d:"Log your first call, text, or email above"}):e.jsx("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:e.jsxs("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12},children:[e.jsx("thead",{children:e.jsx("tr",{style:{background:"#f3f5f9"},children:["Date","Method","Notes","Logged By","Actions"].map(G=>e.jsx("th",{style:{padding:"7px 10px",textAlign:"left",fontWeight:600,fontSize:10,color:u.tx2,textTransform:"uppercase",borderBottom:`1px solid ${u.bdr}`},children:G},G))})}),e.jsx("tbody",{children:[...j.followUps||[]].sort((G,St)=>(St.date||"").localeCompare(G.date||"")).map(G=>e.jsxs("tr",{style:{borderBottom:`1px solid ${u.bdr}`},children:[e.jsxs("td",{style:{padding:"6px 10px",fontWeight:600},children:[Ut(G.date),G.at&&e.jsx("div",{style:{fontSize:9,color:u.tx2},children:G.at})]}),e.jsx("td",{style:{padding:"6px 10px"},children:e.jsx("span",{style:{padding:"2px 8px",borderRadius:8,fontSize:10,fontWeight:600,background:{phone:"#2563eb15",text:"#22c55e15",email:"#f59e0b15",inperson:"#7c3aed15",walkthrough:"#06b6d415"}[G.method]||"#f1f5f9",color:{phone:"#2563eb",text:"#22c55e",email:"#f59e0b",inperson:"#7c3aed",walkthrough:"#06b6d4"}[G.method]||u.tx},children:{phone:"📱 Phone",text:"💬 Text",email:"📧 Email",inperson:"🤝 In Person",walkthrough:"📷 Walkthrough"}[G.method]||G.method})}),e.jsx("td",{style:{padding:"6px 10px",maxWidth:400,whiteSpace:"pre-wrap"},children:G.notes}),e.jsx("td",{style:{padding:"6px 10px",color:u.tx2},children:G.by}),e.jsx("td",{style:{padding:"6px 10px"},children:e.jsx("button",{style:{background:"none",border:"none",color:u.red,cursor:"pointer",fontSize:11},onClick:()=>{confirm("Delete this follow-up?")&&(Wn(St=>St.map(un=>un.id===j.id?{...un,followUps:(un.followUps||[]).filter(vt=>vt.id!==G.id)}:un)),se("Deleted"))},children:"🗑"})})]},G.id))})]})})]}),H==="custnotes"&&e.jsxs("div",{children:[e.jsxs("div",{style:{marginBottom:10},children:[e.jsx("b",{style:{fontSize:14},children:"📝 Customer Notes"}),e.jsx("div",{style:{fontSize:11,color:u.tx2},children:"Wants, needs, preferences, budget — everything about this customer"})]}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12},children:[e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:12,marginBottom:6,display:"block"},children:"Contact Info"}),[["Client",j.client],["Phone",j.clientPhone],["Email",j.clientEmail],["Address",j.address],["Lead Source",j.source]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:St||"—"})]},G))]}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:12,marginBottom:6,display:"block"},children:"Job Summary"}),[["PO",j.autoPO],["Type",j.type],["Status",j.status],["PM",j.pm],["Contract",j.contract?ue(j.contract):"TBD"],["Follow-Ups",(j.followUps||[]).length+" total"]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:St||"—"})]},G))]})]}),e.jsxs("div",{style:Ke,children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsx("b",{style:{fontSize:13},children:"Customer Wants, Needs & Notes"}),e.jsx("span",{style:{fontSize:10,color:u.tx2},children:"Auto-saves on exit"})]}),e.jsx("textarea",{style:{...R,minHeight:200,fontSize:13,lineHeight:1.6,whiteSpace:"pre-wrap"},defaultValue:j.customerNotes||"",onBlur:G=>Wn(St=>St.map(un=>un.id===j.id?{...un,customerNotes:G.target.value}:un)),placeholder:`Customer wants / needs:
+try{window.__gcLiveEstimate={get:function(){return Object.assign({},g,{mats:(Ln&&Ln.length?Ln:g.mats)});},id:(g&&g.id)};}catch(_e){}return e.jsxs("div",{children:[e.jsx("button",{style:{...ot,fontSize:11,padding:"4px 10px",marginBottom:10},onClick:()=>{Pe(null),_("overview")},children:"← All Projects"}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10},children:[e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"},children:[e.jsx("h1",{style:{fontSize:20,fontWeight:800,margin:0},children:j.name}),(window._gcInsBadge?window._gcInsBadge(j,e):null),j.autoPO&&e.jsxs("span",{onClick:()=>{navigator.clipboard.writeText(j.autoPO).then(()=>se("PO "+j.autoPO+" copied to clipboard")).catch(()=>{})},title:"PO number (click to copy)",style:{fontSize:15,fontWeight:700,color:u.tx2,letterSpacing:.5,cursor:"text",userSelect:"all"},children:["PO ",j.autoPO]})]}),e.jsxs("div",{style:{fontSize:12,color:u.tx2},children:[j.client," · ",j.type," · ",j.address?e.jsxs("a",{href:`https://maps.google.com/?q=${encodeURIComponent(j.address)}`,target:"_blank",rel:"noreferrer",style:{color:u.acc2},children:["📍 ",j.address]}):"No address"," · PM: ",j.pm||"Unassigned",j.startDate&&` · Started: ${Ut(j.startDate)}`,j.endDate&&e.jsx("span",{style:{color:"#7c3aed",fontWeight:600},children:` · End: ${Ut(j.endDate)}`})]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx(Wa,{s:j.status}),qe&&e.jsxs("div",{style:{color:qe.c,fontWeight:700,fontSize:12,marginTop:2},children:[qe.pct,"% budget"]}),e.jsxs("div",{style:{display:"flex",gap:4,justifyContent:"flex-end",marginTop:4},children:[e.jsx("button",{style:{...ht,background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",fontSize:10,padding:"3px 10px"},onClick:()=>ls(j),children:"📄 Generate Proposal"}),e.jsx("button",{style:{...ot,fontSize:10,padding:"3px 10px"},onClick:()=>{De({...j}),ke(!0)},children:"✏️ Edit Project"})]})]})]}),q&&e.jsxs("div",{style:{...Ke,marginBottom:12,borderLeft:`3px solid ${u.acc}`},children:[e.jsx("b",{style:{fontSize:14},children:"Edit Project"}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginTop:8},children:[e.jsx(re,{l:"Name",children:e.jsx("input",{style:R,value:z.name||"",onChange:G=>De({...z,name:G.target.value})})}),e.jsx(re,{l:"Client",children:Po(z.client||"",G=>{var _pm=z.pm;if(!_pm){var _s=(G||"").toLowerCase();if(/ean.?holding|\bean\b|msr|mid.?south|midsouth|vanderbilt/.test(_s))_pm=""/* DUPJOB3: never an owner by name — the owners assign the PM */;else if(/a\s*&\s*b|a and b|shawn.?evanson|evanson/.test(_s))_pm=""/* DUPJOB3 */;}De({...z,client:G,pm:_pm||z.pm||""})},G=>{De(St=>({...St,client:G.name,clientPhone:G.phone||St.clientPhone,clientEmail:G.email||St.clientEmail}))},"Type or select customer")}),e.jsx(re,{l:"Client Phone",children:e.jsx("input",{style:R,value:z.clientPhone||"",onChange:G=>De({...z,clientPhone:G.target.value}),placeholder:"901-555-0000"})}),e.jsx(re,{l:"Client Email",children:e.jsx("input",{style:R,value:z.clientEmail||"",onChange:G=>De({...z,clientEmail:G.target.value}),placeholder:"client@email.com"})}),e.jsx(re,{l:"Type",children:e.jsx("select",{style:R,value:z.type||"Residential Reno",onChange:G=>De({...z,type:G.target.value}),children:nd.map(G=>e.jsx("option",{children:G},G))})}),e.jsx(re,{l:"Property"/* patch ENVLEAD */,children:e.jsx("select",{style:R,value:z.sector||"",onChange:G=>De({...z,sector:G.target.value}),children:[["","— pick —"],["Residential","Residential"],["Commercial","Commercial"],["Industrial","Industrial"]].map(o=>e.jsx("option",{value:o[0],children:o[1]},o[0]))})}),e.jsx(re,{l:"Company"/* patch MULTICO */,children:e.jsx("select",{style:R,value:(window._gcCo?window._gcCo.ofLead(z):"construction"),onChange:G=>De({...z,companyId:G.target.value}),children:(window._gcCo?window._gcCo.list():[{id:"construction",short:"Construction",icon:"🏗"}]).map(o=>e.jsx("option",{value:o.id,children:o.icon+" "+o.short},o.id))})}),window._gcCoShareField?window._gcCoShareField(e,re,z,function(v){De(function(q){return {...q,sharedWith:v}})}):null/* patch DONEPCT */,e.jsx(re,{l:"Status",children:e.jsx("select",{style:R,value:z.status||"bidding",onChange:G=>De({...z,status:G.target.value}),children:["bidding","estimating","approved","active","on_hold","completed","lost"].map(G=>e.jsx("option",{children:G},G))})}),e.jsx(re,{l:"Address",children:e.jsx("input",{style:R,value:z.address||"",onChange:G=>De({...z,address:G.target.value})})}),e.jsx(re,{l:"PM",children:e.jsxs("select",{style:R,value:z.pm||"",onChange:G=>De({...z,pm:G.target.value}),children:[e.jsx("option",{value:"",children:"Unassigned"}),(window._gcPeopleOnce?window._gcPeopleOnce(An):An).filter(G=>G.active).map(G=>e.jsx("option",{value:G.name,children:G.name},G.id))]})}),e.jsx(re,{l:"Contract $",children:e.jsx("input",{style:R,type:"number",step:"0.01",value:z.contract||"",onChange:G=>De({...z,contract:parseFloat(G.target.value)||0})})}),e.jsx(re,{l:"Auto PO #",children:e.jsx("input",{style:R,value:z.autoPO||"",onChange:G=>De({...z,autoPO:G.target.value}),placeholder:"e.g. A123"})}),e.jsx(re,{l:"Start Date",children:e.jsx("input",{style:R,type:"date",value:z.startDate||"",onChange:G=>De({...z,startDate:G.target.value})})}),e.jsx(re,{l:"End Date",children:e.jsx("input",{style:R,type:"date",value:z.endDate||"",onChange:G=>De({...z,endDate:G.target.value})})}),e.jsx(re,{l:"Draw Schedule",children:e.jsxs("div",{style:{display:"flex",flexDirection:"column",gap:4},children:[e.jsx("input",{style:R,value:z.drawSchedule||"",onChange:G=>De({...z,drawSchedule:G.target.value}),placeholder:"e.g. 25/25/50"}),e.jsxs("div",{style:{display:"flex",gap:3,flexWrap:"wrap"},children:[e.jsx("button",{type:"button",style:{background:z.drawSchedule==="10/40/40/10"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"10/40/40/10"}),children:"10/40/40/10"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="25/25/50"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"25/25/50"}),children:"25/25/50"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="20/35/35/10"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"20/35/35/10"}),children:"20/35/35/10"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="50/50"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"50/50"}),children:"50/50"}),e.jsx("button",{type:"button",style:{background:z.drawSchedule==="100"?"#d4a01733":"transparent",border:"1px solid #d4a01744",borderRadius:3,color:"#d4a017",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:"100"}),children:"100%"}),z.drawSchedule&&e.jsx("button",{type:"button",style:{background:"transparent",border:"1px solid #ef444444",borderRadius:3,color:"#ef4444",padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:"inherit"},onClick:()=>De({...z,drawSchedule:""}),children:"Clear"})]})]})}),e.jsx(re,{l:"Who Sourced This Job",children:e.jsxs("select",{style:R,value:(z.commissionSource==="self"?(z.broughtInBy||z.leadSource||z.pm||""):"__grayco__"),onChange:G=>{var v=G.target.value;try{window.__GC_MANUAL_SAVE__=true;}catch(_e){}var _stamp=new Date().toISOString();if(v==="__grayco__"){De({...z,commissionSource:"company",leadSource:"GrayCo",broughtInBy:"",pmSourced:!1,updatedAt:_stamp,savedAt:_stamp});}else if(v===""){De({...z,commissionSource:"",leadSource:"",broughtInBy:"",pmSourced:!1,updatedAt:_stamp,savedAt:_stamp});}else{De({...z,commissionSource:"self",leadSource:v,broughtInBy:v,pmSourced:!0,pm:z.pm||v,updatedAt:_stamp,savedAt:_stamp});}try{setTimeout(function(){if(window.idbGet&&window.idbSet){window.idbGet("leads").then(function(L){if(!Array.isArray(L))return;var found=false;L=L.map(function(x){if(x&&x.id===z.id){found=true;return Object.assign({},x,{commissionSource:(v==="__grayco__"?"company":(v===""?"":"self")),leadSource:(v==="__grayco__"?"GrayCo":v),broughtInBy:(v==="__grayco__"||v===""?"":v),pmSourced:(v!=="__grayco__"&&v!==""),updatedAt:_stamp,savedAt:_stamp});}return x;});if(found){if(window._gcSaveForGood){window._gcSaveForGood("leads",L);}else{window.idbSet("leads",L);try{window.__GC_FORCE_PUSH__=true;if(window._gcPushAll)window._gcPushAll();setTimeout(function(){window.__GC_FORCE_PUSH__=false;},3000);}catch(_p){}}}}).catch(function(){});}},50);}catch(_s){}setTimeout(function(){try{window.__GC_MANUAL_SAVE__=false;}catch(_e){}},2000);},children:[e.jsx("option",{value:"__grayco__",children:"GrayCo (company lead) — default"}),(window._gcPeopleOnce?window._gcPeopleOnce(An):An).filter(G=>G.active).map(G=>e.jsx("option",{value:G.name,children:G.name+" brought it in"},G.id))]})}),e.jsx(re,{l:"Completion Date (for 30-day tracking)",children:e.jsx("input",{style:R,type:"date",value:z.completionDate||"",onChange:G=>De({...z,completionDate:G.target.value})})}),e.jsx(re,{l:"Scope of Work",s:3,children:e.jsx("textarea",{style:{...R,minHeight:80,fontFamily:"monospace",fontSize:11,whiteSpace:"pre-wrap"},value:z.scope||"",onChange:G=>De({...z,scope:G.target.value}),placeholder:"Enter or edit scope of work..."})})]}),e.jsxs("div",{style:{display:"flex",gap:6,marginTop:8},children:[e.jsx("button",{style:ht,onClick:(__adE)=>{/* patch ACTIVEDATES */if(window._gcAD&&window._gcAD.form(j,z,function(d){De(Object.assign({},z,d))},__adE))return;const G=j.startDate,St=z.startDate,un=j.endDate,vt=z.endDate;if(Wn(qt=>qt.map(Dt=>Dt.id===j.id?{...Dt,...z}:Dt)),Pe({...j,...z}),(function(){try{if(z.status&&z.status!==j.status&&window._gcSyncScheduleToStatus){window._gcSyncScheduleToStatus(j.id,z.status);}}catch(_e){}})(),z.status==="lost"&&j.status!=="lost"){try{var _lostInvs=(window._crm&&window._crm.invoices||[]).filter(function(iv){return iv.pid===j.id;});_lostInvs.forEach(function(iv){try{if(window._gcTombstoneInv)window._gcTombstoneInv(iv.id);}catch(e){}});if(window._setInvoices)window._setInvoices(function(list){return (list||[]).filter(function(iv){return iv.pid!==j.id;});});if(window._setExpenses)window._setExpenses(function(list){return (list||[]).filter(function(x){return x.pid!==j.id;});});if(window._gcPurgeJobFromRegister)window._gcPurgeJobFromRegister(j.id);}catch(_lp){}const qt=la.filter(Dt=>Dt.pid===j.id).length;se(qt>0?`Project marked LOST — schedule KEPT (${qt} items preserved), accounting cleared`:"Project marked as lost — accounting cleared"),ke(!1);return}if(z.status&&z.status!=="bidding"&&z.status!=="lost"&&j.status==="bidding"){const _prj={...j,...z};const _ts=_prj.tentativeSchedule;if(_ts&&_ts.length>0){const _existSch=la.filter(Dt=>Dt.pid===j.id);if(_existSch.length===0){const _base=_prj.startDate?new Date(_prj.startDate+"T12:00:00"):new Date();const _newSch=_ts.map(function(_it,_i){const _d=new Date(_base);_d.setDate(_base.getDate()+(_it.week-1)*7);const _ds=_d.getFullYear()+"-"+String(_d.getMonth()+1).padStart(2,"0")+"-"+String(_d.getDate()).padStart(2,"0");return{id:$t("SCH"),pid:j.id,title:String(_it.title||"Phase "+(_i+1)),date:_ds,time:"08:00",endTime:"17:00",assignee:_prj.pm||n.name,vendor:"",type:"work",address:_prj.address||"",notes:String(_it.desc||""),scope:"company",by:n.name}});rn(Dt=>[...Dt,..._newSch]);se("✅ "+_newSch.length+" tentative phases promoted to schedule — job accepted!")}else{se("Job accepted! "+_existSch.length+" existing schedule items kept")}}}if(St&&St!==G&&(la.some(Dt=>{var ut;return Dt.pid===j.id&&((ut=Dt.title)==null?void 0:ut.includes("Project Start"))})?(rn(Dt=>Dt.map(ut=>{var Xt;return ut.pid===j.id&&((Xt=ut.title)!=null&&Xt.includes("Project Start"))?{...ut,date:St}:ut})),se("Project updated · Schedule updated")):(rn(Dt=>[...Dt,{id:$t("SCH"),title:`${z.name||j.name} — Project Start`,pid:j.id,date:St,time:"08:00",endTime:"17:00",assignee:z.pm||j.pm||"",vendor:"",type:"work",address:z.address||j.address||"",notes:"Auto-created from project start date",by:n.name}]),se("Project updated · Start date added to schedule"))),vt&&vt!==un){const qt=la.some(Dt=>{var ut;return Dt.pid===j.id&&((ut=Dt.title)==null?void 0:ut.includes("End Date"))});rn(qt?Dt=>Dt.map(ut=>{var Xt;return ut.pid===j.id&&((Xt=ut.title)!=null&&Xt.includes("End Date"))?{...ut,date:vt}:ut}):Dt=>[...Dt,{id:$t("SCH"),title:`${z.name||j.name} — End Date`,pid:j.id,date:vt,time:"08:00",endTime:"17:00",assignee:z.pm||j.pm||"",vendor:"",type:"meeting",address:z.address||j.address||"",notes:"Project end date",by:n.name}]),(!St||St===G)&&se("Project updated · Finish date added to schedule")}(!St||St===G)&&(!vt||vt===un)&&se("Project updated"),ke(!1)},children:"Save"}),e.jsx("button",{style:ot,onClick:()=>ke(!1),children:"Cancel"}),e.jsx("button",{style:{...ot,fontSize:13,padding:"6px 14px",fontWeight:600,color:u.red},onClick:()=>{confirm("Delete project "+j.name+"?")&&(window._gcTombstoneProject&&window._gcTombstoneProject(j.id),(window.__GC_DELETING_AT__=Date.now()),ga(G=>G.map(St=>St&&St.pid===j.id?{...St,pid:"",autoPO:"",projPO:"",projName:"",_unlinkedFrom:j.id,updatedAt:new Date().toISOString()}:St)),Wn(G=>G.filter(St=>St.id!==j.id)),Pe(null),se("Project deleted — its estimates are kept (unassigned); change orders and invoices are kept"))},children:"Delete Project"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:6,marginBottom:10},children:[...(window._gcJobMoneyTiles?window._gcJobMoneyTiles(j,kt,ue,u,(sr.role==="Admin"||(window._gcIsOfficeFull&&window._gcIsOfficeFull())||j.pm===sr.name)):[...[{l:kt.cos?"Contract + COs":"Contract",v:ue(kt.contract)},{l:"Spent",v:ue(kt.spent)}],...((sr.role==="Admin"||(window._gcIsOfficeFull&&window._gcIsOfficeFull())||j.pm===sr.name)?[{l:"Profit",v:ue(kt.profit),c:kt.profit>=0?u.grn:u.red},{l:"Margin",v:kt.margin+"%"}]:[])]),{l:"Estimates",v:Pt.length},{l:"Change Orders",v:at.length}].map(G=>e.jsxs("div",{style:{flex:1,minWidth:80,padding:"10px 12px",borderRight:"1px solid "+u.bdr,textAlign:"center"},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,fontWeight:600,textTransform:"uppercase"},children:G.l}),e.jsx("div",{style:{fontSize:15,fontWeight:700,color:G.c||u.tx},children:G.v})]},G.l))}),e.jsx("div",{style:{display:"flex",gap:0,marginBottom:12,borderBottom:`2px solid ${u.bdr}`,overflowX:"auto"},children:[(window._gcInsTabBtn?window._gcInsTabBtn(e,j,H,_,u):null)].concat((_tabOrd||Ar).map(function(G,_gi){return e.jsx("button",{draggable:true,onDragStart:function(ev){ev.dataTransfer.effectAllowed="move";window._stDrag=_gi},onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="2px solid #d4a017"},onDragLeave:function(ev){ev.currentTarget.style.borderTop="none"},onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="none";var _from=window._stDrag;if(_from===undefined||_from===_gi)return;var _arr=[].concat(_tabOrd||Ar);var _item=_arr.splice(_from,1)[0];_arr.splice(_gi,0,_item);_setTabOrd(_arr);try{localStorage.setItem("gc_taborg_v2_"+j.id,JSON.stringify(_arr.map(function(t){return t.id;})))}catch(_e){}},onClick:function(){_( G.id)},style:{padding:"6px 12px",border:"none",background:"none",borderBottom:H===G.id?"2px solid "+u.acc:"2px solid transparent",color:H===G.id?u.acc:u.tx2,fontWeight:H===G.id?700:400,fontSize:11,cursor:"grab",fontFamily:"inherit",marginBottom:-2,whiteSpace:"nowrap"},children:G.l},G.id)}))}),H==="claim"&&e.jsx("div",{key:"gc-ins-claim-"+j.id,id:"gc-ins-claim-mount","data-pid":j.id,style:{width:"100%",marginBottom:12}}),H==="overview"&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},children:[e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Project Info"}),[["Name",j.name],["Client",j.client],["Phone",j.clientPhone||"—"],["Email",j.clientEmail||"—"],["Type",j.type],["Address",j.address||"—"],["PM",j.pm||"Unassigned"],["Status",j.status],["PO #",j.autoPO||"—"],["Follow-Ups",`${(j.followUps||[]).length} total`],["Start Date",j.startDate?Ut(j.startDate):"—"],["End Date",j.endDate?Ut(j.endDate):"—"],["Draw Schedule",j.drawSchedule||"—"],["Created",Ut(j.created)]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:G==="Address"&&j.address?e.jsxs("a",{href:`https://maps.google.com/?q=${encodeURIComponent(j.address)}`,target:"_blank",rel:"noreferrer",style:{color:u.acc2},children:["📍 ",j.address]}):G==="End Date"&&j.endDate?e.jsx("span",{style:{color:"#7c3aed"},children:St}):G==="Phone"&&j.clientPhone?e.jsxs("a",{href:`tel:${j.clientPhone}`,style:{color:u.acc2},children:["📱 ",St]}):G==="Email"&&j.clientEmail?e.jsxs("a",{href:`mailto:${j.clientEmail}`,style:{color:u.acc2},children:["📧 ",St]}):G==="Follow-Ups"?e.jsxs("span",{style:{cursor:"pointer",color:u.acc2},onClick:()=>_("followups"),children:[St," →"]}):St})]},G)),j.completionDate&&e.jsx("div",{style:{marginTop:6,padding:6,borderRadius:4,background:oa(j.completionDate)<-30?"#fef2f2":"#f0fdf4",border:`1px solid ${oa(j.completionDate)<-30?"#fca5a5":"#bbf7d0"}`},children:e.jsx("div",{style:{fontSize:11,fontWeight:700,color:oa(j.completionDate)<-30?u.red:u.grn},children:oa(j.completionDate)<-30?`⚠️ PAST 30 DAYS — ${Math.abs(oa(j.completionDate))} days since completion`:`✓ ${Math.abs(oa(j.completionDate))} days since completion`})})]}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Financial Summary"}),[["Contract",kt.cos?ue(kt.base)+" + COs "+ue(kt.cos)+" = "+ue(kt.contract):ue(kt.contract)],["Total Spent",ue(kt.spent)],...((sr.role==="Admin"||(window._gcIsOfficeFull&&window._gcIsOfficeFull())||j.pm===sr.name)?[["Profit",ue(kt.profit)],["Margin",kt.margin+"%"]]:[]),["Open COs",ue(at.filter(G=>!G.status||G.status==="pending").reduce((G,St)=>G+(parseFloat(St.amt)||0),0))],["Pending Invoices",ue(Mt.filter(G=>G.status!=="paid").reduce((G,St)=>G+(parseFloat(St.amt)||0),0))]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:St})]},G))]}),va.length>0&&e.jsxs("div",{style:{...Ke,gridColumn:"span 2"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsxs("b",{style:{fontSize:13},children:["Subs & Vendors (",va.length,")"]}),e.jsx("button",{style:{...ot,fontSize:10,padding:"2px 8px"},onClick:()=>_("projsubs"),children:"View All →"})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:6},children:va.slice(0,6).map((G,St)=>e.jsxs("div",{style:{padding:"6px 8px",borderRadius:4,border:`1px solid ${u.bdr}`,borderLeft:`3px solid ${{Bidding:"#f59e0b",Awarded:"#2563eb","In Progress":"#7c3aed",Complete:"#22c55e",Rejected:"#ef4444"}[G.status]||u.bdr}`,fontSize:11},children:[e.jsx("div",{style:{fontWeight:700},children:G.name}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",marginTop:2},children:[e.jsx("span",{style:{color:u.tx2},children:G.trade}),e.jsx("span",{style:{fontWeight:700},children:G.bidAmt?ue(parseFloat(G.bidAmt)):"—"})]})]},St))}),va.length>6&&e.jsxs("div",{style:{fontSize:10,color:u.tx2,marginTop:4},children:["+",va.length-6," more..."]})]}),j.checklist&&j.checklist.length>0&&e.jsxs("div",{style:{...Ke,gridColumn:"span 2"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsxs("b",{style:{fontSize:13},children:["✅ Walkthrough Checklist (",j.checklist.filter(G=>G.done).length,"/",j.checklist.length,")"]}),e.jsxs("span",{style:{fontSize:10,color:u.tx2},children:[Math.round(j.checklist.filter(G=>G.done).length/j.checklist.length*100),"% complete"]})]}),e.jsx("div",{style:{background:u.bdr,borderRadius:4,height:6,marginBottom:8},children:e.jsx("div",{style:{background:"linear-gradient(90deg,#16a34a,#22c55e)",borderRadius:4,height:6,width:`${j.checklist.filter(G=>G.done).length/j.checklist.length*100}%`,transition:"width 0.3s"}})}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:2},children:j.checklist.map((G,St)=>e.jsxs("label",{style:{display:"flex",gap:6,alignItems:"center",padding:"3px 6px",borderRadius:4,cursor:"pointer",fontSize:11,background:G.done?"#f0fdf4":"transparent",color:G.done?u.grn:u.tx},children:[e.jsx("input",{type:"checkbox",checked:G.done,onChange:()=>{const un=[...j.checklist];un[St]={...un[St],done:!un[St].done},Wn(vt=>vt.map(qt=>qt.id===j.id?{...qt,checklist:un}:qt))}}),e.jsx("span",{style:{textDecoration:G.done?"line-through":"none"},children:G.text})]},St))})]}),e.jsxs("div",{style:{...Ke,gridColumn:"span 2",borderLeft:"3px solid #7c3aed"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsx("b",{style:{fontSize:13},children:"📝 Customer Notes"}),e.jsx("button",{style:{...ot,fontSize:10,padding:"2px 8px"},onClick:()=>_("custnotes"),children:"Edit Notes →"})]}),j.customerNotes?e.jsx("div",{style:{fontSize:12,whiteSpace:"pre-wrap",color:u.tx,lineHeight:1.5,maxHeight:120,overflow:"auto"},children:j.customerNotes}):e.jsx("div",{style:{fontSize:11,color:u.tx3,fontStyle:"italic"},children:"No customer notes yet — click Edit Notes to add wants, needs, preferences"})]}),(j.followUps||[]).length>0&&e.jsxs("div",{style:{...Ke,gridColumn:"span 2"},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsxs("b",{style:{fontSize:13},children:["📞 Recent Follow-Ups (",(j.followUps||[]).length,")"]}),e.jsx("button",{style:{...ot,fontSize:10,padding:"2px 8px"},onClick:()=>_("followups"),children:"View All →"})]}),[...j.followUps||[]].sort((G,St)=>(St.date||"").localeCompare(G.date||"")).slice(0,3).map(G=>e.jsxs("div",{style:{display:"flex",gap:8,alignItems:"center",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:11},children:[e.jsx("span",{style:{fontWeight:600,minWidth:70},children:Ut(G.date)}),e.jsxs("span",{style:{padding:"1px 6px",borderRadius:6,fontSize:9,fontWeight:600,background:{phone:"#2563eb15",text:"#22c55e15",email:"#f59e0b15",inperson:"#7c3aed15",walkthrough:"#06b6d415"}[G.method]||"#f1f5f9",color:{phone:"#2563eb",text:"#22c55e",email:"#f59e0b",inperson:"#7c3aed",walkthrough:"#06b6d4"}[G.method]||u.tx},children:[{phone:"📱",text:"💬",email:"📧",inperson:"🤝",walkthrough:"📷"}[G.method]||""," ",G.method]}),e.jsx("span",{style:{color:u.tx2,flex:1},children:G.notes})]},G.id))]})]}),(H==="overview"||H==="invoices")&&j.contract>0&&e.jsxs("div",{style:{...Ke,marginTop:10},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:[e.jsx("b",{style:{fontSize:13},children:"💵 Draw Payment Tracker"}),e.jsx("div",{style:{fontSize:11,color:u.tx2},children:"Contract: "+ue(j.contract)+(kt.cos?" (+ COs "+ue(kt.cos)+", billed on their own invoices)":"")}),e.jsx("button",{onClick:()=>{const _s=prompt("Draw schedule \u2014 percentages separated by / (must total 100, e.g. 20/35/35/10):",j.drawSchedule||"50/50");if(_s===null)return;if(window._gcDrawsError){const _e2=window._gcDrawsError(_s);if(_e2){alert(_e2);return}}Wn(_ps=>_ps.map(_p=>_p.id===j.id?{..._p,drawSchedule:_s.trim()}:_p))},style:{fontSize:10,padding:"2px 8px",borderRadius:6,border:"1px solid "+u.bdr,background:"transparent",color:u.acc2,cursor:"pointer"},children:"\u270E Set draws"})]}),(()=>{const _draws=(j.drawSchedule||"50/50").split("/").map(parseFloat).filter(Boolean);const _total=_draws.reduce((_a,_d)=>_a+_d,0)||100;const _pmts=j.drawPayments||[];return e.jsxs("div",{children:[e.jsx("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr 120px",gap:"6px 10px",alignItems:"center",fontSize:11,borderBottom:`1px solid ${u.bdr}`,paddingBottom:6,marginBottom:6,fontWeight:700,color:u.tx2},children:["Draw","Expected","Paid","Remaining",""]}),..._draws.map((_pct,_i)=>{const _drawNum=_i+1;const _expected=Math.round(j.contract*(_pct/_total)*100)/100;const _paid=_pmts.filter(_p=>_p.draw===_drawNum).reduce((_a,_p)=>_a+(parseFloat(_p.amt)||0),0);const _remaining=Math.max(0,_expected-_paid);const _pctLeft=_expected>0?Math.round(_remaining/_expected*100):0;const _done=_remaining<=0;return e.jsxs("div",{key:_i,style:{display:"contents"},children:[e.jsx("div",{style:{fontWeight:700,fontSize:12},children:"Draw "+_drawNum+" ("+_pct+"%)"}), e.jsx("div",{children:ue(_expected)}),e.jsxs("div",{style:{color:_paid>0?u.grn:u.tx2},children:[_paid>0?ue(_paid):"—",_pmts.filter(_p=>_p.draw===_drawNum).map((_p,_pi)=>e.jsx("div",{key:_pi,style:{fontSize:9,color:u.tx3},children:Ut(_p.date)+((_p.note)?" · "+_p.note:"")}))]}),e.jsxs("div",{style:{color:_done?"#15803d":_pctLeft>50?u.red:"#d97706",fontWeight:_done?700:400},children:[_done?e.jsx("span",{style:{color:"#15803d"},children:"✅ Paid"}):[ue(_remaining),e.jsx("span",{style:{marginLeft:4,fontSize:9,background:_pctLeft>50?"#fee2e2":"#fef3c7",color:_pctLeft>50?"#dc2626":"#92400e",padding:"1px 4px",borderRadius:3},children:_pctLeft+"% left"})]]}),e.jsxs("div",{style:{display:"flex",gap:3},children:[e.jsx("button",{style:{...ht,fontSize:10,padding:"3px 8px",background:_done?"#dcfce7":u.acc,color:_done?"#15803d":"#fff",border:_done?"1px solid #86efac":"none"},onClick:()=>{const _a=prompt("Payment amount for Draw "+_drawNum+":");if(!_a||isNaN(parseFloat(_a)))return;const _n=prompt("Note (optional):") || "";Wn(_ps=>_ps.map(_p=>_p.id===j.id?{..._p,drawPayments:[...(_p.drawPayments||[]),{draw:_drawNum,amt:parseFloat(_a),date:Lt(),note:_n}]}:_p))},children:_done?"+ More":"+ Pay"}),e.jsx("button",{title:"Create a draft invoice for this draw",style:{...ht,fontSize:10,padding:"3px 6px",background:"transparent",border:"1px solid "+(u.acc||"#3498db"),color:u.acc||"#3498db"},onClick:()=>{if(window._gcBillDraw)window._gcBillDraw(j.id,_drawNum)},children:(window._gcDrawInvoiced&&window._gcDrawInvoiced(j.id,_drawNum))?"\u2713 Inv":"\uD83E\uDDFE Invoice"})]})]})}),(()=>{const _totalPaid=_pmts.reduce((_a,_p)=>_a+(parseFloat(_p.amt)||0),0);const _totalOwed=Math.max(0,j.contract-_totalPaid);const _overallPct=j.contract>0?Math.round(_totalPaid/j.contract*100):0;return e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr 120px",gap:"6px 10px",borderTop:`2px solid ${u.bdr}`,paddingTop:8,marginTop:6,fontWeight:700,fontSize:12},children:[e.jsx("div",{children:"TOTAL"}),e.jsx("div",{children:ue(j.contract)}),e.jsx("div",{style:{color:u.grn},children:ue(_totalPaid)}),e.jsxs("div",{style:{color:_totalOwed>0?u.red:"#15803d"},children:[_totalOwed>0?[ue(_totalOwed),e.jsx("span",{style:{marginLeft:4,fontSize:9,background:"#fee2e2",color:"#dc2626",padding:"1px 4px",borderRadius:3},children:(100-_overallPct)+"% left"})]:"✅ Paid in Full"]}),e.jsx("div",{})]})})()]})})()]}),H==="followups"&&e.jsxs("div",{children:[e.jsx("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:14},children:"📞 Follow-Up Log"}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:["Track every contact — phone, text, email, in-person. ",(j.followUps||[]).length," total follow-ups"]})]})}),e.jsxs("div",{style:{...Ke,marginBottom:12,borderLeft:"3px solid #2563eb"},children:[e.jsx("b",{style:{fontSize:12,marginBottom:6,display:"block"},children:"Log a Follow-Up"}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"120px 120px 1fr",gap:8,alignItems:"end"},children:[e.jsx(re,{l:"Method",children:e.jsxs("select",{id:"fu_method",style:R,children:[e.jsx("option",{value:"phone",children:"📱 Phone Call"}),e.jsx("option",{value:"text",children:"💬 Text"}),e.jsx("option",{value:"email",children:"📧 Email"}),e.jsx("option",{value:"inperson",children:"🤝 In Person"}),e.jsx("option",{value:"walkthrough",children:"📷 Walkthrough"})]})}),e.jsx(re,{l:"Date",children:e.jsx("input",{id:"fu_date",type:"date",style:R,defaultValue:Lt()})}),e.jsx(re,{l:"Notes — what was discussed?",children:e.jsx("input",{id:"fu_notes",style:R,placeholder:"Customer wants hardwood floors, asked about timeline..."})})]}),e.jsx("button",{style:{...ht,marginTop:8},onClick:()=>{const G=document.getElementById("fu_method").value,St=document.getElementById("fu_date").value||Lt(),un=document.getElementById("fu_notes").value;if(!un){se("Add notes about what was discussed");return}const vt={id:$t("FU"),method:G,date:St,notes:un,by:n.name,at:new Date().toLocaleTimeString()};Wn(qt=>qt.map(Dt=>Dt.id===j.id?{...Dt,followUps:[...Dt.followUps||[],vt]}:Dt)),document.getElementById("fu_notes").value="",se(`Follow-up logged — ${(j.followUps||[]).length+1} total`)},children:"+ Log Follow-Up"})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6,marginBottom:12},children:[{m:"phone",ic:"📱",l:"Phone"},{m:"text",ic:"💬",l:"Text"},{m:"email",ic:"📧",l:"Email"},{m:"inperson",ic:"🤝",l:"In Person"},{m:"walkthrough",ic:"📷",l:"Walkthrough"}].map(G=>{const St=(j.followUps||[]).filter(un=>un.method===G.m).length;return e.jsxs("div",{style:{...Ke,padding:"8px",textAlign:"center"},children:[e.jsx("div",{style:{fontSize:18},children:G.ic}),e.jsx("div",{style:{fontSize:18,fontWeight:800,color:St>0?u.acc:u.tx3},children:St}),e.jsx("div",{style:{fontSize:9,color:u.tx2,fontWeight:600},children:G.l})]},G.m)})}),(j.followUps||[]).length===0?e.jsx(Zn,{t:"No follow-ups yet",d:"Log your first call, text, or email above"}):e.jsx("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:e.jsxs("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12},children:[e.jsx("thead",{children:e.jsx("tr",{style:{background:"#f3f5f9"},children:["Date","Method","Notes","Logged By","Actions"].map(G=>e.jsx("th",{style:{padding:"7px 10px",textAlign:"left",fontWeight:600,fontSize:10,color:u.tx2,textTransform:"uppercase",borderBottom:`1px solid ${u.bdr}`},children:G},G))})}),e.jsx("tbody",{children:[...j.followUps||[]].sort((G,St)=>(St.date||"").localeCompare(G.date||"")).map(G=>e.jsxs("tr",{style:{borderBottom:`1px solid ${u.bdr}`},children:[e.jsxs("td",{style:{padding:"6px 10px",fontWeight:600},children:[Ut(G.date),G.at&&e.jsx("div",{style:{fontSize:9,color:u.tx2},children:G.at})]}),e.jsx("td",{style:{padding:"6px 10px"},children:e.jsx("span",{style:{padding:"2px 8px",borderRadius:8,fontSize:10,fontWeight:600,background:{phone:"#2563eb15",text:"#22c55e15",email:"#f59e0b15",inperson:"#7c3aed15",walkthrough:"#06b6d415"}[G.method]||"#f1f5f9",color:{phone:"#2563eb",text:"#22c55e",email:"#f59e0b",inperson:"#7c3aed",walkthrough:"#06b6d4"}[G.method]||u.tx},children:{phone:"📱 Phone",text:"💬 Text",email:"📧 Email",inperson:"🤝 In Person",walkthrough:"📷 Walkthrough"}[G.method]||G.method})}),e.jsx("td",{style:{padding:"6px 10px",maxWidth:400,whiteSpace:"pre-wrap"},children:G.notes}),e.jsx("td",{style:{padding:"6px 10px",color:u.tx2},children:G.by}),e.jsx("td",{style:{padding:"6px 10px"},children:e.jsx("button",{style:{background:"none",border:"none",color:u.red,cursor:"pointer",fontSize:11},onClick:()=>{confirm("Delete this follow-up?")&&(Wn(St=>St.map(un=>un.id===j.id?{...un,followUps:(un.followUps||[]).filter(vt=>vt.id!==G.id)}:un)),se("Deleted"))},children:"🗑"})})]},G.id))})]})})]}),H==="custnotes"&&e.jsxs("div",{children:[e.jsxs("div",{style:{marginBottom:10},children:[e.jsx("b",{style:{fontSize:14},children:"📝 Customer Notes"}),e.jsx("div",{style:{fontSize:11,color:u.tx2},children:"Wants, needs, preferences, budget — everything about this customer"})]}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12},children:[e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:12,marginBottom:6,display:"block"},children:"Contact Info"}),[["Client",j.client],["Phone",j.clientPhone],["Email",j.clientEmail],["Address",j.address],["Lead Source",j.source]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:St||"—"})]},G))]}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:12,marginBottom:6,display:"block"},children:"Job Summary"}),[["PO",j.autoPO],["Type",j.type],["Status",j.status],["PM",j.pm],["Contract",j.contract?ue(j.contract):"TBD"],["Follow-Ups",(j.followUps||[]).length+" total"]].map(([G,St])=>e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsx("span",{style:{color:u.tx2},children:G}),e.jsx("b",{children:St||"—"})]},G))]})]}),e.jsxs("div",{style:Ke,children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsx("b",{style:{fontSize:13},children:"Customer Wants, Needs & Notes"}),e.jsx("span",{style:{fontSize:10,color:u.tx2},children:"Auto-saves on exit"})]}),e.jsx("textarea",{style:{...R,minHeight:200,fontSize:13,lineHeight:1.6,whiteSpace:"pre-wrap"},defaultValue:j.customerNotes||"",onBlur:G=>Wn(St=>St.map(un=>un.id===j.id?{...un,customerNotes:G.target.value}:un)),placeholder:`Customer wants / needs:
 • 
 • 
 
@@ -45228,12 +45228,13 @@ window._gcDrawsError = function(ds){
 
 // Jobs without their own draw schedule fall back to the standard split:
 // 25% material & scheduling deposit, 25% at midpoint, 50% on completion.
-window._gcDefaultDraws = '50/50';
+window._gcDefaultDraws = '10/40/40/10';   /* DRAW1040: new jobs */
+window._gcLegacyDraws = '50/50';   /* DRAW1040: a job that never had a schedule keeps its old 50/50 billing */
 
 // The schedule actually used for a job — its own if valid, otherwise the default.
 window._gcEffectiveDraws = function(proj){
   var own = proj && proj.drawSchedule;
-  return (window._gcValidDraws(own).ok) ? String(own) : window._gcDefaultDraws;
+  return (window._gcValidDraws(own).ok) ? String(own) : (window._gcLegacyDraws || '50/50');   /* DRAW1040 */
 };
 
 // ── INVOICE SAFETY ───────────────────────────────────────────────────────
@@ -75078,13 +75079,18 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
        jobs, the same job entered twice, one address on two jobs → a guess for the office, never the first one silently). */
     var spaced=' '+String((inv.desc||'')+' '+(inv.client||'')+' '+(inv.address||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';
     var sp=function(v){ return String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); };
+    /* INVJOB: the bill's own full street address(es) — house # + street + Rd / St / Dr … ("418 Maplecrest rd") */
+    var ijKeys=(window._gcInvJobStreets?window._gcInvJobStreets(spaced):[]);
     projects.forEach(function(p){
       if(!p || p.deleted || p._deleted || p.overhead===true || /^(lost|cancell?ed|dead|declined|rejected|deleted)$/i.test(String(p.status||'').trim())) return;
       var pn=norm(p.name), pc=norm(p.client||''), pa=norm(p.address||''), pp=norm(p.autoPO||p.po||'');
       var conf=0, signals=0;
+      /* INVJOB: the bill names a street; this job has another street on file ('other') or none at all, a city only ('none') */
+      var ijVs=ijKeys.length&&window._gcInvJobVs?window._gcInvJobVs(ijKeys, p.address||p.jobAddress||''):'';
       // Strong single signals (each near-certain on its own)
       var exactPO = poText && pp && poText===pp;
       var exactAddr = pa && invAddr && (invAddr===pa || (pa.length>10 && invAddr.indexOf(pa)>-1));
+      if(exactAddr && !/\d{1,6}\s+[a-z]/i.test(String(p.address||''))) exactAddr=false;   /* INVJOB: a job address with no house # / street ("Demoville TN") is a city only — never an "exact address" */
       // Full job-name match: certain if the name is distinctive (long enough / multi-word)
       var nameWords = pn.split(' ').filter(function(w){return w.length>2;}).length;
       var distinctiveName = pn.length>=8 || nameWords>=2; // e.g. "Cordova Club Apartments", "Smith Kitchen"
@@ -75096,12 +75102,13 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var strong = exactPO || exactAddr || (exactName && distinctiveName);
       // Supporting signals
       if(pc && pc.length>=4 && spaced.indexOf(' '+sp(p.client)+' ')>-1){ conf+=40; signals++; }   /* INVMATCH: whole words */
-      if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6){ conf+=35; signals++; }
+      if(pa && !exactAddr && jobText.indexOf(pa)>-1 && pa.length>6 && ijVs!=='none'){ conf+=35; signals++; }   /* INVJOB: a city alone ("Demoville TN") is no match when the bill names its own street */
       // amount sanity (sub invoice amount within a job's contract range = weak support)
       var amt=parseFloat(inv.amt||inv.amount)||0, contract=parseFloat(p.contract||p.contractAmt||0)||0;
       if(amt>0 && contract>0 && amt<=contract){ conf+=10; }
       // word overlap on name (weak)
       words(p.name).forEach(function(w){ if(w.length>3 && jobText.indexOf(norm(w))>-1) conf+=8; });
+      if(ijVs==='other' && !exactPO){ conf=Math.max(0, conf-60); strong=false; }   /* INVJOB: the bill's street is not this job's — contradicting evidence */
       if(conf>bestJobConf){ runnerUp=bestJobConf; bestJobConf=conf; bestJob=p; bestSignals=signals; bestStrong=strong; }
       else if(conf>runnerUp){ runnerUp=conf; }
     });
@@ -104284,11 +104291,13 @@ window._gcJobMatchesForInvoice = function(inv, projList){
   var text=[inv.desc, inv.fileName, inv.notes, inv.memo, inv.qbMemo, inv.title, inv.address, inv.jobAddress,
             inv.readText, inv.job, inv.jobName].filter(Boolean).join(' \n ');
   var invClient=imName(inv.client||inv.customer||'');
+  var ijKeys=window._gcInvJobStreets?window._gcInvJobStreets(text):[];   /* INVJOB: the bill's own street address(es) */
   list.forEach(function(p){
     if(!imLive(p)) return;
     var how='', st=0;
     var ak=imAddrKey(p.address||p.addr||p.jobAddress);
     if(ak && text && imAddrIn(text, ak)){ how='the address '+String(p.address||'').split(',')[0]; st=3; }
+    if(!st && ijKeys.length && window._gcInvJobVs && window._gcInvJobVs(ijKeys, p.address||p.addr||p.jobAddress||'')==='other') return;   /* INVJOB: another street than the bill's — never by its name / customer */
     var nm=imName(nameOf(p));
     if(!st && nm.length>=8 && nm.split(' ').length>=2 && imPhraseIn(text, nm)){ how='the job name'; st=2; }
     var cl=imName(p.client||p.customer||'');
@@ -133240,7 +133249,7 @@ function officeMe(){ if(isAdmin()) return false; var u = myUser(); return myEmai
 window._gcApOfficeMe = officeMe;
 /* patch APOFFICE4 (owner 10/30): every customer / outside-facing approval is the office's own at once, at any step, and her
    approval is final; owner money / permission kinds never are. Same lists as netlify/functions/_lib/office-kinds.js. */
-var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page","lead_assign","assign_estimator","assign_pm","sub_doc_request","gcp_co_nudge","sign_co_nudge","maint_outreach","maint_repair","maint_reminder","preq_change","preq_project","preq_reply","preq_decline"];   /* patch OFFFIX1: lead assignment is office work */
+var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page","lead_assign","assign_estimator","assign_pm","sub_doc_request","gcp_co_nudge","sign_co_nudge","maint_outreach","maint_repair","maint_reminder","preq_change","preq_project","preq_reply","preq_decline","portal_signup"];   /* patch OFFFIX1: lead assignment is office work */
 var AP4K_ADMIN = ["offer_letter","refcredit","refgift","mkt_payout","mkt_ad","mkt_addraft","mkt_experiment","mkt_feature"];
 var AP4K_ADMIN_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override/, AP4K_PREFIX = /^sign_[a-z0-9_]+$/;
 function ap4kKind(x){ return low(x && typeof x === 'object' ? x.kind : x); }
@@ -133335,7 +133344,7 @@ function markInvoiceSent(invId){
 window._gcApprovalAct = act;
 
 /* ── the list screen ── */
-var KIND = { portal_publish:'Put in customer portal', invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
+var KIND = { portal_signup:'Portal sign-up: match a job', portal_publish:'Put in customer portal', invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
 function kindOf(x){ return KIND[x.kind] || s(x.kind).replace(/_/g, ' '); }
 function preview(x){ return esc(s(x.text)).split(esc(PH)).join('<span style="color:#2563eb;text-decoration:underline">[portal link]</span>'); }
 function stepLabel(x){
@@ -135382,10 +135391,10 @@ function portalTag(l){
   var p = portalOf(l), st = S.portal || {};
   if (!l.inboxId) return '';
   if (p && p.jobId && typeof window._gcBidJobGone === 'function' && window._gcBidJobGone(p.jobId)) return '';   /* patch QAA: archived / deleted on the bid portal */
-  if (p && p.state === 'published') return '<span class="tg t-bp on">✓ On the bid portal</span>';
+  if (p && /^(published|public|private)$/.test(s(p.state)) && lxOn(p) === 'on') return '<span class="tg t-bp on">✓ On the bid portal</span>';   /* patch BIDAUTO */
   if (p && p.state === 'removed') return '<span class="tg t-bp">Bid-portal draft deleted</span>';
   if ((p && p.state === 'queued') || st.ready === false) return '<span class="tg t-bp" title="' + esc(st.why || (p && p.why) || '') + '">Bid-portal draft waiting (portal not set up)</span>';
-  if (p && p.jobId) return '<span class="tg t-bp">Draft in the bid portal</span>';
+  if (p && p.jobId) return '<span class="tg t-bp">Draft (not on the bid portal)</span>';   /* patch BIDAUTO */
   return '';
 }
 function rsCard(l){
@@ -135421,7 +135430,7 @@ function card(l){
     + '<div class="drop" data-drop="lead">Drop plan files here</div>'
     + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (window._gcBidRole ? window._gcBidRole.btn(l) : (l.pm ? 'Change PM' : 'Assign PM')) + '</button>' : '')   /* patch BIDROLE */
     + (l.pid ? '<button class="b pri" data-a="openjob">Open bid job</button>' : '<button class="b pri" data-a="job">Create bid job</button>')
-    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
+    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && (/removed/.test(portalOf(l).state) || lxOn(portalOf(l)) === 'on')) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
     + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
 }
 var LDI_DIRTY = true, LDI_DRAWN = false, LDI_FORCE = false, LDI_LIM = 40;   /* patch LEADFREEZE-2: 40 cards at a time; nothing drawn while another Leads tab is showing */
@@ -135486,12 +135495,14 @@ function lxWho(l){
   try { if (br && br.isBid(l)) { p = s(br.pmOf(l)); e = s(br.estOf(l)); } else p = s(l.pm); } catch (x) { p = s(l.pm); }
   return p ? { t: p, w: 'PM' } : e ? { t: e, w: 'Estimator' } : { t: '', w: '' };
 }
+function lxOn(p){ try { return window._gcBidPortalOn ? window._gcBidPortalOn(p) : (p && p.jobId && p.state === 'published' ? 'on' : ''); } catch (e) { return ''; } }   /* patch BIDAUTO */
 function lxStatus(l, p){
-  if (p && p.state === 'published') return { t: 'On bid portal', c: 'st-on' };
+  var on = lxOn(p);   /* patch BIDAUTO: "On bid portal" only when a person put it there */
+  if (p && /^(published|public|private)$/.test(s(p.state)) && on === 'on') return { t: 'On bid portal', c: 'st-on' };
   if (l.pid) return { t: 'Bid job', c: 'st-job' };
   if (isNew(l)) return { t: 'New', c: 'st-new' };
   if (p && p.state === 'queued') return { t: 'Draft (waiting)', c: 'st-dr' };
-  if ((p && p.jobId && p.state !== 'removed') || l.bidPortalJob) return { t: 'Draft', c: 'st-dr' };
+  if ((p && p.jobId && p.state !== 'removed' && on !== 'gone') || l.bidPortalJob) return { t: 'Draft (not on portal)', c: 'st-dr' };   /* patch BIDAUTO */
   return { t: 'Assigned', c: 'st-as' };
 }
 function lxHay(l){
@@ -142679,7 +142690,7 @@ function post(body){
 window._gcAp2Items = function(){ return items().slice(); };
 
 /* ── the cards ── */
-var KIND = { portal_publish:'Put in customer portal', portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign', pay_app:'Pay application', offer_letter:'Offer letter', walkthrough_sign:'Final walkthrough to sign' };
+var KIND = { portal_signup:'Portal sign-up: match a job', portal_publish:'Put in customer portal', portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign', pay_app:'Pay application', offer_letter:'Offer letter', walkthrough_sign:'Final walkthrough to sign' };
 var ICON = { portal_publish:'📄', invoice:'🧾', final_invoice:'🧾', final_reminder:'⏰', thank_you:'🎉', portal_link:'🔗', portal_docs:'📄', lien_waiver:'📜', contract:'✍️', selection_sign:'🎨', pay_app:'🏗', offer_letter:'🤝', walkthrough_sign:'🏁' };
 function titleOf(x){
   if(x.title) return x.title;
@@ -172571,10 +172582,12 @@ function rowQueue(x, mine, now){
     open: { l: 'Open / Edit', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } }, edit: editForQueue(x, invId, inv),
     doc: invId ? { l: '🧾 Invoice PDF', f: function(){ call('_gcViewInvoicePDF', invId, s(x.jobId || x.pid)); } } : { l: x.channel === 'sms' ? '💬 The text' : '✉️ The e-mail', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } } };
 }
+/* INVJOB: QuickBooks hands names / memos over HTML-escaped ("A&amp;Z Demo Supply LLC"); the card escapes them again → "R&amp;D" on screen */
+function unEnt(v){ return s(v).replace(/&(amp|lt|gt|quot|#39|#x27|apos);/g, function(m, k){ return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'", apos: "'" }[k]; }); }
 function rowSub(a, mine, now){
   var p = proj(a.pid), id = s(a.invId || a.id);
   var t = Date.parse(a.submittedAt || a.createdAt || a.at || a.date || 0) || num(a.queuedAt) || now;
-  return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (s(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + s(a.desc).slice(0, 60) : ''),
+  return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (unEnt(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + unEnt(a.desc).slice(0, 60) : ''),   /* INVJOB: unEnt */
     pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM ' + ((s(a.pmName) || s(p && p.pm)) ? (s(a.pmName) || s(p && p.pm)) + ' ' : '') + 'or the office',   /* patch APOFFICE */ since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
     escalated: false, chain: a.kickedBackToPm ? '↩ sent back by ' + s(a.deniedBy) : '',
     approve: mine || adminLike() ? { l: '✅ Approve', mode: (typeof W._gcSubPayBlocked === 'function' && W._gcSubPayBlocked(id)) ? undefined : 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',   /* patch PAYFAST: a stopped one opens the pay-check window at once */
@@ -179886,6 +179899,7 @@ function portalChip(l){
   var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
   if (typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) return '<span class="gcl-chip mute" title="Taken off the sub bid portal (🗄 Archived / deleted)">🏗 —</span>';   /* patch QAA: cleaned up → not "draft / private" any more */
   var st = s(p.state || p.visibility); var pub = /public|published/.test(st);
+  if (typeof W._gcBidPortalOn === 'function' && W._gcBidPortalOn(p) === 'draft') return '<span class="gcl-chip priv" title="Draft — not on the sub bid portal (staff only). 📢 Put on bid portal puts it there.">🏗 draft</span>';   /* patch BIDAUTO */
   return '<span class="gcl-chip ' + (pub ? 'pub' : 'priv') + '" title="Sub bid portal: ' + (pub ? 'public to all subs' : /private/.test(st) ? 'open to invited subs (private)' : 'private draft (staff only)') + '">🏗 ' + (pub ? 'public' : /private/.test(st) ? 'private' : 'draft') + '</span>';
 }
 function initials(n){ n = s(n).trim(); if (!n) return '?'; var p = n.split(/\s+/); return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
@@ -181194,7 +181208,8 @@ function drawerHtml0(l){
   arr(it.notes).slice(-5).forEach(function(n){ tl.push({ at: it.updatedAt || it.at, t: '📥 ' + s(n).slice(0, 160), by: 'Lead Inbox' }); });
   tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
   var ppl = people();
-  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
+  var pst = p && p.jobId && !(typeof W._gcBidJobGone === 'function' && W._gcBidJobGone(p.jobId)) ? s(p.state || p.visibility) : '';
+  if (pst && typeof W._gcBidPortalOn === 'function' && W._gcBidPortalOn(p) === 'draft') pst = 'draft';   /* patch BIDAUTO: the old automatic opening is a draft */   /* patch QAA: archived / deleted on the bid portal → "Not on the portal yet" */
   return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + kindPick(l) /* patch LEADBULK */ + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
     /* overview */
     + '<section><h4>Overview</h4>'
@@ -181234,7 +181249,7 @@ function drawerHtml0(l){
     /* sub bid portal */
     + '<section><h4>🏗 Sub bid portal</h4>'
     + '<div class="kv"><span>Status:</span> ' + (pst ? (/public|published/.test(pst) ? '<span class="gcl-chip pub">Public — every approved sub can see it</span>' : /private/.test(pst) ? '<span class="gcl-chip priv">Private — invited subs only</span>' : '<span class="gcl-chip priv">Private draft — staff only</span>') : '<span class="gcl-chip mute">Not on the portal yet</span>') + '</div>'
-    + '<div class="note">Every lead goes on the sub bid portal as <b>private</b>. Only you make it public. GrayCo prices are never shown to subs.</div>'
+    + '<div class="note">Nothing goes on the sub bid portal by itself: it is there only when a person puts it there — <b>private</b> (invited subs) or public. GrayCo prices are never shown to subs.</div>'
     + '<div class="sm" role="tablist"><button type="button" class="b' + (SC.mode === 'claude' ? ' on' : '') + '" data-d="sm" data-m="claude">✨ Claude</button><button type="button" class="b' + (SC.mode === 'manual' ? ' on' : '') + '" data-d="sm" data-m="manual">✍️ Manual</button><button type="button" class="b' + (SC.mode === 'estimate' ? ' on' : '') + '" data-d="sm" data-m="estimate">📐 From estimate</button>' + (xactFor(l) ? '<button type="button" class="b' + (SC.mode === 'xactimate' ? ' on' : '') + '" data-d="sm" data-m="xactimate">🛡 From Xactimate</button>' : '') + '</div>'
     + (SC.mode === 'claude' ? '<div class="row"><button type="button" class="b" data-d="draftai"' + (SC.busy ? ' disabled' : '') + '>' + (SC.busy ? 'Writing…' : '✨ Draft the scope') + '</button><span class="note">From the lead, its notes and the inbox details. Edit it before you save.</span></div>' : '')
     + (SC.mode === 'estimate' ? '<div class="row">' + (est ? '<button type="button" class="b" data-d="fromest">📐 Use "' + esc(s(est.name || est.title || 'the estimate').slice(0, 40)) + '" (prices removed)</button>' : '<span class="note">No estimate is linked to this lead yet.</span>') + '</div>' : '')
@@ -181663,7 +181678,7 @@ W._gcLeadsHubKit = { all: function(){ return rawLeads().filter(function(l){ retu
   setLeads: function(mut){ return setLeads(function(list){ var n = mut(list); if (Array.isArray(n)) { LEADS_NOW = n; LEADS_SIG = ''; } return n; }); },   /* as patchLead: the hub's own copy follows at once (a later full-list push never carries the old list) */
   imported: importedL, archived: archivedL, shut: shut, stageOf: stageOf, value: value, isAdmin: isAdmin,
   me: function(){ return myName() || myEmail(); }, receivedMs: function(l){ return receivedMs(l) || born(l); }, typeOf: typeOf };   /* patch LCLEAN */
-W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, assign: assign,   /* patch ASSIGNFIX B */ filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
+W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, markContacted: markContacted, patchLead: patchLead, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, assign: assign,   /* patch ASSIGNFIX B */ filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
 var n0 = 0;
 function tick(){ try { if (D.hidden) return; css(); mount(); luTick(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
 /* patch HOT2: the head-estimator backfill keeps its own 3-second timeout loop — the interval governors hold tick()
@@ -183992,7 +184007,7 @@ function bidsTable(list, jobId, opts){
       return '<tr' + (isLow ? ' class="low"' : '') + ' data-sys-bid="' + esc(b.id) + '"><td><b>' + esc(b.company || b.sub || b.email) + '</b>' + (b.sub && b.company ? '<div class="mut">' + esc(b.sub) + '</div>' : '') + '</td>'
         + '<td class="num">' + money(b.amount) + (isLow ? ' <span class="mut">low</span>' : '') + '</td>'
         + '<td>' + (b.files.length ? b.files.map(function(f){ return '📄 ' + esc(f.name); }).join('<br>') : '<span class="mut">—</span>') + '</td>'
-        + '<td class="mut">' + esc(when(b.at)) + '</td><td>' + srcTag(b.source) + '</td>'
+        + '<td class="mut">' + esc(when(b.at)) + (b.late ? '<div data-sys-latebid="' + esc(b.id) + '" style="color:#b45309;font-weight:800" title="' + esc(b.lateChangedAt ? 'Changed after the due date ' + when(b.lateChangedAt) : 'Sent after the due date') + '">⏰ Late bid</div>' : '') + '</td><td>' + srcTag(b.source) + '</td>'   /* patch LATEBID */
         + '<td>' + (b.awarded ? '<b style="color:#166534">🏆 Awarded</b>' + (aw ? ' <button type="button" class="b" data-sys="unaward" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">Undo</button>' : '')
           : (b.notSelected ? '<span class="mut">Not selected</span> ' : '') /*AWARDFLOW*/ + (aw ? '<button type="button" class="b" data-sys="award" data-src="' + esc(b.source) + '" data-id="' + esc(b.id) + '" data-job="' + esc(jobId) + '">🏆 Mark awarded</button>' : '')) + '</td></tr>';
     }).join('');
@@ -184028,6 +184043,8 @@ function shown(){
     else if (BP.f === 'archived') { if (!j.archived) return false; }   /* patch BIDPOST: 🗄 Archived (auto-added, taken off) */
     else if (j.deleted) return false;
     if (BP.f === 'open' && /^(closed|won|lost|awarded)$/i.test(j.status)) return false;
+    if (BP.f === 'open' && pastDue(j)) return false;   /* patch LATEBID: past the sub due date → off the default list */
+    if (BP.f === 'pastdue' && (!pastDue(j) || j.visibility === 'draft' || /^(closed|won|lost|awarded)$/i.test(j.status))) return false;
     if (BP.f === 'private' && j.visibility !== 'private') return false;
     if (BP.f === 'public' && j.visibility !== 'public') return false;
     if (BP.f === 'draft' && j.visibility !== 'draft') return false;
@@ -184075,8 +184092,9 @@ function canDelete(){ return realAdmin() || isEst() || !!(BP.me && BP.me.canPubl
 /* patch PLANREQ-F (owner 11/12): the bid due date is edited right in the list (click it → date + time → Save: bid-hub op details, the same rule and
    the same automatic 📣 update as 📂 Manage); a past due date is red; "Subs due 11/24 · Our bid due 11/25" (our date: staff only) */
 function mdy(d){ d = s(d); return /^\d{4}-\d{2}-\d{2}/.test(d) ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) + '/' + d.slice(2, 4) : ''; }
+function pastDue(j){ return j && j.pastDue != null ? !!j.pastDue : !!(j && j.due && j.due < new Date().toISOString().slice(0, 10)); }   /* patch LATEBID */
 function dueCell(j){
-  var past = j.due && j.due < new Date().toISOString().slice(0, 10) && !/^(closed|won|lost|awarded)$/i.test(s(j.status));
+  var past = pastDue(j) && !/^(closed|won|lost|awarded)$/i.test(s(j.status));
   var ed = canInvite() || !!(BP.me && BP.me.canInvite);
   var lbl = j.due ? 'Subs due ' + mdy(j.due) + (j.dueTime ? ' ' + j.dueTime : '') : 'No due date';
   return (ed ? '<button type="button" class="b" data-sys="dueedit" data-job="' + esc(j.id) + '" title="Change the date subs see" style="padding:2px 7px;font-size:12px;white-space:normal;text-align:left;max-width:100%' + (past ? ';color:#b91c1c;border-color:#fca5a5;font-weight:800' : '') + '"' + (past ? ' data-pastdue="1"' : '') + '>' + esc(lbl) + ' ✏️</button>'
@@ -184103,7 +184121,7 @@ function drawRows(){
   var fbar = m.querySelector('[data-sys-filters]'), box = m.querySelector('[data-sys-rows]'); if (!box) return;
   var all = arr(BP.jobs), cnt = function(f){ var o = BP.f; BP.f = f; var n = shown().length; BP.f = o; return n; };
   var q0 = BP.q; BP.q = '';
-  fbar.innerHTML = [['open', 'Open'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['archived', '🗄 Archived'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
+  fbar.innerHTML = [['open', 'Open'], ['pastdue', '⏰ Past due'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['archived', '🗄 Archived'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
   BP.q = q0;
   if (BP.err && !BP.jobs) { box.innerHTML = '<div class="mut" style="color:#b91c1c">' + esc(BP.err) + '</div>'; return; }
   if (!BP.jobs) { box.innerHTML = '<div class="mut">Loading the bid jobs…</div>'; return; }
@@ -184120,7 +184138,7 @@ function drawRows(){
       return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
         + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + (j.auto ? '🤖 auto-added · ' : j.postedBy ? '📢 posted by ' + esc(j.postedByName || j.postedBy) + ' · ' : '') + (j.archived ? '🗄 ' + esc(j.archivedReason === 'auto' ? 'archived (auto-added)' : 'taken off the bid portal') + ' · ' : '') + (j.biddingClosed ? '⏸ bidding closed · ' : '') + esc([j.address, j.po].filter(Boolean).join(' · ')) + '</div>'
         + (s(j.trades) ? '<div class="mut" data-row-trades="' + esc(j.id) + '">🔨 Trades: ' + esc((function(l){ return l.slice(0, 3).join(' · ') + (l.length > 3 ? ' +' + (l.length - 3) : ''); })(s(j.trades).split(/\s*[,;\/]\s*/).filter(Boolean))) + '</div>' : '') + '</td>'   /* patch PLANREQ-T */
-        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
+        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visToggle(j)) + (j.openReq > 0 ? '<div><span class="pill draft" data-sys-req="' + esc(j.id) + '" title="Subs asked for plans / more info — answer in 📂 Manage → 💬 Q&amp;A" style="background:#fef3c7;color:#92400e">📩 ' + j.openReq + ' request' + (j.openReq === 1 ? '' : 's') + '</span></div>' : '') + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + (j.lateBids ? '<div data-sys-late="' + esc(j.id) + '" style="color:#b45309;font-weight:700;font-size:12px">⏰ ' + j.lateBids + ' late</div>' : '') + '</td>'
         + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '" data-sys-duecell="' + esc(j.id) + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + (j.archived ? 'keep — restore any time' : left + ' day' + (left === 1 ? '' : 's') + ' left') + '</span>' : dueCell(j)) + '</td>'
         + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
           : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
@@ -184217,6 +184235,8 @@ function drawInvite(){
   var all = {}; INV.subs.forEach(function(x){ tradesOf(x).forEach(function(t){ all[low(t)] = t; }); }); Object.keys(INV.trades).forEach(function(t){ if (!all[t]) all[t] = t; });
   var list = invShown(), n = Object.keys(INV.pick).filter(function(e){ return INV.pick[e]; }).length;
   b.innerHTML = '<div class="mut">Trades (tap to filter):</div><div class="chips">' + Object.keys(all).sort().map(function(t){ return '<button type="button" class="b' + (INV.trades[t] ? ' on' : '') + '" data-sys="trade" data-t="' + esc(t) + '">' + esc(all[t]) + '</button>'; }).join('') + '</div>'
+    /* INVALL: tick / untick everyone shown */
+    + (list.filter(function(x){ return !x.invited; }).length ? '<div class="bar" style="margin:6px 0"><button type="button" class="b" data-sys="pickall">☑ Select all shown (' + list.filter(function(x){ return !x.invited; }).length + ')</button>' + (n ? '<button type="button" class="b" data-sys="picknone">☐ Clear (' + n + ')</button>' : '') + '</div>' : '')
     + '<div class="list">' + (list.length ? list.map(function(x){
       return '<label class="row"><input type="checkbox" data-sys="pick" data-e="' + esc(x.email) + '"' + (INV.pick[x.email] ? ' checked' : '') + (x.invited ? ' disabled' : '') + '>'
         + '<span style="flex:1"><b>' + (x.flag === 'preferred' ? '⭐ ' : '') + esc(x.company || x.name || x.email) + '</b> <span class="mut">' + esc([x.name !== x.company ? x.name : '', x.email, tradesOf(x).join(', ')].filter(Boolean).join(' · ')) + '</span></span>'
@@ -184299,6 +184319,8 @@ function onClick(ev){
   if (a === 'lead') return openLead(t.getAttribute('data-lead'));
   if (a === 'award' || a === 'unaward') return award(t, a === 'award');
   if (a === 'trade') { var k = t.getAttribute('data-t'); if (INV.trades[k]) delete INV.trades[k]; else INV.trades[k] = 1; return drawInvite(); }
+  if (a === 'pickall') { invShown().forEach(function(x){ if (!x.invited && x.email) INV.pick[x.email] = true; }); return drawInvite(); }   /* INVALL */
+  if (a === 'picknone') { INV.pick = {}; return drawInvite(); }   /* INVALL */
   if (a === 'send') {   /* + the pasted e-mails (subs not on file yet) */
     var ta = D.querySelector('#gcsys-modal [data-sys-paste]'), raw = ta ? String(ta.value || '') : ''; INV.paste = raw;
     var pasted = (raw.match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map(function(e){ return low(e); });
@@ -184867,19 +184889,47 @@ function addFiles(fs){
   Promise.all(fs.map(function(f){ return putFile(f).then(function(ref){ return { name: f.name, size: f.size, type: f.type || '', fileRef: ref }; }, function(e){ toast(e.message, true); return null; }); }))
     .then(function(l){ AF = AF.concat(l.filter(Boolean)); draw(); });
 }
-function audienceAcks(num){
-  var r = M.data, ack = arr(r.acks).filter(function(k){ return Number(k.num) === Number(num); });
+function audienceAcks(num, ad){   /* patch ADDEDIT-1: ad = the addendum; an acknowledgement older than its last edit is "before the update" */
+  var r = M.data, upd = s(ad && ad.updatedAt), ack0 = arr(r.acks).filter(function(k){ return Number(k.num) === Number(num); });
+  var ack = ack0.filter(function(k){ return !upd || s(k.at) >= upd; }), stale = ack0.filter(function(k){ return upd && s(k.at) < upd; });
   var by = {}; ack.forEach(function(k){ by[low(k.userEmail)] = k; });
   var not = arr(r.audience).filter(function(x){ return !by[low(x.email)]; });
   return '<div class="mut" data-acks="' + num + '">✍️ Acknowledged by ' + (ack.length ? ack.map(function(k){ return '<b>' + esc(k.userCompany || k.userName) + '</b> ' + esc(when(k.at)); }).join(', ') : 'nobody yet')
-    + (not.length ? ' · <span>not yet: ' + not.slice(0, 12).map(function(x){ return esc(x.company || x.name || x.email); }).join(', ') + (not.length > 12 ? '…' : '') + '</span>' : '') + '</div>';
+    + (not.length ? ' · <span>not yet: ' + not.slice(0, 12).map(function(x){ return esc(x.company || x.name || x.email); }).join(', ') + (not.length > 12 ? '…' : '') + '</span>' : '')
+    + (stale.length ? ' · <span data-acks-stale="' + num + '">acknowledged before the update (asked again): ' + stale.map(function(k){ return esc(k.userCompany || k.userName); }).join(', ') + '</span>' : '') + '</div>';
+}
+/* patch ADDEDIT: ✎ Edit a posted addendum */
+var AE = null;   /* { num, files } — the addendum being edited */
+function addEditHtml(a){
+  var n = a.num, j = job();
+  return '<div class="card" data-addedit="' + n + '" style="background:#fffbeb"><b>✎ Edit addendum #' + n + '</b>'
+    + '<div class="row"><input type="text" data-k="aetitle' + n + '" value="' + esc(a.title || '') + '" placeholder="Title" style="flex:1;min-width:220px"><label>Date <input type="date" data-k="aedate' + n + '" value="' + esc(a.date || '') + '"></label></div>'
+    + '<textarea data-k="aetext' + n + '" placeholder="What changed">' + esc(a.text || '') + '</textarea>'
+    + '<div class="mut">📎 ' + (AE.files.length ? AE.files.map(function(f, i){ return esc(f.name) + ' <button type="button" class="b" data-a="aerm" data-i="' + i + '" title="Take it off (it stays in the history)">✕</button>'; }).join(' ') : 'no files')
+    + ' <button type="button" class="b" data-a="aepick">📎 Add files</button></div>'
+    + '<div class="row"><label>Change the bid due date (optional — now ' + esc(s(j.due) ? s(j.due) + (s(j.dueTime) ? ' ' + s(j.dueTime) : '') : 'none') + ') <input type="date" data-k="aedue' + n + '"></label>'
+    + '<label><input type="checkbox" data-k="aenotify' + n + '"> E-mail the subs about the update (waits on ✅ Approvals)</label></div>'
+    + '<div class="row"><button type="button" class="b pri" data-a="aesave">💾 Save addendum #' + n + '</button><button type="button" class="b" data-a="aecancel">Cancel</button></div></div>';
+}
+function addHistHtml(a){
+  var h = arr(a.history); if (!h.length) return '';
+  var now = {}; arr(a.files).forEach(function(f){ now[s(f.fileRef || f.name)] = 1; });
+  return '<details data-addhist="' + a.num + '"><summary class="mut">History (' + h.length + ')</summary>' + h.slice().reverse().map(function(x){
+    return '<div class="mut" style="border-top:1px solid #e5e7eb;padding-top:4px;margin-top:4px"><b>Before the edit of ' + esc(when(x.replacedAt)) + '</b> · ' + esc(x.replacedByName || x.replacedBy) + ' · ' + esc(arr(x.changed).join(' · '))
+      + (x.title ? '<div>' + esc(x.title) + '</div>' : '') + (x.dueTo ? '<div>⏰ ' + esc(x.dueTo) + '</div>' : '') + (x.text ? '<div style="white-space:pre-wrap">' + esc(x.text) + '</div>' : '')
+      + (arr(x.files).length ? '<div>📎 ' + arr(x.files).map(function(f){ return esc(f.name) + (now[s(f.fileRef || f.name)] ? '' : ' (taken off)'); }).join(', ') + '</div>' : '') + '</div>'; }).join('') + '</details>';
 }
 function addendaHtml(){
   var ad = arr(job().addenda).slice().sort(function(a, b){ return b.num - a.num; }), next = ad.length ? Math.max.apply(null, ad.map(function(a){ return +a.num || 0; })) + 1 : 1;
+  var jd = job(), dd0 = s(jd.due || jd.bidDueDate), dt0 = s(jd.due ? jd.dueTime : jd.bidDueTime), curDue = dd0 ? dd0 + (dt0 ? ' ' + dt0 : '') : '';   /* 📂 Manage's job: due / dueTime */
   return ad.map(function(a){ return '<div class="card" data-addendum="' + a.num + '"><div class="row"><b>Addendum #' + a.num + (a.title ? ' — ' + esc(a.title) : '') + '</b><span class="mut">' + esc(a.date) + '</span>' + noticeTag(a.notice)
+      + (a.publishedAt && !(AE && AE.num === a.num) ? '<button type="button" class="b" data-a="aedit" data-n="' + a.num + '">✎ Edit</button>' : '')   /* patch ADDEDIT */
       + (a.notice && a.notice.status === 'held' && !M.data.paused ? '<button type="button" class="b" data-a="resend" data-w="addendum" data-ref="' + a.num + '">✉️ Send the e-mail now (Approvals)</button>' : '') + '</div>'
+      + (a.updatedAt ? '<div class="mut" data-addupd="' + a.num + '" style="font-weight:700">✎ Updated ' + esc(when(a.updatedAt)) + (a.updatedBy ? ' · ' + esc(a.updatedBy) : '') + '</div>' : '')
       + (a.dueTo ? '<div style="color:#b91c1c;font-weight:700">⏰ Bid due changed to ' + esc(a.dueTo) + (a.dueFrom ? ' (was ' + esc(a.dueFrom) + ')' : '') + '</div>' : '')
-      + (a.text ? '<div style="white-space:pre-wrap">' + esc(a.text) + '</div>' : '') + (arr(a.files).length ? '<div class="mut">📎 ' + arr(a.files).map(function(f){ return esc(f.name); }).join(', ') + '</div>' : '') + audienceAcks(a.num) + '</div>'; }).join('')
+      + (a.dueTo && curDue && s(a.dueTo) !== curDue ? '<div data-nowdue="' + a.num + '" style="color:#15803d;font-weight:700">📅 Now due: ' + esc(curDue) + '</div>' : '')
+      + (a.text ? '<div style="white-space:pre-wrap">' + esc(a.text) + '</div>' : '') + (arr(a.files).length ? '<div class="mut">📎 ' + arr(a.files).map(function(f){ return esc(f.name); }).join(', ') + '</div>' : '') + audienceAcks(a.num, a)
+      + (AE && AE.num === a.num ? addEditHtml(a) : '') + addHistHtml(a) + '</div>'; }).join('')
     + '<h4>New addendum — #' + next + '</h4>'
     + '<div class="row"><input type="text" data-k="atitle" placeholder="What it is (Revised roof plan, RFI #3 answer…)" style="flex:1;min-width:220px"><label>Date <input type="date" data-k="adate" value="' + today() + '"></label></div>'
     + '<textarea data-k="atext" placeholder="What changed — the subs read this on the bid site"></textarea>'
@@ -184991,6 +185041,14 @@ function onClick(ev){
     if (!W.confirm(msg)) return;
     return post({ op: 'addendum', title: val('atitle'), date: val('adate'), text: val('atext'), newDue: nd, files: AF, notify: !!val('anotify') }, t, function(r){ AF = []; ['atitle', 'atext', 'adue'].forEach(function(k){ var x = D.querySelector('#gcsys2 [data-k=' + k + ']'); if (x) x.value = ''; }); toast('📎 Addendum #' + r.num + ' posted' + (r.notice && r.notice.status === 'held' ? ' — e-mail held (data-entry mode)' : r.notice && r.notice.status === 'waiting' ? ' — e-mail waits on Approvals' : '')); });
   }
+  if (a === 'aedit') { var an = +t.getAttribute('data-n'), ao = arr(job().addenda).find(function(x){ return Number(x.num) === an; }); if (!ao) return; AE = { num: an, files: arr(ao.files).map(function(f){ return { name: f.name, size: f.size, type: f.type, fileRef: f.fileRef }; }) }; return draw(); }   /* patch ADDEDIT */
+  if (a === 'aecancel') { AE = null; return draw(); }
+  if (a === 'aerm') { if (AE) AE.files.splice(+t.getAttribute('data-i'), 1); return draw(); }
+  if (a === 'aepick') return pickFiles(function(fs){ if (!fs.length || !AE) return; var keep = AE; toast('Uploading ' + fs.length + ' file' + (fs.length === 1 ? '' : 's') + '…');
+    Promise.all(fs.map(function(f){ return putFile(f).then(function(ref){ return { name: f.name, size: f.size, type: f.type || '', fileRef: ref }; }, function(e){ toast(e.message, true); return null; }); })).then(function(l){ keep.files = keep.files.concat(l.filter(Boolean)); draw(); }); }, ACCEPT_ALL);
+  if (a === 'aesave') { if (!AE) return; var en = AE.num, ed = val('aedue' + en);
+    if (!W.confirm('Save addendum #' + en + '?' + (ed ? '\n\nThe bid due date changes to ' + ed + '.' : '') + '\n\nSubs who acknowledged it are asked to acknowledge it again.' + (val('aenotify' + en) ? '\n\nThe e-mail to the subs waits on ✅ Approvals.' : ''))) return;
+    return post({ op: 'addendumedit', num: en, title: val('aetitle' + en), date: val('aedate' + en), text: val('aetext' + en), files: AE.files, newDue: ed, notify: !!val('aenotify' + en) }, t, function(r){ AE = null; toast(r.unchanged ? 'Nothing changed' : '✎ Addendum #' + en + ' updated' + (r.notice && r.notice.status === 'held' ? ' — e-mail held (data-entry mode)' : r.notice && r.notice.status === 'waiting' ? ' — e-mail waits on Approvals' : '')); }); }
   if (a === 'post') {
     var tg = val('utarget') || 'all', k = tg.split(':')[0], v = tg.slice(k.length + 1);
     return post({ op: 'post', body: val('ubody'), email: !!val('uemail'), target: { kind: k, trade: k === 'trade' ? v : '', email: k === 'sub' ? v : '' } }, t, function(r){ var x = D.querySelector('#gcsys2 [data-k=ubody]'); if (x) x.value = ''; toast('📣 Posted to ' + r.n + ' sub' + (r.n === 1 ? '' : 's')); });
@@ -185681,6 +185739,11 @@ function judge(){
   if (age > STALE) return { ok: null, text: pre + '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
   line = 'Last sync: ' + at + ' — OK, ' + (+h.read || 0) + ' project' + (+h.read === 1 ? '' : 's') + ' read, ' + (+h.made || 0) + ' job' + (+h.made === 1 ? '' : 's') + ' made';
   if (h.ccError && +h.ccError.status >= 500) line += ' · CompanyCam had a server error (' + h.ccError.status + ') — retried another way';
+  /* patch CCLINKSTAT: how much is linked, what waits for a person, how many CompanyCam-made jobs are copies (counts only) */
+  if (h.jobsLinked != null) line += ' · ' + (+h.jobsLinked || 0) + ' job' + (+h.jobsLinked === 1 ? '' : 's') + ' linked';
+  if (+h.waitingNew > 0) line += ' · ⚠ ' + (+h.waitingNew) + ' new CompanyCam project' + (+h.waitingNew === 1 ? '' : 's') + ' waiting on 📷 Photos'
+    + (h.newJobsOn === false ? ' ("Make new jobs" is OFF in ⚡ Automations)' : '');
+  if (+h.ccDupes > 0) line += ' · ' + (+h.ccDupes) + ' CompanyCam-made Bidding job' + (+h.ccDupes === 1 ? ' is a copy' : 's are copies') + ' of a project another job already has';
   return { ok: tokenOk ? true : null, text: pre + line + shape };
 }
 /* patch CCBANNER: THE verdict — the 📷 Photos banner and the Photos header pill both read this, so they cannot disagree.
@@ -198160,6 +198223,15 @@ var ITEMS = [
   { id: 'ionwave', g: 'soon', t: 'IonWave (Memphis-Shelby County Schools): free supplier registration', how: 'mscsprocurementservices.ionwave.net → Supplier Registration (free) → contact e-mail leads@grayco-cs.com → commodity codes for construction, roofing, maintenance and repair.' },
   { id: 'squarespace_ai', g: 'soon', t: 'Website: block AI crawlers on Squarespace', how: 'Squarespace → Settings → Crawlers (or Website → SEO) → turn on "Block known AI crawlers" → Save.' },
   { id: 'late_taxes', g: 'now', t: 'Late tax filings: 941, TN SUTA, MS withholding', how: 'With the CPA: file the federal 941, the Tennessee unemployment (SUTA) report and the Mississippi withholding return that are past due, and pay what is owed to stop more penalties.' },
+  /* OWNERLIST4: open items from 11/23 */
+  { id: 'office_filter', g: 'now', t: 'office@ Gmail: send bid e-mails to a label, not the inbox (they are in the CRM already)', how: 'In the office@ mailbox: Gmail search box → ⚙ Show search options → From / Has the words: "Bid Invite" OR Addendum OR "Reminder to Bid" OR "invited you to bid" OR buildingconnected OR planhub OR isqft OR constructconnect OR hotelprojectleads → Create filter → tick "Skip the Inbox" and "Apply the label: Bids (in CRM)" (new label) → Create filter. The CRM still gets them. (The CRM\'s own sign-up / new-bid e-mails to office@ are being turned off — they are in ✅ Approvals and 🔔.)' },
+  { id: 'leads_group', g: 'now', t: 'Make sure leads@ mail reaches the CRM (plan room sign-up confirmations go to the office To-Do from there)', how: 'admin.google.com → Directory → Groups → leads@grayco-cs.com → Members → Add member: leads@in.grayco-cs.com → Save. Then a sign-up confirmation sent to leads@ shows on the office To-Do as "🔑 Account e-mail to leads@" with its link.' },
+  { id: 'ccam_newjobs', g: 'soon', t: 'Decide: CompanyCam "Make new jobs" (off since Nov 3)', how: 'New CompanyCam projects that do not match a CRM job wait on 📷 Photos instead of becoming Bidding jobs (projects at an existing job\'s address still link by themselves). Turn it on in ⚙ Admin → ⚡ Automations → "Make new jobs", or review the waiting list on 📷 Photos. ~165 of the old "bidding" placeholders are duplicates from the September import — see "Decide: clean up the 480 jobs".' },
+  { id: 'dup_jobs', g: 'soon', t: 'Merge duplicate jobs (e.g. Auditorium HVAC Replacement — D742 and V708; Rapid Air ×3 in Subs)', how: 'Jobs: ⚙ Admin tools → 🔗 Merge Duplicate Jobs → keep one. Subs: the 🔗 Same sub? merge on ✅ Approvals or the Subs list.' },
+  { id: 'qa_invoices', g: 'now', t: 'Move Q&A Construction bills #1530 and #1531 to the UT Martin Somerville job', how: '✅ Approvals → each "Sub invoice — Q&A Construction LLC · QuickBooks bill #153x" card → ✎ Edit → pick the job at 214 Lakeview Rd, Somerville → Save. (The matcher is being fixed so an address match wins.)' },
+  { id: 'q_supstmt', g: 'soon', t: 'Answer: supplier statements — put ABC bills on jobs from the statement\'s PO / address? Finance charges as overhead?', how: 'Tell Claude yes / no for each (🧾 Supplier statement on Accounting).' },
+  { id: 'q_adddate', g: 'later', t: 'Answer: should posting an addendum that moves the bid date also post the automatic "Bid due date changed" message?', how: 'Tell Claude yes / no. Today the addendum uses its own "E-mail the subs" box.' },
+  { id: 'push_keys', g: 'soon', t: 'Phone push notifications for PMs / estimators (VAPID keys)', how: 'Ask Claude for the one-line command that makes the VAPID keys, add them in Netlify → Environment variables → Trigger deploy; then each person taps "Turn on notifications" on their phone.' },
   /* OWNERLIST3: HOA outreach (owner 11/23) */
   { id: 'hoa_cai', g: 'soon', t: 'Decide: join CAI Tennessee (HOA managers) as a business partner — about $645/yr', how: 'caionline.org/join → Business Partner → Tennessee chapter. Its directory of ~170 partners has no Memphis-area roofer or GC. Leads → 🏘 HOAs has the entry.' },
   { id: 'hoa_vive', g: 'soon', t: 'Decide: VIVE vendor sign-up for FirstService / Cedar — about $150–199/yr each', how: 'Ask FirstService Residential Tennessee (800-310-0326) for their Tennessee VIVE link; Cedar Management Group\'s link is in Leads → 🏘 HOAs. Have the W-9, COI naming the association and TN license ready.' },
@@ -229232,6 +229304,9 @@ function popHtml(){
   [{ id: 'all', icon: '🏢', short: 'All companies', legal: 'Everything — every company\'s jobs, leads and money', color: '#334155' }].concat(C.list().filter(function(c){ return !mine || mine.indexOf(c.id) > -1; })).forEach(function(c){ var on = f === c.id;
     h += '<button type="button" role="menuitemradio" aria-checked="' + on + '" data-co-f="' + esc(c.id) + '" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;border-left:4px solid ' + esc(c.color) + ';background:' + (on ? '#f1f5f9' : '#fff') + ';padding:9px 12px;margin:2px 0;border-radius:8px;cursor:pointer;font:14px Inter,Arial,sans-serif;color:#0f172a"><span style="font-size:18px">' + esc(c.icon) + '</span><span><b>' + esc(c.short) + '</b>' + (on ? ' ✓' : '') + '<br><span style="font-size:12px;color:#64748b">' + esc(c.legal) + '</span></span></button>'; });
   if (admin()) h += '<button type="button" data-co-set style="width:100%;text-align:left;border:0;border-top:1px solid #e2e8f0;background:#fff;padding:9px 12px;margin-top:4px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">⚙ Company settings — names, EINs, licenses</button>';
+  /* TABSEDIT: the tabs editor and the old ⚙ Settings panel, for everyone (each person's own tabs) */
+  if (W.gcNavSettings && typeof W.gcNavSettings.open === 'function') h += '<button type="button" data-co-tabs style="width:100%;text-align:left;border:0;border-top:1px solid #e2e8f0;background:#fff;padding:9px 12px;margin-top:4px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">🗂 Edit my tabs — show, hide, order</button>';
+  if (W.gcSettings && typeof W.gcSettings.open === 'function') h += '<button type="button" data-co-gear style="width:100%;text-align:left;border:0;background:#fff;padding:9px 12px;cursor:pointer;font:700 13px Inter,Arial,sans-serif;color:#0f172a">⚙ Settings</button>';
   return h;
 }
 function closePop(){ var p = D.getElementById('gc-co-pop'); if (p) p.remove(); }
@@ -229290,12 +229365,14 @@ function openSettings(){
   ov.addEventListener('keydown', function(e){ e.stopPropagation(); });
 }
 D.addEventListener('click', function(e){
-  var t = e.target && e.target.closest ? e.target.closest('[data-co-menu],[data-gc-co-brand],[data-co-f],[data-co-set],[data-co-x],[data-co-save]') : null;
+  var t = e.target && e.target.closest ? e.target.closest('[data-co-menu],[data-gc-co-brand],[data-co-f],[data-co-set],[data-co-tabs],[data-co-gear],[data-co-x],[data-co-save]') : null;
   if (!t) { if (D.getElementById('gc-co-pop') && !(e.target.closest && e.target.closest('#gc-co-pop'))) closePop(); return; }
   if ((t.hasAttribute('data-co-menu') || t.hasAttribute('data-gc-co-brand')) && !C.canSwitch()) { closePop(); return; }   /* patch COLEAK2: locked to their own company */
   if (t.hasAttribute('data-co-menu') || t.hasAttribute('data-gc-co-brand')) { e.preventDefault(); e.stopPropagation(); if (D.getElementById('gc-co-pop')) closePop(); else openPop(t); paint(); return; }
   if (t.hasAttribute('data-co-f')) { e.preventDefault(); e.stopPropagation(); closePop(); C.setFilter(t.getAttribute('data-co-f')); return; }
   if (t.hasAttribute('data-co-set')) { e.preventDefault(); e.stopPropagation(); closePop(); openSettings(); return; }
+  if (t.hasAttribute('data-co-tabs')) { e.preventDefault(); e.stopPropagation(); closePop(); try { W.gcNavSettings.open(); } catch (x) {} return; }   /* TABSEDIT */
+  if (t.hasAttribute('data-co-gear')) { e.preventDefault(); e.stopPropagation(); closePop(); try { W.gcSettings.open(); } catch (x) {} return; }   /* TABSEDIT */
   var ov = D.getElementById('gc-co-modal'); if (!ov) return;
   if (t.hasAttribute('data-co-x') || t === ov) { ov.remove(); return; }
   if (t.hasAttribute('data-co-save')) {
@@ -233317,7 +233394,7 @@ function draw(){
           + '<td class="num">' + money(b.amount) + (b.isLow ? '<span class="lowtag" data-be-low>⬇ Lowest</span>' : '') + readCell(b) + '</td>'
           + (function(){ var P = scopeOf(b), raw = [s(b.scope), s(b.notes)].filter(Boolean).join(' · '); return '<td class="sc" title="' + esc(raw) + '"><div class="scn" data-be-scn="' + P.inc.length + '/' + P.exc.length + '"><span class="i">✅ ' + P.inc.length + ' included</span> · <span class="x">⛔ ' + P.exc.length + ' excluded</span></div>' + (function(){ var hs = scopeHits(b, b.trade); return hs.length ? '<div class="red" data-be-red="' + esc(hs.map(function(h){ return h.label; }).join('|')) + '">🚩 Excludes part of our scope: ' + esc(hs.map(function(h){ return h.label; }).join(', ')) + '</div>' : ''; })() + (raw ? esc(short(raw, 140)) : '<span class="mut">—</span>') + '</td>'; })()
           + '<td>' + (arr(b.files).length ? arr(b.files).map(function(f){ return (f.ref || f.url) ? '<button type="button" class="fl" data-be="file" data-ref="' + esc(f.ref || '') + '" data-url="' + esc(f.url || '') + '" data-name="' + esc(f.name) + '">📄 ' + esc(f.name) + '</button>' : '<span>📄 ' + esc(f.name) + '</span>'; }).join('') : '<span class="mut">—</span>') + '</td>'
-          + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + '</td>'
+          + '<td class="mut">' + src[0] + ' ' + esc(src[1]) + (b.at ? '<br>' + esc(when(b.at)) : '') + (b.late ? '<div data-be-late="' + esc(k) + '" style="color:#b45309;font-weight:800">⏰ Late bid</div>' : '') + '</td>'   /* patch LATEBID */
           + '<td><span class="st ' + b.status + '" data-be-status="' + b.status + '">' + { awarded: '🏆 Awarded', notselected: 'Not selected', pending: 'Pending' }[b.status] + '</span></td>'
           + '<td>' + (ie ? '<span class="ine" title="' + esc(ie.est.name) + '">✓ In estimate</span><div class="mut">' + esc(short(ie.est.name, 40)) + '</div>' : '<span class="mut">—</span>') + '</td>'
           + '<td><div class="acts">' + acts + '</div></td></tr>';
@@ -234976,6 +235053,24 @@ W._gcBidJobGone = function(id){ id = s(id); if (!id) return false;
   var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
   var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });   /* the newest list that knows the job */
   return !!(hit && hit.deleted); };
+/* patch BIDAUTO (owner 11/23: "all these jobs shouldn't be on bid portal only if we put them on there"): is a lead's bid job ON the bid portal?
+   'on' = a person put it there (bid-hub: not a draft, not autoDraft) · 'draft' = a draft, or the old automatic opening that no person or sub
+   touched · 'gone' = archived / deleted · '' = no bid job. Before the list is here only a person's Publish (publishedBy) counts as on; the list
+   is fetched once and the Lead Inbox / Leads pages repaint. Read only. */
+var BA = { asked: 0 };
+function bidJobOf(id){
+  var lists = [{ at: JOBS.at || 0, l: arr(JOBS.list) }]; try { if (W._gcSys && W._gcSys.bp && W._gcSys.bp.jobs) lists.push({ at: (W._gcSys.bp.at && W._gcSys.bp.at()) || 0, l: arr(W._gcSys.bp.jobs()) }); } catch (e) {}
+  var hit = null; lists.sort(function(a, b){ return b.at - a.at; }).some(function(x){ hit = x.l.filter(function(j){ return j && j.id === id; })[0] || null; return !!hit; });
+  return { hit: hit, known: lists.some(function(x){ return x.at > 0; }) };
+}
+W._gcBidPortalOn = function(p){
+  p = p && typeof p === 'object' ? p : null; var id = s(p && p.jobId); if (!id || s(p.state) === 'removed') return '';
+  var r = bidJobOf(id), j = r.hit;
+  if (j) return j.deleted ? 'gone' : (j.draft || j.autoDraft || s(j.visibility) === 'draft') ? 'draft' : 'on';
+  if (!r.known && !JOBS.busy && Date.now() - BA.asked > 60000) { BA.asked = Date.now();
+    jobs(false).then(function(){ try { if (W._gcLeadInbox && W._gcLeadInbox.repaint) W._gcLeadInbox.repaint(); } catch (e) {} try { if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {} }); }
+  return s(p.publishedBy) && /published|public/.test(s(p.state || p.visibility)) ? 'on' : 'draft';
+};
 /* patch LEADBP: 📢 from the Leads list — a row's 📢 button, and "📢 Put selected on bid portal" for selected leads (admins / estimators): each goes
    on as 🔒 private (invited subs only), its sub due date 1 day before our due date; trades / files are added on 📂 Manage afterwards */
 function bulkPost(ids){
@@ -240917,6 +241012,16 @@ function scoreText(t, J, src){
 }
 /* THE MATCHER: input { memo, desc, lines:[{memo,desc,cust,klass}], cust, klass, name, side, num, text } · ctx { jobs | projects, memoMap }
    → { pid, conf, how, why, cands:[{pid, score, why, name}], ambiguous } */
+/* INVJOB: the full street addresses in a text (house # + street + Rd / St / Dr …): a job with ANOTHER street on file is contradicted */
+function streetsIn(t){
+  var w = nk(t).split(' '), out = [];
+  for (var i = 0; i < w.length - 2; i++) {
+    if (!/^\d{1,6}[a-z]?$/.test(w[i]) || /^(19|20)\d\d$/.test(w[i])) continue;
+    var st = [];
+    for (var j = i + 1; j < w.length && j <= i + 4; j++) { if (/^\d/.test(w[j])) break; if (/^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|hwy|highway)$/.test(w[j])) { if (st.length) out.push({ n: w[i].replace(/[a-z]$/, ''), w: st }); break; } if (!SUFX.test(w[j])) st.push(w[j]); }
+  }
+  return out;
+}
 function matchJob(input, ctx){
   input = input || {}; ctx = ctx || {};
   var jobs = ctx.jobs || jobIndex(ctx.projects), byId = {}; jobs.forEach(function(j){ byId[j.id] = j; });
@@ -240933,11 +241038,14 @@ function matchJob(input, ctx){
   if (input.side === 'income') add(input.name, 0.9, 'Name column');
   add(input.text, 0.9, 'attached PDF');
   var num0 = poNorm(input.num);
+  var ijSt = []; srcs.forEach(function(x){ if (x.src !== 'Name column') ijSt = ijSt.concat(streetsIn(x.t)); });   /* INVJOB */
   var sc = jobs.map(function(J){
     var best = { score: 0, how: '', why: '' }, n = 0;
     if (num0 && input.side === 'income' && J.qbn.indexOf(num0) >= 0) best = { score: 98, how: 'qbnum', why: 'QuickBooks invoice #' + input.num + ' is on this job' };
     srcs.forEach(function(x){ var r = scoreText(x.t, J, x.src); if (r.score) { n++; var v = r.score * x.w; if (v > best.score) best = { score: v, how: r.how, why: r.why }; } });
     if (!best.score) return null;
+    /* INVJOB: the memo names a street that is not this job's street (contradicting evidence) → only a suggestion, a person picks */
+    if (ijSt.length && J.addr && best.how !== 'address' && best.how !== 'qbnum' && !ijSt.some(function(a){ return a.n === J.addr.n && (!J.addr.w.length || J.addr.w.some(function(w){ return a.w.some(function(x){ return near(x, w); }); })); })) { best.score -= 40; best.why += ' — but the memo\'s address (' + ijSt[0].n + ' ' + ijSt[0].w.join(' ') + ') is another street'; }
     var v = best.score + (n >= 2 ? 3 : 0) + (J.lost ? -12 : J.done ? -2 : 1);
     return { pid: J.id, score: Math.min(99, Math.round(v)), how: best.how, why: best.why, name: J.name, company: J.company };
   }).filter(Boolean).sort(function(a, b){ return b.score - a.score; });
@@ -251396,6 +251504,14 @@ function scoreJob(inv, p, ctx){
   if (pos.length && explicit.some(function(x){ return pos.indexOf(x) >= 0; })) { sc += 95; strong = strong || 'po'; why.push('PO ' + pos[0] + ' on the invoice'); }
   var ah = addrHit(tkeys, _nk.addr);
   if (ah) { sc += 90; strong = strong || 'address'; why.push('the address ' + ah); }
+  /* INVJOB: the bill names a full street address that this job does not have — another street (contradicting evidence), or none on
+     file (a city only): a bare PO-looking token / the job's name words / the customer are not enough to put it here by itself */
+  var ijVs = ah ? 'same' : streetVs(ctx.streets, p.address || p.jobAddress || p.addr);
+  if (!ah && (ijVs === 'other' || ijVs === 'none')) {
+    var poLab = pos.length && (ctx.labelledPOs || []).some(function(x){ return pos.indexOf(x) >= 0; });
+    if (strong === 'po' && !poLab) { strong = ''; sc -= ijVs === 'other' ? 60 : 25; why.push(ijVs === 'other' ? 'but the bill\'s address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is another street' : 'but the bill\'s street address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is not on this job'); }
+    else if (ijVs === 'other' && strong !== 'po' && strong !== 'qbjob') { sc -= 60; why.push('but the bill\'s address (' + ctx.streets[0].n + ' ' + ctx.streets[0].st + ') is another street'); }
+  }
   var nw = _nk.nw, hits = nw.filter(function(x){ return tw.indexOf(' ' + x + ' ') >= 0; });
   if (hits.length) { var add = Math.min(50, hits.length * 30); sc += add; why.push('the job name ("' + hits.join('", "') + '")'); }
   var ck = custKey(inv.client || inv.customer || inv.sub, amap), pk = _nk.pk, pn = _nk.pn;
@@ -251414,6 +251530,23 @@ function scoreJob(inv, p, ctx){
   if (/^(bidding|lead|estimating|estimate)$/i.test(s(p.status)) && !con) sc -= 10;
   return { p: p, pid: s(p.id), score: sc, strong: strong, why: why };
 }
+/* INVJOB (owner 11/23): the bill's own FULL street address — house # + street + Rd / St / Dr … (not "2 coats", not a ZIP) — and how a job's
+   street compares: 'same', 'other' (the job has another street on file), 'none' (the job has no street: a city only, "Demoville TN") */
+var IJ_SUF = /^(st|street|rd|road|dr|drive|ln|lane|cv|cove|ave|av|avenue|blvd|boulevard|ct|court|cir|circle|pl|place|pkwy|parkway|way|trl|trail|loop|pike|ter|terrace|hwy|highway)$/;
+function streetsStrict(text){
+  var w = words(text).trim().split(' '), out = [];
+  for (var i = 0; i < w.length - 2; i++) {
+    if (!/^\d{1,6}[a-z]?$/.test(w[i]) || /^(19|20)\d\d$/.test(w[i])) continue;
+    var st = '';
+    for (var j = i + 1; j < w.length && j <= i + 4; j++) { var x = w[j]; if (/^\d/.test(x)) break; if (IJ_SUF.test(x)) { if (st && j > i + 1) out.push({ n: w[i].replace(/[a-z]$/, ''), st: st }); break; } if (!st && !STREET_SKIP.test(x) && x.length >= 3) st = x; }
+  }
+  return out;
+}
+function streetVs(billKeys, jobAddress){
+  if (!billKeys || !billKeys.length) return '';
+  var jk = addrKeysIn(s(jobAddress).split(',')[0]).slice(0, 1); if (!jk.length) return 'none';
+  return addrHit(billKeys, jk) ? 'same' : 'other';
+}
 function ctxFor(inv, projects, opts){
   var text = textOf(inv), amap = (opts && opts.amap) || ALIAS;
   /* a PO counts only when the invoice itself carries it: in its text, or typed on a record a person made (not one a job finder copied from the job) */
@@ -251422,7 +251555,10 @@ function ctxFor(inv, projects, opts){
   if (s(inv.po) && !isQB(inv) && !inv.autoLinked && !inv.linkedBy && !inv.autoPO) ex.push(poN(inv.po));
   var qbBilled = null;
   if (opts && opts.invs) { qbBilled = {}; arr(opts.invs).forEach(function(v){ if (v === inv || s(v.id) === s(inv.id) || !isClient(v) || isArchived(v) || !isQB(v) || !s(v.pid) || !placedOK(v)) return; qbBilled[s(v.pid)] = num(qbBilled[s(v.pid)]) + num(v.amt); }); }
-  return { text: text, tw: words(text), tkeys: addrKeysIn(text), amap: amap, nums: qbNums(inv), explicitPOs: ex, qbBilled: qbBilled };
+  /* INVJOB: a PO the bill LABELS ("PO X901", "PO#: X901") or a person typed is strong; a bare "X901" somewhere in a memo is weak */
+  var lab = []; (text.toUpperCase().match(/\bP\.?\s?O\.?\s*(?:#|NO\.?|NUM(?:BER)?)?\s*[:#-]?\s*[A-Z]-?\d{3}\b/g) || []).forEach(function(x){ lab.push(poN(x.replace(/^P\.?\s?O\.?\s*(?:#|NO\.?|NUM(?:BER)?)?\s*[:#-]?\s*/, ''))); });
+  if (s(inv.po) && !isQB(inv) && !inv.autoLinked && !inv.linkedBy && !inv.autoPO) lab.push(poN(inv.po));
+  return { text: text, tw: words(text), tkeys: addrKeysIn(text), amap: amap, nums: qbNums(inv), explicitPOs: ex, labelledPOs: lab, streets: streetsStrict(text), qbBilled: qbBilled };
 }
 /* every job that fits, best first, and how sure the best one is:
    sure   — a strong signal (QuickBooks project / job's QB invoice #, the PO on the invoice, the address) and no other job close → may link by itself
@@ -251658,12 +251794,15 @@ function matchPayable(inv, projects, opts){
   return m;
 }
 
-return { OLDER_BEFORE: OLDER_BEFORE, ALIAS: ALIAS, nk: nk, custKey: custKey, custSame: custSame, aliasMap: aliasMap, isClient: isClient, isArchived: isArchived, isQB: isQB, qbNums: qbNums,
+return { streetsStrict: streetsStrict, streetVs: streetVs, /* INVJOB */ OLDER_BEFORE: OLDER_BEFORE, ALIAS: ALIAS, nk: nk, custKey: custKey, custSame: custSame, aliasMap: aliasMap, isClient: isClient, isArchived: isArchived, isQB: isQB, qbNums: qbNums,
   isPastJob: isPastJob, isOverhead: isOverhead, liveJob: liveJob, addrKeysIn: addrKeysIn, jobAddrKeys: jobAddrKeys, match: match, sureJob: sureJob, scoreJob: scoreJob,
   placedByPerson: placedByPerson, audit: audit, plan: plan, apply: apply, undo: undo, relink: relink, poCell: poCell, openBal: openBal, isOverdue: isOverdue,
   payeeKind: payeeKind, payableKind: payableKind, matchPayable: matchPayable, customerMerges: customerMerges };
 })();
 var D = W.document;
+/* INVJOB: the older finders (the sub-invoice router, FINDJOB) use the same full-street rule */
+W._gcInvJobStreets = function(text){ try { return CORE.streetsStrict(text); } catch (e) { return []; } };
+W._gcInvJobVs = function(keys, jobAddress){ try { return CORE.streetVs(keys, jobAddress); } catch (e) { return ''; } };
 if (!D || !D.createElement) { W._gcInvLink = CORE; return; }
 if (W.__GC_PATCH_INVLINK__) return; W.__GC_PATCH_INVLINK__ = true;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
@@ -254374,10 +254513,14 @@ try { console.log('[GC] 📑 papers: older jobs keep the basics · suggested · 
         no PM 4 hours after it came in            → 'nopm'   (the owners are texted to assign it; the 5 PM default assign follows)
         no PM 24 hours after it came in           → 'nopm24' (the owners again)
         a PM, not contacted 24 h after assignment → 'pm24'   (the PM's reminder)
-        a PM, not contacted 48 h after assignment → 'pm48'   (the owners are told)
+        a PM, not contacted 48 h after assignment → 'pm48'   (the card only: the owners' 48 h text is OFF for good — QUIETSAT, owner 11/22)
       "Contacted" = the stage moved past New Lead, ✅ Contacted (contactedAt), a call / follow-up / comment a person logged, or
       on a Google LSA lead the PM's own 👍 GOOD / 👎 BAD (an owner's GOOD when assigning is not the PM's call).
    3. The card lists the open customer leads past those times from the last CARD_DAYS days.
+   4. patch LEADRISK (owner 11/23, "be able to clear this"): an owner's ✕ Clear on the card (l.lwClear = { at, by, byEmail, sig },
+      every clear kept in l.lwClearLog) takes the lead off the clock for good — the card, the To-Do, the speed-to-lead texts and the
+      PM-reply ladder — UNLESS something new happens on the lead (clearSig changes: a new PM / assignment, the stage or status moved,
+      it came in again, a call / follow-up / comment was logged). The lead itself is never deleted or closed.
    Pure: no I/O, no names, no e-mails. Nothing here contacts anyone.
    ========================================================================== */
 (function(root){
@@ -254496,6 +254639,7 @@ function contacted(l){
 function risk(l, now, o){
   o = o || {};
   if (!l || closed(l) || !isCustomer(l)) return null;
+  if (!o.withCleared && cleared(l)) return null;   /* patch LEADRISK */
   var t = typeof now === 'number' ? now : Date.now(), born = bornAt(l);
   if (!isFinite(born)) return null;
   if (o.maxDays && t - born > o.maxDays * 864e5) return null;
@@ -254511,6 +254655,15 @@ function risk(l, now, o){
   if (b >= PM_H) return { k: 'pm24', h: Math.floor(b), since: from, label: assignee(l) + ' has not contacted them — assigned ' + ago(b) + ' ago' };
   return null;
 }
+/* patch LEADRISK: what "something new on the lead" is — the fingerprint kept with an owner's ✕ Clear (never the clear itself, never
+   updatedAt or the CRM's own activity lines) */
+function clearSig(l){
+  l = l || {}; var ex = obj(l.leadExtra), a = asgAt(l), b = bornAt(l);
+  return [low(assignee(l)), isFinite(a) ? a : '', low(l.stage), low(l.status), low(l.inboxState), isFinite(b) ? b : '', s(l.reopenedAt || ex.reopenedAt), s(l.lastInboundAt || ex.lastInboundAt),
+    arr(l.calls).length, arr(l.followUps).length, arr(l.comments).length, arr(l.contactLog).length, l.archived ? 1 : 0, l.deleted ? 1 : 0].join('|');
+}
+/* an owner cleared it and nothing new happened since */
+function cleared(l){ var c = obj(l && l.lwClear); return !!(s(c.at) && s(c.sig) && c.sig === clearSig(l)); }
 function ago(h){ h = Math.floor(h); return h >= 48 ? Math.floor(h / 24) + ' days' : h + ' h'; }
 /* the CRM leads + the Lead Inbox items not on the CRM list yet → the leads at risk, worst first */
 function atRisk(leads, items, now, o){
@@ -254546,7 +254699,7 @@ function defaultDue(items, crmLeads, now, holdUntil){
 
 var API = { V: 1, NOPM_H: NOPM_H, NOPM2_H: NOPM2_H, PM_H: PM_H, OWNER_H: OWNER_H, CARD_DAYS: CARD_DAYS, LABEL: LABEL,
   kindOf: kindOf, subWhy: subWhy, isCustomer: isCustomer, isBid: isBid, isLsa: isLsa, closed: closed, assignee: assignee, bornAt: bornAt, asgAt: asgAt,
-  contacted: contacted, risk: risk, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
+  contacted: contacted, risk: risk, clearSig: clearSig, cleared: cleared, atRisk: atRisk, defaultDue: defaultDue, ago: ago };
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
 else root._gcLeadWatchCore = API;
 })(typeof window !== 'undefined' ? window : this);
@@ -254579,10 +254732,26 @@ function leads(){ return arr(W._crm && W._crm.leads).filter(function(l){ return 
 var LAST = { at: 0, list: [] };
 function list(){
   var t = now(); if (LAST.at && Math.abs(t - LAST.at) < 3000 && LAST.n === arr(W._crm && W._crm.leads).length) return LAST.list;
-  var L = C.atRisk(leads(), [], t); LAST = { at: t, n: arr(W._crm && W._crm.leads).length, list: L }; return L;
+  var L = C.atRisk(leads(), [], t).filter(function(z){ var id = s(z.l.id); return !LR.done[id] && !(LR.clr[id] && LR.clr[id] === C.clearSig(z.l)); });   /* patch LEADRISK: what was just ✓ / ✕ here, before the synced copy has it */
+  LAST = { at: t, n: arr(W._crm && W._crm.leads).length, list: L }; return L;
 }
 function riskOf(l){ try { return C.risk(l, now(), { maxDays: C.CARD_DAYS }); } catch (e) { return null; } }
 var KC = { nopm: ['👤', '#9a3412', '#ffedd5'], nopm24: ['👤', '#991b1b', '#fee2e2'], pm24: ['⏰', '#92400e', '#fef3c7'], pm48: ['⚠️', '#991b1b', '#fee2e2'] };
+/* patch LEADRISK (owner 11/23, "be able to clear this"): ✓ Contacted (the lead's own ✅ Contacted: contactedAt / contactedBy, stage →
+   Contacted) and ✕ Clear (off the card for good — lwClear { at, by, byEmail, sig } on the lead, every clear kept in lwClearLog; it comes back
+   only when something new happens on the lead: core clearSig). Saved on the lead, so every computer and every owner sees it; the lead is
+   never deleted. "Clear all" asks inline (no pop-up). Owners / admins only (the card is theirs). */
+var LR = { done: {}, clr: {}, ask: 0, last: null };
+var LRB = 'min-height:36px;padding:0 12px;border-radius:9px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;';
+function actsHtml(l){ var id = esc(l.id);
+  return '<button type="button" data-lw-done="' + id + '" title="I reached out to them: marks the lead contacted (the same as ✅ Contacted on the lead)" style="' + LRB + 'border:1px solid #16a34a;background:#f0fdf4;color:#166534">✓ Contacted</button>'
+    + '<button type="button" data-lw-clear="' + id + '" title="Take it off this card for good. It comes back only if something new happens on the lead. The lead itself is kept." style="' + LRB + 'border:1px solid #cbd5e1;background:#fff;color:#475569">✕ Clear</button>'; }
+function clearAllHtml(L){
+  if (LR.ask > Date.now()) return '<span data-lw-confirm="1" style="margin-left:auto;display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;font:600 12.5px Inter,Arial,sans-serif;color:#7f1d1d">Clear all ' + L.length + '?'
+    + '<button type="button" data-lw-clearall="yes" style="' + LRB + 'min-height:32px;border:1px solid #b91c1c;background:#dc2626;color:#fff">Yes, clear all</button>'
+    + '<button type="button" data-lw-clearall="no" style="' + LRB + 'min-height:32px;border:1px solid #cbd5e1;background:#fff;color:#334155">Cancel</button></span>';
+  return '<button type="button" data-lw-clearall="ask" title="Take every lead on this card off it (each comes back only if something new happens on it)" style="' + LRB + 'margin-left:auto;min-height:32px;border:1px solid #fca5a5;background:#fff;color:#991b1b;font-size:12.5px">Clear all</button>';
+}
 function rowHtml(z){
   var l = z.l, r = z.r, c = obj(l.contact), k = KC[r.k] || KC.nopm, ph = tidy(c.phone || l.phone), nm = s(c.name || l.contactName) || s(l.name) || 'Lead';
   var what = r.k === 'nopm' || r.k === 'nopm24' ? 'No PM — came in ' + C.ago(r.h) + ' ago' : 'Not contacted — ' + esc(s(l.pm || l.estimator || l.apm)) + ' has had it ' + C.ago(r.h);
@@ -254590,12 +254759,12 @@ function rowHtml(z){
     + '<span style="flex:1 1 220px;min-width:0"><b>' + esc(nm) + '</b>' + (s(l.name) && s(l.name) !== nm ? ' <span style="color:#475569">· ' + esc(s(l.name).slice(0, 60)) + '</span>' : '')
     + '<span style="display:block;font-size:12.5px;color:#475569">' + esc(C.LABEL[C.kindOf(l)] || 'Lead') + ' · <span style="display:inline-block;border-radius:999px;padding:0 7px;font-weight:800;color:' + k[1] + ';background:' + k[2] + '">' + k[0] + ' ' + what + '</span></span></span>'
     + (ph ? '<a href="tel:' + esc(ph.replace(/\D/g, '')) + '" style="color:#1d4ed8;font-weight:800;text-decoration:none;min-height:36px;display:inline-flex;align-items:center">📞 ' + esc(ph) + '</a>' : '')
-    + '<button type="button" data-lw-open="' + esc(l.id) + '" style="min-height:36px;padding:0 12px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#241968;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Open</button></div>';
+    + '<button type="button" data-lw-open="' + esc(l.id) + '" style="min-height:36px;padding:0 12px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;color:#241968;font:700 13px Inter,Arial,sans-serif;cursor:pointer">Open</button>' + actsHtml(l) + '</div>';
 }
 function cardHtml(L, kind){
   var more = L.length > 8 ? '<div style="font-size:12.5px;color:#7f1d1d;padding-top:6px">+ ' + (L.length - 8) + ' more</div>' : '';
-  return '<div style="font:800 15px Inter,Arial,sans-serif;color:#7f1d1d;display:flex;align-items:center;gap:8px">🚨 Leads at risk <span style="display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:#dc2626;color:#fff;font-size:12px;line-height:20px;text-align:center">' + L.length + '</span></div>'
-    + '<div style="font-size:12.5px;color:#7f1d1d;margin:2px 0 4px">No PM ' + C.NOPM_H + ' h after it came in, or not marked contacted ' + C.PM_H + ' h after it was assigned (the owners are texted at ' + C.OWNER_H + ' h). Every company\'s leads.</div>'
+  return '<div style="font:800 15px Inter,Arial,sans-serif;color:#7f1d1d;display:flex;align-items:center;gap:8px">🚨 Leads at risk <span style="display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:#dc2626;color:#fff;font-size:12px;line-height:20px;text-align:center">' + L.length + '</span>' + clearAllHtml(L) + '</div>'
+    + '<div style="font-size:12.5px;color:#7f1d1d;margin:2px 0 4px">No PM ' + C.NOPM_H + ' h after it came in, or not marked contacted ' + C.PM_H + ' h after it was assigned. Every company\'s leads. ✕ Clear takes one off for good (it comes back if something new happens on it).</div>'
     + L.slice(0, 8).map(rowHtml).join('') + more;
 }
 var BOX = 'margin:0 0 10px;padding:10px 12px;border-radius:12px;border:2px solid #fca5a5;background:#fef2f2;font:14px Inter,Arial,sans-serif;color:#0f172a;box-sizing:border-box;max-width:100%';
@@ -254626,6 +254795,49 @@ D.addEventListener('click', function(e){
   e.preventDefault(); var id = b.getAttribute('data-lw-open');
   try { if (W._setView) W._setView('leads'); } catch (x) {}
   ST.call(W, function(){ try { W._gcLeadsHub.open(id); } catch (x) {} }, 300);
+}, true);
+
+/* patch LEADRISK: the clicks (owners / admins only) */
+function lrRepaint(){ LAST.at = 0; paint(); ST.call(W, function(){ LAST.at = 0; paint(); }, 450); }   /* again once the Leads page has redrawn */
+function lrSave(id, rec){
+  var f = function(x){ x.lwClear = rec; x.lwClearLog = arr(x.lwClearLog).concat([rec]).slice(-30); };
+  try { if (W._gcLeadsHub && typeof W._gcLeadsHub.patchLead === 'function') return Promise.resolve(W._gcLeadsHub.patchLead(id, f)); } catch (e) {}
+  return new Promise(function(res){ try { if (typeof W._setLeads !== 'function') return res(false);
+    W._setLeads(function(list){ return arr(list).map(function(l){ if (!l || s(l.id) !== s(id)) return l; var y = Object.assign({}, l); f(y); y.updatedAt = new Date().toISOString(); return y; }); }); res(true); } catch (e) { res(false); } });
+}
+function lrClear(ids, all){
+  if (!admin()) return Promise.resolve({ cleared: [] });
+  var byId = {}; leads().forEach(function(l){ byId[s(l.id)] = l; });
+  var todo = arr(ids).map(function(id){ return byId[s(id)]; }).filter(Boolean), at = new Date().toISOString(), out = [];
+  todo.forEach(function(l){ LR.clr[s(l.id)] = C.clearSig(l); });
+  lrRepaint();
+  return todo.reduce(function(p, l){ return p.then(function(){
+    var r = riskOf(l), rec = { at: at, by: myName() || myEmail() || 'owner', byEmail: myEmail(), sig: C.clearSig(l), k: r ? r.k : '', all: !!all };
+    return lrSave(l.id, rec).then(function(ok){ if (ok === false) delete LR.clr[s(l.id)]; else out.push(s(l.id)); }, function(){ delete LR.clr[s(l.id)]; });
+  }); }, Promise.resolve()).then(function(){ LR.last = { at: at, all: !!all, cleared: out }; lrRepaint(); return LR.last; });
+}
+function lrDone(id, b){
+  if (!admin()) return Promise.resolve(false);
+  id = s(id); if (b) { b.disabled = true; b.textContent = 'Saving…'; }
+  var H = W._gcLeadsHub, p;
+  try { p = H && typeof H.markContacted === 'function' ? H.markContacted(id) : W._gcSTL && typeof W._gcSTL.mark === 'function' ? W._gcSTL.mark(id) : false; } catch (e) { p = false; }
+  return Promise.resolve(p).then(function(ok){
+    var l = leads().filter(function(x){ return s(x.id) === id; })[0];
+    if (ok || (l && C.contacted(l))) LR.done[id] = 1; else if (b) { b.disabled = false; b.textContent = '✓ Contacted'; }
+    lrRepaint(); return !!ok;
+  }, function(){ if (b) { b.disabled = false; b.textContent = '✓ Contacted'; } return false; });
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-lw-done],[data-lw-clear],[data-lw-clearall]') : null; if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  if (!admin()) return;
+  if (t.hasAttribute('data-lw-done')) { lrDone(t.getAttribute('data-lw-done'), t); return; }
+  if (t.hasAttribute('data-lw-clear')) { lrClear([t.getAttribute('data-lw-clear')], false); return; }
+  var v = t.getAttribute('data-lw-clearall');
+  if (v === 'ask') { LR.ask = Date.now() + 15000; lrRepaint(); ST.call(W, lrRepaint, 15100); return; }
+  LR.ask = 0;
+  if (v === 'yes') { lrClear(list().map(function(z){ return z.l.id; }), true); return; }
+  lrRepaint();
 }, true);
 
 /* ── the company filter never hides a lead at risk ── */
@@ -254894,7 +255106,7 @@ SI.call(W, function(){ try { subSweep(); } catch (e) {} }, 9000);
 
 SI.call(W, paint, 2000);
 ST.call(W, paint, 800);
-W._gcLeadWatch = { core: C, list: list, jobSweep: jobSweep, subSweep: subSweep, subPlan: subPlan, subState: function(){ return SUBQ; }, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
+W._gcLeadWatch = { core: C, list: list, clear: lrClear, contacted: lrDone, clearState: function(){ return { ask: LR.ask > Date.now(), local: Object.keys(LR.clr), done: Object.keys(LR.done), last: LR.last }; },   /* patch LEADRISK */ jobSweep: jobSweep, subSweep: subSweep, subPlan: subPlan, subState: function(){ return SUBQ; }, notCustomer: notCustomer, custName: custName, fakeCleanup: fakeCleanup, fakePlan: fakePlan, fakeState: function(){ return FJ; }, jobs: function(){ return JOBQ; }, goodLead: goodLead, badLead: badLead, risk: riskOf, todoDrop: todoDrop, filterRaw: filterRaw, personMade: personMade, srcDay: srcDay, keep: keep, hidden: function(){ return { n: OLD.n, by: OLD.why, show: OLD.show }; }, showOld: showOld, paint: paint,
   state: function(){ return { atRisk: list().map(function(z){ return { id: z.l.id, k: z.r.k, h: z.r.h, kind: C.kindOf(z.l) }; }), hidden: OLD.n, by: OLD.why, cut: cut(), admin: admin(), office: office() }; } };
 try { console.log('[GC] 🚨 leads at risk + To-Do only from now on (patch LEADWATCH) — _gcLeadWatch'); } catch (e) {}
 })(window);
@@ -258542,4 +258754,443 @@ function addenda(jobId, list){
 W._gcSubflow = { btn: btn, what: what, sheet: sheet, addenda: addenda };
 try { console.log('[GC] ↩ Reply to the sub from the job thread (patch SUBFLOW): _gcSubflow'); } catch (e) {}
 })(window, document);
+</script>
+<script id="gc-patch-newbidjob">
+/* BIDNEW (owner 11/23: "want to be able to enter a project into the portal from here") — "＋ New bid job" on the 🏗 Bid portal screen
+   (📊 Bids & invites, next to Open the bid portal ↗ / ↻ Refresh / the search box / 🔐 Accounts). It opens an INLINE form (no popup, desk
+   and phone): title, site address, sub bid due date + time, the trades we need priced, scope / notes, 🔒 Private or 🌐 Public, an optional
+   link to an existing CRM lead or job (search), and plans (＋ Upload — the CRM's file pipeline window._gcStoreFile, a crm-files reference
+   only — or a Drive / Dropbox link). 📢 Put on bid portal → the SAME server path as "📢 Put on bid portal" on a lead / estimate / job
+   (bid-hub op postjob: a person posted it — postedAt / postedBy — so the "On bid portal" logic counts it), then its 📂 Manage sheet opens
+   so subs can be invited.
+   Who: the same people who post today (window._gcBidPost.canPost): an admin, an estimator; a PM only for a lead / job of their own (they
+   must link it). The server checks the same (posterRole).
+   A lead / job that already has a bid job is never overwritten from here: the form says so and offers 📂 Manage on that job instead.
+   Console: _gcNewBidJob.open()  _gcNewBidJob.state() */
+(function(W, D){
+'use strict';
+if (W.__gcNewBidJobOn) return; W.__gcNewBidJobOn = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC new bid job]', e && e.message || e); } catch (x) {} }
+function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(m, bad); if (W._gcToast) W._gcToast(m); } catch (e) {} }
+function fn(path, body){
+  if (W._gcSys && W._gcSys.fn) return W._gcSys.fn(path, body);
+  return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || ('The server answered ' + r.status)); return j; }); });
+}
+function crm(){ return W._crm || {}; }
+function BPo(){ return W._gcBidPost || null; }
+function leadsAll(){ var out = [], seen = {}; var add = function(l){ if (l && s(l.id) && !seen[s(l.id)]) { seen[s(l.id)] = 1; out.push(l); } };
+  arr(crm().leads).forEach(add); try { arr(W._gcLeadsHubKit && W._gcLeadsHubKit.all && W._gcLeadsHubKit.all()).forEach(add); } catch (e) {} arr(W._gcLeadsList).forEach(add); return out; }
+function projAll(){ return arr(crm().projects).filter(function(p){ return p && s(p.id); }); }
+
+/* ── who: the 📢 Put on bid portal rule ── */
+function canAny(){ var B = BPo(); if (!B || !B.canPost) return false; try { return !!B.canPost({}); } catch (e) { return false; } }
+function canFor(k){ var B = BPo(); if (!B || !B.canPost) return false; try { return !!B.canPost(k.kind === 'pid' ? { pid: k.id } : { leadId: k.id }); } catch (e) { return false; } }
+var MAY = { at: 0, v: false };
+function may(){
+  if (Date.now() - MAY.at < 20000) return MAY.v;
+  var v = canAny();
+  if (!v) v = projAll().some(function(p){ return canFor({ kind: 'pid', id: s(p.id) }); }) || leadsAll().some(function(l){ return canFor({ kind: 'leadId', id: s(l.id) }); });
+  MAY = { at: Date.now(), v: v }; return v;
+}
+
+/* ── the form ── */
+var TRADES0 = ['Demolition', 'Framing', 'Drywall', 'Paint', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Windows & Doors', 'Insulation', 'Ceilings', 'Cabinets', 'Concrete', 'Masonry', 'Electrical', 'Plumbing', 'HVAC', 'Fire protection', 'Landscaping', 'Mitigation', 'Abatement', 'Cleaning'];
+function tradeList(){ var B = BPo(); try { var l = B && B.trades && B.trades(); if (arr(l).length) return l; } catch (e) {} return TRADES0.slice(); }
+var F = { open: false, vis: 'private', trades: {}, link: null, files: [], links: [], busy: false, q: '', existing: null };
+function fresh(){ F = { open: false, vis: 'private', trades: {}, link: null, files: [], links: [], busy: false, q: '', existing: null }; }
+function css(){
+  if (D.getElementById('gcnb-css')) return;
+  var st = D.createElement('style'); st.id = 'gcnb-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '#gcnb{border:2px solid #d4a017;background:#fffdf5;border-radius:14px;padding:14px;margin:4px 0 14px;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1640;box-sizing:border-box;max-width:100%}'
+    + '#gcnb h3{margin:0;font-size:18px}#gcnb .hd{display:flex;justify-content:space-between;gap:8px;align-items:center}#gcnb label.f{display:block;font-weight:700;font-size:13px;margin:12px 0 4px}'
+    + '#gcnb input[type=text],#gcnb input[type=search],#gcnb input[type=url],#gcnb input[type=date],#gcnb input[type=time],#gcnb textarea{width:100%;box-sizing:border-box;border:1px solid #d6d1e6;border-radius:8px;padding:8px 10px;font:inherit;background:#fff;min-height:40px}'
+    + '#gcnb .g2{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}#gcnb .vis{display:flex;gap:8px;flex-wrap:wrap}#gcnb .vis label{flex:1;min-width:200px;border:2px solid #e7e3f2;border-radius:10px;padding:8px 10px;cursor:pointer;background:#fff}#gcnb .vis label.on{border-color:#d4a017;background:#fffbeb}'
+    + '#gcnb .chips{display:flex;flex-wrap:wrap;gap:6px}#gcnb .chip{border:1px solid #d6d1e6;background:#fff;border-radius:999px;padding:6px 11px;cursor:pointer;font:600 12.5px system-ui;min-height:32px}#gcnb .chip.on{background:#241968;color:#fff;border-color:#241968}'
+    + '#gcnb .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}#gcnb .row>input{flex:1;min-width:160px}#gcnb .hits{border:1px solid #eeeaf6;border-radius:10px;background:#fff;margin-top:4px;max-height:240px;overflow:auto}'
+    + '#gcnb .hits button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f4f2fa;background:#fff;padding:8px 10px;cursor:pointer;font:inherit}#gcnb .hits button:hover{background:#f7f5fc}'
+    + '#gcnb .pick{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:8px 10px}#gcnb .warn{background:#fef3c7;border:1px solid #fcd34d;color:#78350f;border-radius:10px;padding:8px 10px;margin-top:6px}'
+    + '#gcnb ul.fl{list-style:none;margin:6px 0 0;padding:0}#gcnb ul.fl li{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px;word-break:break-all}#gcnb .err{color:#b91c1c;font-weight:600;min-height:1em;margin-top:8px}'
+    + '#gcnb .mut{color:#6b6787;font-size:12px}#gcnb .bar2{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#gcnb button.b{min-height:38px}'
+    + '@media(max-width:640px){#gcnb{padding:12px 10px}#gcnb .g2{grid-template-columns:1fr 1fr}#gcnb .g2>div:first-child{grid-column:1/-1}#gcnb .vis label{min-width:0;flex-basis:100%}#gcnb .bar2 button{flex:1 1 auto}}';
+  D.head.appendChild(st);
+}
+function host(){ return D.querySelector('#gc-sys-bp'); }
+function barOf(){ var h = host(); if (!h) return null; var o = h.querySelector('[data-sys="openbids"]'); return o ? o.parentNode : null; }
+function box(){ return D.getElementById('gcnb'); }
+function val(k){ var b = box(), e = b && b.querySelector('[data-nb="' + k + '"]'); return e ? s(e.value) : ''; }
+function setErr(t){ var b = box(), e = b && b.querySelector('[data-nb-err]'); if (e) e.textContent = t || ''; }
+function addrOf(x){ return [s(x.address), s(x.city), s(x.state)].filter(Boolean).join(', '); }
+function labelOf(k){ if (!k) return ''; if (k.kind === 'pid') { var p = projAll().filter(function(x){ return s(x.id) === k.id; })[0]; return p ? '🏗 Job ' + [s(p.autoPO), s(p.name)].filter(Boolean).join(' · ') + (addrOf(p) ? ' — ' + addrOf(p) : '') : '🏗 Job ' + k.id; }
+  var l = leadsAll().filter(function(x){ return s(x.id) === k.id; })[0]; return l ? '◈ Lead ' + s(l.name || l.title) + (addrOf(l) ? ' — ' + addrOf(l) : '') : '◈ Lead ' + k.id; }
+function hits(q){
+  q = low(q); if (q.length < 2) return [];
+  var words = q.split(/\s+/).filter(Boolean), out = [];
+  var test = function(t){ t = low(t); return words.every(function(w){ return t.indexOf(w) > -1; }); };
+  projAll().forEach(function(p){ if (p.deleted || p.archived) return; if (test([p.autoPO, p.name, p.client, p.address, p.city].join(' '))) out.push({ kind: 'pid', id: s(p.id), t: 0 }); });
+  leadsAll().forEach(function(l){ if (l.deleted || l.archived) return; if (test([l.name, l.title, l.company, l.address, l.city].join(' '))) out.push({ kind: 'leadId', id: s(l.id), t: 1 }); });
+  return out.filter(canFor).slice(0, 10);
+}
+function existingFor(k){   /* the bid job already linked to that lead / job (the same rule as 📢 Put on bid portal's postedFor) */
+  var B = BPo(); if (!k || !B || !B.jobs) return Promise.resolve(null);
+  return Promise.resolve(B.jobs(false)).then(function(list){ var l = arr(list).filter(function(j){ return j && ((k.kind === 'pid' && s(j.crmProjectId) === k.id) || (k.kind === 'leadId' && s(j.crmLeadId) === k.id)); });
+    return l.filter(function(j){ return !j.deleted; })[0] || l[0] || null; }, function(){ return null; });
+}
+function draw(){
+  var b = box(); if (!b) return;
+  var tl = tradeList(); Object.keys(F.trades).forEach(function(t){ if (!tl.some(function(x){ return low(x) === low(t); })) tl.push(t); });
+  var lk = F.link, ex = F.existing, pmOnly = !canAny();
+  b.innerHTML = '<div class="hd"><h3>＋ New bid job</h3><button type="button" class="b" data-nb-a="cancel" aria-label="Close">✕</button></div>'
+    + '<div class="mut">Put a job on bids.grayco-cs.com by hand. Subs see the job, the scope and the plans you share — never prices, never a customer\'s details.</div>'
+    + '<label class="f">Who sees it</label><div class="vis">'
+    + '<label class="' + (F.vis === 'private' ? 'on' : '') + '"><input type="radio" name="gcnb-vis" value="private"' + (F.vis === 'private' ? ' checked' : '') + '> <b>🔒 Private</b><div class="mut">Only subs you invite.</div></label>'
+    + '<label class="' + (F.vis === 'public' ? 'on' : '') + '"><input type="radio" name="gcnb-vis" value="public"' + (F.vis === 'public' ? ' checked' : '') + '> <b>🌐 Public</b><div class="mut">Every approved sub can see it and bid. Needs a due date.</div></label></div>'
+    + '<label class="f" for="gcnb-title">Job title</label><input type="text" id="gcnb-title" data-nb="title" maxlength="200" placeholder="e.g. Sample Clinic — exterior paint">'
+    + '<div class="g2"><div><label class="f" for="gcnb-addr">Site address</label><input type="text" id="gcnb-addr" data-nb="address" maxlength="240" placeholder="Street, city, state"></div>'
+    + '<div><label class="f" for="gcnb-due">Bid due <span class="mut">(subs)</span></label><input type="date" id="gcnb-due" data-nb="due"></div>'
+    + '<div><label class="f" for="gcnb-duet">Time</label><input type="time" id="gcnb-duet" data-nb="dueTime"></div></div>'
+    + '<label class="f">Trades we need priced</label><div class="chips" data-nb-trades>' + tl.map(function(t){ return '<button type="button" class="chip' + (F.trades[t] ? ' on' : '') + '" data-nb-a="trade" data-t="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>'
+    + '<div class="row" style="margin-top:6px"><input type="text" data-nb="trade" placeholder="Another trade (e.g. Exterior paint)" maxlength="40" aria-label="Another trade"><button type="button" class="b" data-nb-a="addtrade">＋ Add</button></div>'
+    + '<label class="f" for="gcnb-scope">Scope / notes for bidders</label><textarea id="gcnb-scope" data-nb="scope" rows="4" maxlength="20000" placeholder="e.g. 2,500 SF exterior repaint: wash, scrape, prime bare wood, 2 coats. Walk-through Tue 9 AM."></textarea>'
+    + '<label class="f">Link to a CRM lead or job <span class="mut">(optional' + (pmOnly ? ' — as a PM, pick one of your own' : '') + ')</span></label>'
+    + (lk ? '<div class="pick" data-nb-linked="' + esc(lk.kind + ':' + lk.id) + '"><span>' + esc(labelOf(lk)) + '</span><button type="button" class="b" data-nb-a="unlink">✕ Unlink</button></div>'
+      + (ex ? '<div class="warn" data-nb-existing="' + esc(ex.id) + '">This ' + (lk.kind === 'pid' ? 'job' : 'lead') + ' is already on the bid portal' + (ex.deleted ? ' (🗄 archived)' : '') + ': <b>' + esc(ex.title || 'Bid job') + '</b>. It is not changed from here — <button type="button" class="b" data-nb-a="manage" data-job="' + esc(ex.id) + '">📂 Manage it</button> or unlink to make a separate job.</div>' : '')
+      : '<input type="search" data-nb="q" placeholder="Search leads and jobs — name, PO, address" aria-label="Search CRM leads and jobs" value="' + esc(F.q) + '"><div class="hits" data-nb-hits style="display:none"></div>')
+    + '<label class="f">Plans</label><div class="row"><button type="button" class="b" data-nb-a="upload">＋ Upload plans / files</button><input type="file" data-nb-file multiple accept=".pdf,.png,.jpg,.jpeg,.heic,.heif,.webp,.tif,.tiff,.dwg,.dxf,.zip,.doc,.docx,.xls,.xlsx,application/pdf,image/*" style="display:none"><span class="mut" data-nb-upmsg></span></div>'
+    + '<div class="row" style="margin-top:6px"><input type="url" data-nb="link" placeholder="or a Drive / Dropbox link — https://…" aria-label="Plans link (Drive / Dropbox)"><button type="button" class="b" data-nb-a="addlink">＋ Add link</button></div>'
+    + '<ul class="fl" data-nb-files>' + F.files.map(function(f, i){ return '<li>📄 ' + esc(f.name) + ' <button type="button" class="b" data-nb-a="rmfile" data-i="' + i + '" aria-label="Remove">✕</button></li>'; }).join('')
+      + F.links.map(function(x, i){ return '<li>🔗 ' + esc(x.label) + ' <span class="mut">' + esc(x.url) + '</span> <button type="button" class="b" data-nb-a="rmlink" data-i="' + i + '" aria-label="Remove">✕</button></li>'; }).join('') + '</ul>'
+    + '<div class="err" data-nb-err role="alert"></div>'
+    + '<div class="bar2"><button type="button" class="b pri" data-nb-a="save"' + (ex || F.busy ? ' disabled' : '') + '>📢 Put on bid portal</button><button type="button" class="b" data-nb-a="cancel">Cancel</button></div>';
+}
+function keepVals(){ var b = box(); if (!b) return null; var o = {}; ['title', 'address', 'due', 'dueTime', 'scope', 'link', 'trade'].forEach(function(k){ o[k] = val(k); }); return o; }
+function putVals(o){ var b = box(); if (!b || !o) return; Object.keys(o).forEach(function(k){ var e = b.querySelector('[data-nb="' + k + '"]'); if (e) e.value = o[k]; }); }
+function redraw(){ var v = keepVals(); draw(); putVals(v); }
+function open(){
+  if (!may()) { toast('Only an admin, an estimator, or a job\'s PM puts jobs on the bid portal.', true); return false; }
+  var h = host(), bar = barOf(); if (!h || !bar) return false;
+  css();
+  var b = box(); if (!b) { fresh(); b = D.createElement('div'); b.id = 'gcnb'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('data-gc-noac', '1'); b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'New bid job');
+    b.addEventListener('click', onClick); b.addEventListener('input', onInput); b.addEventListener('change', onChange); bar.parentNode.insertBefore(b, bar.nextSibling); draw(); }
+  F.open = true;
+  try { b.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
+  var t = b.querySelector('[data-nb="title"]'); if (t) try { t.focus({ preventScroll: true }); } catch (e) { t.focus(); }
+  return true;
+}
+function close(){ var b = box(); if (b) b.remove(); fresh(); }
+function showHits(){
+  var b = box(), hb = b && b.querySelector('[data-nb-hits]'); if (!hb) return;
+  var l = hits(F.q); if (!l.length) { hb.style.display = F.q.length >= 2 ? '' : 'none'; hb.innerHTML = F.q.length >= 2 ? '<div class="mut" style="padding:8px 10px">No lead or job matches' + (canAny() ? '' : ' (only your own leads / jobs)') + '.</div>' : ''; return; }
+  hb.style.display = ''; hb.innerHTML = l.map(function(k){ return '<button type="button" data-nb-a="link" data-k="' + esc(k.kind) + '" data-id="' + esc(k.id) + '">' + esc(labelOf(k)) + '</button>'; }).join('');
+}
+function pickLink(k){
+  var v = keepVals(); F.link = k; F.existing = null; F.q = '';
+  var x = k.kind === 'pid' ? projAll().filter(function(p){ return s(p.id) === k.id; })[0] : leadsAll().filter(function(l){ return s(l.id) === k.id; })[0];
+  /* a box is filled from the lead / job only when it is empty or still holds what an earlier link filled in — never over what a person typed */
+  var A0 = F.auto || {}, A1 = {}, fill = function(k, nv){ if (!v || !nv) return; if (!v[k] || (A0[k] && v[k] === A0[k])) { v[k] = nv; A1[k] = nv; } };
+  if (x) { fill('title', s(x.name || x.title)); fill('address', addrOf(x)); fill('scope', s(x.scope || x.desc || x.description).slice(0, 8000)); }
+  F.auto = A1;
+  draw(); putVals(v);
+  existingFor(k).then(function(j){ if (F.link !== k) return; F.existing = j; if (j) redraw(); });
+}
+var UP_RE = /\.(pdf|png|jpe?g|heic|heif|webp|tiff?|dwg|dxf|zip|docx?|xlsx?)$/i;
+function upMsg(t){ var b = box(), x = b && b.querySelector('[data-nb-upmsg]'); if (x) x.textContent = t; }
+function upload(list){
+  var files = Array.prototype.slice.call(list || []); if (!files.length) return Promise.resolve(0);
+  if (typeof W._gcStoreFile !== 'function') { upMsg('File storage is not ready on this device — add a Drive / Dropbox link instead.'); return Promise.resolve(0); }
+  var n = 0, left = []; upMsg('⏳ Uploading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…');
+  return files.reduce(function(p, f){ return p.then(function(){
+    if (!UP_RE.test(s(f.name)) && !/^image\//.test(s(f.type))) { left.push(f.name + ' (not a plan / file type)'); return; }
+    if (f.size > 50 * 1048576) { left.push(f.name + ' (over 50 MB — add a link)'); return; }
+    return W._gcStoreFile(f, { kind: 'doc', pid: F.link ? F.link.id : 'bid-portal', name: f.name }).then(function(meta){
+      if (!meta || !/^sb:crm-files\//.test(s(meta.ref))) { left.push(f.name); return; }
+      if (!F.files.some(function(x){ return x.ref === meta.ref; })) F.files.push({ ref: meta.ref, name: s(f.name) || 'File', type: s(f.type), size: Number(f.size) || 0, category: /addend/i.test(f.name) ? 'Addenda' : /\bspec/i.test(f.name) ? 'Specs' : /scope/i.test(f.name) ? 'Scope' : 'Plans' });
+      n++;
+    }, function(e){ left.push(f.name + ' (' + s(e && e.message) + ')'); });
+  }); }, Promise.resolve()).then(function(){ redraw(); upMsg((n ? '✓ ' + n + ' file' + (n === 1 ? '' : 's') + ' ready to share' : '') + (left.length ? (n ? ' · ' : '') + 'left out: ' + left.slice(0, 3).join(', ') : '')); return n; });
+}
+function addLink(){
+  var u = val('link'); if (!u) return;
+  if (!/^https?:\/\/\S+$/i.test(u)) { setErr('Paste a full link (https://…).'); return; }
+  var lb = /dropbox\./i.test(u) ? 'Plans — Dropbox' : /drive\.google\.|docs\.google\./i.test(u) ? 'Plans — Drive' : 'Plans';
+  if (!F.links.some(function(x){ return x.url === u; })) F.links.push({ url: u, label: lb });
+  var v = keepVals(); v.link = ''; draw(); putVals(v); setErr('');
+}
+function save(){
+  var b = box(); if (!b || F.busy) return;
+  if (val('link')) { addLink(); if (val('link')) return; }
+  var trades = Object.keys(F.trades).filter(function(t){ return F.trades[t]; });
+  var title = val('title'), due = val('due');
+  if (F.existing) { setErr('This lead / job is already on the bid portal — 📂 Manage it, or unlink it.'); return; }
+  if (!title) { setErr('Give the job a title.'); return; }
+  if (!trades.length) { setErr('Pick at least one trade we need priced.'); return; }
+  if (F.vis === 'public' && !due) { setErr('A public job needs a bid due date (or post it 🔒 private).'); return; }
+  if (!canAny() && !(F.link && canFor(F.link))) { setErr('As a PM, link it to one of your own leads or jobs first.'); return; }
+  var lk = F.link, p = lk && lk.kind === 'pid' ? projAll().filter(function(x){ return s(x.id) === lk.id; })[0] : null, l = lk && lk.kind === 'leadId' ? leadsAll().filter(function(x){ return s(x.id) === lk.id; })[0] : null;
+  var pmN = s(p && p.pm) || s(l && (l.pm || l.estimator)), pmU = arr(crm().users).filter(function(u){ return u && pmN && low(u.name) === low(pmN); })[0];
+  var body = { op: 'postjob', jobId: '', pid: p ? s(p.id) : '', leadId: l ? s(l.id) : '', estId: '', title: title, address: val('address'), visibility: F.vis, trades: trades, due: due, dueTime: val('dueTime'),
+    scope: val('scope'), specs: '', projectName: p ? [s(p.autoPO), s(p.name)].filter(Boolean).join(' · ') : '', po: s(p && p.autoPO), pmName: pmN, pmEmail: low(pmU && pmU.email) || low(p && p.pmEmail),
+    files: F.files.map(function(f){ return { ref: f.ref, name: f.name, type: f.type, size: f.size, category: f.category }; }), links: F.links.slice(), source: 'new bid job' };
+  var go = b.querySelector('[data-nb-a="save"]'); F.busy = true; setErr(''); if (go) { go.disabled = true; go.textContent = 'Posting…'; }
+  return fn('bid-hub', body).then(function(r){
+    F.busy = false;
+    if (!r || !r.jobId) throw new Error((r && r.error) || 'The bid portal did not answer with the new job.');
+    try { if (p && W._gcBidEst && W._gcBidEst.link) W._gcBidEst.link(r.jobId, s(p.id)); } catch (e) { warn(e); }
+    close();
+    toast('📢 On the bid portal — ' + (r.visibility === 'public' ? '🌐 public' : '🔒 private') + (r.files ? ' · ' + r.files + ' file(s) shared' : '') + (arr(r.notCopied).length ? ' · not copied: ' + r.notCopied.map(function(x){ return x.name; }).join(', ') : '') + ' — invite subs in 📂 Manage');
+    try { var B = BPo(); if (B && B.jobs) B.jobs(true); } catch (e) {}
+    try { if (W._gcSys && W._gcSys.bp) { W._gcSys.bp.load(true); if (W._gcSys.bp.freshFrame) W._gcSys.bp.freshFrame(); } } catch (e) {}
+    try { if (W._gcSys2 && W._gcSys2.open) W._gcSys2.open(r.jobId, 'details'); } catch (e) { warn(e); }
+    return r;
+  }).catch(function(e){ F.busy = false; var g = box() && box().querySelector('[data-nb-a="save"]'); if (g) { g.disabled = !!F.existing; g.textContent = '📢 Put on bid portal'; }
+    setErr(F.files.length && /\b50[234]\b|failed to fetch|timed? ?out|network/i.test(s(e && e.message)) ? 'The plan files took too long to copy (' + s(e && e.message) + '). The job is probably already on the bid portal — ↻ Refresh before trying again; add big plans as a Drive / Dropbox link.' : s(e && e.message) || 'Not posted.'); });
+}
+function onInput(ev){ var t = ev.target; if (t && t.getAttribute('data-nb') === 'q') { F.q = s(t.value); showHits(); } }
+function onChange(ev){
+  var t = ev.target; if (!t) return;
+  if (t.name === 'gcnb-vis') { F.vis = t.value === 'public' ? 'public' : 'private'; var b = box(); if (b) b.querySelectorAll('.vis label').forEach(function(x){ var r = x.querySelector('input'); x.classList.toggle('on', !!(r && r.checked)); }); }
+  if (t.hasAttribute('data-nb-file')) { var l = t.files; upload(l).then(function(){ try { t.value = ''; } catch (e) {} }); }
+}
+function onClick(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-nb-a]') : null; if (!t) return;
+  var a = t.getAttribute('data-nb-a'); ev.preventDefault(); ev.stopPropagation();
+  if (a === 'cancel') return close();
+  if (a === 'trade') { var k = t.getAttribute('data-t'); F.trades[k] = !F.trades[k]; t.classList.toggle('on', !!F.trades[k]); return; }
+  if (a === 'addtrade') { var v = val('trade'); if (!v) return; F.trades[v] = 1; var o = keepVals(); o.trade = ''; draw(); putVals(o); return; }
+  if (a === 'link') return pickLink({ kind: t.getAttribute('data-k') === 'pid' ? 'pid' : 'leadId', id: t.getAttribute('data-id') });
+  if (a === 'unlink') { var u0 = keepVals(), A2 = F.auto || {}; Object.keys(A2).forEach(function(k){ if (u0 && u0[k] === A2[k]) u0[k] = ''; }); F.link = null; F.existing = null; F.auto = {}; draw(); putVals(u0); return; }
+  if (a === 'manage') { var jid = t.getAttribute('data-job'); try { if (W._gcSys2 && W._gcSys2.open) return W._gcSys2.open(jid, 'details'); } catch (e) { warn(e); } return toast('The bid job manager is still loading — try again.', true); }
+  if (a === 'upload') { var fi = box() && box().querySelector('[data-nb-file]'); if (fi) fi.click(); return; }
+  if (a === 'addlink') return addLink();
+  if (a === 'rmfile') { F.files.splice(+t.getAttribute('data-i'), 1); return redraw(); }
+  if (a === 'rmlink') { F.links.splice(+t.getAttribute('data-i'), 1); return redraw(); }
+  if (a === 'save') return save();
+}
+/* the button, in the screen's top bar (the bar is redrawn with the screen; this puts it back) */
+function paint(){
+  try {
+    var bar = barOf(), old = bar && bar.querySelector('[data-nb-open]');
+    if (!bar) return;
+    if (!may()) { if (old) old.remove(); return; }
+    if (old) return;
+    css();
+    var b = D.createElement('button'); b.type = 'button'; b.className = 'b pri'; b.setAttribute('data-nb-open', '1'); b.textContent = '＋ New bid job'; b.title = 'Put a new job on the bid portal by hand — title, address, due date, trades, scope, plans';
+    b.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); open(); });
+    var ob = bar.querySelector('[data-sys="openbids"]'); bar.insertBefore(b, ob ? ob : bar.firstChild);
+  } catch (e) { warn(e); }
+}
+RI.call(W, function(){ if (!D.hidden) paint(); }, 1200); later(paint, 600);
+W._gcNewBidJob = { open: open, close: close, paint: paint, may: function(){ MAY.at = 0; return may(); }, hits: hits, save: save, upload: upload,
+  state: function(){ return { open: !!box(), vis: F.vis, trades: Object.keys(F.trades).filter(function(t){ return F.trades[t]; }), link: F.link, existing: F.existing ? F.existing.id : null, files: F.files.length, links: F.links.slice(), busy: F.busy }; } };
+try { console.log('[GC] ＋ New bid job on the 🏗 Bid portal screen — _gcNewBidJob.state()'); } catch (e) {}
+})(window, document);
+</script>
+<script id="gc-patch-portalsignup">
+/* patch PORTALSIGNUP */
+/* __GC_PATCH_PORTALSIGNUP__ (patch PORTALSIGNUP, owner 11/23: "also be able to tell customers to sign up on portal.grayco-cs.com and their
+   name will match to what we already have in our CRM system for their job address etc and that's a way they can sign up or we send them a
+   link too, let them choose customer, subcontractor, supplier and other as choices"). The CRM's side (server: netlify/functions/portal-access.js
+   s-su-* + _lib/portalsignup.js):
+   1. 🔗 Portal sign-up link on the job's 🏠 Portal card (desk and Field): a signed link for THIS job (expires in 30 days) — 📋 Copy · ✉️ E-mail
+      it · 💬 Text it (the person's own mail / text app; nothing is sent by itself). A customer who signs up through it, confirms their e-mail
+      and whose name matches the job's customer is let in to this job; otherwise it is a ✅ Approvals card. The strip also lists this job's
+      portal sign-ups (waiting / let in / removed) with 🗄 Remove access (office / admin; archived — who and when are kept).
+   2. ✅ Approvals card "<name> asks for portal access to <job> (<address>) — matched by name + address" (kind portal_signup): the evidence
+      (what they typed, the job, what matched) and ✅ Approve — let them in · ↪ Not this job (office / admin: pick another job, or ✖ Deny).
+      Who may decide is the approval list's own rule (the job's PM, the office, an admin) — checked on the server.
+   No pop-ups: everything opens inline on the card. Console: _gcPortalSignup.state(). */
+(function(){
+'use strict';
+var W = window, D = document; if (W.__gcPortalSignupUi) return; W.__gcPortalSignupUi = 1;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var FN = '/.netlify/functions/portal-access';
+var JOB = {}, OPEN = {}, NOTE = {}, CARD = {}, PICK = {}, ARM = {};
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[PORTALSIGNUP]', e && e.message || e); } catch (x) {} }
+function token(){
+  var A = W.__GC_AUTH__;
+  if (!A || typeof A.fresh !== 'function') return Promise.reject(new Error('Sign in to the CRM first.'));
+  return Promise.resolve(A.fresh()).then(function(x){ if (!x || !x.access_token) throw new Error('Sign in to the CRM first.'); return x.access_token; });
+}
+function api(body){
+  return token().then(function(t){ return W.fetch(FN, { method: 'POST', cache: 'no-store', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: 'The server answered ' + r.status + '.' }; } if (!j.ok && !j.error) j.error = 'The server answered ' + r.status + '.'; return j; }); }, function(e){ return { ok: false, error: e.message }; });
+}
+function copy(text){
+  try { if (navigator.clipboard && W.isSecureContext) return navigator.clipboard.writeText(text).then(function(){ return true; }, function(){ return fb(); }); } catch (e) {}
+  return Promise.resolve(fb());
+  function fb(){ try { var ta = D.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;top:-100px;opacity:0'; D.body.appendChild(ta); ta.select(); var ok = D.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; } }
+}
+function css(){
+  if (D.getElementById('gcps-css')) return;
+  var st = D.createElement('style'); st.id = 'gcps-css';
+  st.textContent = '._ap2Card[data-id^="appr_psu_"] ._ap2Yes,._ap2Card[data-id^="appr_psu_"] ._ap2No,._ap2Card[data-id^="appr_psu_"] ._ap2Prev,'
+    + '._apCard[data-id^="appr_psu_"] ._apApprove,._apCard[data-id^="appr_psu_"] ._apEditBtn,._apCard[data-id^="appr_psu_"] ._apRejBtn,'
+    + '.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|approve"],.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|deny"],.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|edit"],.apx-row[data-k^="ap2:appr_psu_"] [data-apx-act$="|sendedit"]{display:none!important}'
+    + '.gcps-strip{margin-top:8px;border-top:1px dashed #E2DCCD;padding-top:8px;font:14px Inter,-apple-system,Arial,sans-serif;color:#14202E;text-align:left}'
+    + '.gcps-strip button,.gcps-card button{min-height:44px;border-radius:10px;font:700 14px Inter,-apple-system,Arial,sans-serif;cursor:pointer;padding:6px 12px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F}'
+    + '.gcps-strip a.gcps-a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:10px;font:700 14px Inter,-apple-system,Arial,sans-serif;padding:6px 12px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F;text-decoration:none;box-sizing:border-box}'
+    + '.gcps-bs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}.gcps-bs>*{flex:1 1 130px}'
+    + '.gcps-url{width:100%;box-sizing:border-box;min-height:40px;border:1px solid #C9C2B2;border-radius:8px;padding:6px 8px;font:13px ui-monospace,Menlo,monospace;color:#14202E;background:#FAF8F3;margin-top:8px}'
+    + '.gcps-m{font-size:12.5px;color:#55626F;margin-top:6px;line-height:1.4}.gcps-n{margin-top:6px;font-weight:700;color:#0f766e}.gcps-n.bad{color:#b91c1c}'
+    + '.gcps-row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;border-top:1px solid #EFEAE0;padding:6px 0}.gcps-row>div{min-width:0;flex:1 1 200px;overflow-wrap:anywhere}'
+    + '.gcps-card{margin-top:8px;border-top:1px dashed #cbd5e1;padding-top:8px;font:14px Inter,-apple-system,Arial,sans-serif;color:#0f172a;text-align:left;cursor:default}'
+    + '.gcps-card dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;margin:0 0 8px}.gcps-card dt{color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding-top:2px}.gcps-card dd{margin:0;overflow-wrap:anywhere}'
+    + '.gcps-card .ok{background:#16a34a;color:#fff;border-color:#16a34a}.gcps-card .no{color:#b91c1c;border-color:#b91c1c}'
+    + '.gcps-pick{display:flex;flex-direction:column;gap:6px;margin-top:8px}.gcps-pick input{min-height:44px;border:1px solid #cbd5e1;border-radius:10px;padding:6px 10px;font:15px Arial;box-sizing:border-box;width:100%}'
+    + '.gcps-res{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto}.gcps-res button{text-align:left;font-weight:600}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return p && p.id && !/lost|dead|cancel/.test(low(p.status)); }); }
+function poL(v){ v = s(v); return !v ? '' : /^po\b/i.test(v) ? v : 'PO ' + v; }
+function when(iso){ var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+/* ══ 1. the job's 🏠 Portal card: 🔗 Portal sign-up link ══ */
+var ST_LABEL = { unconfirmed: '✉️ confirming their e-mail', confirmed: 'confirmed', approval: '⏳ waiting on ✅ Approvals', granted: '🟢 let in', in: '🟢 signed in (e-mail on the job)', denied: '⛔ not approved', removed: '🗄 access removed', todo: '📝 office To-Do' };
+function stripHtml(pid){
+  var j = JOB[pid], h = '<button type="button" data-gcps="link" aria-expanded="' + (OPEN[pid] ? 'true' : 'false') + '">🔗 Portal sign-up link</button>';
+  if (!OPEN[pid]) return h;
+  if (!j) return h + '<div class="gcps-m">Making the link…</div>';
+  if (j.error) return h + '<div class="gcps-n bad">⚠ ' + esc(j.error) + '</div>';
+  var mail = 'mailto:' + encodeURIComponent(j.email || '').replace(/%40/g, '@') + '?subject=' + encodeURIComponent('Sign up for your GrayCo Portal') + '&body=' + encodeURIComponent(j.message);
+  var sms = 'sms:' + s(j.phone).replace(/[^0-9+]/g, '') + '?&body=' + encodeURIComponent(j.message);
+  h += '<input class="gcps-url" data-gcps-url readonly value="' + esc(j.url) + '" aria-label="Portal sign-up link">'
+    + '<div class="gcps-bs"><button type="button" data-gcps="copy">📋 Copy link</button><a class="gcps-a" data-gcps="mail" href="' + esc(mail) + '">✉️ E-mail it</a><a class="gcps-a" data-gcps="sms" href="' + esc(sms) + '">💬 Text it</a></div>'
+    + '<div class="gcps-m">For this job only · works until ' + esc(when(j.expires)) + '. They confirm their e-mail; if their name matches this job\'s customer they are let in, otherwise it comes to ✅ Approvals. Nothing is sent unless you send it.'
+    + (j.linkOn ? '' : ' <b>The job\'s portal link is off</b> — turn it on so they can get in.') + '</div>';
+  var L = arr(j.signups);
+  if (L.length) {
+    h += '<div style="margin-top:8px;font-weight:800;font-size:12px;color:#8A5A00">PORTAL SIGN-UPS FOR THIS JOB</div>';
+    L.forEach(function(x){
+      h += '<div class="gcps-row" data-gcps-su="' + esc(x.id) + '"><div><b>' + esc(x.name) + '</b> <span class="gcps-m">' + esc([x.email, x.phone].filter(Boolean).join(' · ')) + '</span><div class="gcps-m">' + esc(ST_LABEL[x.status] || x.status) + (x.by ? ' · by ' + esc(x.by) : '') + (x.removedBy ? ' · removed by ' + esc(x.removedBy) : '') + (x.at ? ' · ' + esc(when(x.at)) : '') + '</div></div>'
+        + (x.status === 'granted' && j.canRemove ? '<button type="button" data-gcps="remove" data-id="' + esc(x.id) + '">' + (ARM['rm' + x.id] ? 'Tap again to remove' : '🗄 Remove access') + '</button>' : '') + '</div>';
+    });
+  }
+  if (NOTE[pid]) h += '<div class="gcps-n' + (/^⚠/.test(NOTE[pid]) ? ' bad' : '') + '">' + esc(NOTE[pid]) + '</div>';
+  return h;
+}
+function paintStrip(el, pid){ var st = el.querySelector(':scope > .gcps-strip'); if (!st) return; var sig = JSON.stringify([OPEN[pid], JOB[pid], NOTE[pid], ARM]); if (st.__sig === sig) return; st.__sig = sig; st.innerHTML = stripHtml(pid); }
+function loadJob(pid){ JOB[pid] = null; repaint(pid); api({ action: 's-su-link', projectId: pid }).then(function(j){ JOB[pid] = j.ok ? j : { error: j.error }; repaint(pid); }); }
+function repaint(pid){ D.querySelectorAll('.gcq-card[data-pid]').forEach(function(el){ if (el.getAttribute('data-pid') === String(pid)) paintStrip(el, pid); }); }
+function decorateJobs(){
+  D.querySelectorAll('.gcq-card[data-pid]').forEach(function(el){
+    var pid = el.getAttribute('data-pid'); if (!pid) return;
+    var st = el.querySelector(':scope > .gcps-strip');
+    if (!st) { css(); st = D.createElement('div'); st.className = 'gcps-strip'; st.setAttribute('data-gcps-pid', pid); el.appendChild(st); wireStrip(st); }
+    paintStrip(el, pid);
+  });
+}
+function wireStrip(st){
+  st.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-gcps]'); if (!b) return;
+    var pid = st.getAttribute('data-gcps-pid'), a = b.getAttribute('data-gcps');
+    e.stopPropagation();
+    if (a === 'link') { OPEN[pid] = !OPEN[pid]; NOTE[pid] = ''; if (OPEN[pid]) loadJob(pid); else repaint(pid); return; }
+    if (a === 'copy' && JOB[pid] && JOB[pid].url) { copy(JOB[pid].url).then(function(ok){ NOTE[pid] = ok ? '✓ Link copied — paste it in a text or e-mail.' : '⚠ Could not copy — select the link above.'; repaint(pid); }); return; }
+    if (a === 'mail' && JOB[pid] && !JOB[pid].email) { NOTE[pid] = 'No customer e-mail on the job — type their address in your mail app.'; repaint(pid); return; }
+    if (a === 'sms' && JOB[pid] && !JOB[pid].phone) { NOTE[pid] = 'No customer phone on the job — type their number in your text app.'; repaint(pid); return; }
+    if (a === 'remove') {
+      var id = b.getAttribute('data-id');
+      if (!ARM['rm' + id]) { ARM['rm' + id] = 1; repaint(pid); ST.call(W, function(){ delete ARM['rm' + id]; repaint(pid); }, 6000); return; }
+      delete ARM['rm' + id]; NOTE[pid] = 'Removing…'; repaint(pid);
+      api({ action: 's-su-remove', id: id }).then(function(j){ NOTE[pid] = j.ok ? '🗄 Access removed (kept on record).' : '⚠ ' + j.error; api({ action: 's-su-link', projectId: pid }).then(function(x){ if (x.ok) JOB[pid] = x; repaint(pid); }); });
+    }
+  });
+}
+
+/* ══ 2. the ✅ Approvals card ══ */
+var HOW = { name: 'Name', address: 'Address', po: 'PO / job #', email: 'E-mail', phone: 'Phone' };
+function hosts(){
+  var out = [];
+  D.querySelectorAll('._ap2Card[data-id^="appr_psu_"],._apCard[data-id^="appr_psu_"]').forEach(function(el){ out.push({ el: el, aq: el.getAttribute('data-id') }); });
+  D.querySelectorAll('.apx-row[data-k^="ap2:appr_psu_"]').forEach(function(el){ out.push({ el: el, aq: el.getAttribute('data-k').slice(4) }); });
+  return out;
+}
+function loadCard(aq, force){
+  if (CARD[aq] && (CARD[aq].busy || (!force && Date.now() - CARD[aq].at < 60e3))) return;
+  CARD[aq] = { busy: 1, at: Date.now() };
+  api({ action: 's-su-get', id: aq }).then(function(j){ CARD[aq] = { at: Date.now(), d: j.ok ? j : null, err: j.ok ? '' : j.error }; decorateCards(); });
+}
+function cardHtml(aq){
+  var c = CARD[aq], d = c && c.d;
+  if (!c || c.busy) return '<div class="gcps-m">Loading the sign-up…</div>';
+  if (!d) return '<div class="gcps-n bad">⚠ ' + esc(c.err || 'Could not load the sign-up.') + '</div>';
+  var u = d.signup, j = d.job || {}, h = '<dl>';
+  var row = function(k, v){ if (s(v)) h += '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>'; };
+  row('They typed', [u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', [u.address, u.zip].filter(Boolean).join(' '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · '));
+  row('Job', [poL(j.po), j.name, j.address, j.client ? 'customer: ' + j.client : ''].filter(Boolean).join(' · '));
+  arr(d.evidence).forEach(function(w){ row('✓ ' + (HOW[w.k] || w.k), '"' + w.typed + '" = "' + w.crm + '"' + (w.note ? ' (' + w.note + ')' : '')); });
+  if (u.link && u.link.pid) row('Link', 'came through GrayCo\'s 🔗 sign-up link for this job');
+  if (u.link && u.link.bad) row('Link', 'a ' + u.link.bad + ' sign-up link (ignored)');
+  h += '</dl>';
+  if (u.status !== 'approval') { h += '<div class="gcps-n">' + esc(ST_LABEL[u.status] || u.status) + '</div>'; return h + (NOTE[aq] ? '<div class="gcps-n">' + esc(NOTE[aq]) + '</div>' : ''); }
+  h += '<div class="gcps-bs"><button type="button" class="ok" data-gcps-c="approve">✅ Approve — let them in</button><button type="button" data-gcps-c="other" aria-expanded="' + (PICK[aq] ? 'true' : 'false') + '">↪ Not this job</button></div>'
+    + '<div class="gcps-m">Approve adds their e-mail and mobile as an extra portal contact on this job (nothing on the job or the customer record is changed) and e-mails them that they are connected.</div>';
+  if (PICK[aq]) {
+    var qv = s(PICK[aq].q), res = [];
+    if (qv.length >= 2) { var ql = low(qv); res = projects().filter(function(p){ return String(p.id) !== String(j.id) && low([p.name, p.address, p.client, p.autoPO, p.po].join(' ')).indexOf(ql) > -1; }).slice(0, 12); }
+    h += '<div class="gcps-pick">' + (d.canMove ? '<input type="search" data-gcps-q placeholder="Find the right job: name, address, customer or PO" value="' + esc(qv) + '">'
+      + '<div class="gcps-res">' + res.map(function(p){ return '<button type="button" data-gcps-c="move" data-pid="' + esc(p.id) + '">' + esc([poL(p.autoPO || p.po), p.name, p.address, p.client].filter(Boolean).join(' · ')) + '</button>'; }).join('') + (qv.length >= 2 && !res.length ? '<div class="gcps-m">No job matches “' + esc(qv) + '”.</div>' : '') + '</div>'
+      : '<div class="gcps-m">The office or an admin picks another job.</div>')
+      + '<button type="button" class="no" data-gcps-c="deny">' + (ARM['dn' + aq] ? 'Tap again to deny (no access)' : '✖ Deny — no access') + '</button></div>';
+  }
+  if (NOTE[aq]) h += '<div class="gcps-n' + (/^⚠/.test(NOTE[aq]) ? ' bad' : '') + '">' + esc(NOTE[aq]) + '</div>';
+  return h;
+}
+function decorateCards(){
+  try {
+    var hs = hosts(); if (!hs.length) return; css();
+    hs.forEach(function(x){
+      var blk = x.el.querySelector(':scope > .gcps-card');
+      loadCard(x.aq);
+      var sig = JSON.stringify([CARD[x.aq] && CARD[x.aq].at, CARD[x.aq] && CARD[x.aq].busy, PICK[x.aq], NOTE[x.aq], ARM['dn' + x.aq]]);
+      if (blk && blk.__sig === sig) return;
+      var focused = blk && D.activeElement && blk.contains(D.activeElement) && D.activeElement.hasAttribute('data-gcps-q');
+      if (!blk) { blk = D.createElement('div'); blk.className = 'gcps-card'; blk.setAttribute('data-gcps-aq', x.aq); x.el.appendChild(blk); wireCard(blk, x.aq); }
+      blk.innerHTML = cardHtml(x.aq); blk.__sig = sig;
+      if (focused) { var qi = blk.querySelector('[data-gcps-q]'); if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) {} } }
+    });
+  } catch (e) { warn(e); }
+}
+function after(aq, j, okMsg){
+  NOTE[aq] = j.ok ? (j.scheduled ? '⏰ Approved — it goes at 7:00 AM (customers get nothing 7 PM–7 AM).' : okMsg) : '⚠ ' + (j.error || 'Try again.');
+  PICK[aq] = j.ok ? null : PICK[aq];
+  loadCard(aq, true);
+  try { if (W._gcApprovalsRefresh) ST.call(W, function(){ Promise.resolve(W._gcApprovalsRefresh()).then(decorateCards, function(){}); }, 400); } catch (e) {}
+}
+function wireCard(blk, aq){
+  blk.addEventListener('click', function(e){
+    e.stopPropagation();   /* the card around it opens its preview on a tap — not for these */
+    var b = e.target.closest && e.target.closest('[data-gcps-c]'); if (!b) return;
+    var a = b.getAttribute('data-gcps-c');
+    if (a === 'approve') { NOTE[aq] = 'Approving…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'approve' }).then(function(j){ after(aq, j, '✅ Approved — they can sign in now; their "you are connected" e-mail went out.'); }); }
+    if (a === 'other') { PICK[aq] = PICK[aq] ? null : { q: '' }; NOTE[aq] = ''; return decorateCards(); }
+    if (a === 'move') { NOTE[aq] = 'Linking to that job…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'move', pid: b.getAttribute('data-pid') }).then(function(j){ after(aq, j, '✅ Linked to the job you picked — they can sign in now.'); }); }
+    if (a === 'deny') {
+      if (!ARM['dn' + aq]) { ARM['dn' + aq] = 1; decorateCards(); ST.call(W, function(){ delete ARM['dn' + aq]; decorateCards(); }, 6000); return; }
+      delete ARM['dn' + aq]; NOTE[aq] = 'Recording…'; decorateCards();
+      return api({ action: 's-su-decide', id: aq, op: 'deny' }).then(function(j){ after(aq, j, '✖ Denied — no access; nothing was sent to them.'); });
+    }
+  });
+  blk.addEventListener('input', function(e){ if (e.target && e.target.hasAttribute('data-gcps-q')) { PICK[aq] = { q: e.target.value }; decorateCards(); } });
+  blk.addEventListener('keydown', function(e){ e.stopPropagation(); });
+}
+
+function tick(){ try { decorateJobs(); } catch (e) { warn(e); } decorateCards(); }
+var q = false;
+try { new MutationObserver(function(){ if (q) return; q = true; Promise.resolve().then(function(){ q = false; tick(); }); }).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }
+tick();
+W._gcPortalSignup = { tick: tick, state: function(){ return { jobs: Object.keys(JOB).length, cards: Object.keys(CARD).length, open: OPEN }; } };
+try { console.log('[GC] 🔗 Portal sign-up link + the sign-up ✅ Approvals card (patch PORTALSIGNUP) — _gcPortalSignup'); } catch (e) {}
+})();
 </script>

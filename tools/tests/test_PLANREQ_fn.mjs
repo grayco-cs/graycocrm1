@@ -120,7 +120,7 @@ await t('only approved subs, only jobs open to them for bids; "Other" needs a no
   await no(() => ask(SUB2, 'j_lead', ['other'], ''), /Write what you need/);
   await no(() => HUBX.requestPlans({ isAdmin: true, email: 'wjohnson@grayco-cs.com', profile: {} }, { jobId: 'j_noplans' }, {}), /for subcontractors/);
 });
-await t('who hears: the CRM lead\'s PM + estimator; no one set → the poster; nobody at all → the Senior Estimator, else office@', async () => {
+await t('who hears: the CRM lead\'s PM + estimator; no one set → the poster; nobody at all → the Senior Estimator, else the office (To-Do, no e-mail)', async () => {
   MAIL.length = 0;
   await ask(SUB, 'j_lead', ['specs'], ''); eq(MAIL[0].to.slice().sort(), ['gestimator@grayco-cs.com', 'lleadpm@grayco-cs.com'], 'lead');
   eq(kvList('gc_job_messages').find(x => x.planReqId === 'j_lead__u_sam').pid, 'L1', 'the lead\'s thread');
@@ -129,7 +129,8 @@ await t('who hears: the CRM lead\'s PM + estimator; no one set → the poster; n
   await ask(SUB, 'j_nobody', ['plans'], ''); eq(MAIL[2].to, ['gestimator@grayco-cs.com'], 'the Senior Estimator (the one person with the Estimator role)');
   eq(kvList('gc_job_messages').find(x => x.planReqId === 'j_nobody__u_sam').pid, 'bidjob:j_nobody', 'no CRM job / lead → the bid job\'s own thread');
   STAFF = STAFF.filter(x => !/estimat/.test(x.profile || '')); KV.users = KV.users.filter(u => u.role !== 'Estimator');
-  await ask(SUB2, 'j_nobody', ['plans'], ''); eq(MAIL[3].to, ['office@grayco-cs.com'], 'no estimator at all → office@');
+  await ask(SUB2, 'j_nobody', ['plans'], ''); eq(MAIL.length, 3, 'no estimator at all → the office: its To-Do + 🔔 post, no e-mail (patch OFFICEMAIL)');
+  yes((kvList('gc_office_tasks') || []).some(x => x.planReqId === 'j_nobody__u_otto' && (x.assignees || []).indexOf('office@grayco-cs.com') > -1), 'the office To-Do: ' + JSON.stringify((kvList('gc_office_tasks') || []).map(x => [x.planReqId, x.assignees])));
   STAFF.push({ email: 'gestimator@grayco-cs.com', name: 'Gus Estimator', role: 'staff', profile: 'estimator', active: true }); KV.users.push({ id: 'U_est', name: 'Gus Estimator', email: 'gestimator@grayco-cs.com', role: 'Estimator', active: true });
 });
 await t('⏸ data-entry mode: the request e-mail to staff still goes (staff only)', async () => {

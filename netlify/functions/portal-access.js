@@ -398,7 +398,7 @@ exports._papers = { bidPapersToCrm: function(){ return bidPapersToCrm.apply(null
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 } };   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 }, signup: { req: 6, bad: 10 }, suconf: { req: 20, bad: 10 } };   /* signup / suconf: the public sign-up and its confirm (patch PORTALSIGNUP) */   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -431,9 +431,10 @@ const MAIL = {
 };
 function mailHtml(head, body, big, button){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
-    '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
-    '<div style="font-size:18px;font-weight:bold">' + esc(head) + '</div></div>' +
+    /* patch MAILHEAD (owner 11/23: "more white and navy and look better, not faded"): white header + the full-colour logo + a navy bar with the title */
+    '<div style="background:#ffffff;padding:16px 20px 12px;border-radius:12px 12px 0 0;text-align:center;border:1px solid #E2DCCD;border-bottom:0">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/grayco-logo-wide.jpg') + '" alt="GrayCo Construction Services" width="200" style="display:block;margin:0 auto;border:0;max-width:200px;height:auto"></div>' +
+    '<div style="background:#0F1D2F;color:#ffffff;padding:12px 20px;text-align:center;font-size:18px;font-weight:bold">' + esc(head) + '</div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px;line-height:1.5">' + esc(body) + '</p>' +
     (big ? '<p style="font-size:32px;font-weight:bold;letter-spacing:6px;text-align:center;margin:18px 0">' + esc(big) + '</p>' : '') +
@@ -611,12 +612,15 @@ async function customerMatch(data, id, noTeam){
     const phones = [p.clientPhone, p.phone, c.phone].map(phone10).filter(Boolean);
     if ((id.kind === 'email' && emails.indexOf(id.value) > -1) || (id.kind === 'phone' && phones.indexOf(id.value) > -1)) pids.push(s(p.id));
   });
+  let suOnly = null;   /* patch PORTALSIGNUP: + the one job a portal sign-up was let into (staff link + name, or ✅ Approvals) */
+  if (!noTeam) { try { const g = await SUL().grantPids(suDeps(), id), had = pids.length; g.pids.forEach(function(x){ if (pids.indexOf(x) < 0 && liveProjects(data).some(function(p){ return s(p.id) === x; })) pids.push(x); }); if (!had && pids.length) suOnly = g; } catch (e) {} }
   if (!pids.length) return noTeam ? null : teamCustMatch(data, id);   /* patch PORTALTEAM: a household / company member */
   const live = await dbGet('gc_portal', 'select=token,project_id&revoked=eq.false&project_id=' + inq(pids));
   if (!live.length) return null;
   if (!noTeam && await teamPrimaryOff(id, function(m){ return /^cu:/.test(s(m.company)); })) return teamCustMatch(data, id);   /* patch PORTALTEAM: the account holder was taken off the team */
   const p0 = arr(data.projects).find(function(p){ return s(p.id) === s(live[0].project_id); }) || {};
   const c0 = custs.find(function(x){ return low(x.name || x.company) === low(p0.client); }) || {};
+  if (suOnly) return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: id.kind === 'email' ? id.value : suOnly.email, lang: 'en', member: { signup: true } };   /* patch PORTALSIGNUP: codes go to THEIR e-mail; their own password */
   return { kind: 'customer', links: live.map(function(x){ return x.token; }), pids: live.map(function(x){ return s(x.project_id); }), name: s(p0.client), email: low(p0.clientEmail || p0.email || c0.email), lang: 'en' };
 }
 async function partnerMatch(data, id){
@@ -855,6 +859,7 @@ async function customerPassword(event, body){
   if (!keys.some(function(k){ return hmac(k) === (rows[0] || {}).ident; })) {   /* patch PORTALTEAM: a team member's own e-mail / mobile */
     const tm = await teamMemberBySession(sess, 'customer');
     keys.length = 0; if (tm) TEAM().identOfMember(tm).forEach(function(k){ keys.push(k); });
+    else { try { (await SUL().grantKeysForIdent(suDeps(), (rows[0] || {}).ident)).forEach(function(k){ keys.push(k); }); } catch (e) {} }   /* patch PORTALSIGNUP: a sign-up's own e-mail / mobile */
   }
   if (!keys.some(function(k){ return hmac(k) === (rows[0] || {}).ident; })) throw Fail(400, 'Sign in with your e-mail (or mobile number) and password first.');
   const now = new Date().toISOString(), hash = pwHash(pw);
@@ -1605,6 +1610,7 @@ async function partnerAction(action, body, ctx){
   if (action === 'p-bids') return bidsAccept(sub, body);
   if (action === 'p-bidjobs') return pBidJobs(sub);               /* patch SUBBIDS: 📋 Jobs to bid — the bid site's open jobs this sub may bid on + their own bid */
   if (action === 'p-bid-save') return pBidSave(sub, body);
+  if (action === 'p-bid-intent' || action === 'p-bid-view' || action === 'p-bid-note-read') return pBidIntent(sub, action, body);   /* patch BIDREMIND2: ✋ I'm bidding / 🚫 Not bidding, opened, 🔔 read */
   if (action === 'p-bid-ask') return pBidAsk(sub, body);
   if (action === 'p-receipt') return pReceipt(ctx, body);         /* patch POGUARD: 🧾 Send a receipt / expense — with its PO (or "I don't know" → the No-PO alert) */
   if (action === 'p-receipt-po') return pReceiptPo(ctx, body);   /* patch POGUARD: ✏️ Add / fix the PO on their own receipt until it is approved */
@@ -1835,20 +1841,22 @@ async function pBidJobs(sub){
   if (ids.length) { try { (await HUB().listRows([HUB().eq('collection', 'planreqs'), HUB().eq('user_id', s(c.profile.id))])).forEach(function(r){ reqs[s(r.job_id)] = HUB().subReqView(r.data); }); } catch (e) {} }
   const views = {}; ids.forEach(function(id){ views[id] = HUB().subJobView(sc.jobs[id].data || {}, trades); if (arr(views[id].tradeScopes).some(function(x){ return arr(x.files).length; })) signQ.push(views[id].tradeScopes); if (arr(views[id].addenda).length) signQ.push(views[id].addenda); });   /* patch SUBFLOW: + the published addenda's files */
   if (signQ.length) { try { await HUB().signAll(signQ); } catch (e) {} }   /* patch PLANREQ-C: their trades' scope files, as 8-hour links */
+  let bst = { notes: [], intents: {} }; try { bst = await require('./_lib/bidintent.js').stateOf(c.profile.id, ids); } catch (e) {}   /* patch BIDREMIND2 */
   const jobs = ids.map(function(id){
     const j = views[id], b = mine[id] || null, open = !!sc.biddable[id];
-    return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), tradesSought: clip(tradesOf(j.tradesSought), 300),
+    return { id: s(id), title: clip(j.title, 200) || 'Bid job', address: clip(j.address, 240), bidDueDate: ymd(j.bidDueDate), bidDueTime: /^\d{2}:\d{2}$/.test(s(j.bidDueTime)) ? s(j.bidDueTime) : '', tradesSought: clip(tradesOf(j.tradesSought), 300),
       tradeScopes: arr(j.tradeScopes).slice(0, 10).map(function(x){ return { trade: clip(x.trade, 80), scope: clip(x.scope, 6000), files: arr(x.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Scope', type: clip(f.type, 80), url: f.dataUrl } : null; }).filter(Boolean) }; }).filter(function(x){ return x.scope || x.files.length; }),   /* patch PLANREQ-C: + the trade's scope files (signed) */
       scope: clip(j.scope, 8000), specifications: clip(j.specifications, 8000), notes: clip(j.notes, 4000),
       plansLinks: linkList(j.plansLinks), plans: plans[id] || [], invited: invited.has(id), canBid: open, myBid: myBidOut(b),
       details: detailsOut(j), biddingClosed: !!j.biddingClosed,   /* patch PLANREQ-E: what GrayCo filled in on 📂 Manage → 📝 Details (never internal notes / the RSVP list) */
       questions: (qs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), request: reqs[id] || null,
-      addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30),
+      addenda: arr(j.addenda).filter(function(a){ return a && a.publishedAt; }).sort(function(a, b){ return (Number(b.num) || 0) - (Number(a.num) || 0); }).slice(0, 30).map(function(a){ return { num: Number(a.num) || 0, title: clip(a.title, 200), date: ymd(a.date), text: clip(a.text, 8000), dueTo: clip(a.dueTo, 30), updatedAt: clip(a.updatedAt, 40),   /* patch ADDEDIT: "Updated <date>" */
         files: arr(a.files).slice(0, 20).map(function(f){ return /^https:\/\//.test(s(f.dataUrl)) ? { name: clip(f.name, 160) || 'Addendum', url: f.dataUrl } : null; }).filter(Boolean) }; }),   /* patch SUBFLOW: 📎 Addenda (as on the bid site) */
-      messages: (msgs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), pastDue: !!j.pastDue || (!open && !j.biddingClosed && !!HUB().dueOver(sc.jobs[id].data || {})) };   /* patch SUBFLOW */
+      intent: s(bst.intents[s(id)]), reminder: bst.notes.filter(function(n){ return n.jobId === s(id) && !n.readAt; })[0] || null,   /* patch BIDREMIND2: ✋ / 🚫 and the 🔔 bid-due reminder */
+      messages: (msgs[id] || []).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); }).slice(-40), pastDue: !!HUB().dueOver(sc.jobs[id].data || {}), lateBid: open && !!(sc.late && sc.late[id]) };   /* patch SUBFLOW · LATEBID: past due and still on their list → a ⏰ late bid */
   });
   jobs.sort(function(a, b){ return (b.canBid ? 1 : 0) - (a.canBid ? 1 : 0) || (b.invited ? 1 : 0) - (a.invited ? 1 : 0) || (a.bidDueDate || '9').localeCompare(b.bidDueDate || '9'); });
-  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email), trades: (Array.isArray(c.profile.trades) ? c.profile.trades : []).map(function(x){ return clip(x, 60); }).slice(0, 20) } };   /* patch PLANREQ: the request form shows who it is from; PLANREQ-T: their trades ("Your trade") */
+  return { ok: true, linked: true, approved: true, url: bidsBase(), docs: docs, jobs: jobs.slice(0, 60), reminders: bst.notes.filter(function(n){ return !n.readAt && ids.indexOf(n.jobId) > -1; }).slice(0, 10), me: { company: clip(c.profile.company, 160), name: clip(c.profile.name, 120), phone: clip(c.profile.phone, 40), email: low(c.profile.email), trades: (Array.isArray(c.profile.trades) ? c.profile.trades : []).map(function(x){ return clip(x, 60); }).slice(0, 20) } };   /* patch PLANREQ: the request form shows who it is from; PLANREQ-T: their trades ("Your trade") */
 }
 function detailsOut(j){
   const r = j.requirements || {}, w = j.siteWalk || {}, c = j.contacts || {};
@@ -1922,6 +1930,18 @@ async function bidReadAfterSave(row, uploadIds, sub){
   d.read = read;
   await HUB().upsertRows([HUB().rowFor('bids', d)], 'portal-read');
   return Object.assign({}, row, { data: d });
+}
+/* patch BIDREMIND2: the sub portal's ✋ I'm bidding / 🚫 Not bidding, "opened this job" (for the bid-due reminders) and 🔔 dismiss —
+   the bid site's own rows (_lib/bidintent.js), as the linked bid-site account */
+async function pBidIntent(sub, action, body){
+  const BI = require('./_lib/bidintent.js');
+  const c = await bidCtx(sub);
+  if (!c.linked) throw Fail(403, 'Join GrayCo bids first (📋 Jobs to bid on Home).');
+  if (!c.approved) throw Fail(403, 'Your company is waiting for GrayCo to approve it for bids.');
+  if (action === 'p-bid-note-read') return BI.markRead(c.profile.id, body.ids);
+  const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
+  if (action === 'p-bid-view') return BI.logView(c.who, c.sc, jobId, 'portal');
+  try { return await BI.setIntent(c.who, c.sc, jobId, body.intent, 'portal'); } catch (e) { throw Fail(e.status || 500, e.message); }
 }
 async function pBidSave(sub, body){
   const jobId = bidJobId(body.jobId); if (!jobId) throw Fail(400, 'Pick a job.');
@@ -2043,6 +2063,7 @@ function cleanScope(sc){
     notes: clip(d.notes, 4000), start: ymd(d.start), end: ymd(d.end), files: files(d.files), photos: files(d.photos), source: clip(d.source, 40), scId: clip(d.scId, 80) };
 }
 async function staffAction(action, body, who){
+  if (/^s-su-/.test(action)) return SUL().staff(action, body, who, suDeps());   /* patch PORTALSIGNUP: 🔗 Portal sign-up link · the ✅ Approvals card */
   const data = await crmData(true);
   const me = staffName(data, who);
   if (action === 's-sync') {
@@ -2367,6 +2388,14 @@ async function cTeam(event, action, body, pids){
   return teamAct({ keys: keys, primary: primary, me: me, canManage: com ? !!me.actor : me.meId === 'primary', kind: 'customer', household: !com, companyName: s(c0.company || c0.name || p0.client), es: low(body.lang) === 'es', crmSubId: '' }, action, body);
 }
 /* ═══ end patch PORTALTEAM (server) ═══ */
+/* ═══ patch PORTALSIGNUP — the public sign-up's helpers (the rules: _lib/portalsignup.js) ═══ */
+function SUL(){ return require('./_lib/portalsignup.js'); }
+function suDeps(){
+  return { core: function(){ return require('./portal.js')._core; }, crmData: crmData, liveProjects: liveProjects, customerMatch: customerMatch, sessionCreate: sessionCreate,
+    hmac: hmac, sendMail: sendMail, mailHtml: mailHtml, portalBase: portalBase, isAdmin: isAdmin,
+    revokeIdents: async function(ids){ ids = ids.filter(Boolean); if (ids.length) await dbPatch('gc_portal_session', 'revoked=eq.false&kind=eq.customer&ident=' + inq(ids), { revoked: true }); } };
+}
+/* ═══ end patch PORTALSIGNUP ═══ */
 /* ── the door ──────────────────────────────────────────────────────────────── */
 async function notActive(headers, t0){
   const wait = MIN_FAIL_MS + Math.floor(Math.random() * 60) - (Date.now() - t0);
@@ -2400,6 +2429,14 @@ exports.handler = async function (event) {
       if (limited(ip, 'pub')) return reply(429, { ok: false, error: 'Too many tries. Wait a few minutes.' });
       const r = await customerPassword(event, body); if (!r) return notActive(headers, t0);
       return reply(200, r);
+    }
+    if (action === 'su-start') {   /* patch PORTALSIGNUP: the public sign-up (Customer / Other) — always the same answer */
+      if (limited(ip, 'signup')) { await sleep(MIN_FAIL_MS); return reply(429, { ok: false, error: 'Too many sign-ups from here. Wait a few minutes and try again.' }); }
+      const r = await SUL().start(body, ip, suDeps()); await padTo(t0); return reply(200, r);
+    }
+    if (action === 'su-confirm') {   /* patch PORTALSIGNUP: the confirm link's button */
+      if (limited(ip, 'suconf')) return reply(429, { ok: false, error: 'Too many tries. Wait a few minutes.' });
+      try { return reply(200, await SUL().confirm(body, ip, suDeps())); } catch (e) { noteBad(ip, 'suconf'); throw e; }
     }
     if (action === 'signin-start') {
       if (limited(ip, 'signin')) return reply(429, { ok: false, error: 'Too many tries. Wait a few minutes.' });
@@ -2469,6 +2506,7 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
 exports._portalpol = { CMN: CMN, questionsFor: questionsFor, custMsgNotify: custMsgNotify };   /* patch PORTALPOL: tests */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut, bidHasPdf: bidHasPdf, readAfterSave: function(){ return bidReadAfterSave.apply(null, arguments); } };   /* patch BIDSCOPE: tests */
+exports._signup = { onApproved: function(item, now){ return SUL().onApproved(item, now, suDeps()); }, onRejected: function(item, me){ return SUL().onRejected(item, me, suDeps()); } };   /* patch PORTALSIGNUP: portal.js (✅ Approvals) */
 exports._match = { crmSubOf: crmSubOf, subResolve: subResolve, partnerMatch: partnerMatch, customerMatch: customerMatch };   /* patch SUBSYNC: tests */
 /* patch SUBACCT: Admin → 🔐 Sub portal accounts (netlify/functions/sub-accounts.js) uses the same links, matcher and records */
 exports._acct = { crmData: function(f){ return crmData(f); }, crmSubs: crmSubs, subById: subById, crmSubOf: crmSubOf, bidSubId: bidSubId, linkFor: linkFor,

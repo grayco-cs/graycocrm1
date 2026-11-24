@@ -78,6 +78,9 @@ const CLOSED = ['closed', 'won', 'lost'];
    visibility "private", draft:true). A draft is for GrayCo staff only — never shown to a sub, invited or not,
    until an admin publishes it (CRM Lead Inbox "Publish to bid portal", or the same button on the job here). */
 function isDraft(j){ return !!j && (j.draft === true || low(j.status) === 'draft'); }
+/* patch BIDAUTO: a job the old automatic way opened (autoPrivate / openedBy 'auto') that no person put on the bid portal reads as a draft for
+   every sub — unless the sub was invited to it or already bid / quoted on it (a sub who touched it keeps it) */
+function autoOpened(j){ try { return require('./_lib/bid-portal.js').autoOpened(j); } catch (e) { return false; } }
 /* patch SYS2: deleted from the CRM's 🏗 Bid portal tab (a soft delete, restorable for 30 days) — no sub sees it any more */
 function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedAt); }
 /* patch SYS2: what a sub sees of a bid job — trade scopes of their own trades only (all of them when they gave no trade),
@@ -92,7 +95,7 @@ function subJobView(j, trades){
   if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
   if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope', 'files']); })   /* patch PLANREQ-C: + the trade's scope files */
     .filter(function(ts){ return s(ts.scope) || (Array.isArray(ts.files) && ts.files.length); });   /* patch QAA: a trade with no scope written yet is not an empty box on the sub's page (the trades are listed under "We are bidding") */
-  if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
+  if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt', 'updatedAt']); });   /* patch ADDEDIT: + updatedAt ("Updated <date>"; never its history) */
   /* patch BIDVIS (owner 11/19: "just the plans, addendums and scopes"): no invitation to bid / solicitation / bid form, no bid board's page,
      unless an admin ticked "Visible to subs" (_lib/subvis.js); the Lead Inbox's source link and its notes lines with those links go too */
   const V = SV(), hidLinks = arr(v.plansLinks).filter(function(l){ return !V.visible(l, 'link'); });
@@ -279,6 +282,7 @@ function rowFor(collection, rec){
   else if (collection === 'questions') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
   else if (collection === 'acks' || collection === 'mquotes') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }   /* patch SUPPLIER: + mquotes */
   else if (collection === 'planreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.email); }   /* patch PLANREQ */
+  else if (collection === 'intents' || collection === 'duenotes') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.userEmail || rec.email); }   /* patch BIDREMIND2 */
   else if (collection === 'matreqs') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); r.email = low(rec.userEmail); }   /* patch BIDSITE3: a sub's "Request more materials" */
   return r;
 }
@@ -458,18 +462,44 @@ async function subScope(who){
   ]);
   const invited = new Set(invites.map(function(r){ return r.job_id; }));
   const bidOn = new Set(myBids.map(function(r){ return r.job_id; }));
-  const visible = {}, biddable = {};
+  const visible = {}, biddable = {}, late = {}, lateCand = [];
   if (who.approved) {
     jobs.forEach(function(r){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;   /* patch SYS2: a deleted bid job is gone for every sub, even one who bid on it */
+      if (autoOpened(j) && !invited.has(r.id) && !bidOn.has(r.id)) return;   /* patch BIDAUTO */
       const canSee = ((j.visibility || 'public') === 'public' && tradeFit(j, who.profile)) || invited.has(r.id);   /* patch TRADEVIS */
-      const open = CLOSED.indexOf(low(j.status)) < 0;
+      const open = CLOSED.indexOf(low(j.status)) < 0, past = dueOver(j);
+      /* patch LATEBID: past the due date → only a sub who had it on their list sees it (decided below, one read for all of them) */
+      if (past && !bidOn.has(r.id) && !invited.has(r.id)) { if (canSee && open) lateCand.push(r); return; }
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
-      if (canSee && open && !j.biddingClosed && !dueOver(j)) biddable[r.id] = true;   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids · patch SUBFLOW: past the due date too */
+      if (canSee && open && !j.biddingClosed) { biddable[r.id] = true; if (past) late[r.id] = true; }   /* patch PLANREQ-E: ⏸ Close bidding — still visible, no new bids · patch LATEBID: past due → a ⏰ late bid */
     });
+    if (lateCand.length) {
+      const on = await onTheirList(me, lateCand);
+      lateCand.forEach(function(r){ if (!on.has(r.id)) return; visible[r.id] = r; if (!(r.data || {}).biddingClosed) { biddable[r.id] = true; late[r.id] = true; } });
+    }
   }
-  return { me: me, jobs: visible, biddable: biddable, invites: invites, myBids: myBids };
+  return { me: me, jobs: visible, biddable: biddable, late: late, invites: invites, myBids: myBids };
+}
+/* patch LATEBID (owner 11/23: "when jobs are past due they come off our bid list, subs can still send us a bid if they have it on their bid
+   list in their portal from invite or they put it on their list to keep up with then they can send a late bid in but if they missed it
+   completely it should never show to them"): a past-due job is on a sub's list when they were invited or bid on it (checked by the caller),
+   tapped ✋ I'm bidding, asked for plans / info (📩), or opened it / downloaded a plan BEFORE the due date (activity 'view' / 'download' rows:
+   the server stamps their time, the browser never sends it). Never anyone else's rows. */
+async function onTheirList(me, rows){
+  const ids = rows.map(function(r){ return r.id; }), due = {}, out = new Set();
+  rows.forEach(function(r){ due[r.id] = dueAt(r.data || {}); });
+  const [ints, reqs, acts] = await Promise.all([
+    listRows([eq('collection', 'intents'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }),
+    listRows([eq('collection', 'planreqs'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }),
+    listRows([eq('collection', 'activity'), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; })
+  ]);
+  ints.forEach(function(r){ const d = r.data || {}; if (d.intent === 'yes' && s(d.userId) === me) out.add(s(r.job_id || d.jobId)); });
+  reqs.forEach(function(r){ const d = r.data || {}; if (s(d.userId) === me) out.add(s(r.job_id || d.jobId)); });
+  acts.forEach(function(r){ const d = r.data || {}, id = s(r.job_id || d.jobId), at = Date.parse(s(d.at));
+    if (s(d.userId) === me && (d.kind === 'view' || d.kind === 'download') && at && due[id] && at <= due[id]) out.add(id); });
+  return out;
 }
 
 /* ── patch SUPPLIER (owner 11/19: "Vendors, not subs, should also be able to have a portal and see these jobs for bid and their own jobs
@@ -494,6 +524,7 @@ async function supplierScope(who){
     jobs.forEach(function(r){
       const j = r.data || {};
       if (isDraft(j) || isGone(j)) return;
+      if (autoOpened(j) && !invited.has(r.id) && !quoted.has(r.id)) return;   /* patch BIDAUTO */
       const canSee = j.suppliersCanQuote === true && ((j.visibility || 'public') === 'public' || invited.has(r.id));
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (quoted.has(r.id) || (canSee && open)) visible[r.id] = r;
@@ -661,7 +692,7 @@ async function loadKey(who, key, ctx){
       const ps = await poSync(Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; }), { noAssign: true, by: 'bidpo-sync' });   /* patch BIDPO: the CRM's PO (never a new one from a sub's load) */
       return withSupplierMaterials((await estFill(ps.jobs, ctx)).map(function(j){   /* patch BIDEST: the Senior Estimator next to the PM · patch BIDSITE3: + supplier materials */
         const v = subJobView(j, tr);
-        if (!v.biddingClosed && dueOver(j)) { v.biddingClosed = true; v.pastDue = true; }   /* patch SUBFLOW: past the due date → the bid site shows "Bidding is closed" (the server refuses it too) */
+        if (dueOver(j)) { v.pastDue = true; if (sc.late && sc.late[j.id]) v.lateBid = true; else v.biddingClosed = true; }   /* patch SUBFLOW · LATEBID: past due → a ⏰ late bid when it is on their list, else "Bidding is closed" (the server refuses it too) */
         if (ps.data && !(v.siteWalk && v.siteWalk.date)) { try { const w = BPO().crmSiteWalk(j, ps.data); if (w) v.siteWalk = { date: w.date, time: w.time, location: w.location, mandatory: w.mandatory }; } catch (e) {} }   /* the CRM's site walk when the bid site has none */
         return v;
       })); }
@@ -820,7 +851,7 @@ async function saveCollection(who, key, upsert, del, ctx){
         if (key === 'jobs') {   /* patch LD2: a draft stays a draft until "Publish to bid portal" */
           const old = existing[rec.id] && existing[rec.id].data;
           const publish = rec._publish === true; delete rec._publish;
-          if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt', 'resultMailed', 'dueReminderAt'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });   /* + patch BIDSITE3: the e-mail stamps */
+          if (old) ['leadInbox', 'specDocs', 'sourceLink', 'createdBy', 'createdByName', 'createdAt', 'resultMailed', 'dueReminderAt', 'dueSetAt', 'dueSetBy'].forEach(function(k){ if (rec[k] === undefined && old[k] !== undefined) rec[k] = old[k]; });   /* + patch BIDSITE3: the e-mail stamps */
           if (rec.showSupplierMaterials !== undefined) rec.showSupplierMaterials = rec.showSupplierMaterials === true;
           /* patch BIDSITE3 C: marked WON / LOST → the result e-mails (each once per job; their switches decide) */
           if (old && !isDraft(old) && low(rec.status) !== low(old.status) && /^(won|lost)$/i.test(s(rec.status))) {
@@ -853,6 +884,7 @@ async function saveCollection(who, key, upsert, del, ctx){
             Object.assign(rec, { status: 'draft', visibility: 'private', draft: true });
           }
           if (old && arr(rec.plansLinks).length > arr(old.plansLinks).length) notes.push({ kind: 'plans-added', jobId: rec.id });
+          if (old && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime))) { rec.dueSetAt = new Date().toISOString(); rec.dueSetBy = who.email; }   /* patch BIDREMIND2: a person set it — the Lead Inbox re-sync keeps it (_lib/bid-portal.js) */
           if (old && !isDraft(old) && (s(old.bidDueDate).slice(0, 10) !== s(rec.bidDueDate).slice(0, 10) || s(old.bidDueTime) !== s(rec.bidDueTime)))   /* patch PLANREQ-D: the bid due date changed on the bid site */
             notes.push({ kind: 'due-changed', jobId: rec.id, from: s(old.bidDueDate).slice(0, 10) ? s(old.bidDueDate).slice(0, 10) + (s(old.bidDueTime) ? ' ' + s(old.bidDueTime) : '') : 'no due date', who: { email: who.email, name: s(who.profile && who.profile.name) || who.email } });   /* patch PLANREQ: a 🔗 plan link added on the bid site → whoever asked hears */
         }
@@ -926,7 +958,16 @@ async function saveCollection(who, key, upsert, del, ctx){
         ['_rank', '_total', '_amounts'].forEach(function(k){ delete b[k]; });
         if (prev && prev.read && JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs))) delete b.read;   /* patch SUBSIMPLE: a new PDF → GrayCo reads it again ("Not read yet") */
         if (!prev && x.via === 'portal') b.via = 'portal';   /* patch SUBFLOW: sent from the sub portal's 📋 Jobs to bid */
-        if (!prev) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data });
+        /* patch LATEBID: sent or changed after the due date → ⏰ Late bid (the server's clock, never the browser's); a change after the due date
+           to an on-time bid is told like a new one (the PM + estimator may have compared it already) */
+        let lateEdit = false;
+        if (sc.late && sc.late[jobId]) {
+          const lat = new Date().toISOString();
+          if (!prev) { b.late = true; b.lateAt = lat; }
+          else if (num(prev.amount) !== num(b.amount) || JSON.stringify(arr(prev.docs)) !== JSON.stringify(arr(b.docs)) || JSON.stringify(prev.lines || null) !== JSON.stringify(b.lines || null)) {
+            b.late = true; b.lateAt = s(prev.lateAt) || lat; b.lateChangedAt = lat; if (!prev.late) b.lateEdit = true; lateEdit = true; }
+        }
+        if (!prev || lateEdit) notes.push({ kind: 'new-bid', bid: b, job: sc.jobs[jobId] && sc.jobs[jobId].data, lateEdit: lateEdit });
         rows.push(rowFor('bids', b));
       }
       del.forEach(function(id){
@@ -976,10 +1017,10 @@ async function saveCollection(who, key, upsert, del, ctx){
       for (const x of upsert) {
         const jobId = s(x.jobId), n = parseInt(x.num, 10);
         const jr = sc.jobs[jobId]; if (!jr || !(n > 0)) continue;
-        if (!arr(jr.data.addenda).some(function(a){ return a && a.publishedAt && Number(a.num) === n; })) continue;
-        const id = jobId + '__a' + n + '__' + me;
-        if (existing[id]) continue;
-        rows.push(rowFor('acks', { id: id, jobId: jobId, num: n, userId: me, userName: p.name, userCompany: p.company, userEmail: p.email, at: new Date().toISOString() }));
+        const ad = arr(jr.data.addenda).find(function(a){ return a && a.publishedAt && Number(a.num) === n; }); if (!ad) continue;
+        const id = jobId + '__a' + n + '__' + me, prevAck = existing[id] && existing[id].data;
+        if (prevAck && !(s(ad.updatedAt) && s(prevAck.at) < s(ad.updatedAt))) continue;   /* patch ADDEDIT: acknowledged before an edit → acknowledged again */
+        rows.push(rowFor('acks', Object.assign({ id: id, jobId: jobId, num: n, userId: me, userName: p.name, userCompany: p.company, userEmail: p.email, at: new Date().toISOString() }, prevAck ? { firstAt: s(prevAck.firstAt || prevAck.at) } : {})));
       }
     } else if (key === 'activity') {
       upsert.filter(function(x){ return !existing[x.id] && sc.jobs[s(x.jobId)]; }).slice(0, 50).forEach(function(x){
@@ -1227,9 +1268,9 @@ async function teamJoin(email, pw, p, comp){
   try { m = await TEAM().add(TEAM().keySub(comp.id), { name: p.name, email: email, phone: p.phone }, { email: email, name: s(p.name), role: 'signup' }, { kind: 'sub', companyName: comp.company, via: 'domain', status: 'verify', primary: { email: comp.email, phone: comp.phone } }); }
   catch (e) { const id = s(au.id || (au.user && au.user.id)); if (id) await deleteAuthUser(id); throw e; }
   const sent = await teamConfirmMail(m, m.verifyToken);
-  try { await sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE], '👥 ' + s(p.name) + ' is joining ' + s(comp.company) + ' on the portal', mailHtml('New team member (confirming their e-mail)', [
-    '<b>' + esc(p.name) + '</b> (' + esc(email) + ') signed up with the same company e-mail domain as <b>' + esc(comp.company) + '</b>. They join that company\'s portal team once they tap the confirm link sent to that address (24 hours).',
-    'See or remove them in the CRM: Admin → 🔐 Sub portal accounts → ' + esc(comp.company) + ' → 👥 Team.'], { href: crmUrl(), label: 'Open the CRM' })); } catch (e) {}
+  /* patch OFFICEMAIL: an office To-Do (was an e-mail to the office mailbox) */
+  try { await officeTodo('teamjoin_' + s(m && m.id || email), '👥 ' + s(p.name) + ' is joining ' + s(comp.company) + ' on the portal',
+    s(p.name) + ' (' + email + ') signed up with the same company e-mail domain as ' + s(comp.company) + '. They join that company\'s portal team once they tap the confirm link sent to that address (24 hours). See or remove them: Admin → 🔐 Sub portal accounts → ' + s(comp.company) + ' → 👥 Team.'); } catch (e) {}
   return { ok: true, approved: false, verify: true, sent: !!sent, joined: s(comp.company), memberId: s(m && m.id), message: TEAM_VERIFY_MSG };
 }
 const TEAM_VERIFY_MSG = 'Check your e-mail: tap the confirm link we sent to finish joining your company on the GrayCo portal (the link works for 24 hours).';
@@ -1310,7 +1351,9 @@ async function deleteAuthUser(id){
 function portalLink(){ return PORTAL_ORIGIN + '/'; }
 function mailHtml(title, lines, button){
   return '<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F172A">' +
-    '<div style="background:#0F1D2F;color:#fff;padding:16px 20px;font-weight:700;font-size:16px;text-align:center"><img src="' + esc(CUSTOMER_PORTAL_ORIGIN + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="160" style="display:block;margin:0 auto 6px">GrayCo Bids</div>' +
+    /* patch MAILHEAD (owner 11/23: "I don't want it to say GrayCo Bids, I want that to be more white and navy and look better, not faded"):
+       a white header with the full-colour logo (its own white box — phones' dark mode can't wash it out) and a solid navy bar under it */
+    '<div style="background:#ffffff;padding:16px 20px 12px;text-align:center;border-bottom:6px solid #0F1D2F"><img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/grayco-logo-wide.jpg') + '" alt="GrayCo Construction Services" width="200" style="display:block;margin:0 auto;border:0;max-width:200px;height:auto"></div>' +
     '<div style="padding:20px;border:1px solid #EDE9E0;border-top:0"><h2 style="margin:0 0 12px;font-size:18px">' + esc(title) + '</h2>' +
     lines.map(function(l){ return '<p style="margin:0 0 10px;line-height:1.5">' + l + '</p>'; }).join('') +
     (button ? '<p style="margin:18px 0 0"><a href="' + esc(button.href) + '" style="background:#D4A017;color:#140665;padding:11px 18px;border-radius:999px;text-decoration:none;font-weight:700">' + esc(button.label) + '</a></p>' : '') +
@@ -1323,7 +1366,7 @@ async function sendMail(to, subject, html){
   if (!key || mailOff() || !to.length) return false;
   const r = await fetch('https://api.resend.com/emails', { method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Bids <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: to, subject: require('./_lib/mailtag.js').tag(subject, to, 'subs bids'), html: html }) });
+    body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>' /* MAILHEAD */, reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: to, subject: require('./_lib/mailtag.js').tag(subject, to, 'subs bids'), html: html }) });
   return r.ok;
 }
 /* patch RESETMAIL (owner 11/13: "the link didn't send to one guy for forgot password … fix this right now"): the bid site's
@@ -1353,7 +1396,7 @@ async function resetPassword(body){
   } catch (e) { throw Fail(503, 'The sign-in service did not answer. Try again in a minute.'); }
   let es = false;
   try { const rows = await fetch(sbUrl() + '/rest/v1/sp_rows?select=data&collection=eq.users&email=eq.' + encodeURIComponent(email) + '&limit=1', { headers: H() }).then(function(x){ return x.ok ? x.json() : []; }); es = !!(rows[0] && rows[0].data && rows[0].data.lang === 'es'); } catch (e) {}
-  const subj = es ? 'Cambie su contraseña de GrayCo Bids' : 'Reset your GrayCo Bids password';
+  const subj = es ? 'Cambie su contraseña de GrayCo' : 'Reset your GrayCo password';   /* MAILHEAD */
   const html = mailHtml(es ? 'Cambiar la contraseña' : 'Reset your password', es
     ? ['Alguien (esperamos que usted) pidió cambiar la contraseña de ' + esc(email) + ' en bids.grayco-cs.com.', 'Toque el botón para elegir una contraseña nueva. El enlace sirve una sola vez.', 'Si no lo pidió, ignore este correo.']
     : ['Someone (hopefully you) asked to reset the password for ' + esc(email) + ' on bids.grayco-cs.com.', 'Tap the button to choose a new password. The link works once.', 'If you did not ask, you can ignore this e-mail.'],
@@ -1362,8 +1405,14 @@ async function resetPassword(body){
   if (!ok) throw Fail(502, 'The e-mail could not be sent. Call GrayCo ' + OFFICE_PHONE + '.');
   return { ok: true, sent: true };
 }
+/* patch OFFICEMAIL (owner 11/23: "I don't want all these bids to clog up my office email … they go to CRM already"): the office mailbox
+   (office@ / SUBPORTAL_NOTIFY) gets no e-mail about bid-site / sub-portal events any more — sign-ups (✅ Approvals), new / late bids,
+   material quotes, messages, questions, plan requests (🔔 For you + To-Do + push for the PM / estimator), team joins (an office To-Do).
+   The owners' e-mail stays as it is. Kept: a SUPPLIER sign-up (approved automatically — no ✅ Approvals card, nothing else in the CRM). */
+function officeBox(e){ e = low(e); return !!e && (e === OFFICE || e === low(process.env.SUBPORTAL_NOTIFY)); }
+function notOffice(list){ return (Array.isArray(list) ? list : [list]).map(low).filter(function(e){ return e && !officeBox(e); }); }
 async function staffEmailsFor(job){
-  const out = [process.env.SUBPORTAL_NOTIFY || OFFICE];
+  const out = [];   /* patch OFFICEMAIL: was [SUBPORTAL_NOTIFY || office@] first */
   if (job) [job.postedBy, job.pmEmail].forEach(function(e){ if (okEmail(low(e))) out.push(low(e)); });   /* patch BIDPOST: the person who posted it and its PM hear too */
   if (job) {
     const ids = [job.pmId, job.estimatorId].filter(Boolean);
@@ -1712,7 +1761,8 @@ async function requestPlans(who, body, ctx){
     'Contact: ' + esc([rec.name, rec.phone, rec.email].filter(Boolean).join(' · ')) + (rec.trade ? ' · ' + esc(rec.trade) : ''),
     'Sent to ' + esc(contacts.map(function(c){ return c.name + ' (' + c.roles.join(', ') + ')'; }).join(', ')) + '.',
     'Answer it in the CRM: 🏗 Bid portal → 📂 Manage → 💬 Q&A (↩ Reply or ✅ Mark sent) — or add the plans / a plan link there; everyone who asked is told when they are posted.'];
-  try { rec.mailed = !!(await sendMail(contacts.map(function(c){ return c.email; }), title, mailHtml(title.replace(/^📩 /, ''), lines.filter(Boolean), { href: crmUrl(), label: 'Open the CRM' }))); } catch (e) { rec.mailed = false; }
+  try { const to = notOffice(contacts.map(function(c){ return c.email; }));   /* patch OFFICEMAIL: the office has the To-Do + 🔔 post */
+    rec.mailed = to.length ? !!(await sendMail(to, title, mailHtml(title.replace(/^📩 /, ''), lines.filter(Boolean), { href: crmUrl(), label: 'Open the CRM' }))) : false; } catch (e) { rec.mailed = false; }
   const crm = await planReqCrm(job, rec, contacts).catch(function(){ return {}; });
   /* patch SUBFLOW: the push + staff text go through the job-message rules (🌙 staff quiet hours, 🏖 Away) — was a raw push at any hour */
   try { rec.ping = !!(await sfPing(s(crm.pid) || sfPid(job), s(crm.msgId) || ('planreq_' + rec.id), contacts, rec.company + ' (' + (rec.via === 'portal' ? 'sub portal' : 'bid site') + ') on ' + s(job.title), '📩 ' + rec.company + ' asked for ' + prWhat(rec).toLowerCase() + (rec.note ? ': ' + rec.note : ''))).ok; } catch (e) {}
@@ -1843,14 +1893,15 @@ async function sfDone(kind, id, by){
     return ch ? { list: l, check: function(l2){ return l2.every(function(t){ return !t || s(t.id) !== tid || t.done; }); } } : null; }); } catch (e) {}
 }
 /* the e-mail list for a sub → GrayCo item: the old list (office, poster, PM) + the job's PM and estimator */
-async function sfEmails(job, contacts){ const base = await staffEmailsFor(job); return Array.from(new Set(base.concat((contacts || []).map(function(c){ return c.email; })))); }
+async function sfEmails(job, contacts){ const base = await staffEmailsFor(job); return notOffice(Array.from(new Set(base.concat((contacts || []).map(function(c){ return c.email; }))))); }   /* patch OFFICEMAIL: never the office mailbox (nobody else → the 🔔 post / To-Do / push only) */
 /* patch SUBFLOW: a job is past its sub due date (the bid due date + time, Central; no time = the end of that day) → no new bids or changes */
 function chiOff(d){ try { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' }).formatToParts(new Date(d + 'T18:00:00Z')).find(function(x){ return x.type === 'timeZoneName'; }); const m = /GMT([+-])(\d{1,2})/.exec(p ? p.value : ''); return m ? m[1] + ('0' + m[2]).slice(-2) + ':00' : '-06:00'; } catch (e) { return '-06:00'; } }
-function dueOver(j, nowMs){
-  const d = s(j && j.bidDueDate).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+function dueAt(j){   /* patch LATEBID: the due moment (ms), 0 = no due date */
+  const d = s(j && j.bidDueDate).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return 0;
   const tm = /^\d{2}:\d{2}$/.test(s(j.bidDueTime)) ? s(j.bidDueTime) + ':00' : '23:59:59';
-  const t = Date.parse(d + 'T' + tm + chiOff(d)); return !!t && (nowMs || Date.now()) > t;
+  return Date.parse(d + 'T' + tm + chiOff(d)) || 0;
 }
+function dueOver(j, nowMs){ const t = dueAt(j); return !!t && (nowMs || Date.now()) > t; }
 /* patch SUBFLOW: "⬇ All plans (ZIP)" — every plan file the sub may open on the job, in one ZIP (a phone opened only the first of several
    files). Built once per set of files (kept in the bucket under zips/), a signed 8-hour link back. Stored (no compression: plans are PDFs). */
 const ZIP_MAX = 150 * 1024 * 1024;
@@ -1922,7 +1973,7 @@ async function notify(n){
     const owners = String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail);
     /* patch SIGNUPNOTE (owner 11/13: "make sure we get the approval notification"): a phone notice to the owners too, and the e-mail opens ✅ Approvals in the CRM */
     try { await pushTo(owners, u.role === 'supplier' ? '🧱 New supplier signed up (approved automatically)' : u.approved ? '🔨 New sub signed up (job invite) — please check' : '🔨 New sub waiting for approval', s(u.company) + (u.trades && u.trades.length ? ' — ' + u.trades.slice(0, 3).join(', ') : '') + ' · open ✅ Approvals'); } catch (e) {}   /* SUBSIGNUP: an invited one too */
-    return sendMail([process.env.SUBPORTAL_NOTIFY || OFFICE].concat(owners), (u.role === 'supplier' ? '🧱 New supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
+    return sendMail((u.role === 'supplier' ? [process.env.SUBPORTAL_NOTIFY || OFFICE] : []).concat(owners), (u.role === 'supplier' ?   /* patch OFFICEMAIL: a sub's sign-up is a card in ✅ Approvals for the office — only the owners get the e-mail (a supplier's: no card, so the office keeps it) */ '🧱 New supplier — ' : u.approved ? '🔨 Check new sub (job invite) — ' : '🔨 Approve new sub — ') + u.company,
       mailHtml(u.role === 'supplier' ? 'New supplier sign-up' : 'New subcontractor sign-up', [
         '<b>' + esc(u.company) + '</b>' + (u.dbaName ? ' (DBA ' + esc(u.dbaName) + ')' : ''),
         esc(u.name) + ' · ' + esc(u.email) + (u.phone ? ' · ' + esc(u.phone) : ''),
@@ -1960,9 +2011,12 @@ async function notify(n){
   if (n.kind === 'new-bid' && n.job) {
     const b = n.bid;
     const sfC = await planReqContacts(n.job).catch(function(){ return []; });   /* patch SUBFLOW: the PM + estimator hear (🔔 + push / text) — never the price in the post */
-    try { await sfTell(n.job, { kind: 'bid', id: b.id, userId: b.userId, company: b.userCompany, name: b.userName, via: b.via === 'portal' ? 'sub portal' : 'bid site', what: 'sent a bid' + (s(b.trade) ? ' for ' + s(b.trade) : ''), body: '', hint: 'Compare it in 🏗 Bid portal → 📨 Bids.', contacts: sfC }); } catch (e) {}
-    return sendMail(await sfEmails(n.job, sfC), 'New bid — ' + s(n.job.title) + ' — ' + b.userCompany,
-      mailHtml('New bid on ' + s(n.job.title), [
+    /* patch LATEBID: a late bid (or a change after the due date) is told the same way, marked ⏰ Late bid */
+    const lt = b.late ? (n.lateEdit ? '⏰ Late bid — changed their bid after the due date' : '⏰ Late bid — sent after the due date') : '';
+    try { await sfTell(n.job, { kind: 'bid', id: b.id, userId: b.userId, company: b.userCompany, name: b.userName, via: b.via === 'portal' ? 'sub portal' : 'bid site', what: (lt ? (n.lateEdit ? 'changed their bid' : 'sent a ⏰ Late bid') : 'sent a bid') + (s(b.trade) ? ' for ' + s(b.trade) : '') + (lt ? ' after the due date' + (n.lateEdit ? ' (⏰ Late bid)' : '') : ''), body: '', hint: 'Compare it in 🏗 Bid portal → 📨 Bids.', contacts: sfC, stamp: n.lateEdit ? s(b.lateChangedAt) : '' }); } catch (e) {}
+    return sendMail(await sfEmails(n.job, sfC), (lt ? '⏰ Late bid — ' : 'New bid — ') + s(n.job.title) + ' — ' + b.userCompany,
+      mailHtml((lt ? '⏰ Late bid on ' : 'New bid on ') + s(n.job.title), [
+        lt ? '<b>' + esc(lt) + '</b> (due ' + esc(s(n.job.bidDueDate) + (s(n.job.bidDueTime) ? ' ' + s(n.job.bidDueTime) : '')) + ').' : '',
         '<b>' + esc(b.userCompany) + '</b> (' + esc(b.userName) + ') bid <b>$' + num(b.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</b>.',
         b.scope ? 'Scope: ' + esc(b.scope.slice(0, 600)) : ''
       ].filter(Boolean), { href: portalLink(), label: 'Review the bid' }));
@@ -2394,8 +2448,8 @@ async function inviteSend(who, body){
     }
     rows.push(rowFor('invites', inv)); out.push(pick(inv, ['id', 'jobId', 'email', 'company', 'token', 'createdAt', 'createdBy', 'as', 'mailedAt', 'usedAt', 'usedBy']));
   }
-  if (isDraft(jr.data)) {   /* an invite opens a draft as PRIVATE (the CRM's invite does the same): only invited accounts see it */
-    await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: 'open', openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, updatedAt: at }))], who.email);
+  if (isDraft(jr.data) || autoOpened(jr.data)) {   /* an invite opens a draft as PRIVATE (the CRM's invite does the same): only invited accounts see it (patch BIDAUTO: + a job the old automatic way opened — a person puts it on now) */
+    await upsertRows([rowFor('jobs', Object.assign({}, jr.data, { draft: false, visibility: 'private', status: isDraft(jr.data) ? 'open' : jr.data.status, openedPrivateAt: jr.data.openedPrivateAt || at, openedBy: who.email, autoPrivate: false, personOpenedAt: jr.data.personOpenedAt || at, personOpenedBy: who.email, updatedAt: at }))], who.email);
   }
   await upsertRows(rows, who.email);
   return { ok: true, invites: out, mailed: mailed, mailOff: !sw.invite, skippedDnu: skippedDnu };
@@ -2718,12 +2772,29 @@ exports.handler = async function (event) {
       return J(200, await plansImport(who, body));
     }
     if (action === 'request-plans') return J(200, await requestPlans(who, body, ctx));
+    /* patch BIDREMIND2: ✋ I'm bidding / 🚫 Not bidding, and the sub's own bid-due reminders (🔔) */
+    if (action === 'bid-intent' || action === 'my-bidstate' || action === 'notes-read') {
+      if (who.isAdmin) return J(200, { ok: true, notes: [], intents: {} });
+      if (!who.profile || !who.approved) return J(403, { error: 'Your account is waiting for GrayCo to approve it.' });
+      const BI = require('./_lib/bidintent.js');
+      if (action === 'notes-read') return J(200, await BI.markRead(who.profile.id, body.ids));
+      const sc = await subScope(who);
+      if (action === 'bid-intent') { try { return J(200, await BI.setIntent(who, sc, s(body.jobId), body.intent, 'bidsite')); } catch (e) { return J(e.status || 500, { error: e.message }); } }
+      return J(200, Object.assign({ ok: true }, await BI.stateOf(who.profile.id, Object.keys(sc.jobs))));
+    }
     if (action === 'plans-zip') return J(200, await plansZip(who, body, ctx));   /* patch SUBFLOW: ⬇ All plans (ZIP) */
     if (action === 'addendum-post') {   /* patch SUBFLOW: 📎 Post addendum on the bid site — the CRM's own rule and code (bid-hub op addendum: who may, the number, the e-mail on ✅ Approvals / held in ⏸) */
       if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
       const BH = require('./bid-hub.js')._test, bw = await BH.whoIs(event);
       if (!bw.ok) return J(bw.code || 401, { error: bw.error });
       const r = await BH.addendum(bw, body);
+      return r.code ? J(r.code, { error: r.error }) : J(200, r);
+    }
+    if (action === 'addendum-edit') {   /* patch ADDEDIT: ✎ Edit a posted addendum on the bid site — the CRM's own rule and code (bid-hub op addendumedit) */
+      if (!who.isAdmin) return J(403, { error: 'GrayCo staff only.' });
+      const BH = require('./bid-hub.js')._test, bw = await BH.whoIs(event);
+      if (!bw.ok) return J(bw.code || 401, { error: bw.error });
+      const r = await BH.addendumEdit(bw, body);
       return r.code ? J(r.code, { error: r.error }) : J(200, r);
     }
     if (action === 'plans-guess') {   /* patch PLANREQ-C: the trade / kind of each file before it is saved */
@@ -2767,10 +2838,10 @@ exports.handler = async function (event) {
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._sv = { svUnconfirmed, svConfirm, svResend, SV_MSG };   /* SIGNUPVERIFY: portal-access / sub-accounts / tests */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { autoOpened: autoOpened, crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 exports._hub.tradeFit = tradeFit; exports._hub.jobTrades = jobTrades;   /* patch TRADEVIS */
-Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */
+Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, dueAt, onTheirList, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

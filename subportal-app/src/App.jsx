@@ -22,6 +22,8 @@ import MeasureTool, { MeasureFromPortal, canMeasure } from './Measure.jsx';   //
    ============================================================ */
 const T = {
   en: {
+    brBidding: "✋ I'm bidding", brNot: '🚫 Not bidding', brYouBid: "✋ You said you're bidding", brYouNot: '🚫 You said you are not bidding', brAsk: 'Are you bidding this job? We remind you 3 days before it is due and on the due day.', brChange: 'Change', brOpen: 'Open', brDismiss: 'Dismiss', brSaved: 'Saved', brTitle: 'Reminders',   /* patch BIDREMIND2 */
+    addEdit: '✎ Edit', addEditT: 'Edit addendum #', addEditSave: '💾 Save addendum #', addEditNotify: 'E-mail the subs about the update (waits on ✅ Approvals; held in data-entry mode)', addEditDone: 'Addendum #{n} updated', addEditSame: 'Nothing changed', addEditDue: 'Change the bid due date (optional) — now', addUpdated: 'Updated', addReack: 'Updated since you acknowledged — please acknowledge again', addHistory: 'History', addWas: 'Before the edit of', addRemoved: 'taken off', addStale: 'before the update', nowDue: 'Now due:',   /* patch ADDEDIT */
     addPost: 'Post addendum', addAsk: 'looks like an addendum — post it under Addenda (not with the plans):', addNum: 'Addendum #', addTitle: 'Title', addDate: 'Date', addText: 'What changed', addFiles: 'Files', addPick: '📎 Add files', addNewDue: 'New bid due date (optional)', addNotify: 'E-mail the subs who can see this job (it waits on ✅ Approvals; held in data-entry mode)', addSend: '📎 Post addendum #', addCancel: 'Cancel', addPlain: 'No — it is a plan sheet, put it with the plans', addNeed: 'Write what the addendum changes, or attach its files.', addDone: 'Addendum #{n} posted', addHeld: ' — e-mail held (data-entry mode)', addWaits: ' — e-mail waits on ✅ Approvals', badType: 'can not go on a bid job — use PDF, pictures, Word / Excel / PowerPoint, Outlook e-mail (.msg / .eml), text, DWG / DXF or a ZIP', tooBig: 'is over 50 MB — add a 🔗 plan link (Drive / Dropbox) for it instead',   /* patch SUBFLOW */
     addenda: 'Addenda', addendumN: 'Addendum #', acknowledge: 'Acknowledge addendum #', acknowledged: 'Acknowledged', dueChangedTo: 'Bid due date changed to', wasDue: 'was',
     ackBy: 'Acknowledged by', notAckYet: 'Not acknowledged yet', updatesFromGrayCo: 'Updates from GrayCo', currentSet: 'CURRENT', versionL: 'Version', docPlans: 'Plans', docSpecs: 'Specs', docRoom: 'Plan room', bidDocs: 'Bid documents', planLinks: 'Plan room links', openLink: 'Open link',
@@ -258,6 +260,7 @@ const T = {
     signupOptionalInfo: 'Optional but Helpful',
     signupDocsInfo: 'Company Documents',
     openPlans: 'Open plans', linkNeed: 'Paste the share link.', linkBad: 'That is not a link.', linkAdded: 'Plan link added — subs see "Open plans ↗".', driveBig: 'Upload big file to Google Drive', linkOr: 'Or paste a Drive / Dropbox link', linkBig: 'Over 50 MB? Paste a Drive/Dropbox link', linkLabelPh: 'Name (e.g. Full plan set)', linkAddBtn: 'Add plan link',
+    lateBid: 'Late bid', lateBidOk: 'The bid due date has passed. Because this job is on your list, you can still send or change your bid — GrayCo sees it marked ⏰ Late bid.', pastDueTab: '⏰ Past due', openTab: 'Open', jobNotFound: 'That job was not found.',   /* patch LATEBID */
     noDueDate: 'No due date', archivedJobs: 'Archived', showArchived: 'Show archived', hideArchived: 'Hide archived', archivedBadge: 'Archived',
     ppLater: 'I have it — will send later', ppUpload: 'Upload', ppExemptS: 'Exempt (sole proprietor)', ppLicOpt: 'License (optional)', cellPhone: 'Cell phone', crewSize: 'Crew size', tradesTap: 'Your trade(s) — tap all that fit', tradeOther: 'Other trade(s) — type them here', optional: 'optional',
     ppT: 'Your papers — optional', ppWhy: 'Upload these now for faster approval — a PDF or a phone photo is fine. With your W-9, general liability and workers’ comp on file, GrayCo can approve you and you can bid right away. No files handy? Tick “I have it — will send later”.',
@@ -347,6 +350,8 @@ const T = {
     daysUntilExp: 'days until expiration',
   },
   es: {
+    brBidding: '✋ Voy a ofertar', brNot: '🚫 No voy a ofertar', brYouBid: '✋ Usted dijo que va a ofertar', brYouNot: '🚫 Usted dijo que no va a ofertar', brAsk: '¿Va a ofertar este trabajo? Le recordamos 3 días antes de la fecha límite y el mismo día.', brChange: 'Cambiar', brOpen: 'Abrir', brDismiss: 'Descartar', brSaved: 'Guardado', brTitle: 'Recordatorios',   /* patch BIDREMIND2 */
+    addEdit: '✎ Editar', addEditT: 'Editar adenda #', addEditSave: '💾 Guardar adenda #', addEditNotify: 'Enviar correo a los subcontratistas sobre el cambio (espera en ✅ Aprobaciones)', addEditDone: 'Adenda #{n} actualizada', addEditSame: 'No cambió nada', addEditDue: 'Cambiar la fecha límite (opcional) — ahora', addUpdated: 'Actualizada', addReack: 'Actualizada después de su confirmación — confirme otra vez', addHistory: 'Historial', addWas: 'Antes del cambio del', addRemoved: 'quitado', addStale: 'antes del cambio', nowDue: 'Ahora vence:',   /* patch ADDEDIT */
     addPost: 'Publicar adenda', addAsk: 'parece una adenda — publíquela en Adendas (no con los planos):', addNum: 'Adenda #', addTitle: 'Título', addDate: 'Fecha', addText: 'Qué cambió', addFiles: 'Archivos', addPick: '📎 Agregar archivos', addNewDue: 'Nueva fecha límite (opcional)', addNotify: 'Enviar correo a los subcontratistas que ven este trabajo (espera en ✅ Aprobaciones)', addSend: '📎 Publicar adenda #', addCancel: 'Cancelar', addPlain: 'No — es una hoja de planos, póngala con los planos', addNeed: 'Escriba qué cambia la adenda o adjunte sus archivos.', addDone: 'Adenda #{n} publicada', addHeld: ' — correo retenido (modo de captura)', addWaits: ' — el correo espera en ✅ Aprobaciones', badType: 'no se puede subir a un trabajo — use PDF, fotos, Word / Excel / PowerPoint, correo de Outlook (.msg / .eml), texto, DWG / DXF o un ZIP', tooBig: 'pesa más de 50 MB — agregue un 🔗 enlace (Drive / Dropbox)',   /* patch SUBFLOW */
     addenda: 'Adendas', addendumN: 'Adenda #', acknowledge: 'Acuso recibo de la adenda #', acknowledged: 'Recibo confirmado', dueChangedTo: 'La fecha límite cambió a', wasDue: 'antes',
     ackBy: 'Recibo confirmado por', notAckYet: 'Sin confirmar todavía', updatesFromGrayCo: 'Novedades de GrayCo', currentSet: 'VIGENTE', versionL: 'Versión', docPlans: 'Planos', docSpecs: 'Especificaciones', docRoom: 'Sala de planos', bidDocs: 'Documentos de licitación', planLinks: 'Enlaces a planos', openLink: 'Abrir enlace',
@@ -561,6 +566,7 @@ const T = {
     signupOptionalInfo: 'Opcional pero Útil',
     signupDocsInfo: 'Documentos de la Compañía',
     openPlans: 'Abrir planos', linkNeed: 'Pegue el enlace.', linkBad: 'Eso no es un enlace.', linkAdded: 'Enlace agregado — los subcontratistas ven "Abrir planos ↗".', driveBig: 'Subir archivo grande a Google Drive', linkOr: 'O pegue un enlace de Drive / Dropbox', linkBig: '¿Más de 50 MB? Pegue un enlace de Drive/Dropbox', linkLabelPh: 'Nombre (p. ej. Juego completo)', linkAddBtn: 'Agregar enlace',
+    lateBid: 'Oferta tardía', lateBidOk: 'La fecha límite ya pasó. Como este trabajo está en su lista, todavía puede enviar o cambiar su oferta — GrayCo la ve marcada ⏰ Oferta tardía.', pastDueTab: '⏰ Vencidos', openTab: 'Abiertos', jobNotFound: 'No se encontró ese trabajo.',   /* patch LATEBID */
     noDueDate: 'Sin fecha límite', archivedJobs: 'Archivados', showArchived: 'Ver archivados', hideArchived: 'Ocultar archivados', archivedBadge: 'Archivado',
     ppLater: 'Lo tengo — lo envío después', ppUpload: 'Subir', ppExemptS: 'Exento (propietario único)', ppLicOpt: 'Licencia (opcional)', cellPhone: 'Celular', crewSize: 'Cuadrilla', tradesTap: 'Su(s) oficio(s) — toque todos los que hace', tradeOther: 'Otro(s) oficio(s) — escríbalos aquí', optional: 'opcional',
     ppT: 'Sus documentos — opcional', ppWhy: 'Súbalos ahora para una aprobación más rápida. Con el W-9, el seguro de responsabilidad general y el de compensación de trabajadores, GrayCo puede aprobarlo y usted puede licitar de inmediato. También puede agregarlos después en Mis Documentos.',
@@ -1194,6 +1200,8 @@ function BidApp() {
   const [activeJob, setActiveJob] = useState(null);
   /* patch BIDPOST: the open job follows the job list (plans just uploaded, a plan link just added show at once) */
   useEffect(() => { setActiveJob(prev => prev ? (jobs.find(j => j.id === prev.id) || prev) : prev); }, [jobs]);
+  /* patch BIDREMIND2: a reminder e-mail's link (?open=<job id>) opens that job once the list is loaded */
+  const openWanted = useRef((() => { try { return new URLSearchParams(window.location.search).get('open') || ''; } catch (e) { return ''; } })());
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [toast, setToast] = useState(null);
@@ -1203,6 +1211,9 @@ function BidApp() {
     setToast({ msg, kind });
     setTimeout(() => setToast(null), kind === 'error' ? 10000 : 3500);
   };
+  /* patch BIDREMIND2 · LATEBID (after loading / showToast exist) */
+  useEffect(() => { const id = openWanted.current; if (!id) return; const j = jobs.find(x => x.id === id); if (j) { openWanted.current = ''; setActiveJob(j); }
+    else if (!loading && user) { openWanted.current = ''; showToast(t.jobNotFound, 'error'); } }, [jobs, loading, user]);   /* patch LATEBID: a job they may not see (a past-due one they never had) → "not found" */
 
   // Load everything this person may see (the server filters it), after sign-in.
   async function loadAll(u) {
@@ -2171,6 +2182,46 @@ function AuthScreen({ t, lang, setLang, mode, setMode, onLogin, showToast }) {
 /* ============================================================
    JOB LIST (subs and admins)
    ============================================================ */
+/* patch BIDREMIND2 (owner 11/23: "on jobs people click yes to bidding on or if they open a project at all send follow up notifications and
+   emails when its within 3 days of being due and the day its being due"): a sub's ✋ I'm bidding / 🚫 Not bidding on a job, and the 🔔 bid-due
+   reminders (the same ones e-mailed by the morning run, netlify/functions/_lib/bidmail.js dueReminders) on top of the job list. */
+const BRS = { v: { notes: [], intents: {} }, subs: new Set(), at: 0 };
+function brSet(v) { BRS.v = v; BRS.subs.forEach(f => f(v)); }
+function brLoad(force) { if (!force && Date.now() - BRS.at < 30000) return Promise.resolve(BRS.v); BRS.at = Date.now(); return api('my-bidstate', {}).then(r => { brSet({ notes: (r && r.notes) || [], intents: (r && r.intents) || {} }); return BRS.v; }).catch(() => BRS.v); }
+function useBidState(on) { const [v, setV] = useState(BRS.v); useEffect(() => { BRS.subs.add(setV); if (on) brLoad(); return () => { BRS.subs.delete(setV); }; }, [on]); return v; }
+function BidReminders({ t, user, jobs, onOpen }) {
+  const st = useBidState(user.role !== 'admin');
+  const list = (st.notes || []).filter(n => !n.readAt && (jobs || []).some(j => j.id === n.jobId));
+  if (user.role === 'admin' || !list.length) return null;
+  async function dismiss(n) { try { await api('notes-read', { ids: [n.id] }); brSet({ ...BRS.v, notes: BRS.v.notes.map(x => x.id === n.id ? { ...x, readAt: new Date().toISOString() } : x) }); } catch (e) { /* stays */ } }
+  return (
+    <div data-bidreminders="1" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontWeight: 700 }}>🔔 {t.brTitle}</div>
+      {list.map(n => (
+        <div key={n.id} data-bidreminder={n.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 12px', borderRadius: 8, background: '#FFFBEB', borderLeft: '4px solid #D97706' }}>
+          <div style={{ flex: '1 1 200px' }}><b>{n.title}</b><div style={{ fontSize: 13, color: styles.text2 }}>{n.body}</div></div>
+          <Btn size="sm" data-bidreminder-open={n.id} onClick={() => { const j = jobs.find(x => x.id === n.jobId); if (j) onOpen(j); }}>{t.brOpen}</Btn>
+          <Btn size="sm" variant="ghost" data-bidreminder-x={n.id} onClick={() => dismiss(n)}>{t.brDismiss}</Btn>
+        </div>
+      ))}
+    </div>
+  );
+}
+function BidIntent({ t, job, showToast }) {
+  const st = useBidState(true);
+  const v = (st.intents || {})[job.id] || '';
+  const note = (st.notes || []).find(n => n.jobId === job.id && !n.readAt);
+  async function set(x) { try { await api('bid-intent', { jobId: job.id, intent: x }); brSet({ ...BRS.v, intents: { ...BRS.v.intents, [job.id]: x } }); showToast(t.brSaved); } catch (e) { showToast(e.message, 'error'); } }
+  return (
+    <div data-bidintent={job.id} style={{ marginBottom: 18, padding: 12, borderRadius: 10, border: `1px solid ${styles.border}`, background: styles.surface }}>
+      {note && <div data-bidreminder-job={job.id} style={{ fontWeight: 700, color: '#B45309', marginBottom: 8 }}>🔔 {note.title} — {note.body}</div>}
+      {v ? <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><b data-bidintent-is={v}>{v === 'yes' ? t.brYouBid : t.brYouNot}</b><Btn size="sm" variant="ghost" data-bidintent-change={job.id} onClick={() => set('')}>{t.brChange}</Btn></div>
+        : <><div style={{ fontSize: 14, marginBottom: 8 }}>{t.brAsk}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Btn size="sm" data-bidintent-yes={job.id} onClick={() => set('yes')}>{t.brBidding}</Btn><Btn size="sm" variant="ghost" data-bidintent-no={job.id} onClick={() => set('no')}>{t.brNot}</Btn></div></>}
+    </div>
+  );
+}
+
 function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   // Admins see everything. Subs see:
   //  - all open PUBLIC jobs
@@ -2180,8 +2231,11 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
   /* patch BIDPOST: archived jobs (deleted in the CRM, auto-added ones cleaned up, taken off the bid portal) are hidden — "Show archived" */
   const [showArch, setShowArch] = useState(false);
   const archN = user.role === 'admin' ? jobs.filter(isArchivedJob).length : 0;
+  /* patch LATEBID: past-due jobs come off GrayCo's default list — "⏰ Past due" finds them */
+  const [showPast, setShowPast] = useState(false);
+  const pastN = user.role === 'admin' ? jobs.filter(j => !isArchivedJob(j) && jobPastDue(j)).length : 0;
   const visibleJobs = user.role === 'admin'
-    ? jobs.filter(j => showArch ? isArchivedJob(j) : !isArchivedJob(j))
+    ? jobs.filter(j => showArch ? isArchivedJob(j) : !isArchivedJob(j) && (showPast ? jobPastDue(j) : !jobPastDue(j)))
     : jobs.filter(j => {
         if (isArchivedJob(j)) return false;
         if (bidJobIds.has(j.id)) return true;  // always show jobs they've bid on
@@ -2189,12 +2243,17 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
         return canSeeJob(j, user, invites);
       });
 
-  const archBtn = archN > 0 && (
-    <div style={{ margin: '0 0 12px' }}>
-      <button type="button" data-archived-toggle="1" onClick={() => setShowArch(!showArch)}
+  const tabSt = on => ({ border: `1px solid ${styles.border}`, background: on ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13 });
+  const archBtn = (archN > 0 || user.role === 'admin') && (
+    <div style={{ margin: '0 0 12px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {user.role === 'admin' && !showArch && <>
+        <button type="button" data-jobtab="open" onClick={() => setShowPast(false)} style={tabSt(!showPast)}>{t.openTab}</button>
+        <button type="button" data-jobtab="pastdue" onClick={() => setShowPast(true)} style={tabSt(showPast)}>{t.pastDueTab} ({pastN})</button>
+      </>}
+      {archN > 0 && <button type="button" data-archived-toggle="1" onClick={() => setShowArch(!showArch)}
         style={{ border: `1px solid ${styles.border}`, background: showArch ? '#FFFBEB' : '#fff', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
         🗄 {showArch ? t.hideArchived : t.showArchived} ({archN})
-      </button>
+      </button>}
     </div>
   );
   if (visibleJobs.length === 0) {
@@ -2206,6 +2265,7 @@ function JobList({ t, jobs, user, users, invites, onOpen, bids }) {
     <div>
       <SectionHeader icon={Briefcase} title={showArch ? `${t.jobs} — ${t.archivedJobs}` : t.jobs} count={visibleJobs.length} />
       {archBtn}
+      <BidReminders t={t} user={user} jobs={visibleJobs} onOpen={onOpen} />
       <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
         {visibleJobs.map(job => {
           const myBidExists = bids.some(b => b.jobId === job.id && b.userId === user.id);
@@ -2313,6 +2373,14 @@ function dueInfo(v, t) {
   return { ok: true, days, text: `${days} ${t.daysLeft}`, color: days <= 3 ? styles.accent : styles.text2, date: d.toLocaleDateString() };
 }
 function isArchivedJob(j) { return !!j && (j.status === 'archived' || !!j.archivedAt); }
+/* patch LATEBID: past the sub due date — the server's rule (bid due date + time, Central; no time = the end of that day) */
+function jobPastDue(j) {
+  const d = String((j && j.bidDueDate) || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const tm = /^\d{2}:\d{2}$/.test(String(j.bidDueTime || '')) ? j.bidDueTime + ':00' : '23:59:59';
+  let off = '-06:00';
+  try { const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'shortOffset' }).formatToParts(new Date(d + 'T18:00:00Z')).find(x => x.type === 'timeZoneName'); const m = /GMT([+-])(\d{1,2})/.exec(p ? p.value : ''); if (m) off = m[1] + ('0' + m[2]).slice(-2) + ':00'; } catch (e) { /* the default */ }
+  const at = Date.parse(d + 'T' + tm + off); return !!at && Date.now() > at;
+}
 
 /* patch PLANREQ-T (owner 11/12: "need to put what trades we are bidding on some places"): the job's trades as chips; a sub's own trades
    are highlighted ("Your trade: Drywall") */
@@ -2729,6 +2797,66 @@ function AddendumPost({ t, job, showToast, prefill, onClose, setJobs, onPlain })
   );
 }
 
+/* patch ADDEDIT (owner 11/23: "I need to be able to edit an addendum there too"): ✎ Edit on a posted addendum (admin) — title, date, what
+   changed, files (add / take off), the bid due date; the e-mail about the update only when ticked (it waits on ✅ Approvals). The server
+   (bid-hub op addendumedit) keeps the old version in the addendum's history and asks the subs to acknowledge it again. */
+function AddendumEdit({ t, job, a, showToast, setJobs, onClose }) {
+  const [title, setTitle] = useState(a.title || '');
+  const [date, setDate] = useState(a.date || '');
+  const [text, setText] = useState(a.text || '');
+  const [files, setFiles] = useState((a.files || []).map(f => ({ name: f.name, size: f.size, type: f.type, fileRef: f.fileRef })));
+  const [due, setDue] = useState('');
+  const [notify, setNotify] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const ref = useRef(null);
+  async function pick(list) {
+    setBusy(true); setErr('');
+    try {
+      const out = [];
+      for (const f of list) {
+        if (!ALL_RE.test(f.name)) { setErr(f.name + ' ' + t.badType); continue; }
+        if (f.size > 50 * 1024 * 1024) { setErr(f.name + ' ' + t.tooBig); continue; }
+        out.push({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', fileRef: await uploadBlob(f, f.name) });
+      }
+      setFiles(fs => fs.concat(out));
+    } catch (e) { setErr(e.message); }
+    setBusy(false); if (ref.current) ref.current.value = '';
+  }
+  async function save() {
+    if (!text.trim() && !title.trim() && !files.length) { setErr(t.addNeed); return; }
+    setBusy(true); setErr('');
+    try {
+      const r = await api('addendum-edit', { jobId: job.id, num: a.num, title, date, text, files, newDue: due, notify });
+      const { data } = await api('load', { keys: ['jobs'] });
+      const fresh = ((data && data.jobs) || []).find(x => x.id === job.id);   /* the server's copy (never save a stale one over it) */
+      if (fresh) setJobs(js => js.map(j => j.id === job.id ? { ...j, ...fresh } : j));
+      showToast(r.unchanged ? t.addEditSame : t.addEditDone.replace('{n}', a.num) + (r.notice && r.notice.status === 'held' ? t.addHeld : r.notice && r.notice.status === 'waiting' ? t.addWaits : ''));
+      onClose();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  const inp = { width: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 6, border: `1px solid ${styles.border}`, fontFamily: 'inherit', fontSize: 15 };
+  return (
+    <div data-addedit="form" style={{ marginTop: 10, padding: 12, borderRadius: 8, background: '#FFFBEB', border: `1px solid ${styles.accent}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontWeight: 700 }}>{t.addEditT}{a.num}</div>
+      <label>{t.addDate}<input data-addedit="date" type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} /></label>
+      <label>{t.addTitle}<input data-addedit="title" value={title} maxLength={200} onChange={e => setTitle(e.target.value)} style={inp} /></label>
+      <label>{t.addText}<textarea data-addedit="text" rows={3} value={text} maxLength={8000} onChange={e => setText(e.target.value)} style={inp} /></label>
+      <div>{t.addFiles}: {files.length ? files.map((f, i) => <span key={i} data-addedit="file" style={{ display: 'inline-flex', gap: 4, alignItems: 'center', margin: '2px 6px 2px 0', padding: '2px 8px', borderRadius: 999, background: '#fff', border: `1px solid ${styles.border}`, fontSize: 13 }}>📄 {f.name}<button type="button" aria-label="remove" data-addedit="rmfile" onClick={() => setFiles(files.filter((x, j) => j !== i))} style={{ border: 0, background: 'none', cursor: 'pointer' }}>✕</button></span>) : '—'}
+        <input ref={ref} type="file" multiple accept={ACCEPT_ALL} style={{ display: 'none' }} data-addedit="pick" onChange={e => pick(Array.from(e.target.files || []))} />
+        <Btn size="sm" variant="ghost" disabled={busy} onClick={() => ref.current && ref.current.click()}>{t.addPick}</Btn></div>
+      <label>{t.addEditDue} {job.bidDueDate || '—'}{job.bidDueTime ? ' ' + job.bidDueTime : ''}<input data-addedit="due" type="date" value={due} onChange={e => setDue(e.target.value)} style={inp} /></label>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13 }}><input data-addedit="notify" type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} style={{ marginTop: 3 }} />{t.addEditNotify}</label>
+      {err && <div role="alert" data-addedit="err" style={{ color: '#B91C1C', fontSize: 13 }}>{err}</div>}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn data-addedit="save" disabled={busy} onClick={save}>{t.addEditSave}{a.num}</Btn>
+        <Btn variant="ghost" disabled={busy} onClick={onClose}>{t.addCancel}</Btn>
+      </div>
+    </div>
+  );
+}
+
 function PlansRequests({ t, job, user, isAdmin, showToast, onAdded, onLink, onAddendum }) {
   const [reqs, setReqs] = useState(null);
   const [note, setNote] = useState('');
@@ -2903,6 +3031,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
   /* patch SUBFLOW: ⬇ All plans (ZIP) · the 📎 Post addendum box (prefilled by an addendum-named upload) */
   const [zipBusy, setZipBusy] = useState(false);
   const [addPrefill, setAddPrefill] = useState(null);
+  const [editAdd, setEditAdd] = useState(null);   /* patch ADDEDIT: the addendum being edited (its number) */
   async function zipAll() {
     let w = null; try { w = window.open('', '_blank'); } catch (e) { w = null; }
     setZipBusy(true);
@@ -3445,6 +3574,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             fontFamily: styles.fontDisplay, fontSize: 36, fontWeight: 700,
             margin: '0 0 16px', textTransform: 'uppercase', letterSpacing: '0.02em', lineHeight: 1.1,
           }}>{job.title}</h1>
+          {!isAdmin && !myBid && job.status !== 'closed' && !job.biddingClosed && !job.pastDue && <BidIntent t={t} job={job} showToast={showToast} />}
 
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 24, color: styles.text2, fontSize: 14 }}>
             {job.address && <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><MapPin size={16} /> {job.address}</div>}
@@ -3686,15 +3816,20 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                 onPlain={async f => { try { const r = await api('plans-import', { jobId: job.id, fileRef: f.fileRef, name: f.name, size: f.size, asPlan: true }); if ((r.added || []).length) setJobs(js => js.map(j => j.id === job.id ? { ...j, plans: [...(j.plans || []), ...r.added] } : j)); showToast(t.plansUploaded.replace('{n}', (r.added || []).length)); } catch (e) { showToast(e.message, 'error'); } }} />}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(job.addenda || []).filter(a => a.publishedAt).slice().sort((a, b) => b.num - a.num).map(a => {
-                  const mineAck = (acks || []).find(k => k.jobId === job.id && Number(k.num) === Number(a.num) && k.userId === user.id);
+                  const mineAck0 = (acks || []).find(k => k.jobId === job.id && Number(k.num) === Number(a.num) && k.userId === user.id);
+                  const staleAck = k => !!(k && a.updatedAt && String(k.at || '') < String(a.updatedAt));   /* patch ADDEDIT: acknowledged before the edit */
+                  const mineAck = staleAck(mineAck0) ? null : mineAck0;
                   const allAcks = (acks || []).filter(k => k.jobId === job.id && Number(k.num) === Number(a.num));
                   return (
                     <div key={a.num} data-addendum={a.num} style={{ border: `1px solid ${styles.border}`, borderRadius: 10, padding: 14, background: styles.surface }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{t.addendumN}{a.num}{a.title ? ' — ' + a.title : ''}</div>
-                        <div style={{ fontSize: 12, color: styles.text2 }}>{a.date ? new Date(a.date + 'T12:00:00').toLocaleDateString() : ''}</div>
+                        <div style={{ fontSize: 12, color: styles.text2, display: 'flex', gap: 8, alignItems: 'center' }}>{a.date ? new Date(a.date + 'T12:00:00').toLocaleDateString() : ''}
+                          {isAdmin && editAdd !== a.num && <Btn size="sm" variant="ghost" data-addedit-open={a.num} onClick={() => setEditAdd(a.num)}>{t.addEdit}</Btn>}</div>
                       </div>
+                      {a.updatedAt && <div data-addupd={a.num} style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: styles.accent }}>✎ {t.addUpdated} {new Date(a.updatedAt).toLocaleDateString()}</div>}
                       {a.dueTo && <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: styles.red }}>⏰ {t.dueChangedTo} {a.dueTo}{a.dueFrom ? ` (${t.wasDue} ${a.dueFrom})` : ''}</div>}
+                      {a.dueTo && job.bidDueDate && a.dueTo !== job.bidDueDate + (job.bidDueTime ? ' ' + job.bidDueTime : '') && <div data-nowdue={a.num} style={{ marginTop: 2, fontSize: 13, fontWeight: 700, color: styles.green }}>📅 {t.nowDue} {job.bidDueDate}{job.bidDueTime ? ' ' + job.bidDueTime : ''}</div>}
                       {a.text && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 14, marginTop: 8 }}>{a.text}</div>}
                       {(a.files || []).length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
@@ -3710,13 +3845,29 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                         <div style={{ marginTop: 10 }}>
                           {mineAck
                             ? <Badge color={styles.green}>✓ {t.acknowledged} {new Date(mineAck.at).toLocaleDateString()}</Badge>
-                            : <Btn size="sm" data-ack={a.num} onClick={() => setAcks([...(acks || []), { id: `${job.id}__a${a.num}__${user.id}`, jobId: job.id, num: a.num, userId: user.id, at: new Date().toISOString() }])}>✍️ {t.acknowledge}{a.num}</Btn>}
+                            : <>{mineAck0 && <div data-reack={a.num} style={{ fontSize: 13, color: styles.red, fontWeight: 600, marginBottom: 6 }}>{t.addReack}</div>}
+                              <Btn size="sm" data-ack={a.num} onClick={() => setAcks([...(acks || []).filter(k => k.id !== `${job.id}__a${a.num}__${user.id}`), { id: `${job.id}__a${a.num}__${user.id}`, jobId: job.id, num: a.num, userId: user.id, at: new Date().toISOString() }])}>✍️ {t.acknowledge}{a.num}</Btn></>}
                         </div>
                       )}
                       {isAdmin && (
                         <div style={{ marginTop: 8, fontSize: 12, color: styles.text2 }}>
-                          {allAcks.length ? `${t.ackBy}: ${allAcks.map(k => k.userCompany || k.userName).join(', ')}` : t.notAckYet}
+                          {allAcks.length ? `${t.ackBy}: ${allAcks.map(k => (k.userCompany || k.userName) + (staleAck(k) ? ' (' + t.addStale + ')' : '')).join(', ')}` : t.notAckYet}
                         </div>
+                      )}
+                      {isAdmin && editAdd === a.num && <AddendumEdit t={t} job={job} a={a} showToast={showToast} setJobs={setJobs} onClose={() => setEditAdd(null)} />}
+                      {isAdmin && (a.history || []).length > 0 && (
+                        <details data-addhist={a.num} style={{ marginTop: 8, fontSize: 12, color: styles.text2 }}>
+                          <summary style={{ cursor: 'pointer' }}>{t.addHistory} ({a.history.length})</summary>
+                          {a.history.slice().reverse().map((h, i) => (
+                            <div key={i} style={{ borderTop: `1px solid ${styles.border}`, paddingTop: 6, marginTop: 6 }}>
+                              <div><b>{t.addWas} {new Date(h.replacedAt).toLocaleString()}</b> · {h.replacedByName || h.replacedBy} · {(h.changed || []).join(' · ')}</div>
+                              {h.title && <div>{h.title}</div>}
+                              {h.dueTo && <div>⏰ {h.dueTo}</div>}
+                              {h.text && <div style={{ whiteSpace: 'pre-wrap' }}>{h.text}</div>}
+                              {(h.files || []).length > 0 && <div>📎 {h.files.map(f => f.name + ((a.files || []).some(x => (x.fileRef || x.name) === (f.fileRef || f.name)) ? '' : ' (' + t.addRemoved + ')')).join(', ')}</div>}
+                            </div>
+                          ))}
+                        </details>
                       )}
                     </div>
                   );
@@ -3881,6 +4032,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                           <div style={{ fontWeight: 700, fontSize: 15 }}>{b.userCompany}</div>
                           {b.accepted && <Badge color={styles.green}>✓ {t.accepted}</Badge>}
                           {b.rejected && <Badge color={styles.red}>{t.rejected}</Badge>}
+                          {b.late && <span data-latebid={b.id} title={b.lateChangedAt ? 'Changed after the due date' : 'Sent after the due date'}><Badge color="#B45309">⏰ {t.lateBid}</Badge></span>}
                         </div>
                         <div style={{ fontSize: 12, color: styles.text2 }}>{b.userName} • {new Date(b.submittedAt).toLocaleString()}</div>
                       </div>
@@ -3973,6 +4125,7 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             <SupplierQuoteForm t={t} job={job} user={user} mquotes={mquotes} setMquotes={setMquotes} showToast={showToast} />
           ) : !isAdmin ? (
             <>
+            {job.lateBid && !job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidlate="1" style={{ fontWeight: 700, color: '#B45309' }}>⏰ {t.lateBidOk}</div></Card>}
             {job.biddingClosed && <Card style={{ marginBottom: 12 }}><div data-bidding-closed="1" data-pastdue={job.pastDue ? '1' : undefined} style={{ fontWeight: 700 }}>⏸ {job.pastDue ? t.pastDueClosed : t.biddingClosed}</div></Card>}
             {!job.biddingClosed && <Card>
               <h3 style={{ ...sectionTitleStyle, marginTop: 0 }}>

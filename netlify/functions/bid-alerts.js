@@ -41,6 +41,7 @@ async function crmLeads(){
     return { leads: Array.isArray(leads) ? leads : [], tombs: o.gc_tombstones && typeof o.gc_tombstones === 'object' ? o.gc_tombstones : {}, users: Array.isArray(users) ? users : [], bidders: o.gc_bid_bidders && typeof o.gc_bid_bidders === 'object' ? o.gc_bid_bidders : {} };   /* patch BIDSEND */
   } catch (e) { return { leads: [], tombs: {}, why: 'gc_kv unreachable' }; }
 }
+function dueHour(at){ const h = +new Date(at || Date.now()).toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24; return h >= 8 && h < 12; }   /* patch BIDREMIND2 */
 async function run(){
   const out = { at: L.nowIso() };
   const A = L.alertsApi(), AUTO = require('./_lib/automations.js');   /* patch AUTOPANEL */
@@ -60,8 +61,10 @@ async function run(){
   out.portalQueue = (await AUTO.gate('bid_portal_drafts')) || await L.flushPortal();
   /* patch BIDSITE3 I: the bid requirement reminders (bond, pre-bid, sealed delivery, prequal, questions, bid due) — 7 / 3 / 1 days, the morning-of */
   try { const crm = crm0 || await crmLeads(), items = await L.kvGet(L.KV); out.bidReq = crm.why ? { skipped: crm.why } : await require('./_lib/bidremind.js').run({ leads: crm.leads, items: Array.isArray(items) ? items : [] }); } catch (e) { out.bidReq = { error: L.s(e && e.message) }; }
-  /* patch BIDSITE3: "Bid due reminder" to invited subs (off unless switched on in the bid site's 📧 Bid site e-mails) — the 8 AM Central runs only */
-  try { const h = +new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24; if (h === 8) out.dueReminders = await require('./_lib/bidmail.js').dueReminders(); } catch (e) { out.dueReminders = { error: L.s(e && e.message) }; }
+  /* patch BIDREMIND2: "Bid due in 3 days" / "Bid due today" to the subs / suppliers who said they are bidding or opened the job (the bid site's
+     📧 Bid site e-mails → dueSoon, ON). The runs from 8 to 11:59 AM Central: the first one sends; the later ones find each reminder already
+     recorded (one per step / person / job / due date), so a missed 8 AM run is made up the same morning. */
+  try { if (dueHour()) out.dueReminders = await require('./_lib/bidmail.js').dueReminders(); } catch (e) { out.dueReminders = { error: L.s(e && e.message) }; }
   return out;
 }
 exports.handler = async function(){
@@ -73,3 +76,4 @@ exports.handler = async function(){
 };
 exports.run = run;
 exports._crmLeads = crmLeads;
+exports._dueHour = dueHour;
