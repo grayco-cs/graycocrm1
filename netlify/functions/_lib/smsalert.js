@@ -1673,6 +1673,19 @@ async function escSend(leadId, step, e){
   /* REPLYOFF (owner 11/24: "I don't care what an estimator does I shouldn't get these alerts and definitely not at 9pm"): the
      "has not answered the lead text" ladder never reaches the owners — it ends with the office / marketing steps */
   if (obj(e).kind === 'reply' && step === 'owners') return { nobody: true, why: 'owners are not told about a PM reply (owner 11/24)' };
+  /* MKTNOTEXT (owner 11/24: "why does marketing get the lead text, marketing can get MESSAGE IN CRM WHEN A LEAD IS MARKED BAD FROM LSA BUT
+     NO TEXT"): marketing never gets a GrayCo text from a ladder. A BAD Google lead → one To-Do in the CRM for the marketing people (by role);
+     the "has not answered" and GOOD ladders skip marketing. */
+  if (step === 'marketing') {
+    if ((obj(e).kind || 'bad') !== 'bad') return { nobody: true, why: 'marketing is not told (owner 11/24)' };
+    let pp = {}; try { pp = await _D.people(); } catch (er) {}
+    const mk = arr(pp.users).filter(u => u && isActiveUser(u) && /marketing/i.test([u.role, u.title, u.profile].map(s).join(' ')) && low(u.email)).map(u => low(u.email));
+    if (!mk.length) return { nobody: true, why: 'nobody in marketing' };
+    let r = null; try { r = await _D.officeTask({ id: 'LSABADMKT_' + s(leadId), kind: 'lsa_bad_mkt', leadId: s(leadId), code: s(e.code), assignees: mk, prio: 'med', personal: false,
+      label: '⚖️ Bad Google LSA lead ' + s(e.code) + ': ' + clip(s(e.name), 40) + ' — ' + clip(s(e.why) || 'marked bad', 60) + (e.by ? ' (per ' + clip(s(e.by), 24) + ')' : ''),
+      note: 'For marketing: a Google LSA lead was marked BAD. Dispute in Google: ' + s(e.link) + (e.dueS ? ' — by ' + s(e.dueS) : '') + '. Nothing to text; the office disputes it.' }); } catch (er) { r = null; }
+    return { inapp: true, todo: r };
+  }
   const tg = await escTargets(step, e.item || {});
   { let pp = {}; try { pp = await _D.people(); } catch (er) {} let set = { people: {} }; try { set = await load(); } catch (er) {} const cell = {};   /* a step with nobody who has a cell on file is skipped */
     staffList(pp).forEach(x => { if (x.phone) cell[x.email] = 1; }); Object.keys(set.people || {}).forEach(k => { if (set.people[k] && set.people[k].phone) cell[k] = 1; });
@@ -1785,7 +1798,7 @@ async function lsaDisputed(o){
   if (!r.item) return Object.assign(out, { ok: false, error: 'Lead not found.' });
   if (!r.already) {
     const crm = 'LEADIN-' + leadId.replace(/^LI-/, '');
-    try { out.closed = await _D.tasksDone(['LSADISPUTE_' + leadId, 'LSA25_' + leadId, 'LSAIN_' + leadId, 'LSACHECK_' + leadId, 'LSADISPUTE_' + crm, 'LSADISPUTE2_' + crm], 'disputed in Google by ' + byName); } catch (e) {}
+    try { out.closed = await _D.tasksDone(['LSADISPUTE_' + leadId, 'LSABADMKT_' + leadId, 'LSA25_' + leadId, 'LSAIN_' + leadId, 'LSACHECK_' + leadId, 'LSADISPUTE_' + crm, 'LSADISPUTE2_' + crm], 'disputed in Google by ' + byName); } catch (e) {}
     await _D.kvCas(SKEY, v => { const st = loadState(v); lsaMarkDone(st, leadId, 'disputed'); st.lsaEsc = obj(st.lsaEsc); if (st.lsaEsc[leadId]) st.lsaEsc[leadId].closed = true; return st; }).catch(() => {});   /* LEADWATCH: the ladder stops */
   }
   if (o.via === 'text' && phone10(o.ph).length === 10) { try { out.conf = await sendL(o.ph, 'GrayCo: ' + code + ' ' + nm + (r.already ? ' was already marked disputed in Google (' + s(x.lsaDisputedBy) + ').' : ' marked ✓ disputed in Google — closed for everyone.'), leadNum(), undefined, { who: byName, leadId, code, type: 'lead' }); } catch (e) {} }

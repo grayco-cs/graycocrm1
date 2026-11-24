@@ -7742,7 +7742,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.334-2026-11-24-r38w -->
+<!-- GrayCo CRM Build: 33.335-2026-11-24-r38x -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -8714,7 +8714,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.334-2026-11-24-r38w");
+  console.log("[GC] Build 33.335-2026-11-24-r38x");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -8762,7 +8762,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.334-2026-11-24-r38w"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.335-2026-11-24-r38x"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -198229,7 +198229,12 @@ var ITEMS = [
   { id: 'ccam_newjobs', g: 'soon', t: 'Decide: CompanyCam "Make new jobs" (off since Nov 3)', how: 'New CompanyCam projects that do not match a CRM job wait on 📷 Photos instead of becoming Bidding jobs (projects at an existing job\'s address still link by themselves). Turn it on in ⚙ Admin → ⚡ Automations → "Make new jobs", or review the waiting list on 📷 Photos. ~165 of the old "bidding" placeholders are duplicates from the September import — see "Decide: clean up the 480 jobs".' },
   { id: 'dup_jobs', g: 'soon', t: 'Merge duplicate jobs (e.g. Auditorium HVAC Replacement — D742 and V708; Rapid Air ×3 in Subs)', how: 'Jobs: ⚙ Admin tools → 🔗 Merge Duplicate Jobs → keep one. Subs: the 🔗 Same sub? merge on ✅ Approvals or the Subs list.' },
   { id: 'qa_invoices', g: 'now', t: 'Move Q&A Construction bills #1530 and #1531 to the UT Martin Somerville job', how: '✅ Approvals → each "Sub invoice — Q&A Construction LLC · QuickBooks bill #153x" card → ✎ Edit → pick the job at 214 Lakeview Rd, Somerville → Save. (The matcher is being fixed so an address match wins.)' },
-  { id: 'q_supstmt', g: 'soon', t: 'Answer: supplier statements — put ABC bills on jobs from the statement\'s PO / address? Finance charges as overhead?', how: 'Tell Claude yes / no for each (🧾 Supplier statement on Accounting).' },
+  /* OWNERLIST5: answered 11/24 — ABC bills go on jobs by PO / address / customer name; the office uses the bookkeeper tools. Still open: */
+  { id: 'q_fincharge', g: 'later', t: 'Answer: supplier finance charges — leave unpaid unless ticked, and book them as overhead when paid?', how: 'That is how 🧾 Supplier statement works today. Ask the CPA, then tell Claude yes or how to book them.' },
+  { id: 'q_hoaletter', g: 'soon', t: 'Answer: save the HOA intro letter (our portal keeps their properties\' jobs in one place) as a CRM outreach template?', how: 'Tell Claude yes, or what to change. Then it is one tap from Leads → 🏘 HOAs.' },
+  { id: 'q_bidsfwd', g: 'later', t: 'Answer: bids@ e-mail the CRM cannot sort — forward it to office@ too?', how: 'Today leads@ mail that is not a lead goes to office@; bids@ mail that is not a bid stays in the CRM only. Tell Claude yes or no.' },
+  { id: 'q_planbuilder', g: 'soon', t: 'Answer: which plans did the 3D plan builder get wrong?', how: 'Tell Claude the job or plan set name so it can test the reader on those exact plans.' },
+  { id: 'q_bcapi', g: 'later', t: 'Decide: BuildingConnected API for password-protected plan rooms', how: 'Without it those plan rooms are read from their e-mail alerts only. Tell Claude yes to set up the connection (needs an Autodesk account sign-in once).' },
   { id: 'q_adddate', g: 'later', t: 'Answer: should posting an addendum that moves the bid date also post the automatic "Bid due date changed" message?', how: 'Tell Claude yes / no. Today the addendum uses its own "E-mail the subs" box.' },
   { id: 'push_keys', g: 'soon', t: 'Phone push notifications for PMs / estimators (VAPID keys)', how: 'Ask Claude for the one-line command that makes the VAPID keys, add them in Netlify → Environment variables → Trigger deploy; then each person taps "Turn on notifications" on their phone.' },
   /* OWNERLIST3: HOA outreach (owner 11/23) */
