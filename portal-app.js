@@ -1574,6 +1574,11 @@ Object.assign(L.es, { suTitle: 'Cree su cuenta de subcontratista', suWhy: 'Para 
   ppW9: 'W-9', ppGl: 'Certificado de responsabilidad general (COI)', ppWc: 'Certificado de compensación de trabajadores (COI)', ppExp: 'Fecha de vencimiento', ppExempt: 'Exento / propietario único — suba el formulario de exención de TN',
   ppLic: 'Licencia', ppLicState: 'Estado', ppLicType: 'Tipo (p. ej. Eléctrica, General)', ppLicNum: 'Número', ppLicAdd: '＋ Agregar otra licencia', ppFile: 'Archivo (PDF o foto, 50 MB máximo)',
   ppExpNeed: 'Agregue la fecha de vencimiento de: {f}.', ppBig: '{f} pasa de 50 MB.', ppUp: 'Subiendo sus documentos…', ppDone: '📎 {n} documento(s) subidos — GrayCo los ve con su solicitud.', ppFail: 'Algunos documentos no se subieron ({f}). Entre y agréguelos en Mis documentos.' });
+/* patch BIDSSAME: one line, every sign-up step — the same e-mail and password open the bid site */
+Object.assign(L.en, { bsSame: 'Your e-mail and password also sign you in to GrayCo\u2019s bid site — jobs to bid, plans and your bids: ', bsSameAfter: 'Same sign-in for both.' });
+Object.assign(L.es, { bsSame: 'Su correo y contraseña también le dan entrada al sitio de licitaciones de GrayCo — trabajos para licitar, planos y sus ofertas: ', bsSameAfter: 'La misma cuenta para los dos.' });
+function bidsSame(){ return h('p', { class: 'bids-same', 'data-bids-same': '1', style: 'background:#FFF8E1;border:1px solid #F2D27A;border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.45' },
+  ['🏗 ', t('bsSame'), h('a', { href: 'https://bids.grayco-cs.com', target: '_blank', rel: 'noopener', class: 'lnk', style: 'font-weight:700', text: 'bids.grayco-cs.com' }), '. ', t('bsSameAfter')]); }
 var DUPWHY = { es: { 'company name': 'nombre de la compañía', address: 'dirección', phone: 'teléfono', EIN: 'EIN' } };
 function suCss(){
   if (document.getElementById('gc-signup-css')) return;
@@ -1617,6 +1622,7 @@ function signup(opts){
   box.appendChild(h('button', { type: 'button', class: 'back', id: 'suBack', style: 'align-self:flex-start', text: t('suBack'), on: { click: function(){ if (opts.back) opts.back(F.email && F.email.value.trim()); } } }));
   box.appendChild(h('h2', { text: t('suTitle') }));
   box.appendChild(h('p', { class: 'muted', text: t('suWhy') }));
+  box.appendChild(bidsSame());   /* patch BIDSSAME */
   box.appendChild(inviteNote);
   box.appendChild(h('div', { class: 'su-grid' }, [fld(t('suCompany'), inp('company', { autocomplete: 'organization', maxlength: '120' }), '', true), fld(t('suName'), inp('name', { autocomplete: 'name', maxlength: '80' }), '', true),
     fld(t('suEmail'), inp('email', { type: 'email', inputmode: 'email', autocomplete: 'email', maxlength: '200' }), '', true), fld(t('suPhone'), inp('phone', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', maxlength: '40' }), '', true)]));
@@ -1736,7 +1742,7 @@ function signup(opts){
     main.innerHTML = '';
     Object.keys(keep).forEach(function(k){ delete keep[k]; });
     main.appendChild(h('section', { class: 'card signin signup su-done', id: 'signupDone', 'data-approved': approved ? '1' : '0' }, [h('div', { class: 'big', text: '✅ ' + t('suDoneT') }),
-      h('p', { text: approved ? t('suDoneInv') : t('suDone') }), email ? h('div', { class: 'muted', text: email }) : null,
+      h('p', { text: approved ? t('suDoneInv') : t('suDone') }), email ? h('div', { class: 'muted', text: email }) : null, bidsSame(),   /* patch BIDSSAME */
       pap && pap.n ? h('p', { id: 'suPapersDone', text: t('ppDone', { n: pap.n }) }) : null, pap && pap.failed && pap.failed.length ? h('p', { class: 'err', id: 'suPapersFail', text: t('ppFail', { f: pap.failed.join(', ') }) }) : null,
       h('button', { type: 'button', class: 'btn gold', id: 'suDoneSignin', text: t('suSignin'), on: { click: function(){ if (opts.back) opts.back(email); } } })]));
     window.scrollTo(0, 0);
@@ -1888,7 +1894,7 @@ function svCheckMail(email, msg, cell){
         .then(function(j){ cb.disabled = false;
           if (j && j.ok) { main.innerHTML = ''; main.appendChild(h('section', { class: 'card signin signup', id: 'svDone' }, [h('div', { class: 'big', text: es ? '✅ Confirmado' : '✅ Confirmed' }),
             h('p', { text: j.approved ? (es ? 'Ya puede entrar con su correo y contraseña.' : 'You can sign in now with your e-mail and password.') : (es ? 'GrayCo revisa las cuentas nuevas (normalmente el mismo día) y le avisa por correo cuando esté aprobada.' : 'GrayCo reviews new accounts (usually the same day) and e-mails you when you are approved.') }),
-            h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn gold', text: es ? 'Entrar' : 'Sign in', on: { click: function(){ location.reload(); } } })])])); return; }
+            bidsSame(), h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn gold', text: es ? 'Entrar' : 'Sign in', on: { click: function(){ location.reload(); } } })])])); return; }   /* patch BIDSSAME */
           note.textContent = (j && j.error) || (es ? 'Ese código no es correcto o ya venció.' : 'That code is not right or has run out.'); }, function(){ cb.disabled = false; note.textContent = t('loadFail'); });
     } } });
     codeBox = h('div', { id: 'svCodeBox' }, [h('p', { text: es ? '¿Recibió el texto de GrayCo? Escriba el código de 6 dígitos:' : 'Got the GrayCo text? Type the 6-digit code:' }), ci, h('div', { class: 'btns' }, [cb])]);
@@ -1900,7 +1906,7 @@ function svCheckMail(email, msg, cell){
   main.innerHTML = '';
   main.appendChild(h('section', { class: 'card signin signup', id: 'svCheck' }, [h('div', { class: 'big', text: es ? '✉️ Revise su correo' : '✉️ Check your e-mail to confirm' }),
     h('p', { text: es ? 'Le enviamos un enlace a ' + email + '. Tóquelo para confirmar su correo (sirve por 24 horas). Después GrayCo revisa su cuenta; podrá subir sus documentos al entrar.' : (msg || 'We sent a link to ' + email + '. Tap it to confirm your e-mail (it works for 24 hours).') + ' After that, GrayCo reviews your account; you can add your papers when you sign in.' }),
-    h('div', { class: 'muted', text: email }), codeBox, h('div', { class: 'btns' }, [b]), note].filter(Boolean)));
+    h('div', { class: 'muted', text: email }), codeBox, h('div', { class: 'btns' }, [b]), note, bidsSame()].filter(Boolean)));   /* patch BIDSSAME */
 }
 function pendAfterSignup(opts, email, pw, keep, fallback){
   if (!opts || !opts.signedIn) return fallback();
@@ -1963,6 +1969,7 @@ function pendPaint(main, d, load){
   box.appendChild(h('div', { class: 'pd-big', id: 'pendIn', text: t('pdIn') }));
   box.appendChild(h('p', { id: 'pendWhy', text: t('pdWhy') }));
   box.appendChild(h('p', { class: 'muted', text: t('pdThen') }));
+  box.appendChild(bidsSame());   /* patch BIDSSAME */
   if (me.company || me.email) box.appendChild(h('div', { class: 'muted', id: 'pendWho', text: [me.company, me.email].filter(Boolean).join(' · ') + (me.createdAt ? ' · ' + t('pdSince', { d: dt(me.createdAt) }) : '') }));
   box.appendChild(h('div', { class: 'pd-btns' }, [callBtn, check]));
   box.appendChild(pendPapers(d, load));

@@ -1218,8 +1218,8 @@ function svUrl(token){ return PORTAL_ORIGIN + '/.netlify/functions/subportal?sig
 async function svMail(prof, token){   /* tagged 'trade': a sub's own sign-up mail — data-entry mode lets it go */
   const es = prof.lang === 'es';
   const html = mailHtml(es ? 'Confirme su correo' : 'Confirm your e-mail', es
-    ? ['Hola ' + esc(s(prof.name).split(' ')[0]) + ',', 'Usted creó una cuenta de GrayCo con ' + esc(prof.email) + '. Toque el botón para confirmar que es su correo.', 'El enlace sirve una vez, por 24 horas. Si usted no se registró, ignore este correo.']
-    : ['Hi ' + esc(s(prof.name).split(' ')[0] || 'there') + ',', 'You signed up for GrayCo with ' + esc(prof.email) + '. Tap the button to confirm it is your e-mail.', 'The link works once, for 24 hours. If you did not sign up, ignore this e-mail — nothing happens.'],
+    ? ['Hola ' + esc(s(prof.name).split(' ')[0]) + ',', 'Usted creó una cuenta de GrayCo con ' + esc(prof.email) + '. Toque el botón para confirmar que es su correo.', 'El enlace sirve una vez, por 24 horas. Si usted no se registró, ignore este correo.', 'Su correo y contraseña sirven en los dos sitios de GrayCo: el Portal (portal.grayco-cs.com) y el sitio de licitaciones (<a href="https://bids.grayco-cs.com">bids.grayco-cs.com</a>) — la misma cuenta.']   /* patch BIDSSAME */
+    : ['Hi ' + esc(s(prof.name).split(' ')[0] || 'there') + ',', 'You signed up for GrayCo with ' + esc(prof.email) + '. Tap the button to confirm it is your e-mail.', 'The link works once, for 24 hours. If you did not sign up, ignore this e-mail — nothing happens.', 'Your e-mail and password work on both GrayCo sites: the Portal (portal.grayco-cs.com) and the bid site (<a href="https://bids.grayco-cs.com">bids.grayco-cs.com</a>) — one sign-in for both.'],   /* patch BIDSSAME */
     { href: svUrl(token), label: es ? 'Confirmar mi correo' : 'Confirm my e-mail' });
   try { return await require('./_lib/custquiet.js').run('trade', function(){ return sendMail(low(prof.email), es ? 'Confirme su correo para GrayCo' : 'Confirm your e-mail for GrayCo', html); }); } catch (e) { return false; }
 }

@@ -164,6 +164,8 @@ let pendTok = '';
   const p0 = profOf(EMAIL);
   ok('1 SIGNUPVERIFY: sign-up → "✉️ Check your e-mail to confirm" with a Resend link; no session, no waiting page yet', !!held && /Check your e-mail to confirm/.test(await txt(P, '#svCheck')) && !!(await P.$('#svResend')) && !(await stored(P)) && !(await P.$('#pendBox')) && p0 && p0.emailUnverified === true, await txt(P, '#main'));
   await P.click('#svResend');
+  { const bs = await P.$eval('#svCheck [data-bids-same]', e => ({ t: e.textContent, h: (e.querySelector('a') || {}).href })).catch(() => null);
+    ok('1 BIDSSAME (owner 11/24): "Check your e-mail" says the same e-mail and password sign in at bids.grayco-cs.com (a link)', !!bs && /also sign you in to GrayCo/.test(bs.t) && /Same sign-in for both/.test(bs.t) && /^https:\/\/bids\.grayco-cs\.com\/?$/.test(bs.h), bs); }
   ok('1 SIGNUPVERIFY: Resend link → "Sent — check your e-mail"', !!(await waitFor(async () => /Sent/.test(await txt(P, '#svNote')))), await txt(P, '#svNote'));
   await signinPw(P, EMAIL, PW);
   ok('1 SIGNUPVERIFY: signing in before the confirm → "Check your e-mail to confirm" + Resend link (no waiting page)', !!(await waitFor(async () => /Check your e-mail to confirm/.test(await txt(P, '#siErr')) && !!(await P.$('#siResendLink')))) && !(await stored(P)), await txt(P, '#siErr'));
@@ -180,6 +182,7 @@ let pendTok = '';
   const t1 = await txt(P, '#pendBox');
   ok('1 the page: "✅ You\'re signed in. GrayCo is reviewing your sign-up (usually the same business day). You\'ll get an e-mail when you\'re approved." + Call GrayCo 901-585-0944',
     /✅ You're signed in\./.test(t1) && /GrayCo is reviewing your sign-up \(usually the same business day\)\. You'll get an e-mail when you're approved\./.test(t1) && (await P.getAttribute('#pendCall', 'href')) === 'tel:9015850944' && /901-585-0944/.test(t1), t1.slice(0, 500));
+  ok('1 BIDSSAME: the waiting page says the same sign-in works at bids.grayco-cs.com', /also sign you in to GrayCo.s bid site/.test(await txt(P, '#pendBox [data-bids-same]').catch(() => '')) && /bids\.grayco-cs\.com/.test(await txt(P, '#pendBox [data-bids-same]').catch(() => '')));
   ok('1 the papers checklist: W-9 ("you said you have it"), COI, workers\' comp, licenses — each with 📎 Upload',
     (await P.$$eval('#pendPapers [data-pd]', x => x.map(e => e.getAttribute('data-pd')))).join() === 'w9,gl,wc,lic' && /You said you have it/.test(await txt(P, '[data-pd="w9"]')) && /Not on file yet/.test(await txt(P, '[data-pd="gl"]')) && (await P.$$('[data-pd-up]')).length === 4, await txt(P, '#pendPapers'));
   ok('1 the Sign out button shows; no partner tabs / jobs / pay on the page', await P.isVisible('#signOut') && !(await P.isVisible('#tabs')) && !/Pay|Invoices|SECRET|Kitchen/.test(await txt(P, '#main')), await txt(P, '#main'));

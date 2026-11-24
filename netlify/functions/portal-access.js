@@ -417,7 +417,7 @@ const MAIL = {
     linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).',
     linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).', scopeBtn: 'Review and sign',
     coSignSubj: 'Change order to sign — ', coSignBody: 'GrayCo sent you a change order to your scope on this job. Open your portal to review it and sign it, or ask a question.',
-    approvedSubj: 'You are approved — sign in to your GrayCo Portal', approvedBody: 'GrayCo approved your company. Sign in at portal.grayco-cs.com with the e-mail and password you chose to see the jobs to bid, the plans and your papers. (bids.grayco-cs.com works with the same sign-in.)', approvedBtn: 'Open my GrayCo Portal',
+    approvedSubj: 'You are approved — sign in to your GrayCo Portal', approvedBody: 'GrayCo approved your company. Sign in at portal.grayco-cs.com with the e-mail and password you chose to see the jobs to bid, the plans and your papers. The same e-mail and password also sign you in to GrayCo\'s bid site at bids.grayco-cs.com — one sign-in for both.', approvedBtn: 'Open my GrayCo Portal',
     foot: 'Questions? Call GrayCo at ' + OFFICE_PHONE + '.'
   },
   es: {
@@ -425,7 +425,7 @@ const MAIL = {
     linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).',
     linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', scopeBtn: 'Revisar y firmar',
     coSignSubj: 'Orden de cambio para firmar — ', coSignBody: 'GrayCo le envió una orden de cambio a su alcance en este trabajo. Abra su portal para revisarla y firmarla, o hacer una pregunta.',
-    approvedSubj: 'Aprobado — entre a su Portal GrayCo', approvedBody: 'GrayCo aprobó a su compañía. Entre en portal.grayco-cs.com con el correo y la contraseña que escogió para ver los trabajos para licitar, los planos y sus papeles. (bids.grayco-cs.com funciona con la misma cuenta.)', approvedBtn: 'Abrir mi Portal GrayCo',
+    approvedSubj: 'Aprobado — entre a su Portal GrayCo', approvedBody: 'GrayCo aprobó a su compañía. Entre en portal.grayco-cs.com con el correo y la contraseña que escogió para ver los trabajos para licitar, los planos y sus papeles. El mismo correo y contraseña también le dan entrada al sitio de licitaciones de GrayCo en bids.grayco-cs.com — la misma cuenta para los dos.', approvedBtn: 'Abrir mi Portal GrayCo',
     foot: '¿Preguntas? Llame a GrayCo al ' + OFFICE_PHONE + '.'
   }
 };
