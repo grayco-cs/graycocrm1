@@ -272,6 +272,183 @@ function docRec(pid, f, meta, batchId, by){
   return r;
 }
 
+/* ── patch ZIPSCHED (owner 11/25: "when I send mass zips to put into each job's documents, if you read a schedule or tentative
+   schedule make sure to put those into the schedule"): a schedule file in the import (its name / folder says schedule, tentative
+   schedule, look-ahead, 3-week, construction schedule, timeline, Gantt, baseline) is read — Excel / CSV with the Schedule screen's
+   own 📥 Import column guessing (task / activity, start, end / finish, duration, assignee / sub, trade), PDF text (window._gcPdfText:
+   rows that pair an activity with a date or a date range — one row per line, or MS Project / P6 cell-per-line layouts), Word
+   (window._gcDocxText). Fewer than 2 dated rows = not read (nothing guessed). The rows go on the job's Schedule like the Schedule
+   screen's own import (same record shape; scope 'tentative' + tentative:true = the 📋 Tentative tab), tagged source 'zip-import',
+   zipBatch, fromFile; never twice (same job + title + start). A needs-a-job file carries its rows to the office's 📥 Place. ── */
+var SCHED_RX = /schedul|look.?ahead|\b\d{1,2}.?(week|wk)s?\b|timeline|gantt|baseline|milestones/i;
+var TENT_RX = /tentative|proposed|draft|preliminary|prelim\b/i;
+var XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+var XLSX_SRI = 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw';
+var xlP = null;
+function loadXlsx(){
+  if (W.XLSX && W.XLSX.read) return Promise.resolve(W.XLSX);
+  if (xlP) return xlP;
+  xlP = new Promise(function(res, rej){
+    var sc = D.createElement('script'); sc.src = XLSX_URL; sc.integrity = XLSX_SRI; sc.crossOrigin = 'anonymous';
+    sc.onload = function(){ W.XLSX && W.XLSX.read ? res(W.XLSX) : rej(new Error('the Excel reader did not load')); };
+    sc.onerror = function(){ xlP = null; rej(new Error('the Excel reader could not be loaded')); };
+    D.head.appendChild(sc);
+  });
+  return xlP;
+}
+function p2(n){ return String(n).padStart(2, '0'); }
+function okY(y){ return y >= 2020 && y <= 2099; }
+var MONS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+var MON_SRC = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+function monOf(w){ w = low(w); return MONS[w.slice(0, 4)] || MONS[w.slice(0, 3)] || 0; }
+function ymd(v){
+  if (v == null || v === '') return '';
+  if (v instanceof Date && !isNaN(v.getTime())) return okY(v.getFullYear()) ? v.getFullYear() + '-' + p2(v.getMonth() + 1) + '-' + p2(v.getDate()) : '';
+  if (typeof v === 'number') { if (v > 43000 && v < 80000) { var d = new Date(Math.round((v - 25569) * 864e5)); return d.getUTCFullYear() + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate()); } return ''; }
+  var t = s(v).toLowerCase().replace(/^(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\.?,?\s+/, '').replace(/\s+\d{1,2}:\d{2}(\s*[ap]m)?$/, '');
+  var m, y, mo, da;
+  if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t))) { y = +m[1]; mo = +m[2]; da = +m[3]; }
+  else if ((m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/.exec(t))) { y = +(m[3].length === 2 ? '20' + m[3] : m[3]); mo = +m[1]; da = +m[2]; }
+  else if ((m = new RegExp('^' + MON_SRC + '\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4}|\\d{2})$').exec(t))) { mo = monOf(m[1]); da = +m[2]; y = +(m[3].length === 2 ? '20' + m[3] : m[3]); }
+  else if ((m = new RegExp('^(\\d{1,2})[\\s\\-]' + MON_SRC + '\\.?[\\s\\-,]+(\\d{4}|\\d{2})$').exec(t))) { mo = monOf(m[2]); da = +m[1]; y = +(m[3].length === 2 ? '20' + m[3] : m[3]); }
+  else return '';
+  if (!okY(y) || mo < 1 || mo > 12 || da < 1 || da > 31) return '';
+  var dt = new Date(y, mo - 1, da); if (dt.getMonth() !== mo - 1) return '';
+  return y + '-' + p2(mo) + '-' + p2(da);
+}
+function addDays(d, n){ var x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + p2(x.getMonth() + 1) + '-' + p2(x.getDate()); }
+/* a table (rows of cells) → items, with the Schedule screen's 📥 Import column guessing; rows without a readable start are left out */
+function hnorm(c){ return low(c).replace(/[_\-.#]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function hasWord(h, w){ return h === w || (' ' + h + ' ').indexOf(' ' + w + ' ') >= 0; }
+var TKW = ['task', 'phase', 'activity', 'item', 'work', 'scope', 'milestone', 'name', 'title', 'task name', 'activity name', 'deliverable', 'line item', 'wbs name', 'description'];
+var DKW = ['start', 'date', 'begin', 'planned start', 'actual start', 'start date', 'day', 'when', 'target start', 'finish'];
+function rowsToItems(rows){
+  var ne = arr(rows).filter(function(r){ return arr(r).some(function(c){ return s(c); }); });
+  if (ne.length < 2) return [];
+  var hIdx = -1;
+  for (var i = 0; i < Math.min(15, ne.length); i++) {
+    var rr = ne[i].map(hnorm);
+    if (rr.some(function(h){ return TKW.some(function(k){ return hasWord(h, k); }); }) && rr.some(function(h){ return DKW.some(function(k){ return hasWord(h, k); }); })) { hIdx = i; break; }
+  }
+  if (hIdx < 0) return [];
+  var hd = ne[hIdx].map(hnorm), dt = ne.slice(hIdx + 1);
+  var fi = function(groups, not){ for (var g = 0; g < groups.length; g++) for (var x = 0; x < hd.length; x++) { if (not && not.indexOf(x) >= 0) continue; if (groups[g].some(function(w){ return hasWord(hd[x], w); })) return x; } return -1; };
+  var tC = fi([['task name', 'activity name', 'wbs name'], ['task', 'phase', 'activity', 'item', 'work item', 'scope', 'milestone'], ['title', 'name', 'deliverable', 'line item'], ['description', 'desc']]);
+  if (tC < 0) return [];
+  var sC = fi([['start date', 'planned start', 'actual start', 'target start', 'early start'], ['start', 'begin', 'date', 'day', 'when', 'scheduled']], [tC]);
+  var eC = fi([['end date', 'finish date', 'planned finish', 'completion date', 'early finish'], ['finish', 'end', 'complete', 'due', 'deadline']], [tC, sC]);
+  var duC = fi([['duration', 'dur', 'days', 'length', 'span', 'orig dur', 'original duration']], [tC, sC, eC]);
+  var aC = fi([['resource', 'resources', 'resource names', 'assigned', 'assignee', 'crew', 'responsible', 'superintendent', 'foreman', 'sub', 'subcontractor', 'contractor', 'who']], [tC, sC, eC, duC]);
+  var tyC = fi([['trade', 'type', 'category']], [tC, sC, eC, duC, aC]);
+  if (sC < 0 && eC < 0) return [];
+  var out = [];
+  dt.forEach(function(row){
+    var t = s(row[tC]).replace(/\s+/g, ' '); if (!t || /^(grand )?(total|subtotal)$/i.test(t)) return;
+    var st = sC >= 0 ? ymd(row[sC]) : '', en = eC >= 0 ? ymd(row[eC]) : '', du = duC >= 0 ? parseInt(String(row[duC]).replace(/[^\d]/g, ''), 10) || 0 : 0;
+    if (!st && en && du > 0) st = addDays(en, -(du - 1));
+    if (!st) return;
+    if (en && en < st) en = '';
+    out.push({ t: t.slice(0, 120), s: st, e: en && en !== st ? en : '', du: du, who: aC >= 0 ? s(row[aC]).slice(0, 80) : '', trade: tyC >= 0 ? s(row[tyC]).slice(0, 60) : '' });
+  });
+  return out;
+}
+function csvRows(txt){
+  var rows = [], row = [], cur = '', q = false, sep = ',';
+  var first = String(txt).split(/\r?\n/)[0] || ''; if ((first.match(/;/g) || []).length > (first.match(/,/g) || []).length) sep = ';'; else if ((first.match(/\t/g) || []).length > (first.match(/,/g) || []).length) sep = '\t';
+  for (var i = 0; i < txt.length; i++) {
+    var c = txt[i];
+    if (q) { if (c === '"') { if (txt[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; continue; }
+    if (c === '"') q = true; else if (c === sep) { row.push(cur); cur = ''; } else if (c === '\n' || c === '\r') { if (c === '\r' && txt[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; } else cur += c;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+/* text (PDF / Word) → items: a line with an activity and one or two dates; or (cell-per-line layouts) an activity line followed by
+   its date lines. Header, page and print lines are left out. */
+var DATE_SRC = '(?:(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\\.?,?\\s+)?(?:\\d{4}-\\d{1,2}-\\d{1,2}|\\d{1,2}[\\/\\-.]\\d{1,2}[\\/\\-.](?:\\d{4}|\\d{2})(?![\\d\\/])|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}|\\d{1,2}[\\s\\-](?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?[\\s\\-,]+(?:\\d{4}|\\d{2}))';
+var NOT_ACT = /^(activity|task|task name|activity name|description|name|start|finish|end|duration|id|wbs|printed|print date|run date|data date|date|page|project|report|as of|prepared|layout|filter|total float|resource)\b|\bpage \d+ of \d+/i;
+function cleanAct(t){
+  return s(t).replace(/^[\s\-–•*]*(?:[A-Z]{0,4}[\-.]?\d+(?:[.\-]\d+)*[\s.)\-:]+)?/, '').replace(/\s+\d+(?:\.\d+)?\s*(?:d|day|days|wd|wk|wks|week|weeks|edays|h|hrs)\.?\s*$/i, '').replace(/\s+\d+\s*$/, '').replace(/[\s,;:|\-–]+$/, '').replace(/\s+/g, ' ');
+}
+function datesIn(line){ var rx = new RegExp(DATE_SRC, 'gi'), m, out = []; while ((m = rx.exec(line))) { var d = ymd(m[0].replace(/\.$/, '')); if (d) out.push({ d: d, i: m.index, n: m[0].length }); } return out; }
+function schedFromText(text){
+  var lines = String(text || '').split(/\n+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+  var one = [], seen = {};
+  var push = function(L, t, a, b){ t = cleanAct(t); if (!/[a-z].*[a-z].*[a-z]/i.test(t) || t.length > 120 || NOT_ACT.test(t)) return; if (b && b < a) b = ''; var k = low(t) + '|' + a; if (seen[k]) return; seen[k] = 1; L.push({ t: t, s: a, e: b && b !== a ? b : '', du: 0, who: '', trade: '' }); };
+  lines.forEach(function(l){ var ds = datesIn(l); if (!ds.length || ds[0].i < 3) return; push(one, l.slice(0, ds[0].i), ds[0].d, ds[1] ? ds[1].d : ''); });
+  if (one.length >= 2) return one.slice(0, 400);
+  /* cell per line: an activity, then its start / finish on the lines that follow */
+  var seq = [], cur = null; seen = {};
+  var flush = function(){ if (cur && cur.d.length) push(seq, cur.t, cur.d[0], cur.d[1] || ''); cur = null; };
+  lines.forEach(function(l){
+    var ds = datesIn(l);
+    var rest = ds.reduce(function(acc, x){ return acc.replace(l.substr(x.i, x.n), ' '); }, l).replace(/\b\d+(?:\.\d+)?\s*(?:d|days?|wd|wks?|weeks?|h|hrs)?\b/gi, ' ').replace(/[\s%$,.\-–]+/g, '');
+    if (ds.length && !rest) { if (cur) { ds.forEach(function(x){ if (cur.d.length < 2) cur.d.push(x.d); }); if (cur.d.length >= 2) flush(); } return; }
+    if (ds.length) { flush(); if (ds[0].i >= 3) push(seq, l.slice(0, ds[0].i), ds[0].d, ds[1] ? ds[1].d : ''); return; }
+    if (!/[a-z]{3}/i.test(l)) return;   /* a duration / number cell between the activity and its dates */
+    flush(); if (l.length <= 120 && !NOT_ACT.test(l)) cur = { t: l, d: [] };
+  });
+  flush();
+  return seq.length >= 2 ? seq.slice(0, 400) : [];
+}
+function isSchedFile(r){ return SCHED_RX.test(r.path) && /\.(xlsx|xlsm|xls|csv|txt|pdf|docx)$/i.test(r.name); }
+async function readSched(r){
+  var b = await r.get(); if (!r.size) r.size = b.size;
+  if (b.size > 25 * 1048576) return { items: [], text: '' };
+  var ext = (/\.([a-z0-9]+)$/i.exec(r.name) || [])[1].toLowerCase(), items = [], text = '';
+  if (ext === 'csv' || ext === 'txt') { text = await b.text(); items = rowsToItems(csvRows(text)); if (!items.length) items = schedFromText(text); }
+  else if (/^xls/.test(ext)) {
+    var XL = await loadXlsx(), wb = XL.read(new Uint8Array(await b.arrayBuffer()), { type: 'array', cellDates: true, raw: false });
+    wb.SheetNames.forEach(function(n){ var ws = wb.Sheets[n]; if (!ws || !ws['!ref'] || items.length) return; var rows = XL.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false }); items = rowsToItems(rows); if (!text) text = rows.slice(0, 8).map(function(x){ return arr(x).join(' '); }).join('\n'); });
+  }
+  else if (ext === 'pdf' && typeof W._gcPdfText === 'function') { text = s(await W._gcPdfText(new Uint8Array(await b.arrayBuffer()))); items = schedFromText(text); }
+  else if (ext === 'docx' && typeof W._gcDocxText === 'function') { text = s(await W._gcDocxText(new Uint8Array(await b.arrayBuffer()))); items = schedFromText(text); }
+  return { items: items, text: text.slice(0, 4000) };
+}
+async function detectScheds(){
+  var L = S.rows.filter(function(r){ return !r.schedRead && r.status !== 'big' && isSchedFile(r); });
+  for (var i = 0; i < L.length; i++) {
+    var r = L[i]; r.schedRead = true;
+    try {
+      msg('Reading the schedule in ' + r.name + '…');
+      var x = await readSched(r);
+      if (x.items.length) r.sched = { on: true, tent: TENT_RX.test(r.path) || TENT_RX.test(x.text.slice(0, 3000)), open: false, items: x.items.map(function(it){ it.on = true; return it; }) };
+    } catch (e) { warn(e); }
+  }
+  msg('');
+}
+function schedPicked(r){ return r.sched && r.sched.on ? r.sched.items.filter(function(it){ return it.on !== false; }) : []; }
+function schedRecs(pid, items, tent, ctx){
+  var p = proj(pid) || {};
+  return arr(items).map(function(it, i){
+    var notes = [it.e ? 'End: ' + it.e : '', it.du ? it.du + ' days' : '', it.trade ? 'Trade: ' + it.trade : '', 'From ' + ctx.file].filter(Boolean).join(' | ');
+    return { id: 'SCH' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + '_' + i, pid: String(pid), title: it.t, date: it.s, endDateSch: it.e || '',
+      time: '08:00', endTime: '17:00', assignee: it.who || '', vendor: '', type: 'work', address: s(p.address), notes: notes,
+      scope: tent ? 'tentative' : 'company', tentative: !!tent, by: ctx.by, createdBy: ctx.by, source: 'zip-import', zipBatch: ctx.batch, fromFile: ctx.file, createdAt: nowIso() };
+  });
+}
+function schedKey(x){ return String(x.pid) + '|' + low(x.title) + '|' + s(x.date); }
+function addSched(recs){
+  if (!recs.length) return Promise.resolve(0);
+  return Promise.resolve(typeof W.idbGet === 'function' ? W.idbGet('schedule') : null).catch(function(){ return null; }).then(function(cur){
+    var live = (Array.isArray(cur) ? cur : []).concat(arr(crm().schedule)), have = {};
+    live.forEach(function(e){ if (e && e.pid != null && e.deleted !== true) have[schedKey(e)] = 1; });
+    var add = recs.filter(function(m){ var k = schedKey(m); if (have[k]) return false; have[k] = 1; return true; });
+    if (!add.length) return 0;
+    personWrote(['schedule']);
+    var put = function(base){
+      var h = {}; base.forEach(function(e){ if (e && e.pid != null) h[schedKey(e)] = 1; });
+      var out = base.concat(add.filter(function(m){ return !h[schedKey(m)]; }));
+      try { if (W.idbSet) W.idbSet('schedule', out); } catch (e) {}
+      try { if (W._supaUpsert) W._supaUpsert('schedule', out); } catch (e) {}
+      return out;
+    };
+    if (typeof W._setSchedule === 'function') { var done = false; W._setSchedule(function(prev){ var out = put(Array.isArray(prev) ? prev : (Array.isArray(cur) ? cur : [])); done = true; return out; }); if (!done) put(Array.isArray(cur) ? cur : []); }
+    else { var out = put(Array.isArray(cur) ? cur : []); try { if (W._crm) W._crm.schedule = out; } catch (e) {} }
+    return add.length;
+  });
+}
+
 /* ── the sheet ── */
 var S = null;   /* { rows: [...], mode, zips, busy, done } */
 function css(){
@@ -299,6 +476,8 @@ function css(){
     '.gczi .bar{height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:8px 0}.gczi .bar i{display:block;height:100%;background:#16a34a;width:0;transition:width .2s}' +
     '.gczi .sum{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:13.5px;margin:10px 0}' +
     '.gczi .foot{position:sticky;bottom:-24px;background:#fff;border-top:1px solid #e2e8f0;padding:10px 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+    '.gczi .sch{margin:0 10px 8px 10px;padding:8px 10px;border:1px dashed #93c5fd;background:#eff6ff;border-radius:10px;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px}.gczi .sch details{flex:1 1 100%;min-width:0}.gczi .sch summary{cursor:pointer;color:#1d4ed8;font-size:12.5px}' +
+    '.gczi .schl{max-height:260px;overflow:auto;margin-top:6px}.gczi .si{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;padding:3px 0;border-top:1px solid #dbeafe;font-size:12.5px}.gczi .si input{width:18px;height:18px;flex:none}.gczi .si .st{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}.gczi .si .sd{color:#475569;white-space:nowrap}' +
     '@media (max-width:640px){.gczi-ov{padding:0}.gczi{border-radius:0;min-height:100%;padding:14px 12px}.gczi .row .rc{flex:1 1 140px}}';
   D.head.appendChild(st);
 }
@@ -366,6 +545,7 @@ async function addInputs(files){
     }
   }
   await autoPlace();
+  await detectScheds();   /* patch ZIPSCHED */
   applyMode(); paint();
 }
 /* sizes of ZIP entries are known only once read — read the ones without one when the time comes */
@@ -430,7 +610,7 @@ function paint(){
       h += '<div class="row" data-zi-row="' + r.id + '"><div class="fn">' + esc(r.name) + '<small>' + (r.size ? kb(r.size) + ' · ' : '') + rowHow(r) + '</small></div>' +
         '<select class="rj" data-zi-job="' + r.id + '" aria-label="Job">' + rowOpts(r.pid) + '</select>' +
         '<select class="rc" data-zi-cat="' + r.id + '" aria-label="Category">' + CATS.map(function(c){ return '<option' + (c === r.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>' +
-        '<label class="pt"><input type="checkbox" data-zi-portal="' + r.id + '"' + (r.portal ? ' checked' : '') + '><span>Show in the customer’s portal' + (r.portalWhy ? '<br><span class="why">' + (r.portal ? '⚠ looks like ' : 'Off: looks like ') + esc(r.portalWhy) + ' — never shown to customers' + (r.portal ? ' (you turned it on)' : '') + '</span>' : '') + '</span></label></div>';
+        '<label class="pt"><input type="checkbox" data-zi-portal="' + r.id + '"' + (r.portal ? ' checked' : '') + '><span>Show in the customer’s portal' + (r.portalWhy ? '<br><span class="why">' + (r.portal ? '⚠ looks like ' : 'Off: looks like ') + esc(r.portalWhy) + ' — never shown to customers' + (r.portal ? ' (you turned it on)' : '') + '</span>' : '') + '</span></label></div>' + schedHtml(r);
     });
     h += '</div>';
   });
@@ -443,7 +623,24 @@ function paint(){
   L.querySelectorAll('[data-zi-cat]').forEach(function(sel){ sel.onchange = function(){ var r = rowById(sel.getAttribute('data-zi-cat')); if (r) r.cat = sel.value; }; });
   L.querySelectorAll('[data-zi-portal]').forEach(function(cb){ cb.onchange = function(){ var r = rowById(cb.getAttribute('data-zi-portal')); if (r) { r.portal = cb.checked; paint(); } }; });
   L.querySelectorAll('[data-zi-fold]').forEach(function(sel){ sel.onchange = function(){ if (sel.value === '__mixed') return; var g = groups[+sel.getAttribute('data-zi-fold')]; g.rows.forEach(function(r){ if (r.status !== 'big') r.pid = sel.value; }); paint(); }; });
+  schedWire(L);
   F.querySelector('[data-zi="go"]').onclick = run;
+}
+/* patch ZIPSCHED: under a schedule file — the rows found, the job's Schedule, Tentative */
+function schedHtml(r){
+  if (!r.sched || r.pid === '__skip') return '';
+  var x = r.sched, p = r.pid ? proj(r.pid) : null, n = x.items.length, on = schedPicked(r).length;
+  var where = p ? esc(s(p.name)) + '’s Schedule' : 'the Schedule of the job the office picks';
+  return '<div class="sch" data-zs="' + r.id + '"><label class="pt"><input type="checkbox" data-zs-on="' + r.id + '"' + (x.on ? ' checked' : '') + '><span>📅 <b>' + n + ' schedule item' + (n === 1 ? '' : 's') + ' found</b> → add ' + (on < n && x.on ? on + ' ' : '') + 'to ' + where + '</span></label>' +
+    '<label class="pt"><input type="checkbox" data-zs-tent="' + r.id + '"' + (x.tent ? ' checked' : '') + '><span>Tentative <span class="mut">(📋 Tentative tab)</span></span></label>' +
+    '<details data-zs-det="' + r.id + '"' + (x.open ? ' open' : '') + '><summary>Show the rows</summary><div class="schl">' +
+    x.items.map(function(it, i){ return '<label class="si"><input type="checkbox" data-zs-it="' + r.id + ':' + i + '"' + (it.on !== false ? ' checked' : '') + '><span class="st">' + esc(it.t) + '</span><span class="sd">' + esc(it.s) + (it.e ? ' → ' + esc(it.e) : '') + '</span></label>'; }).join('') + '</div></details></div>';
+}
+function schedWire(L){
+  L.querySelectorAll('[data-zs-on]').forEach(function(cb){ cb.onchange = function(){ var r = rowById(cb.getAttribute('data-zs-on')); if (r && r.sched) { r.sched.on = cb.checked; paint(); } }; });
+  L.querySelectorAll('[data-zs-tent]').forEach(function(cb){ cb.onchange = function(){ var r = rowById(cb.getAttribute('data-zs-tent')); if (r && r.sched) r.sched.tent = cb.checked; }; });
+  L.querySelectorAll('[data-zs-det]').forEach(function(d){ d.addEventListener('toggle', function(){ var r = rowById(d.getAttribute('data-zs-det')); if (r && r.sched) r.sched.open = d.open; }); });
+  L.querySelectorAll('[data-zs-it]').forEach(function(cb){ cb.onchange = function(){ var a = cb.getAttribute('data-zs-it').split(':'), r = rowById(a[0]); if (r && r.sched && r.sched.items[+a[1]]) { r.sched.items[+a[1]].on = cb.checked; paint(); } }; });
 }
 function rowById(id){ return S.rows.filter(function(r){ return r.id === id; })[0] || null; }
 /* the duplicate check reads the job files once a list is shown */
@@ -460,6 +657,8 @@ async function run(){
   var batch = { id: bid, at: at, by: by, byEmail: myEmail(), zips: S.zips.slice(), mode: S.mode === 'auto' ? 'automatic' : 'one job', files: [] };
   var dups = docIndex(await docsNow()), waiting = waitingIndex();
   var todo = S.rows.filter(function(r){ return r.pid !== '__skip'; }), done = 0, placed = 0, queued = 0, skipped = 0, failed = 0, recs = [], perJob = {};
+  var sRecs = [], sFound = 0, sJobs = {};   /* patch ZIPSCHED */
+  var schedFor = function(r){ var it = schedPicked(r); sFound += r.sched ? r.sched.items.length : 0; if (!r.pid || !it.length) return 0; var L = schedRecs(r.pid, it, r.sched.tent, { file: r.name, batch: bid, by: by }); sRecs = sRecs.concat(L); sJobs[r.pid] = 1; return L.length; };
   for (var i = 0; i < todo.length; i++) {
     var r = todo[i];
     prog.textContent = 'Saving ' + (i + 1) + ' of ' + todo.length + ': ' + r.name;
@@ -468,7 +667,7 @@ async function run(){
       var blob = null;
       if (!r.size) { blob = await r.get(); r.size = blob.size; }
       var key = r.pid ? dupKey(r.pid, r.name, r.size) : dupKey('?', r.name, r.size);
-      if ((r.pid ? dups : waiting)[key]) { skipped++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, pid: r.pid || '', skipped: 'already imported', updatedAt: nowIso() }); continue; }
+      if ((r.pid ? dups : waiting)[key]) { skipped++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, pid: r.pid || '', skipped: 'already imported', schedItems: r.pid ? schedFor(r) : 0, updatedAt: nowIso() }); continue; }   /* a re-run adds no schedule row twice (same job + title + start) */
       if (!blob) blob = await r.get();
       if (blob.size > MAX_FILE) { failed++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: blob.size, failed: 'over 50 MB', updatedAt: nowIso() }); continue; }
       var file = blob instanceof File && blob.name === r.name ? blob : new File([blob], r.name, { type: r.type || blob.type || '' });
@@ -480,21 +679,26 @@ async function run(){
         var rec = docRec(r.pid, ent, meta, bid, by); recs.push(rec); dups[key] = 1;
         ent.pid = String(r.pid); ent.docId = rec.id; ent.placedAt = rec.uploadedAt; ent.placedBy = by; placed++;
         perJob[r.pid] = (perJob[r.pid] || 0) + 1;
-      } else { ent.pid = ''; ent.queued = true; waiting[key] = 1; queued++; }
+        if (r.sched) ent.schedItems = schedFor(r);
+      } else { ent.pid = ''; ent.queued = true; waiting[key] = 1; queued++;
+        if (r.sched) { sFound += r.sched.items.length; var pk = schedPicked(r); if (pk.length) ent.sched = { tent: !!r.sched.tent, items: pk.map(function(x){ return { t: x.t, s: x.s, e: x.e, du: x.du, who: x.who, trade: x.trade }; }) }; }   /* patch ZIPSCHED: goes with the file to 📥 Place */
+      }
       batch.files.push(ent);
       if (recs.length >= 25) { await addDocs(recs.splice(0)); }
     } catch (e) { failed++; warn(e); batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, failed: s(e && e.message || e).slice(0, 120), updatedAt: nowIso() }); }
     done++;
   }
   if (recs.length) await addDocs(recs.splice(0));
+  var sAdded = 0; try { sAdded = await addSched(sRecs); } catch (e) { warn(e); }   /* patch ZIPSCHED */
   bar.firstChild.style.width = '100%';
-  batch.counts = { placed: placed, waiting: queued, skipped: skipped, failed: failed };
+  batch.counts = { placed: placed, waiting: queued, skipped: skipped, failed: failed, schedFound: sFound, schedAdded: sAdded, schedJobs: Object.keys(sJobs).length };
   batch.jobs = Object.keys(perJob).map(function(pid){ var p = proj(pid); return { pid: pid, name: p ? s(p.name) : pid, n: perJob[pid] }; });
   prog.textContent = 'Saving the import log…';
   await saveBatch(batch);
   S.busy = false;
   var h = '<div class="sum"><b>✓ Import finished.</b><br>' + placed + ' file' + (placed === 1 ? '' : 's') + ' put on ' + batch.jobs.length + ' job' + (batch.jobs.length === 1 ? '' : 's') +
     (queued ? '<br>❓ ' + queued + ' file' + (queued === 1 ? '' : 's') + ' need a job — sent to the office and admins (✅ Approvals → “📦 Files from a ZIP need a job”).' : '') +
+    (sFound ? '<br>📅 ' + sAdded + ' schedule item' + (sAdded === 1 ? '' : 's') + ' added to ' + Object.keys(sJobs).length + ' job schedule' + (Object.keys(sJobs).length === 1 ? '' : 's') + (sRecs.length > sAdded ? ' (' + (sRecs.length - sAdded) + ' already there)' : '') + '.' : '') +
     (skipped ? '<br>' + skipped + ' already imported before — skipped.' : '') + (failed ? '<br><span style="color:#b91c1c">' + failed + ' could not be saved (see the log).</span>' : '') + '</div>';
   h += batch.jobs.map(function(j){ return '<div class="row"><div class="fn">📁 ' + esc(j.name) + '</div><span class="mut">' + j.n + ' file' + (j.n === 1 ? '' : 's') + '</span></div>'; }).join('');
   S.done = h; paint();
@@ -552,7 +756,7 @@ function openPlace(bid){
     var h = '<div class="mut">Imported by ' + esc(b.by) + ' on ' + esc(s(b.at).slice(0, 16).replace('T', ' ')) + (arr(b.zips).length ? ' from ' + esc(b.zips.join(', ')) : '') + '. These files had no PO, address or job name the CRM could read. Pick the job for each, then 📥 Place.</div>';
     if (!w.length) h += '<div class="sum">✓ Every file of this import has a job now.</div>';
     h += '<div class="grp">' + w.map(function(f){
-      return '<div class="row" data-zp="' + esc(f.id) + '"><div class="fn">' + esc(f.name) + '<small>' + esc(f.path) + ' · ' + kb(f.size) + ' · ' + esc(f.cat || 'Other') + ' · ' + (f.portal ? 'goes in the customer portal' : 'staff only' + (f.portalWhy ? ' (' + esc(f.portalWhy) + ')' : '')) + '</small></div>' +
+      return '<div class="row" data-zp="' + esc(f.id) + '"><div class="fn">' + esc(f.name) + '<small>' + esc(f.path) + ' · ' + kb(f.size) + ' · ' + esc(f.cat || 'Other') + (f.sched && arr(f.sched.items).length ? ' · 📅 ' + f.sched.items.length + ' schedule item' + (f.sched.items.length === 1 ? '' : 's') + (f.sched.tent ? ' (tentative)' : '') + ' go on the job’s Schedule' : '') + ' · ' + (f.portal ? 'goes in the customer portal' : 'staff only' + (f.portalWhy ? ' (' + esc(f.portalWhy) + ')' : '')) + '</small></div>' +
         '<select class="rj" data-zp-job="' + esc(f.id) + '" aria-label="Job">' + jobOpts('', '<option value="">— pick the job —</option>') + '</select>' +
         '<button type="button" class="btn go" data-zp-go="' + esc(f.id) + '">📥 Place</button><button type="button" class="btn" data-zp-drop="' + esc(f.id) + '">🚫 Leave out</button></div>';
     }).join('') + '</div>';
@@ -577,6 +781,9 @@ function placeOne(b, fid, pid){
     var dup = docIndex(all)[dupKey(pid, f.name, f.size)];
     var rec = dup ? null : docRec(pid, f, { ref: f.ref, hash: f.hash, type: f.type, size: f.storedSize || f.size }, b.id, by);
     return (rec ? addDocs([rec]) : Promise.resolve(0)).then(function(){
+      /* patch ZIPSCHED: the schedule rows found in the file go on that job's Schedule now */
+      return f.sched && arr(f.sched.items).length ? addSched(schedRecs(pid, f.sched.items, f.sched.tent, { file: f.name, batch: b.id, by: by })).then(function(n){ f.schedAdded = n; }, function(e){ warn(e); }) : null;
+    }).then(function(){
       f.pid = String(pid); f.docId = rec ? rec.id : ''; f.placedAt = nowIso(); f.placedBy = by; f.placedFrom = 'approvals'; f.updatedAt = nowIso();
       var p = proj(pid); toast('📥 ' + f.name + ' → ' + (p ? p.name : 'the job'));
       return saveBatch(b);
@@ -610,7 +817,8 @@ wrapSet(); SI.call(W, watch, 3000);
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 
 W._gcZipImport = { open: open, openPlace: openPlace, match: match, placeByPath: placeByPath, internalWhy: internalWhy, guessCat: guessCat,
+  schedFromText: schedFromText, rowsToItems: rowsToItems, ymd: ymd,
   refresh: function(){ return refresh(true); }, list: cache, items: items, canImport: canImport,
-  state: function(){ return S ? { rows: S.rows.map(function(r){ return { path: r.path, name: r.name, size: r.size, pid: r.pid, auto: r.auto, cat: r.cat, portal: r.portal, portalWhy: r.portalWhy }; }), mode: S.mode, busy: S.busy, done: !!S.done } : null; } };
+  state: function(){ return S ? { rows: S.rows.map(function(r){ return { path: r.path, name: r.name, size: r.size, pid: r.pid, auto: r.auto, cat: r.cat, portal: r.portal, portalWhy: r.portalWhy, sched: r.sched ? { on: r.sched.on, tent: r.sched.tent, n: r.sched.items.length, items: r.sched.items } : null }; }), mode: S.mode, busy: S.busy, done: !!S.done } : null; } };
 try { console.log('[GC] 📦 Import ZIP of job files (💎 menu) — _gcZipImport'); } catch (e) {}
 })();
