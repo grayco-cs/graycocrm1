@@ -38,7 +38,9 @@ function isSolicitation(item, kind){
 const ROOM = /\b(plan\s*-?\s*rooms?|planrooms?|bid\s*rooms?|bid\s*boards?|solicitations?|bidding\s+documents?|bid\s+documents?|documents?\s+for\s+bid)\b/i;
 function planSetLink(item){
   const own = [item.name, item.label, item.title].map(s).join(' ').replace(/[_\-.]+/g, ' ');
-  if (!s(item.url) || s(item.board) || ROOM.test(own) || isSolicitation(item, 'link') || HOST.test(hostOf(item.url))) return false;
+  if (!s(item.url) || s(item.board)) return false;
+  if (/(^|\.)(drive\.google\.com|docs\.google\.com|dropbox\.com)$/i.test(hostOf(item.url))) return true;   /* patch DRIVEPLANS (owner 11/25): a Drive / Dropbox link GrayCo posts is plans, whatever its label */
+  if (ROOM.test(own) || isSolicitation(item, 'link') || HOST.test(hostOf(item.url))) return false;
   return PLANWORD.test(own);
 }
 function visible(item, kind){

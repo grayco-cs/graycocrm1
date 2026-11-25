@@ -500,7 +500,7 @@ async function onTheirList(me, rows){
   const ids = rows.map(function(r){ return r.id; }), due = {}, out = new Set();
   rows.forEach(function(r){ due[r.id] = dueAt(r.data || {}); });
   const mine = function(c){ return listRows([eq('collection', c), eq('user_id', me), inList('job_id', ids)]).catch(function(){ return []; }); };
-  const [ints, reqs, qs, msgs, drafts, tks] = await Promise.all(['intents', 'planreqs', 'questions', 'messages', 'bid-draft', 'takeoffs'].map(mine));
+  const [ints, reqs, qs, msgs, drafts, tks, acts] = await Promise.all(['intents', 'planreqs', 'questions', 'messages', 'bid-draft', 'takeoffs', 'activity'].map(mine));
   const job = function(r){ return s(r.job_id || (r.data && r.data.jobId)); };
   ints.forEach(function(r){ const d = r.data || {}; if (d.intent === 'yes' && s(d.userId) === me) out.add(job(r)); });
   reqs.forEach(function(r){ const d = r.data || {}; if (s(d.userId) === me) out.add(job(r)); });
@@ -509,6 +509,9 @@ async function onTheirList(me, rows){
   drafts.forEach(function(r){ const d = r.data || {}, id = s(r.job_id), at = Date.parse(s(d.firstAt));
     if (s(r.user_id) === me && draftHasWork(d.value) && (!s(d.firstAt) || (at && due[id] && at <= due[id]))) out.add(id); });
   tks.forEach(function(r){ if (s(r.user_id) === me) out.add(job(r)); });
+  /* patch LATEDL (owner 11/25: "yes if they download they can send late bid"): a plan downloaded (one file or ⬇ All plans) on or before the
+     due moment keeps the job — the server stamps the activity row's time, the browser never sends it */
+  acts.forEach(function(r){ const d = r.data || {}, id = s(r.job_id || d.jobId), at = Date.parse(s(d.at)); if (s(r.user_id) === me && d.kind === 'download' && at && due[id] && at <= due[id]) out.add(id); });
   out.delete('');
   return out;
 }

@@ -1161,7 +1161,11 @@ async function processEventCore(evt, opts){
     if (k.kind === 'reply') return { status: 200, body: Object.assign({ inbox: 'bid-replies' }, k.r) };
     if (k.kind === 'sub') subBidMail = true;
     else if (k.kind === 'unsorted') {
-      try { return { status: 200, body: Object.assign({ inbox: 'unsorted' }, await unsortedBidsMail(mail)) }; }
+      try { const ur = await unsortedBidsMail(mail);
+        /* patch BIDSFWD (owner 11/25: "yes for bids to office if CRM can't sort it"): a bids@ e-mail the CRM could not sort also goes to office@
+           (the same forward as leads@'s "not a lead": never our own mail, a forward, spam / a pitch or a blocked sender; once per e-mail) */
+        let fw = null; if (!ur.already) { try { fw = await leadsFwd(mail, 'bids@', 'the CRM could not sort it'); } catch (e) { fw = { forwarded: false, why: s(e && e.message).slice(0, 80) }; } }
+        return { status: 200, body: Object.assign({ inbox: 'unsorted' }, ur, { officeFwd: fw }) }; }
       catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this bids@ e-mail yet (' + (e && e.message) + ') — retry.' } }; }
     }
   }

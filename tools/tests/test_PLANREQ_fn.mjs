@@ -149,7 +149,8 @@ await t('NOLINKS (owner 11/24): a 🔗 plan-room link added → GrayCo only: the
   eq([row('planreqs/j_noplans__u_sam').status, row('planreqs/j_noplans__u_otto').status], ['open', 'open']);
   eq(MAIL.filter(m => !m.to.every(a => /@grayco-cs\.com$/.test(a))).length, 0, 'no e-mail to a sub');
   const SVL = require(path.join(FN, '_lib', 'subvis.js'));
-  eq([SVL.visible({ label: 'Solicitation & documents', url: 'https://x.gov/a', subsVisible: true }, 'link'), SVL.visible({ label: 'Plan room', url: 'https://drive.google.com/x' }, 'link'), SVL.visible({ label: 'Plans (Google Drive)', url: 'https://drive.google.com/x' }, 'link')], [false, false, true], 'no tick opens a plan room; GrayCo\'s own plan set does');
+  eq([SVL.visible({ label: 'Solicitation & documents', url: 'https://x.gov/a', subsVisible: true }, 'link'), SVL.visible({ label: 'Plan room', url: 'https://plans.gc-demo.test/x' }, 'link'), SVL.visible({ label: 'Plans (Google Drive)', url: 'https://drive.google.com/x' }, 'link')], [false, false, true], 'no tick opens a plan room; GrayCo\'s own plan set does');
+  eq(SVL.visible({ label: 'Full set', url: 'https://drive.google.com/x' }, 'link'), true, 'DRIVEPLANS (owner 11/25): a Drive / Dropbox link GrayCo posts is plans, whatever its label');
 });
 await t('a 🔗 plan set link added (bid-hub op plans) → both requests close, To-Dos done, each sub gets a bid-site notice; the sub e-mail is HELD (⏸ on)', async () => {
   MAIL.length = 0;

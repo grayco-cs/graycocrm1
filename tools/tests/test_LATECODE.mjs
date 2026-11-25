@@ -143,6 +143,7 @@ add('invites', 'inv_2', { email: 'invyes@late.test' }, null, { email: 'invyes@la
 add('intents', 'JL__u_invyes', { userId: 'u_invyes', intent: 'yes', at: before }, 'u_invyes');
 add('activity', 'a_pv_view', { userId: 'u_view', kind: 'view', at: before }, 'u_view');
 add('activity', 'a_dl_dl', { userId: 'u_dl', kind: 'download', at: before }, 'u_dl');
+add('activity', 'a_dl_late', { userId: 'u_dllate', kind: 'download', at: after }, 'u_dllate');   /* LATEDL: a download AFTER the due date does not count */
 add('intents', 'JL__u_no', { userId: 'u_no', intent: 'no', at: before }, 'u_no');
 add('intents', 'JL__u_yes', { userId: 'u_yes', intent: 'yes', at: before }, 'u_yes');
 add('planreqs', 'JL__u_pr', { userId: 'u_pr', at: before }, 'u_pr');
@@ -157,9 +158,9 @@ T.sp_rows.push({ key: 'bid-draft/JL:u_dr', collection: 'bid-draft', id: 'JL:u_dr
 add('bids', 'b_1', { userId: 'u_bid', amount: 47000 }, 'u_bid');
 const whoOf = (id, email) => ({ email: email || id + '@late.test', isSub: true, isSupplier: false, approved: true, profile: { id, email: email || id + '@late.test', role: 'sub', approved: true, trades: ['Drywall'] } });
 const scopeOf = async (id, email) => { const sc = await H.subScope(whoOf(id, email)); return [!!sc.jobs.JL, !!sc.biddable.JL, !!(sc.late && sc.late.JL), !!sc.jobs.JO]; };
-const want = { u_yes: 1, u_pr: 1, u_q: 1, u_msg: 1, u_dr: 1, u_drold: 1, u_tk: 1, u_invyes: 1, u_inv: 0, u_view: 0, u_dl: 0, u_no: 0, u_gcmsg: 0, u_dr0: 0, u_drlate: 0, u_none: 0 };
+const want = { u_yes: 1, u_pr: 1, u_q: 1, u_msg: 1, u_dr: 1, u_drold: 1, u_tk: 1, u_invyes: 1, u_inv: 0, u_view: 0, u_dl: 1, u_dllate: 0, u_no: 0, u_gcmsg: 0, u_dr0: 0, u_drlate: 0, u_none: 0 };
 const why = { u_yes: "✋ I'm bidding (saved it)", u_pr: 'a 📩 plan / info request', u_q: 'a question on the job', u_msg: 'a message to GrayCo on the job', u_dr: 'a bid draft typed before the due date', u_drold: 'an older draft (no time stamp)', u_tk: 'a 📐 takeoff', u_invyes: 'invited AND ✋',
-  u_inv: 'an invite they never acted on', u_view: 'a view before the due date', u_dl: 'a plan download before the due date', u_no: '🚫 Not bidding', u_gcmsg: 'only GrayCo wrote to them', u_dr0: 'an empty draft', u_drlate: 'a draft first typed after the due date', u_none: 'nothing at all' };
+  u_inv: 'an invite they never acted on', u_view: 'a view before the due date', u_dl: 'LATEDL (owner 11/25): a plan download before the due date', u_dllate: 'a plan download only after the due date', u_no: '🚫 Not bidding', u_gcmsg: 'only GrayCo wrote to them', u_dr0: 'an empty draft', u_drlate: 'a draft first typed after the due date', u_none: 'nothing at all' };
 for (const id of Object.keys(want)) {
   const email = id === 'u_inv' ? 'inv@late.test' : id === 'u_invyes' ? 'invyes@late.test' : undefined;
   const g = await scopeOf(id, email);

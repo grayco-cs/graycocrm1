@@ -2357,6 +2357,7 @@ function svPlanSet(l) {
   if (!l || !l.url || String(l.board || '').trim()) return false;
   const own = [l.name, l.label, l.title].map(x => String(x == null ? '' : x).trim()).join(' ').replace(/[_\-.]+/g, ' ');
   let h = ''; try { h = new URL(l.url).host; } catch (e) {}
+  if (/(^|\.)(drive\.google\.com|docs\.google\.com|dropbox\.com)$/i.test(h)) return true;   /* patch DRIVEPLANS (owner 11/25) */
   if (/\b(plan\s*-?\s*rooms?|planrooms?|bid\s*rooms?|bid\s*boards?|solicitations?|bidding\s+documents?|bid\s+documents?|documents?\s+for\s+bid)\b/i.test(own) || svSolicitation(l, 'link') || SV_HOST.test(h)) return false;
   return SV_PLAN.test(own);
 }

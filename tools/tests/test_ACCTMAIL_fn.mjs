@@ -74,9 +74,11 @@ ok(fwds().length === sent0 + 1 && fwds()[sent0].subject === '[leads@] November l
 r = await deliver(resend(Object.assign({ from: 'County Purchasing <notifications@county.test>', mid: '<vend1@county.test>', subject: 'Vendor registration renewal reminder', text: 'Your vendor registration renews on 12/31. Log in to update your W-9.' }, L)));
 ok(fwds().length === sent0 + 2 && fwds()[sent0 + 1].subject === '[leads@] Vendor registration renewal reminder', '13 a vendor-registration mail to leads@ is forwarded', [r.body, fwds().slice(sent0).map(m => m.subject)]);
 r = await deliver(resend({ from: 'Some Sub <est@somesub.test>', envelope: ['bids@in.grayco-cs.com'], toHdr: ['bids@grayco-cs.com'], mid: '<uns1@sub.test>', subject: 'Following up', text: 'Did you get our numbers for the clinic job?' }));
-ok(r.body && r.body.unsorted && fwds().length === sent0 + 2, '13b bids@ mail the CRM keeps as 📥 unsorted (the estimator sorts it) stays in the CRM — not forwarded', r.body);
+ok(r.body && r.body.unsorted && fwds().length === sent0 + 3 && fwds()[sent0 + 2].subject === '[bids@] Following up', '13b BIDSFWD (owner 11/25): bids@ mail the CRM cannot sort stays as 📥 unsorted AND goes to the office', [r.body, fwds().slice(sent0).map(m => m.subject)]);
+r = await deliver(resend({ from: 'Some Sub <est@somesub.test>', envelope: ['bids@in.grayco-cs.com'], toHdr: ['bids@grayco-cs.com'], mid: '<uns1@sub.test>', subject: 'Following up', text: 'Did you get our numbers for the clinic job?' }));
+ok(fwds().length === sent0 + 3, '13c … the same e-mail again is not forwarded twice', fwds().slice(sent0).map(m => m.subject));
 r = await deliver(resend({ from: 'County Purchasing <vendors@county.test>', envelope: ['bids@in.grayco-cs.com'], toHdr: ['bids@grayco-cs.com'], mid: '<acct10@county.test>', subject: 'Verify your email for the County vendor portal', text: 'Verify: https://county.test/verify?v=2' }));
-ok(r.body && r.body.account && fwds().length === sent0 + 3 && fwds()[sent0 + 2].subject === '[bids@] Verify your email for the County vendor portal', '13c an account e-mail to bids@ is forwarded ("[bids@] ")', [r.body, fwds().slice(sent0).map(m => m.subject)]);
+ok(r.body && r.body.account && fwds().length === sent0 + 4 && fwds()[sent0 + 3].subject === '[bids@] Verify your email for the County vendor portal', '13d an account e-mail to bids@ is forwarded ("[bids@] ")', [r.body, fwds().slice(sent0).map(m => m.subject)]);
 
 /* never: spam / a pitch, an auto-reply, a bounce, our own mail; once per e-mail; no loop */
 sent0 = fwds().length;
