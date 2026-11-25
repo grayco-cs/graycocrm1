@@ -65,7 +65,7 @@ let CC_NEW = null;
 globalThis.fetch = async function(input, init){
   const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : input.url);
   if (/api\.bls\.gov/.test(url)) { bridge.EXT.push({ t: Date.now(), host: 'api.bls.gov', p: '/', m: 'POST', b: '' }); return new Response(JSON.stringify(BLS), { status: 200, headers: { 'content-type': 'application/json' } }); }
-  if (/api\.companycam\.com\/v2\/projects\?/.test(url) && CC_NEW) { const pg = +(/[?&]page=(\d+)/.exec(url) || [0, 1])[1]; return new Response(JSON.stringify(pg === 1 ? [CC_NEW] : []), { status: 200, headers: { 'content-type': 'application/json' } }); }
+  if (/api\.companycam\.com\/v2\/projects\?/.test(url) && CC_NEW) { const pg = +(/[?&]page=(\d+)/.exec(url) || [0, 1])[1]; const ms = /[?&]modified_since=([^&]+)/.exec(url), msT = ms ? Date.parse(decodeURIComponent(ms[1])) / 1000 : 0; if (msT && CC_NEW.updated_at < msT) return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });   /* CCWAITNEW: like CompanyCam, only projects changed since */ return new Response(JSON.stringify(pg === 1 ? [CC_NEW] : []), { status: 200, headers: { 'content-type': 'application/json' } }); }
   return bridgeFetch(input, init);
 };
 globalThis.fetch.__gcPause = undefined;

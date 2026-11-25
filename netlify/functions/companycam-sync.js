@@ -417,7 +417,10 @@ async function run(opts){
   const wantFull = !!(s(req.at) && s(req.at) !== s(st.fullDoneFor));
   const stale = !!((+st.cursor || 0) > 0 && lastOk && Date.now() - lastOk > 3 * 86400e3);
   const relink = (+st.linkV || 0) !== LINK_V;   /* patch PHOTOLINK: the new linking rule looks at every 2026 project once */
-  const full = wantFull || stale || relink;
+  /* patch CCWAITNEW (owner 11/25: "make new jobs" turned ON, Steven's projects still waiting): projects that waited on the review list while it
+     was OFF are not "changed" in CompanyCam, so the hourly read skipped them — with it ON and any still waiting, read them all once */
+  const waitNew = !!newJobsOn && arr(kv.gc_cc_review).some(x => x && x.kind === 'new');
+  const full = wantFull || stale || relink || waitNew;
   const since = full ? CUT : Math.max(CUT, (+st.cursor || 0) - OVERLAP);
   const cc = await listChanged(token, since);
   function revOf(p, kind, why, jobs){ const x = { cc: s(p.id), kind: kind, why: s(why).slice(0, 300), name: s(p.name), address: s(p.address), url: s(p.url), creator: s(p.creator), created: ymd(p.created_at), at: nowIso };
