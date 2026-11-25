@@ -35,6 +35,7 @@ const J = (status, body) => ({ ok: status >= 200 && status < 300, status, header
 const setKv = (k, v) => KV.set(k, { value: v, updated_at: new Date(Date.now() - 1000).toISOString() });
 const getKv = k => { const v = (KV.get(k) || {}).value; if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return v; } } return v; };
 global.fetch = async function(url, init = {}){
+  if (/^https:\/\/c\.gle\//.test(String(url))) return new Response('', { status: 302, headers: { location: String(url).replace('https://c.gle/', 'https://ads.google.com/lsa/') } });   /* LSAACCT: Google's short link → the lead's page */
   const u = new URL(url), m = (init.method || 'GET').toUpperCase();
   if (u.host === 'sb.test') {
     if (u.pathname === '/auth/v1/user') { const t = String((init.headers || {}).Authorization || '').replace(/^Bearer\s+/, ''); const e = USERS_BY_TOKEN[t]; return e ? J(200, { email: e }) : J(401, {}); }
@@ -133,10 +134,10 @@ const ALL_CUST = [];
   SMS.length = 0; T += 3600e3;
   r = await txt(PAT, 'BAD ' + c1 + ' selling solar panels');
   ok(r && r.byPm && r.good === false && item('LI-f1').lsaCheck === 'bad' && /selling solar panels/.test(item('LI-f1').lsaReason || ''), 'the lead is BAD at once (no approval step)', { r, x: item('LI-f1') });
-  ok(toPh(PAT).length === 1 && new RegExp('^GrayCo: ' + c1 + ' Cus Tomer0 marked BAD \\(selling solar panels\\)\\. Dispute it in Google, pick the reason: https://c\\.gle/DEMOLINK0 ').test(toPh(PAT)[0].Body), '(a) Pat gets the Google dispute link for that lead', toPh(PAT).map(x => x.Body));
+  ok(toPh(PAT).length === 1 && new RegExp('^GrayCo: ' + c1 + ' Cus Tomer0 marked BAD \\(selling solar panels\\)\\. Dispute it in Google, pick the reason: https://ads\\.google\\.com/lsa/DEMOLINK0\\?authuser=ann\\.owner%40grayco-cs\\.com ').test(toPh(PAT)[0].Body), '(a) Pat gets the Google dispute link for that lead', toPh(PAT).map(x => x.Body));
   ok([O1, O2].every(ph => !toPh(ph).length), '(b) LEADWATCH ladder: the owners are not texted at once (the PM has the link first)', SMS.map(x => [x.To, x.Body]));
   const td = task('LSADISPUTE_LI-f1');
-  ok(td && !td.done && (td.assignees || []).includes('office') && /^⚖️ Bad lead per Pat Miller — confirm and dispute by 11\/21, 9:59 AM: Cus Tomer0/.test(td.label) && /https:\/\/c\.gle\/DEMOLINK0/.test(td.note), '(c) the office To-Do "Bad lead per Pat Miller — confirm and dispute by 11/21, 9:59 AM" (LEADWATCH: Google\'s 48 hours from the call)', td);
+  ok(td && !td.done && (td.assignees || []).includes('office') && /^⚖️ Bad lead per Pat Miller — confirm and dispute by 11\/21, 9:59 AM: Cus Tomer0/.test(td.label) && /https:\/\/ads\.google\.com\/lsa\/DEMOLINK0/.test(td.note), '(c) the office To-Do "Bad lead per Pat Miller — confirm and dispute by 11/21, 9:59 AM" (LEADWATCH: Google\'s 48 hours from the call)', td);
   const dec = (getKv('gc_lsa_decisions') || []).find(d => d.id === 'LI-f1');
   ok(dec && dec.good === false && dec.byEmail === EM.pat, 'gc_lsa_decisions: BAD by Pat (the CRM page marks the lead)', dec);
   ok(toPh(OFF).length === 0 && !custSms().length, 'no text to the office or the customer yet');
@@ -144,9 +145,9 @@ const ALL_CUST = [];
   SMS.length = 0; T += 30 * 60e3; let es = await SA.lsaEscTick();
   ok(!SMS.length, 'ladder: nothing before the hour', es);
   T += 31 * 60e3; es = await SA.lsaEscTick();
-  ok(toPh(OFF).length === 1 && new RegExp('BAD lead ' + c1 + ' Cus Tomer0 \\(selling solar panels, per Pat Miller\\).*https://c\\.gle/DEMOLINK0.*DISPUTED ' + c1).test(toPh(OFF)[0].Body) && !toPh(O1).length, 'ladder step 2 (1 hour later): the office role gets the dispute link', SMS.map(x => [x.To, x.Body]));
+  ok(toPh(OFF).length === 1 && new RegExp('BAD lead ' + c1 + ' Cus Tomer0 \\(selling solar panels, per Pat Miller\\).*https://ads\\.google\\.com/lsa/DEMOLINK0\\?authuser=ann\\.owner.*DISPUTED ' + c1).test(toPh(OFF)[0].Body) && !toPh(O1).length, 'ladder step 2 (1 hour later): the office role gets the dispute link', SMS.map(x => [x.To, x.Body]));
   SMS.length = 0; T += 61 * 60e3; es = await SA.lsaEscTick();
-  ok(toPh(O1).length === 1 && toPh(O2).length === 1 && /BAD lead .*https:\/\/c\.gle\/DEMOLINK0/.test(toPh(O1)[0].Body), 'ladder: marketing has nobody with a cell → the owners (an hour after the office)', { es, sms: SMS.map(x => [x.To, x.Body]) });
+  ok(toPh(O1).length === 1 && toPh(O2).length === 1 && /BAD lead .*https:\/\/ads\.google\.com\/lsa\/DEMOLINK0\?authuser=ann\.owner/.test(toPh(O1)[0].Body), 'ladder: marketing has nobody with a cell → the owners (an hour after the office)', { es, sms: SMS.map(x => [x.To, x.Body]) });
 
   console.log('4. Disputed in Google ✓ closes it for everyone');
   SMS.length = 0; T += 600e3;
@@ -168,7 +169,7 @@ const ALL_CUST = [];
   SMS.length = 0;
   r = await api('tok-pat', 'POST', { lsamark: '1' }, { leadId: 'LEADIN-f2', verdict: 'bad', reason: 'wrong number, never called' });
   ok(r.__code === 200 && r.ok && item('LI-f2').lsaCheck === 'bad', 'Pat taps 👎 Bad in the app', r);
-  ok(toPh(PAT).length === 1 && /marked BAD \(wrong number, never called\)\. Dispute it in Google, pick the reason: https:\/\/c\.gle\/DEMOLINK1/.test(toPh(PAT)[0].Body), '(a) Pat gets the dispute link by text', toPh(PAT).map(x => x.Body));
+  ok(toPh(PAT).length === 1 && /marked BAD \(wrong number, never called\)\. Dispute it in Google, pick the reason: https:\/\/ads\.google\.com\/lsa\/DEMOLINK1\?authuser=ann\.owner/.test(toPh(PAT)[0].Body), '(a) Pat gets the dispute link by text', toPh(PAT).map(x => x.Body));
   ok([O1, O2].every(ph => !toPh(ph).some(x => /DEMOLINK1/.test(x.Body))), '(b) the ladder starts with Pat (the owners not at once)', SMS.map(x => [x.To, x.Body]));
   ok(task('LSADISPUTE_LI-f2') && !task('LSADISPUTE_LI-f2').done && /Bad lead per Pat Miller — confirm and dispute by/.test(task('LSADISPUTE_LI-f2').label), '(c) the office To-Do', tasks());
   SMS.length = 0;

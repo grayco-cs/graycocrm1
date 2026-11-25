@@ -731,6 +731,24 @@ async function leads(list, raw, isEm){
 const LSA_MS = 72 * 3600 * 1000;
 const HOWTO_MS = 30 * 864e5;   /* HOWTO: the reply how-to shows for a person's first 30 days of lead texts */
 const LSA_LEADS_URL = 'https://ads.google.com/localservices/leads';   /* LSALINK: Google's LSA leads page (dispute a lead there) */
+/* patch LSAACCT (owner 11/25: "That link opened up to Nick's e-mail — all the LSA goes through my profile, it should automatically open even on
+   Nick's phone to my Gmail and LSA account"): the dispute link in a text opens Google's LSA leads page AS Owner 1's Google account
+   (authuser = Owner 1's e-mail, by role) — a Google short link (c.gle / goo.gl) opens in whatever account the phone has, so it is replaced by
+   the leads page; the code and name in the text find the lead there. A phone not signed in to that account is asked to add it once. */
+async function lsaAcct(u){
+  u = s(u) || LSA_LEADS_URL;
+  if (!OWN.length) { try { await loadOwners(); } catch (e) {} }
+  const o1 = OWN.find(o => o && o.slot === 1), em = low(o1 && o1.email);
+  if (!em) return u;
+  if (/^https:\/\/(c\.gle|goo\.gl)\//i.test(u)) {   /* a Google short link: follow it to the lead's own page (once, 3 s at most) */
+    try { const ac = typeof AbortController === 'function' ? new AbortController() : null, tm = ac ? setTimeout(() => ac.abort(), 3000) : null;
+      const r = await fetch(u, { method: 'GET', redirect: 'manual', signal: ac ? ac.signal : undefined }); if (tm) clearTimeout(tm);
+      const loc = s(r && r.headers && r.headers.get && r.headers.get('location')); if (/^https:\/\/([a-z0-9-]+\.)*google\.com\//i.test(loc)) u = loc; } catch (e) {}
+  }
+  if (!/^https:\/\/([a-z0-9-]+\.)*google\.com\//i.test(u)) u = LSA_LEADS_URL;
+  if (/[?&]authuser=/.test(u)) return u;
+  return u + (u.indexOf('?') < 0 ? '?' : '&') + 'authuser=' + encodeURIComponent(em);
+}
 /* LSAREC: " (2m 14s call, Roofer — roof repair)" from the Google LSA details on the lead; '' when none */
 function lsaDetails(r, x){ const ex = Object.assign({}, obj(obj(x).leadExtra), obj(obj(r).leadExtra)), sec = Math.round(+ex.lsaDurSec || 0), job = clip(s(ex.lsaJob), 34);
   const d = sec ? (sec < 60 ? sec + 's' : Math.floor(sec / 60) + 'm ' + String(sec % 60).padStart(2, '0') + 's') + ' call' : ''; const p = [d, job].filter(Boolean); return p.length ? ' (' + p.join(', ') + ')' : ''; }
@@ -876,7 +894,7 @@ async function lsaApply(ph, who, isAdm, verb, rec, reason, o){
   if (good && selfPm) { try { await pmReplied(rec.leadId); await goodLadder(rec.leadId); } catch (e) {} }   /* LEADWATCH: an owner who takes it himself has answered as its PM; an owner's GOOD <code> <PM> waits for that PM's reply */   /* CUSTTEXT2: "a PM will reach out shortly" · LEADWATCH: the GOOD ladder */
   let pmTx = null; if (good && pm && rec.isLsa !== false && low(pm.email) !== low(who.email)) { try { pmTx = await pmAssignText(pm, { leadId: rec.leadId, code: rec.code, name: rec.name, phone: rec.phone, notes, by: who.name || who.email, em: !!rec.em }); } catch (e) {} }   /* LSAFLOW2: the PM's GrayCo text */
   const gTxt = selfPm ? 'GOOD — it\'s yours (you answered it). To give it to someone else reply GOOD ' + rec.code + ' <PM>.' + (gc && gc.sent ? ' The customer is told a PM will reach out shortly.' : '') : (pm ? 'GOOD — PM ' + pm.name + ' assigned; ' + pm.name.split(' ')[0] + ' is told' + (gc && (gc.sent || gc.skipped === 'already sent') ? ' and the customer is told a PM will reach out shortly.' : ' (nothing goes to the customer).') : 'GOOD — no PM set: pick the PM in CRM Approvals (or reply GOOD ' + rec.code + ' <PM name>).') + (notes ? ' Notes saved on the lead.' : '');
-  let conf = null; if (!o.quiet) { try { conf = await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? gTxt : 'BAD (' + clip(reason || 'no reason given', 50) + ') — closed, no PM.' + (rec.isLsa !== false ? ' Dispute it in Google: ' + (s(rec.link) || LSA_LEADS_URL) : '')) + more, leadNum()); } catch (e) {} }
+  let conf = null; if (!o.quiet) { try { conf = await sendL(ph, 'GrayCo: ' + rec.code + ' ' + clip(rec.name, 40) + ' marked ' + (good ? gTxt : 'BAD (' + clip(reason || 'no reason given', 50) + ') — closed, no PM.' + (rec.isLsa !== false ? ' Dispute it in Google: ' + (await lsaAcct(rec.link)) : '')) + more, leadNum()); } catch (e) {} }
   const line = lsaShort(rec) + ' — ' + (good ? (pm ? 'GOOD, PM ' + pm.name + ' assigned' : 'GOOD, no PM yet (GOOD ' + rec.code + ' <PM>)') + (notes ? ', notes saved' : '') : 'BAD (' + clip(reason || 'no reason given', 40) + '), closed');
   return { res: { handled: true, staff: who.email, lsa: rec.leadId, good, reason: good ? '' : reason, pm: pm ? pm.name : '', pmAsked, notes, saved: r, pmText: pmTx, confirmed: !!(conf && conf.ok) }, line };
 }
@@ -910,8 +928,8 @@ async function lsaMulti(ph, who, isAdm, list, mp){
   let txt = 'GrayCo: ' + (todo.length ? todo.length + ' lead' + (todo.length === 1 ? '' : 's') + ' updated:\n' + lines.join('\n') : 'nothing saved.');
   /* LSALINKS: every BAD Google LSA lead gets its own dispute link, right under the list (owner 11/19) */
   let dispTxt = '';
-  if (disp.length === 1) dispTxt = '\nDispute ' + disp[0].rec.code + ' in Google: ' + (s(disp[0].rec.link) || LSA_LEADS_URL);
-  else if (disp.length) disp.forEach(t => { dispTxt += '\nDispute ' + t.rec.code + ' ' + clip(t.rec.name, 24) + ': ' + (s(t.rec.link) || LSA_LEADS_URL); });
+  if (disp.length === 1) dispTxt = '\nDispute ' + disp[0].rec.code + ' in Google: ' + (await lsaAcct(disp[0].rec.link));
+  else if (disp.length) { const gl = await lsaAcct(''); disp.forEach(t => { dispTxt += '\nDispute ' + t.rec.code + ' ' + clip(t.rec.name, 24) + ': ' + gl; }); }   /* LSAACCT */
   if (dup.length) txt += '\n' + dup.join(', ') + ' answered twice — the first answer counts.';
   if (mp.unclear.length) txt += '\n' + mp.unclear.join(', ') + ': no GOOD / BAD after the code — not saved.';
   if (askMore) txt += '\n' + askMore;
@@ -1765,7 +1783,7 @@ async function lsaBad(o){
   let x = null; try { x = await _D.inboxLead(leadId); } catch (e) { x = null; }
   const c = obj(obj(x).contact), code = s(o.code) || lsaCode(leadId), why = clip(o.reason, 200) || 'no reason given';
   const ph = phone10(o.phone).length === 10 ? phone10(o.phone) : phone10(c.phone), nm = clip(s(o.name) || s(c.name) || 'Google LSA caller', 40);
-  const isLsa = o.isLsa !== false && (!x || isLsaLead(x, x)), link = x ? lsaLinkOf(x) : (/^https:\/\//.test(s(o.link)) ? s(o.link) : LSA_LEADS_URL);
+  const isLsa = o.isLsa !== false && (!x || isLsaLead(x, x)), link = await lsaAcct(x ? lsaLinkOf(x) : (/^https:\/\//.test(s(o.link)) ? s(o.link) : LSA_LEADS_URL));   /* LSAACCT */
   const due = (arrivedOf(x) || now()) + LSA_DISPUTE_WINDOW_H * 3600e3, dueS = mdhOf(due);   /* LEADWATCH: Google's 48 hours */
   const out = { ok: true, code, leadId, good: false, link: isLsa ? link : '' };
   await escClose(leadId, 'reply'); await escClose(leadId, 'good');   /* LEADWATCH: a BAD is a reply; it is not a good lead */
