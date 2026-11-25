@@ -16,5 +16,34 @@
   <body style="margin: 0;">
     <div id="root"></div>
     <div id="gc-sub-pay-note" style="text-align:center;font:13px Arial,sans-serif;color:#55626F;padding:10px 16px">Send all invoices and pay requests to <a href="mailto:invoices@grayco-cs.com">invoices@grayco-cs.com</a> (include the job name/PO). Send your price for our bids to <a href="mailto:bids@grayco-cs.com">bids@grayco-cs.com</a>.</div>
+    <!-- patch BIDSTALE (owner 11/25: the bid site open in a tab since before 11/20 still showed the old e-mail-only "Invite Subs" box):
+         an open bid-site tab checks for a newer version every 5 minutes; coming back to the tab after 2+ minutes away → it reloads to the new
+         one; while you are on the page → a small "🔄 Reload" bar at the bottom (never a popup). Bid drafts are kept on the server. -->
+    <script>
+    (function(){
+      function cur(){ var s = document.querySelector('script[type=module][src*="/assets/index-"]'); return s ? String(s.getAttribute('src')).replace(/^.*\/assets\//, '') : ''; }
+      var stale = false, hiddenAt = 0;
+      function bar(){
+        if (document.getElementById('gc-newver')) return;
+        var b = document.createElement('div'); b.id = 'gc-newver';
+        b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;max-width:520px;margin:0 auto;background:#fff;border:2px solid #D4A017;border-radius:10px;padding:10px 14px;font:600 14px Inter,Arial,sans-serif;color:#0F172A;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(0,0,0,.15)';
+        b.innerHTML = '<span>🔄 A newer version of the bid site is ready.</span><button type="button" style="background:#D4A017;color:#0F172A;border:none;border-radius:8px;padding:8px 14px;font:700 14px Inter,Arial,sans-serif;cursor:pointer">Reload</button>';
+        b.querySelector('button').onclick = function(){ location.reload(); };
+        document.body.appendChild(b);
+      }
+      function check(){
+        var me = cur(); if (!me) return;
+        fetch('/?v=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' }).then(function(r){ return r.ok ? r.text() : ''; }).then(function(h){
+          var m = /assets\/(index-[A-Za-z0-9_-]+\.js)/.exec(h || ''); if (m && m[1] !== me) { stale = true; bar(); }
+        }).catch(function(){});
+      }
+      document.addEventListener('visibilitychange', function(){
+        if (document.hidden) { hiddenAt = Date.now(); return; }
+        if (stale && hiddenAt && Date.now() - hiddenAt > 120000) { location.reload(); return; }
+        check();
+      });
+      setInterval(check, 300000); setTimeout(check, 60000);
+    })();
+    </script>
   </body>
 </html>
