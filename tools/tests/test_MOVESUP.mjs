@@ -38,6 +38,17 @@ try {
     const box = await A.textContent('[data-profile-box="u_cb"]');
     ok('B1 ' + kind + ': 👤 Profile shows phone, e-mail, address, trades, license', /901-555-0142/.test(box) && /jason@trussdemo\.test/.test(box) && /1 Truss Way/.test(box) && /Memphis, TN/.test(box) && /TN-12345/.test(box), box);
     ok('B2 ' + kind + ': the phone is a tap-to-call link', await A.locator('[data-profile-box="u_cb"] a[href="tel:9015550142"]').count() === 1);
+    /* SUBEDIT (owner 11/25): 👤 Profile sits in the button row (next to the docs / work buttons); ✎ Edit changes the company and its trades */
+    ok('B2b ' + kind + ': 👤 Profile is in the card\'s button row', await A.evaluate(() => { const b = document.querySelector('[data-profile-open="u_cb"]'); const row = b && b.parentElement; return !!row && [...row.querySelectorAll('button')].some(x => /Revoke/.test(x.textContent)); }));
+    if (kind === 'desktop') {
+      await A.click('[data-subedit-open="u_cb"]');
+      await A.fill('[data-subedit="u_cb"] [data-subedit-f="company"]', 'Component Builders of Memphis');
+      await A.fill('[data-subedit="u_cb"] [data-subedit-f="other"]', 'Wood Floor Trusses');
+      await A.click('[data-subedit-save="u_cb"]');
+      ok('B2c desktop: ✎ Edit saved the company and the new trade (kept the old ones)', await until(() => { const d = rowData('users/u_cb'); return d.company === 'Component Builders of Memphis' && (d.trades || []).includes('Wood Floor Trusses') && (d.trades || []).length >= 2; }), rowData('users/u_cb'));
+      await A.click('[data-profile-open="u_cb"]').catch(() => {});
+      if (!(await A.locator('[data-profile-box="u_cb"]').count())) await A.click('[data-profile-open="u_cb"]');
+    }
     await A.click(`[data-move="${to}"]`);
     ok('B3 ' + kind + ': the move asks first (inline, no browser popup)', await A.locator(`[data-move-ask="${to}"]`).count() === 1 && rowData('users/u_cb').role === from);
     await A.click(`[data-move-yes="${to}"]`);

@@ -128,6 +128,13 @@ ok('25 a sub\'s my-work is unchanged (the CRM sub link)', r.code === 200 && r.b.
 /* the code keeps the sub-only parts apart */
 const SP = fs.readFileSync(path.join(BUILD, 'netlify/functions/subportal.js'), 'utf8');
 ok('26 bid-hub / CRM sub lists read role "sub" only — a supplier is never offered labour bids or merged into Subs', /us\.filter\(u => u\.role === 'sub' && u\.approved/.test(fs.readFileSync(path.join(BUILD, 'netlify/functions/bid-hub.js'), 'utf8')) && /role: p\.acctType === 'supplier' \? 'supplier' : 'sub'/.test(SP));
+/* TRADEGROW + TRADESPELL (owner 11/25): a trade a sub typed is a button for future subs; a typo is corrected */
+putRow('users', 'u_grow', { id: 'u_grow', role: 'sub', approved: true, email: 'grow@demo.test', name: 'Grow Sub', company: 'Grow Civil LLC', trades: ['Erosion Control', 'Storm Drain', 'Cocnrete and masonry'] }, { user_id: 'u_grow', email: 'grow@demo.test' });
+{ const sp = require(path.join(BUILD, 'netlify/functions/subportal.js')); if (sp._test && sp._test.tradeCacheReset) sp._test.tradeCacheReset(); }
+r = await call('', { action: 'trade-list' });
+const TL = (r.b && r.b.trades) || [];
+ok('27 TRADEGROW: trades a sub added (Erosion Control, Storm Drain) are choices for future subs; the supplier\'s HVAC equipment too', r.code === 200 && TL.includes('Erosion Control') && TL.includes('Storm Drain') && TL.some(x => /hvac equipment/i.test(x)), TL);
+ok('28 TRADESPELL: "Cocnrete and masonry" is offered as "Concrete and masonry", never the typo', TL.includes('Concrete and masonry') && !TL.some(x => /cocnrete/i.test(x)), TL);
 const fails = R.filter(x => !x).length;
 console.log(fails ? 'FAILED ' + fails + ' of ' + R.length : 'ALL ' + R.length + ' PASS');
 process.exit(fails ? 1 : 0);

@@ -818,6 +818,9 @@ function signupDocs(p, t) {
   return { docs, missingExp, claimed };
 }
 const SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
+/* patch TRADESPELL */
+const TRADE_TYPOS = [[/\bcocnrete\b/gi, 'concrete'], [/\bconcret\b/gi, 'concrete'], [/\bconrete\b/gi, 'concrete'], [/\bmasonary\b/gi, 'masonry'], [/\bmasonery\b/gi, 'masonry'], [/\bdrywal\b/gi, 'drywall'], [/\broffing\b/gi, 'roofing'], [/\bplumming\b/gi, 'plumbing'], [/\belectical\b/gi, 'electrical'], [/\bcarpentary\b/gi, 'carpentry'], [/\bpaintng\b/gi, 'painting'], [/\bflooing\b/gi, 'flooring']];
+function tradeSpell(x){ let v = String(x == null ? '' : x); TRADE_TYPOS.forEach(function(p){ v = v.replace(p[0], function(m){ return m[0] === m[0].toUpperCase() ? p[1][0].toUpperCase() + p[1].slice(1) : p[1]; }); }); return v; }
 function TradeChips({ picked, onChange }) {
   const [list, setList] = useState(SU_TRADES);
   useEffect(() => { let off = false; api('trade-list', {}, { anonymous: true }).then(r => { if (!off && r && Array.isArray(r.trades) && r.trades.length) setList(r.trades); }).catch(() => {}); return () => { off = true; }; }, []);
@@ -5309,6 +5312,24 @@ function SupplierWork({ t, user, asAdmin = false }) {
    inline first; the server keeps who / when). */
 function ProfileBox({ u, users, setUsers, showToast, to }) {
   const [open, setOpen] = useState(false), [ask, setAsk] = useState(false);
+  /* patch SUBEDIT: ✎ Edit the company and what they do */
+  const [ed, setEd] = useState(null);
+  function startEdit() {
+    const all = Array.isArray(u.trades) ? u.trades.filter(Boolean).map(tradeSpell) : [];   /* TRADESPELL: saving fixes the spelling */
+    setEd({ company: u.company || '', dbaName: u.dbaName || '', name: u.name || '', contactTitle: u.contactTitle || '', phone: u.phone || '',
+      businessAddress: u.businessAddress || '', businessCity: u.businessCity || '', businessState: u.businessState || '', businessZip: u.businessZip || '',
+      website: u.website || '', licenseNumbers: u.licenseNumbers || u.license || '', picked: Object.fromEntries(all.map(x => [x, true])), other: '' });
+  }
+  function saveEdit() {
+    const trades = Object.keys(ed.picked).filter(k => ed.picked[k]).concat(ed.other.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean)).filter((x, i, a) => a.indexOf(x) === i).slice(0, 30);
+    if (!ed.company.trim()) { showToast('The company name is needed.', 'error'); return; }
+    const patch = { company: ed.company.trim(), dbaName: ed.dbaName.trim(), name: ed.name.trim(), contactTitle: ed.contactTitle.trim(), phone: ed.phone.trim(),
+      businessAddress: ed.businessAddress.trim(), businessCity: ed.businessCity.trim(), businessState: ed.businessState.trim().toUpperCase().slice(0, 2), businessZip: ed.businessZip.trim(),
+      website: ed.website.trim(), licenseNumbers: ed.licenseNumbers.trim(), trades };
+    setUsers(users.map(x => x.id === u.id ? { ...x, ...patch } : x));
+    setEd(null); showToast('Saved — ' + patch.company + '.');
+  }
+  const inp = (k, ph, w) => <input data-subedit-f={k} placeholder={ph} value={ed[k]} onChange={e => setEd({ ...ed, [k]: e.target.value })} style={{ ...inputStyle, width: w || '100%', boxSizing: 'border-box', marginBottom: 6 }} />;
   const tel = String(u.phone || '').replace(/[^\d+]/g, '');
   const addr = [u.businessAddress, [u.businessCity, u.businessState].filter(Boolean).join(', '), u.businessZip].filter(Boolean).join(' ');
   const row = (k, v) => v ? <div style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0' }}><span style={{ color: styles.text2, minWidth: 92 }}>{k}</span><span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{v}</span></div> : null;
@@ -5318,9 +5339,21 @@ function ProfileBox({ u, users, setUsers, showToast, to }) {
     showToast(to === 'supplier' ? (u.company || u.name) + ' moved to Suppliers.' : (u.company || u.name) + ' moved to Subcontractors.');
   }
   return (
-    <div data-profile={u.id} style={{ marginBottom: 8 }}>
+    <>
       <Btn size="sm" variant="secondary" data-profile-open={u.id} onClick={() => setOpen(!open)}>👤 {open ? 'Hide profile' : 'Profile'}</Btn>
-      {open && <div data-profile-box={u.id} style={{ marginTop: 8, padding: 10, border: `1px solid ${styles.border}`, borderRadius: 8, background: styles.cream }}>
+      {open && <div data-profile={u.id} data-profile-box={u.id} style={{ flexBasis: '100%', marginTop: 4, padding: 10, border: `1px solid ${styles.border}`, borderRadius: 8, background: styles.cream }}>
+        {ed ? <div data-subedit={u.id}>
+          {inp('company', 'Company name')}{inp('dbaName', 'DBA (optional)')}
+          <div style={{ display: 'flex', gap: 6 }}>{inp('name', 'Contact name')}{inp('contactTitle', 'Title')}</div>
+          {inp('phone', 'Phone')}
+          {inp('businessAddress', 'Street address')}
+          <div style={{ display: 'flex', gap: 6 }}>{inp('businessCity', 'City')}{inp('businessState', 'ST', 70)}{inp('businessZip', 'ZIP', 100)}</div>
+          {inp('website', 'Website')}{inp('licenseNumbers', 'License number(s)')}
+          <div style={{ fontSize: 12, fontWeight: 700, margin: '4px 0' }}>What they do</div>
+          <TradeChips picked={ed.picked} onChange={pk => setEd({ ...ed, picked: pk })} />
+          {inp('other', 'Other trade(s) — type them, comma between')}
+          <div style={{ display: 'flex', gap: 6 }}><Btn size="sm" data-subedit-save={u.id} onClick={saveEdit}>Save</Btn><Btn size="sm" variant="ghost" onClick={() => setEd(null)}>Cancel</Btn></div>
+        </div> : <>
         {row('Contact', [u.name, u.contactTitle].filter(Boolean).join(' · '))}
         {row('Phone', tel ? <a href={'tel:' + tel} style={{ color: styles.accentDk, fontWeight: 700 }}>{u.phone}</a> : '')}
         {row('E-mail', u.email ? <a href={'mailto:' + u.email} style={{ color: styles.accentDk }}>{u.email}</a> : '')}
@@ -5330,15 +5363,17 @@ function ProfileBox({ u, users, setUsers, showToast, to }) {
         {row('License', u.licenseNumbers || u.license)}
         {row('Website', u.website)}
         {row('Joined', u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '')}
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <Btn size="sm" variant="secondary" data-subedit-open={u.id} onClick={startEdit}>✎ Edit</Btn>
           {!ask ? <Btn size="sm" variant="ghost" data-move={to} onClick={() => setAsk(true)}>{to === 'supplier' ? '🧱 Move to supplier' : '🔨 Move to subcontractor'}</Btn>
             : <div data-move-ask={to} style={{ fontSize: 13 }}>
                 {to === 'supplier' ? 'Move ' + (u.company || u.name) + ' to Suppliers? They will see the jobs open for material quotes and send quotes, not labour bids.' : 'Move ' + (u.company || u.name) + ' back to Subcontractors? They will see jobs to bid on for their trades.'}
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}><Btn size="sm" data-move-yes={to} onClick={move}>Yes, move</Btn><Btn size="sm" variant="ghost" onClick={() => setAsk(false)}>Cancel</Btn></div>
               </div>}
         </div>
+        </>}
       </div>}
-    </div>
+    </>
   );
 }
 function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
@@ -5365,8 +5400,7 @@ function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
               </div>
               <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
               <div style={{ fontSize: 12, color: styles.text2, marginTop: 6, marginBottom: 8 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
-              <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="sub" />
-              {u.trades?.length > 0 && <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>{u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}</div>}
+              {u.trades?.length > 0 && <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>{u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tradeSpell(tr)}</Badge>)}</div>}
               <Field label={t.crmVendor}>
                 <select style={{ ...inputStyle, marginTop: 4 }} data-crm-vendor={u.id} value={u.crmVendorId || ''} onChange={e => link(u.id, e.target.value)}>
                   <option value="">{vendors === null ? 'Loading…' : 'Not linked — pick the CRM vendor'}</option>
@@ -5376,6 +5410,7 @@ function ApprovedSuppliers({ t, users, setUsers, subDocs, showToast }) {
               {hit && <div data-vendor-match={hit.id} style={{ fontSize: 12, color: styles.text2, marginTop: -8, marginBottom: 10 }}>{t.likelyMatch}: <strong>{hit.name}</strong>{' '}
                 <button type="button" onClick={() => link(u.id, hit.id)} style={{ background: 'transparent', border: 'none', color: styles.accentDk, fontWeight: 700, cursor: 'pointer', padding: 0 }}>{t.linkIt}</button></div>}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="sub" />   {/* SUBEDIT: next to the buttons */}
                 <Btn size="sm" variant="ghost" icon={DollarSign} onClick={() => setWork(u)}>{t.supPos} &amp; {t.supBills}</Btn>
                 <Btn size="sm" variant="ghost" onClick={() => revoke(u.id)}>Revoke</Btn>
               </div>
@@ -5483,7 +5518,7 @@ function PendingSubs({ t, users, setUsers, showToast }) {
                 </div>
                 {u.trades?.length > 0 && (
                   <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}
+                    {u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tradeSpell(tr)}</Badge>)}
                   </div>
                 )}
               </div>
@@ -5601,10 +5636,9 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
               </div>
               <div style={{ fontSize: 14, marginTop: 4 }}>{u.name}</div>
               <div style={{ fontSize: 12, color: styles.text2, marginTop: 6, marginBottom: 8 }}>{u.email}{u.phone ? ' · ' + u.phone : ''}</div>
-              <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="supplier" />
               {u.trades?.length > 0 && (
                 <div style={{ marginTop: 10, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  {u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tr}</Badge>)}
+                  {u.trades.map(tr => <Badge key={tr} color={styles.blue}>{tradeSpell(tr)}</Badge>)}
                 </div>
               )}
               <Field label="CRM record (jobs, pay, 1099)">
@@ -5634,6 +5668,7 @@ function ApprovedSubs({ t, users, setUsers, subDocs, showToast }) {
                 <Btn size="sm" variant="ghost" icon={FileText} onClick={() => setViewingDocs(u)}>
                   {t.viewSubDocs} ({docCount})
                 </Btn>
+                <ProfileBox u={u} users={users} setUsers={setUsers} showToast={showToast} to="supplier" />   {/* SUBEDIT: next to the docs button */}
                 <Btn size="sm" variant="ghost" icon={DollarSign} onClick={() => setViewingWork(u)}>
                   Work &amp; pay
                 </Btn>

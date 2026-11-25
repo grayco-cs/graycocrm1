@@ -1357,12 +1357,18 @@ function teamConfirmPage(token){
 }
 const BASE_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Gutters', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Ceilings', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning', 'Mitigation', 'Abatement'];
 let tradeCache = null;
+/* patch TRADESPELL */
+const TRADE_TYPOS = [[/\bcocnrete\b/gi, 'concrete'], [/\bconcret\b/gi, 'concrete'], [/\bconrete\b/gi, 'concrete'], [/\bmasonary\b/gi, 'masonry'], [/\bmasonery\b/gi, 'masonry'], [/\bdrywal\b/gi, 'drywall'], [/\broffing\b/gi, 'roofing'], [/\bplumming\b/gi, 'plumbing'], [/\belectical\b/gi, 'electrical'], [/\bcarpentary\b/gi, 'carpentry'], [/\bpaintng\b/gi, 'painting'], [/\bflooing\b/gi, 'flooring']];
+function tradeSpell(x){ let v = String(x == null ? '' : x); TRADE_TYPOS.forEach(function(p){ v = v.replace(p[0], function(m){ return m[0] === m[0].toUpperCase() ? p[1][0].toUpperCase() + p[1].slice(1) : p[1]; }); }); return v; }
 async function tradeList(){
   if (tradeCache && Date.now() - tradeCache.at < 600e3) return tradeCache.v;
   const seen = {}, out = [];
   let extra = []; try { extra = crmSubList(await crmData()).map(function(x){ return s(x && (x.trade || x.cat2)); }); } catch (e) { extra = []; }
-  BASE_TRADES.concat(extra.join(',').split(/[,;\/]/)).forEach(function(x){ x = s(x); const k = low(x); if (!x || seen[k] || x.length > 40 || /^(subcontractor|sub|other|vendor)$/i.test(x)) return; seen[k] = 1; out.push(x.charAt(0).toUpperCase() + x.slice(1)); });
-  tradeCache = { at: Date.now(), v: out.slice(0, 40) };
+  /* patch TRADEGROW (owner 11/25: "if a sub adds a trade then make sure that trade is a choice for future subs too"): every trade a sub /
+     supplier account typed (sign-up "other", ✎ Edit) joins the buttons — spelling fixed, one button per trade */
+  try { (await listRows([eq('collection', 'users')])).forEach(function(r){ const d = r.data || {}; if ((d.role === 'sub' || d.role === 'supplier') && d.bidsRevoked !== true) (Array.isArray(d.trades) ? d.trades : String(d.trades || '').split(',')).forEach(function(x){ if (typeof x === 'string') extra.push(s(x)); }); }); } catch (e) {}
+  BASE_TRADES.concat(extra.join(',').split(/[,;\/]/)).forEach(function(x){ x = tradeSpell(s(x)); const k = low(x); if (!x || seen[k] || x.length > 40 || /^(subcontractor|sub|other|vendor)$/i.test(x)) return; seen[k] = 1; out.push(x.charAt(0).toUpperCase() + x.slice(1)); });
+  tradeCache = { at: Date.now(), v: out.slice(0, 150) };   /* TRADEGROW: room for the trades subs add (was 40) */
   return tradeCache.v;
 }
 const PAPER_TYPES = ['w9', 'insurance_general', 'insurance_workers_comp', 'license', 'other'];
