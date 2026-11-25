@@ -8047,7 +8047,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.350-2026-11-25-r39m -->
+<!-- GrayCo CRM Build: 33.351-2026-11-25-r39n -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -9019,7 +9019,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.350-2026-11-25-r39m");
+  console.log("[GC] Build 33.351-2026-11-25-r39n");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -9067,7 +9067,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.350-2026-11-25-r39m"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.351-2026-11-25-r39n"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -47302,6 +47302,7 @@ window.gcDocLib = {
   },
   open: function(projId){
    try{
+    window.__gcDocLibOpenAt = Date.now();   /* patch DOCLIBSTRAY */
     _selProjId = projId || '';
     // Make sure the overlay container exists (create it if a race left it null).
     if(!overlay){
@@ -47323,7 +47324,7 @@ window.gcDocLib = {
       target.appendChild(box);
     }
     renderLib();
-    if(!navMount){ if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible');   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */ }
+    if(!navMount){ if(!overlay.isConnected) document.body.appendChild(overlay); overlay.classList.add('visible'); setTimeout(function(){ try{ var _b=document.getElementById('gc-doclib-box'); if(overlay.classList.contains('visible') && _b && _b.parentNode===overlay && !document.getElementById('gc-forms-nav-mount') && typeof window._setView==='function'){ overlay.classList.remove('visible'); window._setView('forms'); } }catch(_e){} }, 80);   /* patch DOCLIBSTRAY: not claimed → the Forms & Docs page, never stacked under another screen */   /* HUBFIX: the ‹ Back helper takes a screen off the page when its own close did not hide it — put it back, or this button shows nothing until a reload */ }
    }catch(_e){
     console.warn('[GC DocLib] open failed', _e);
     var nm=document.getElementById('gc-forms-nav-mount');
@@ -47405,6 +47406,8 @@ var _fnt = setInterval(function(){
   } else {
     // navigated away — remove the back bar so it doesn't linger on other views
     var _oldBar=document.getElementById('_gcFormsBackBar'); if(_oldBar) _oldBar.remove();
+    /* patch DOCLIBSTRAY: a library left loose on another page (no Forms & Docs, nobody holding it) is put away */
+    try{ var _ov=document.getElementById('gc-doclib-overlay'), _bx=document.getElementById('gc-doclib-box'); if(_ov && _ov.classList.contains('visible') && (!_bx || _bx.parentNode===_ov) && Date.now()-(window.__gcDocLibOpenAt||0)>3000) _ov.classList.remove('visible'); }catch(_e){}
     _lastFormsMount = null;
   }
 }, 1000);
