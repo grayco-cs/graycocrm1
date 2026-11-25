@@ -13627,7 +13627,7 @@ e.jsx("button",{style:{background:"#ef444422",border:"1px solid #ef444455",borde
 ]})
 })(),_st==="pnl"&&e.jsx(__gcStable("bu",bu),{}),_st==="cctrans"&&e.jsx(__gcStable("yl",yl),{}),_st==="reports"&&e.jsx(__gcStable("wu",wu),{}),_st==="estvactual"&&e.jsx(__gcStable("Yf",Yf),{}),e.jsx("div",{id:"tc-mount",style:{display:_st==="tax"?"block":"none",width:"100%",height:"calc(100vh - 100px)"}})]})},
 _spay=function(nm){var _i=Ba.filter(function(x){return x.sub===nm&&x.status==="paid"});return{t:_i.reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),m:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,7)===new Date().toISOString().slice(0,7)}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),y:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,4)===""+new Date().getFullYear()}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),inv:_i}},
-ch=()=>{if(/^(mws|ews)_[a-z]+$/.test(P||""))return e.jsx("div",{key:"gc-view-"+P,id:"gc-mws-mount","data-mws":P,ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.mount(el,P)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch MITWS */if(P==="planbuilder")return e.jsx("div",{key:"gc-view-planbuilder",id:"gc-pb-mount",ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.planbuilder(el)}catch(_x){}},style:{width:"100%",height:"calc(100vh - 60px)"}});/* patch MITWS: 📐 PlanBuilder */switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,(function(_B){var C=window._gcCo;if(!C||C.filter()==="all")return _B;var f=C.filter(),R=window._gcCoRecs||function(x){return x};return Object.assign({},_B,{projects:_B.projects.filter(function(p){return C.passJob(p)}),invs:_B.invs.filter(function(i){return C.pass(i,"inv")}),expenses:R(_B.expenses),leads:_B.leads.filter(function(l){return C.passLead?C.passLead(l,f):C.ofLead(l)===f})/* patch LEADBOTH */,cos:R(_B.cos)})})({projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}))/* patch COLEAK2: the Brain reads the picked company's records */:e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
+ch=()=>{if(/^(mws|ews)_[a-z]+$/.test(P||""))return e.jsx("div",{key:"gc-view-"+P,id:"gc-mws-mount","data-mws":P,ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.mount(el,P)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch MITWS */if(P==="custportals")return e.jsx("div",{key:"gc-view-custportals",id:"gc-cpx-mount",ref:function(el){try{if(el&&window._gcSuperPortal)window._gcSuperPortal.mount(el)}catch(_x){}},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});/* patch SUPERPORTAL */if(P==="planbuilder")return e.jsx("div",{key:"gc-view-planbuilder",id:"gc-pb-mount",ref:function(el){try{if(el&&window._gcMitWS)window._gcMitWS.planbuilder(el)}catch(_x){}},style:{width:"100%",height:"calc(100vh - 60px)"}});/* patch MITWS: 📐 PlanBuilder */switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,(function(_B){var C=window._gcCo;if(!C||C.filter()==="all")return _B;var f=C.filter(),R=window._gcCoRecs||function(x){return x};return Object.assign({},_B,{projects:_B.projects.filter(function(p){return C.passJob(p)}),invs:_B.invs.filter(function(i){return C.pass(i,"inv")}),expenses:R(_B.expenses),leads:_B.leads.filter(function(l){return C.passLead?C.passLead(l,f):C.ofLead(l)===f})/* patch LEADBOTH */,cos:R(_B.cos)})})({projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}))/* patch COLEAK2: the Brain reads the picked company's records */:e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
 e.jsx("div",{style:{fontSize:18,fontWeight:800,marginBottom:4},children:"QuickBooks Import & Sync"}),
 e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:14},children:"Import your QuickBooks data — customers, invoices, expenses, vendors, and jobs. Export CSV files from QuickBooks and upload them here."}),
 
@@ -160012,7 +160012,7 @@ function planFor(p, tpl, start, fit){
     }
     var date = addDays(start, day), end = addDays(date, days - 1);
     var row = { id: 'SCH_T_' + p.id + '_' + t.id, title: s(p.name) + ' — ' + t.name, pid: p.id, date: date, endDate: end, days: days, time: t.notify ? '09:00' : '08:00', endTime: t.notify ? '11:00' : '17:00',
-      type: rowType(t), assignee: /^(PM|super)$/i.test(t.who) ? s(p.pm) : '', vendor: /^sub:/i.test(t.who) ? t.who.slice(4) : '', who: t.who, address: s(p.address),
+      type: rowType(t), assignee: /^super$/i.test(t.who) ? (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)) /* patch SUPERPORTAL */ : /^PM$/i.test(t.who) ? s(p.pm) : '', vendor: /^sub:/i.test(t.who) ? t.who.slice(4) : '', who: t.who, address: s(p.address),
       notes: 'From the “' + tpl.name + '” template' + (t.optional ? ' (if needed)' : ''), tpl: tpl.id, tplTask: t.id, tplName: t.name, dep: t.dep.slice(), portal: !!t.portal, customerVisible: !!t.portal && !t.internal, internal: !!t.internal, reminder: isReminder(t),
       notify: !!t.notify, stage: t.stage || '', pct: t.pct, recurring: t.recurring || 0, draft: true, by: 'Automations', createdAt: nowIso() };
     if (t.sla && program(p)) row.slaDue = new Date(made + num(t.sla.hours) * 3600e3).toISOString(), row.sla = t.sla;
@@ -160404,7 +160404,7 @@ function insTick(){
     arr(data[pid]).forEach(function(i){
       if (!i || !i.id || !/^\d{4}-\d{2}-\d{2}/.test(s(i.date)) || i.done) return;
       var id = 'SCH_INS_' + i.id, r = have[id];
-      if (!r) add.push({ id: id, title: s(p.name) + ' — ' + s(i.label), pid: pid, date: s(i.date).slice(0, 10), time: '09:00', endTime: '12:00', type: 'inspection', assignee: s(p.pm), address: s(p.address), notes: 'From the inspections list', insId: i.id, by: 'Automations', createdAt: nowIso() });
+      if (!r) add.push({ id: id, title: s(p.name) + ' — ' + s(i.label), pid: pid, date: s(i.date).slice(0, 10), time: '09:00', endTime: '12:00', type: 'inspection', assignee: (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)) /* patch SUPERPORTAL */, address: s(p.address), notes: 'From the inspections list', insId: i.id, by: 'Automations', createdAt: nowIso() });
       else if (s(r.date) !== s(i.date).slice(0, 10)) move[id] = s(i.date).slice(0, 10);
     });
   });
@@ -166835,7 +166835,7 @@ var SB = (function(){
   function jobHtml(p){
     var r = rec(p.id), sec = st.sec;
     var body = ({ today: secToday, plans: secPlans, codes: secCodes, subs: secSubs, schedule: secSchedule, log: secLog, punch: secPunch, safety: secSafety, rfi: secRfi, deliv: secDeliv }[sec] || secToday)(p, r);
-    return '<div class="sb-hd"><button type="button" class="gc-rp-btn" data-sb="list" aria-label="Back">‹ All jobs</button><h2>' + esc(p.name) + '</h2><span class="sp"></span>' + navA(p.address) + '</div>' +
+    return '<div class="sb-hd"><button type="button" class="gc-rp-btn" data-sb="list" aria-label="Back">‹ All jobs</button><h2>' + esc(p.name) + '</h2><span class="sp"></span>' + (W._gcSuperPortal ? W._gcSuperPortal.sbBtns(p) : '') /* patch SUPERPORTAL */ + navA(p.address) + '</div>' +
       '<div class="sb-sub">' + esc([p.address, p.client, p.pm ? 'PM ' + p.pm : ''].filter(Boolean).join(' · ')) + (err ? ' <span class="gc-rp-chip bad">cloud: retrying</span>' : '') + '</div>' +
       '<div class="sb-tabs" role="tablist">' + SECS.map(function(x){ return '<button type="button" role="tab" class="sb-tab' + (sec === x[0] ? ' on' : '') + '" data-sb-sec="' + x[0] + '" aria-selected="' + (sec === x[0]) + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>' +
       '<div class="sb-body" data-sb-pid="' + esc(p.id) + '">' + body + '</div>';
@@ -184478,7 +184478,7 @@ function estimatedBy(j, me){
 }
 function samePM(j, me){ try { if (W._gcSamePM) return !!W._gcSamePM(j.pm, me, j); } catch (e) {} return !!me && j.pm === me.name; }
 /* __GC_PATCH_SUPERVIS__ — patch SUPERVIS: a Superintendent also sees the jobs where they are the job team's superintendent */
-function isSuperRole(){ try { return !!(W._gcRP && typeof W._gcRP.role === 'function' && W._gcRP.role() === 'Superintendent'); } catch (e) { return false; } }
+function isSuperRole(){ try { return !!(W._gcRP && typeof W._gcRP.role === 'function' && /^(superintendent|field supervisor)$/i.test(String(W._gcRP.role() || '').trim())); } catch (e) { return false; } }   /* patch SUPERPORTAL: + Field Supervisor */
 function sameSuper(j, me){
   if (!j || !me) return false;
   var names = [j.superintendent, j.superName, j.super].filter(function(x){ return x && typeof x !== 'object'; });
@@ -205940,7 +205940,7 @@ function pullFset(){ if (fsetPulled || typeof W._gcCloudGet !== 'function') retu
 /* ── which jobs ── */
 function mine(p){
   var n = low(myName()), k = rk(); if (!n) return false;
-  if (k === 'super') return [p.superintendent, p.superName, p.super].some(function(x){ return low(x) === n; });
+  if (k === 'super') return [p.superintendent, p.superName, p.super, p.pm, p.apm, p.assistantPm].some(function(x){ return low(x) === n; });   /* patch SUPERPORTAL: + the jobs he runs as PM / APM */
   if (k === 'est') return [p.estimator, p.soldBy].some(function(x){ return low(x) === n; });
   if (k === 'mit') return [p.mitTech, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });
   if (k === 'env') return [p.envTech, p.abatementSupervisor, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });   /* patch MITWS */
@@ -210795,7 +210795,7 @@ function pmBoard(){
     var st = when(p.startDate), en = when(p.endDate);
     if (en && s(p.endDate).slice(0, 10) < td) add(p.pm, 'behind', { id: id, t: en.t, title: nm, sub: 'end date ' + s(p.endDate).slice(0, 10) + ' has passed — ' + pct + '% done', what: 'Behind schedule: ' + nm + ' (end date ' + s(p.endDate).slice(0, 10) + ', ' + pct + '%) — update the dates or the %' });
     else if (st && en && en.t > st.t && t0 > st.t) { var exp = Math.round(100 * (t0 - st.t) / (en.t - st.t)); if (exp - pct >= 25) add(p.pm, 'behind', { id: id, t: -(exp - pct), title: nm, sub: pct + '% done, ' + exp + '% of the time used', what: 'Behind: ' + nm + ' is ' + pct + '% done with ' + exp + '% of the time gone' }); }
-    if (!st || st.t <= t0) { var ll = lastLog[id], wd = ll ? workDaysSince(ll) : null; if (wd == null || wd >= 3) add(p.pm, 'nolog', { id: id, t: ll ? ll : 0, title: nm, sub: ll ? 'last daily log ' + wd + ' working days ago' : 'no daily log on record', what: 'Post a daily log for ' + nm }); }
+    if (!st || st.t <= t0) { var ll = lastLog[id], wd = ll ? workDaysSince(ll) : null; if (wd == null || wd >= 3) add((window._gcPaperTo ? window._gcPaperTo(p) : '') || p.pm, 'nolog', { id: id, t: ll ? ll : 0, title: nm, sub: ll ? 'last daily log ' + wd + ' working days ago' : 'no daily log on record', what: 'Post a daily log for ' + nm }); }
     var last = p._pctUpdatedAt ? Date.parse(p._pctUpdatedAt) : (p._createdAt ? Date.parse(p._createdAt) : 0);
     if (!last || t0 - last >= 7 * 864e5) add(p.pm, 'stale', { id: id, t: last || 0, title: nm, sub: last ? 'no update in ' + Math.floor((t0 - last) / 864e5) + ' days' : 'never updated', what: 'Update the progress % on ' + nm + ' (no update in 7 days)' });
   });
@@ -212268,7 +212268,8 @@ function own(p){ return !!p && scoped([p]).length > 0; }
 function pmRole(){ return /project manager|\bapm\b|assistant p/i.test(role()); }
 function perms(p){
   var all = seesAll(), mine = all || own(p), pm = !all && mine && pmRole();
-  return { cust: all || pm, sub: all || pm, photos: mine, msg: mine };
+  var sp = !all && !pm && (function(){ try { return !!(W._gcSuperPortal && W._gcSuperPortal.can(p)); } catch (e) { return false; } })();   /* patch SUPERPORTAL: a Superintendent on his jobs */
+  return { cust: all || pm || sp, sub: all || pm || sp, photos: mine, msg: mine };
 }
 
 /* ── the customer portal (patch Q's link: /portal.html#t=<43>; the staff preview adds &p=1) ── */
@@ -213134,6 +213135,229 @@ function css(){
 css(); wrapDocs();
 W._gcFP2 = { chooser: function(kind, pid){ var p = proj(pid); return p ? chooser(kind, p, (kind === 'call' ? 'tel:' : 'sms:') + custPhone(p)) : null; }, pref: pref, papers: function(pid){ var p = proj(pid); return p ? papers(p) : Promise.resolve([]); }, docShown: docShown, decorateDocs: decorateDocs };
 try { console.log('[GC] 📱 Field part 2: Call / Text from my phone or the GrayCo number · every paper on the job (patch FIELDPORTAL2) — _gcFP2'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-superportal">
+/* __GC_PATCH_SUPERPORTAL__ — THE SUPERINTENDENT AND THE PORTALS / PAPERWORK (owner 11/25: "Make sure the superintendent can post
+   updates to the customer or sub portal, have on his left tabs the portals." · "superintendent is responsible for all of the
+   paperwork to be filled out etc."). By ROLE and the job's team fields — never by a person's name.
+   • A Superintendent (role Superintendent / Field Supervisor) gets the PM's portal powers on HIS jobs — the jobs where he is the
+     superintendent, the PM or the APM: FIELDPORTAL's perms (👤 Customer portal · 🔧 Sub portal on the Field job cards and the job
+     page; PORTALED's full-screen portal and the desk 🏠 Portal card's ✏️ Open portal follow it) and the 📒 Site Book job page.
+     Posts go through the existing code (patch Q's 📣 post, patch SUB's sub thread): the same rules and Approvals as a PM's.
+   • Left tabs: 🔨 Sub Portal merged into the Superintendent / Field Supervisor tab lists (the role table, saved or built-in), and
+     👤 Customer portals (view custportals) for admin / office / PM / APM / Superintendent: the person's open jobs (admin / office:
+     every open job) — 📣 Post to customer · 👁 See what they see · 🏠 Make portal · 🔧 Sub portal, all existing functions.
+   • Paperwork To-Dos: window._gcPaperTo(job) — the job's superintendent when one is set and is an active person on the team,
+     else the PM; _gcPaperCc(job) — the PM's name when the To-Do went to the superintendent instead (one person nagged, never two).
+   API: window._gcSuperPortal = { isSuper(), can(p), superOn(p), hisJob(p), jobs(), canTab(), mount(el), sbBtns(p), state() } */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_SUPERPORTAL__) return; W.__GC_PATCH_SUPERPORTAL__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x != null; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function warn(e){ try { console.warn('[GC SUPERPORTAL]', e && e.message || e); } catch (x) {} }
+var STATS = { mounts: 0, posts: 0, made: 0, errs: [] };
+function oops(e){ warn(e); try { STATS.errs.push(String(e && e.message || e).slice(0, 160)); if (STATS.errs.length > 20) STATS.errs.shift(); } catch (x) {} }
+
+/* ── who ── */
+function role(){ try { return W._gcRP && typeof W._gcRP.role === 'function' ? s(W._gcRP.role()) : ''; } catch (e) { return ''; } }
+function seesAll(){ try { if (typeof W._gcProjSeesAll === 'function') return !!W._gcProjSeesAll(); } catch (e) {} return false; }
+function isSuper(){ var r = role(); return /^(superintendent|field supervisor)$/i.test(r) || (/super/i.test(r) && !/office|admin|owner|assistant|\bapm\b|project manager/i.test(r)); }
+function isPm(){ return /project manager|\bapm\b|assistant p/i.test(role()); }
+function viewer(){ try { if (typeof W._gcProjViewer === 'function') return W._gcProjViewer(); } catch (e) {} return W._gcMeNow || null; }
+function users(){ return arr(W._crm && W._crm.users); }
+function names(v){ var out = []; (Array.isArray(v) ? v : [v]).forEach(function(x){ x = x && typeof x === 'object' ? (x.name || x.email) : x; if (typeof x === 'string' && s(x)) out.push(s(x)); }); return out; }
+function isMe(n, vo){
+  if (!n || !vo) return false;
+  try { if (typeof W._gcSamePM === 'function' && W._gcSamePM(n, vo, null)) return true; } catch (e) {}
+  return low(n) === low(vo.name) || (!!s(vo.email) && low(n) === low(vo.email));
+}
+function superNames(p){ return p ? names([p.superintendent, p.superName, p.super]) : []; }
+function superOn(p){ var vo = viewer(); return !!p && !!vo && superNames(p).some(function(n){ return isMe(n, vo); }); }
+function teamOn(p){
+  var vo = viewer(); if (!p || !vo) return false;
+  if (names([p.pm, p.projectManager, p.apm, p.assistantPm]).concat(names(arr(p.apms))).some(function(n){ return isMe(n, vo); })) return true;
+  var em = low(vo.email); return !!em && [p.pmEmail, p.apmEmail].some(function(x){ return low(x) === em; });
+}
+function scoped(p){ try { return typeof W._gcProjScope === 'function' && arr(W._gcProjScope([p])).length > 0; } catch (e) { return false; } }
+/* his jobs: the jobs where he is the superintendent, the PM or the APM (myJobsOf's rule) and the jobs the Projects list gives him */
+function hisJob(p){ return !!p && !p.deleted && (superOn(p) || teamOn(p) || scoped(p)); }
+function can(p){ return isSuper() && !seesAll() && hisJob(p); }
+function canTab(){ return seesAll() || isPm() || isSuper(); }
+
+/* ── the paperwork To-Dos: the job's superintendent (an active person on the team), else the PM ── */
+function activeUser(n){
+  n = low(n); if (!n) return null;
+  return users().filter(function(u){ return u && u.active !== false && !u.departed && !u.tombstoned && !u.deleted && (low(u.name) === n || low(u.email) === n || arr(u.aka).some(function(a){ return low(a) === n; })); })[0] || null;
+}
+function paperSuper(p){ var l = superNames(p); for (var i = 0; i < l.length; i++) { var u = activeUser(l[i]); if (u) return s(u.name) || l[i]; } return ''; }
+W._gcPaperTo = function(p){ try { return paperSuper(p) || s(p && p.pm); } catch (e) { return s(p && p.pm); } };
+W._gcPaperCc = function(p){ try { var sp = paperSuper(p); return sp && low(sp) !== low(p && p.pm) ? s(p && p.pm) : ''; } catch (e) { return ''; } };
+
+/* ── the left menu: 🔨 Sub Portal for the Superintendent, 👤 Customer portals for the roles that post to customers ── */
+var SUPER_ROLES = ['Superintendent', 'Field Supervisor'];
+function mergeUx(){
+  var U = W._gcUx; if (!U || typeof U !== 'object') return false;
+  SUPER_ROLES.forEach(function(r){
+    var l = U[r]; if (!Array.isArray(l)) return;
+    if (l.indexOf('subportal') < 0) { var i = l.indexOf('subs'); if (i >= 0) l.splice(i + 1, 0, 'subportal'); else l.push('subportal'); }   /* a saved table too: new defaults merge in */
+    if (l.indexOf('custportals') < 0) { var j = l.indexOf('subportal'); l.splice(j + 1, 0, 'custportals'); }
+  });
+  return true;
+}
+var CP = { id: 'custportals', l: 'Customer portals', ic: '👤' };
+function wrapMenu(){
+  var RP = W._gcRP; if (!RP || typeof RP.menu !== 'function') { later(wrapMenu, 400); return; }
+  if (RP.menu.__spx) return;
+  var orig = RP.menu;
+  var m = function(Uf, list){
+    var r = orig.apply(this, arguments);
+    try {
+      mergeUx();
+      r = arr(r);
+      var ids = r.map(function(g){ return g && g.id; });
+      if (isSuper() && ids.indexOf('subportal') < 0) {
+        var sp = arr(Uf).filter(function(g){ return g && g.id === 'subportal'; })[0] || { id: 'subportal', l: 'Sub Portal', ic: '🔨' };
+        var at = ids.indexOf('subs'); r = at < 0 ? r.concat([sp]) : r.slice(0, at + 1).concat([sp], r.slice(at + 1)); ids = r.map(function(g){ return g && g.id; });
+      }
+      if (!canTab()) r = r.filter(function(g){ return g && g.id !== 'custportals'; });
+      else if (ids.indexOf('custportals') < 0) {
+        var a2 = -1; ['subportal', 'messages', 'sitebook', 'projects'].some(function(k){ var i = ids.indexOf(k); if (i >= 0) { a2 = i + 1; return true; } return false; });
+        r = a2 < 0 ? r.concat([CP]) : r.slice(0, a2).concat([CP], r.slice(a2));
+      }
+    } catch (e) { oops(e); }
+    return r;
+  };
+  m.__spx = true; RP.menu = m;
+}
+wrapMenu();
+(function arm(n){ if (!mergeUx() && n < 120) later(function(){ arm(n + 1); }, 500); })(0);
+
+/* ── the jobs on the 👤 Customer portals tab: open jobs the person may post on (FIELDPORTAL's own rule) ── */
+function allJobs(){ var l = arr(W._crm && W._crm.projects); if (!l.length) { try { l = arr(W._gcFPJobs && W._gcFPJobs()); } catch (e) {} } return l.filter(function(p){ return p && p.id && !p.deleted && !p.tombstoned; }); }
+function open_(p){ var st = low(p.status); return !(p.history || p.recordOnly || /complete|closed|lost|cancel|archiv|dead|void|history/.test(st)); }
+function custOk(p){ try { if (W._gcFP && typeof W._gcFP.perms === 'function') return !!W._gcFP.perms(p.id).cust; } catch (e) {} return seesAll() || can(p); }
+function subOk(p){ try { if (W._gcFP && typeof W._gcFP.perms === 'function') return !!W._gcFP.perms(p.id).sub; } catch (e) {} return seesAll() || can(p); }
+function jobs(){
+  if (!canTab()) return [];
+  var l = allJobs().filter(open_).filter(custOk);
+  try { if (typeof W._gcFPSort === 'function') l = W._gcFPSort(l); } catch (e) {}
+  return l;
+}
+var LINK = /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/, MADE = {};
+function linkOf(p){ if (!p || p.portalOff) return ''; var u = s(p.portalUrl); if (!LINK.test(u)) u = s(MADE[p.id]); return LINK.test(u) ? u : ''; }
+function proj(pid){ return allJobs().filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
+
+/* ── 👤 Customer portals (the tab) ── */
+var UI = { q: '', el: null };
+function css(){
+  if (D.getElementById('gc-spx-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-spx-css';
+  st.textContent = [
+    '#gc-cpx-mount{background:#f7f5f0;color:#14202e;font-family:Inter,-apple-system,sans-serif;box-sizing:border-box;padding:16px;min-height:calc(100vh - 60px)}',
+    '#gc-cpx-mount *{box-sizing:border-box}',
+    '.spx-hd{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px}.spx-hd h2{margin:0;font-size:20px;font-weight:800;color:#14202e}',
+    '.spx-hd .n{font-size:13px;color:#55626f}',
+    '.spx-q{flex:1 1 220px;min-width:0;max-width:360px;border:1px solid #d8d2c4;border-radius:10px;padding:9px 12px;font:15px inherit;background:#fff;color:#14202e}',
+    '.spx-note{font-size:13px;color:#55626f;margin:0 0 12px;line-height:1.45}',
+    '.spx-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}',
+    '.spx-job{background:#fff;border:1px solid #e2dccd;border-left:4px solid #d4a017;border-radius:12px;padding:12px;min-width:0}',
+    '.spx-job b{display:block;font-size:15px;color:#14202e;overflow-wrap:anywhere}.spx-job .m{display:block;font-size:12.5px;color:#55626f;margin:2px 0 8px;overflow-wrap:anywhere}',
+    '.spx-acts{display:flex;flex-wrap:wrap;gap:6px}',
+    '.spx-b{display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:8px 12px;border-radius:10px;border:1px solid #d8d2c4;background:#fff;color:#14202e;font:600 13.5px Inter,-apple-system,sans-serif;cursor:pointer;text-decoration:none}',
+    '.spx-b.pri{background:#d4a017;border-color:#d4a017;color:#14202e}.spx-b:disabled{opacity:.6;cursor:default}',
+    '.spx-empty{background:#fff;border:1px dashed #d8d2c4;border-radius:12px;padding:18px;color:#55626f;font-size:14px}',
+    '.spx-chip{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;background:#fef3c7;color:#92400e;margin-left:6px;vertical-align:middle}',
+    '.spx-sb{display:inline-flex;gap:6px;flex-wrap:wrap}',
+    '#gc-spx-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100300;background:#fff;color:#14202e;border:1px solid #d4a017;border-radius:10px;padding:10px 16px;font:14px Inter,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.15);display:none;max-width:calc(100vw - 32px)}',
+    '@media (max-width:600px){#gc-cpx-mount{padding:12px 16px}.spx-list{grid-template-columns:1fr}.spx-b{flex:1 1 auto;justify-content:center}}'
+  ].join('\n');
+  (D.head || D.documentElement).appendChild(st);
+}
+function toast(t){
+  var el = D.getElementById('gc-spx-toast'); if (!el) { el = D.createElement('div'); el.id = 'gc-spx-toast'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'status'); D.body.appendChild(el); }
+  el.textContent = t; el.style.display = 'block'; clearTimeout(el.__t); el.__t = later(function(){ el.style.display = 'none'; }, 3500);
+}
+function jobHtml(p){
+  var P = W._gcPortal || {}, url = linkOf(p), h = '';
+  if (typeof P.post === 'function') h += '<button type="button" class="spx-b pri" data-spx-a="post" data-pid="' + esc(p.id) + '">📣 Post to customer</button>';
+  if (url) h += '<a class="spx-b" data-spx-a="see" href="' + esc(url + '&p=1') + '" target="_blank" rel="noopener">👁 See what they see</a>';
+  else if (!p.portalOff && typeof P.link === 'function') h += '<button type="button" class="spx-b" data-spx-a="make" data-pid="' + esc(p.id) + '">🏠 Make portal</button>';
+  if (subOk(p) && W._gcFP && typeof W._gcFP.sub === 'function') h += '<button type="button" class="spx-b" data-spx-a="sub" data-pid="' + esc(p.id) + '">🔧 Sub portal</button>';
+  var meta = [s(p.client || p.customer), s(p.address), s(p.status)].filter(Boolean).join(' · ');
+  return '<div class="spx-job" data-spx-pid="' + esc(p.id) + '"><b>' + esc(p.name || p.address || 'Job') + (p.portalOff ? '<span class="spx-chip">portal off</span>' : !url ? '<span class="spx-chip">no portal yet</span>' : '') + '</b><span class="m">' + esc(meta) + '</span><div class="spx-acts">' + h + '</div></div>';
+}
+function paint(){
+  var el = UI.el; if (!el || !D.body.contains(el)) return;
+  var all = jobs(), q = low(UI.q), l = q ? all.filter(function(p){ return low([p.name, p.client, p.customer, p.address, p.po].join(' ')).indexOf(q) >= 0; }) : all;
+  var list = el.querySelector('.spx-list'), n = el.querySelector('.spx-hd .n');
+  if (n) n.textContent = all.length + ' job' + (all.length === 1 ? '' : 's');
+  if (!list) return;
+  list.innerHTML = !canTab() ? '<div class="spx-empty">The customer portals are for the office, admins, PMs and superintendents.</div>'
+    : l.length ? l.map(jobHtml).join('') : '<div class="spx-empty">' + (all.length ? 'No job matches “' + esc(UI.q) + '”.' : (allJobs().length ? 'No open jobs of yours yet — the jobs where you are the superintendent, PM or APM show here.' : 'Loading your jobs…')) + '</div>';
+}
+function mount(el){
+  if (!el) return;
+  css(); STATS.mounts++;
+  if (UI.el === el && el.querySelector('.spx-list')) { paint(); return; }
+  UI.el = el;
+  el.innerHTML = '<div class="spx-hd"><h2>👤 Customer portals</h2><span class="n"></span><input type="search" class="spx-q" placeholder="Search jobs" aria-label="Search jobs" value="' + esc(UI.q) + '"></div>' +
+    '<p class="spx-note">📣 Post an update or photos to the customer’s page (the same post as the job’s 🏠 Portal card — the same rules and ✅ Approvals). 👁 See what they see opens the preview (not counted as the customer opening it). 🏠 Make portal makes the link — nothing is sent.</p>' +
+    '<div class="spx-list"></div>';
+  el.querySelector('.spx-q').addEventListener('input', function(){ UI.q = this.value; paint(); });
+  el.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-spx-a]'); if (!b || !el.contains(b)) return;
+    var a = b.getAttribute('data-spx-a'), pid = b.getAttribute('data-pid'), p = pid ? proj(pid) : null;
+    if (a === 'see') return;   /* the link opens the tab itself */
+    if (!p || !custOk(p)) { toast('This job is not one of yours.'); return; }
+    var P = W._gcPortal || {};
+    try {
+      if (a === 'post' && typeof P.post === 'function') { STATS.posts++; P.post(p.id); return; }
+      if (a === 'sub' && subOk(p) && W._gcFP && W._gcFP.sub) { W._gcFP.sub(p.id); return; }
+      if (a === 'make' && typeof P.link === 'function') {
+        b.disabled = true; b.textContent = 'Making the link…';
+        Promise.resolve(P.link(p.id)).then(function(u){
+          if (u && LINK.test(u)) { MADE[p.id] = u; STATS.made++; toast('🏠 Portal made — nothing was sent to the customer.'); }
+          else toast('The portal link was not made — try again with a signal.');
+          paint();
+        }, function(x){ oops(x); toast('The portal link was not made — try again.'); paint(); });
+      }
+    } catch (x) { oops(x); }
+  });
+  paint();
+  [800, 2500, 6000].forEach(function(ms){ later(paint, ms); });   /* the jobs arriving after the tab opened */
+}
+
+/* ── 📒 Site Book job page: 👤 Customer portal · 🔧 Sub portal (FIELDPORTAL's sheets; PORTALED's full-screen portal) ── */
+function sbBtns(p){
+  try {
+    if (!p || !W._gcFP || typeof W._gcFP.perms !== 'function') return '';
+    var pm = W._gcFP.perms(p.id) || {}, h = '';
+    if (pm.cust) h += '<button type="button" class="gc-rp-btn" data-spx-sb="cust" data-pid="' + esc(p.id) + '">👤 Customer portal</button>';
+    if (pm.sub) h += '<button type="button" class="gc-rp-btn" data-spx-sb="sub" data-pid="' + esc(p.id) + '">🔧 Sub portal</button>';
+    return h ? '<span class="spx-sb">' + h + '</span>' : '';
+  } catch (e) { oops(e); return ''; }
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest && e.target.closest('[data-spx-sb]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  var pid = b.getAttribute('data-pid'), a = b.getAttribute('data-spx-sb'), F = W._gcFP;
+  try {
+    var p = proj(pid); if (!F || !p) return;
+    if (a === 'cust') { if (typeof F.run === 'function' && F.run('fp-cust', p)) return; if (F.cust) F.cust(pid); }
+    else if (a === 'sub') { if (typeof F.run === 'function' && F.run('fp-sub', p)) return; if (F.sub) F.sub(pid); }
+  } catch (x) { oops(x); }
+}, true);
+
+W._gcSuperPortal = { isSuper: isSuper, can: can, superOn: superOn, hisJob: hisJob, jobs: jobs, canTab: canTab, mount: mount, sbBtns: sbBtns, paint: paint,
+  state: function(){ return { role: role(), isSuper: isSuper(), canTab: canTab(), jobs: jobs().map(function(p){ return p.id; }), stats: JSON.parse(JSON.stringify(STATS)) }; } };
+try { console.log('[GC] 👤 Superintendent: customer / sub portals on his jobs, 👤 Customer portals tab, paperwork To-Dos (patch SUPERPORTAL) — _gcSuperPortal.state()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-portaled">
@@ -228497,7 +228721,7 @@ function sweep(){
         var due = N.map(function(x){ return x.due; }).filter(Boolean).sort()[0] || '', over = N.some(function(x){ return x.over; });
         var soon = !over && due && due <= plus(today(), 10);   /* LEADASB2: within 10 days (day 20 of 30, 7 days before start) → high */
         var lab = (over ? '⚠️ OVERDUE — ' : soon ? '⏰ ' : '☣️ ') + 'Give ' + s(p.client || p.name) + ' the lead / asbestos papers' + (due ? ' — due ' + nice(due) : '') + ' (' + N.map(function(x){ return x.k.replace('L', 'Lead ').replace('A', 'Asbestos '); }).join(', ') + ')';
-        if (!t) { l.push({ id: id, kind: 'leadasb', pid: p.id, label: lab, note: 'Job ' + s(p.name) + ' → ☣️ Lead & asbestos card: the forms and ✓ Given. Keep signed papers 3 years.', assignee: s(p.pm), addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: (over || soon) ? 'high' : 'med' }); ch = true; }
+        if (!t) { l.push({ id: id, kind: 'leadasb', pid: p.id, label: lab, note: 'Job ' + s(p.name) + ' → ☣️ Lead & asbestos card: the forms and ✓ Given. Keep signed papers 3 years.', assignee: (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)), pmCc: (window._gcPaperCc ? window._gcPaperCc(p) : '') /* patch SUPERPORTAL */, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: (over || soon) ? 'high' : 'med' }); ch = true; }
         else if (t.label !== lab || t.done) { t.label = lab; t.done = false; t.updatedAt = now; t.prio = (over || soon) ? 'high' : 'med'; ch = true; }
       } else if (t && !t.done) { t.done = true; t.doneAt = t.updatedAt = now; t.resolution = 'every paper given'; ch = true; }
     });
@@ -245624,7 +245848,7 @@ function sweep(){
     P.forEach(function(p){ if (!p || !p.id || p.deleted || !p.leadAsb) return; alertsFor(p, t).forEach(function(x){ want[x.id] = { x: x, p: p }; }); });
     Object.keys(want).forEach(function(id){
       var w = want[id], x = w.x, cur = l.find(function(y){ return y && y.id === id; });
-      if (!cur) { l.push({ id: id, kind: 'leadasb', pid: w.p.id, label: x.label, note: x.note, assignee: s(w.p.pm), prio: x.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
+      if (!cur) { l.push({ id: id, kind: 'leadasb', pid: w.p.id, label: x.label, note: x.note, assignee: (window._gcPaperTo ? window._gcPaperTo(w.p) : s(w.p.pm)), pmCc: (window._gcPaperCc ? window._gcPaperCc(w.p) : '') /* patch SUPERPORTAL */, prio: x.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
       else if (cur.done || cur.label !== x.label) { cur.label = x.label; cur.done = false; cur.updatedAt = now; ch++; }
     });
     l.forEach(function(y){ if (y && !y.done && /^LEADASB(7|20|28)_/.test(s(y.id)) && !want[y.id]) { y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'papers given'; ch++; } });
@@ -249359,7 +249583,7 @@ function sweep(){
     var l = tasks(), now = nowIso(), ch = 0, want = wantedTasks();
     Object.keys(want).forEach(function(id){
       var w = want[id], cur = l.find(function(y){ return y && y.id === id; });
-      if (!cur) { l.push({ id: id, kind: 'envcomp', pid: w.p.id, label: w.label, note: w.note, assignee: s(w.p.pm), prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
+      if (!cur) { l.push({ id: id, kind: 'envcomp', pid: w.p.id, label: w.label, note: w.note, assignee: (window._gcPaperTo ? window._gcPaperTo(w.p) : s(w.p.pm)), pmCc: (window._gcPaperCc ? window._gcPaperCc(w.p) : '') /* patch SUPERPORTAL */, prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
       else if (cur.done || cur.label !== w.label) { cur.label = w.label; cur.note = w.note; cur.done = false; cur.updatedAt = now; ch++; }
     });
     l.forEach(function(y){ if (y && !y.done && /^ENVCOMP_[NCAP]_/.test(s(y.id)) && !want[y.id]) { y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'done in 🛡 Compliance'; ch++; } });
@@ -250341,7 +250565,7 @@ function sweep(){
     if (!X.office() || !arr(W._crm && W._crm.projects).length) return 0;
     var l = X.tasks(), now = X.nowIso(), ch = 0, want = wanted();
     Object.keys(want).forEach(function(id){ var w = want[id], cur = l.find(function(y){ return y && y.id === id; });
-      if (!cur) { l.push({ id: id, kind: 'envdocs', pid: w.p ? w.p.id : '', label: w.label, note: w.note, assignee: s(w.assignee || (w.p && w.p.pm)), prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
+      if (!cur) { l.push({ id: id, kind: 'envdocs', pid: w.p ? w.p.id : '', label: w.label, note: w.note, assignee: s(w.assignee || (w.p && (window._gcPaperTo ? window._gcPaperTo(w.p) : w.p.pm))), pmCc: w.assignee || !w.p ? '' : (window._gcPaperCc ? window._gcPaperCc(w.p) : '') /* patch SUPERPORTAL */, prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
       else if (cur.done || cur.label !== w.label) { cur.label = w.label; cur.note = w.note; cur.done = false; cur.updatedAt = now; ch++; } });
     l.forEach(function(y){ if (y && !y.done && /^ENVDOCS_[EDSRW]_/.test(s(y.id)) && !want[y.id]) { y.done = true; y.doneAt = y.updatedAt = now; y.resolution = 'done in 🛡 Compliance'; ch++; } });
     if (ch) X.saveTasks(l);
@@ -251153,7 +251377,7 @@ function wanted(){
     toSend(p).forEach(function(z){
       if (!z.d.date || !(z.d.over || z.d.soon)) return;
       var job = s(p.name || p.client || p.id), lab = z.x.label.split(' — ')[0];
-      want['EPAHUD_' + p.id + '_' + z.x.k] = { p: p, assignee: s(p.pm) || 'Office', prio: z.d.over ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + (z.d.over ? ' — OVERDUE (was due ' + nice(z.d.date) + ')' : ' — due ' + nice(z.d.date)), note: z.x.label + '\n' + z.d.txt + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '\nJob → 📑 Paperwork → 📤 Send… (or GrayCo Field → Needs you).' };
+      want['EPAHUD_' + p.id + '_' + z.x.k] = { p: p, assignee: (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)) || 'Office' /* patch SUPERPORTAL */, prio: z.d.over ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + (z.d.over ? ' — OVERDUE (was due ' + nice(z.d.date) + ')' : ' — due ' + nice(z.d.date)), note: z.x.label + '\n' + z.d.txt + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '\nJob → 📑 Paperwork → 📤 Send… (or GrayCo Field → Needs you).' };
       if (z.d.over && (z.d.days || 0) <= -2) want['EPAHUD_ESC_' + p.id + '_' + z.x.k] = { p: p, assignee: 'Office', prio: 'high', label: '⚠ ' + job + ': ' + lab + ' is ' + (-z.d.days) + ' days late — PM ' + (s(p.pm) || 'not set') + ' (office + admins)', note: z.x.label + '\nWas due ' + nice(z.d.date) + ' — ' + z.d.txt + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '. Escalated to the office and the admins.' };
     });
   });
@@ -251164,9 +251388,9 @@ function sweep(){
     if (!signedIn() || !projects().length) return 0;
     var l = tasks(), now = nowIso(), ch = 0, want = wanted();
     Object.keys(want).forEach(function(id){ var w = want[id], cur = l.find(function(y){ return y && y.id === id; });
-      if (!cur) { l.push({ id: id, kind: 'epahud', pid: w.p.id, label: w.label, note: w.note, assignee: w.assignee, prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
+      if (!cur) { l.push({ id: id, kind: 'epahud', pid: w.p.id, label: w.label, note: w.note, assignee: w.assignee, pmCc: /^EPAHUD_ESC_/.test(id) ? '' : (window._gcPaperCc ? window._gcPaperCc(w.p) : '') /* patch SUPERPORTAL */, prio: w.prio, addedBy: 'CRM', addedAt: now, updatedAt: now, done: false }); ch++; }
       else if (cur.done || cur.label !== w.label) { cur.label = w.label; cur.note = w.note; cur.prio = w.prio; cur.done = false; cur.updatedAt = now; ch++; } });
-    l.forEach(function(y){ if (y && !y.done && /^EPAHUD_/.test(s(y.id)) && !want[y.id]) { var p = proj(y.pid); if (!office() && !(p && low(p.pm) === low(me()))) return; y.done = true; y.doneAt = y.updatedAt = now; y.resolution = (W._gcPapers && W._gcPapers.closeWhy ? W._gcPapers.closeWhy(y) : '') || 'sent / handled on 📑 Paperwork'; ch++; } });
+    l.forEach(function(y){ if (y && !y.done && /^EPAHUD_/.test(s(y.id)) && !want[y.id]) { var p = proj(y.pid); if (!office() && !(p && (low(p.pm) === low(me()) || low(y.assignee) === low(me())))) return;   /* patch SUPERPORTAL: + the person it is on (the superintendent) */ y.done = true; y.doneAt = y.updatedAt = now; y.resolution = (W._gcPapers && W._gcPapers.closeWhy ? W._gcPapers.closeWhy(y) : '') || 'sent / handled on 📑 Paperwork'; ch++; } });
     if (ch) saveTasks(l);
     return ch;
   } catch (e) { W.__gcEpErr = String(e && e.stack || e); return 0; }
@@ -251332,7 +251556,8 @@ function toast(m, bad){ try { if (W._gcSys && W._gcSys.toast) return W._gcSys.to
 /* ── who may do what (roles, never names) ── */
 function isPM(p){
   if (!p) return false; var n = low(me()), e = myEmail(), r = meRec();
-  return !!((n && (low(p.pm) === n || low(p.projectManager) === n)) || (e && (low(p.pmEmail) === e || low(p.pm) === e)) || (r && s(r.id) && s(p.pmId) === s(r.id)));
+  return !!((n && (low(p.pm) === n || low(p.projectManager) === n)) || (e && (low(p.pmEmail) === e || low(p.pm) === e)) || (r && s(r.id) && s(p.pmId) === s(r.id)))
+    || (function(){ try { return !!(W._gcSuperPortal && W._gcSuperPortal.can(p)); } catch (x) { return false; } })();   /* patch SUPERPORTAL: the job's superintendent does the paperwork */
 }
 function canAdd(p){ return !!p && !p.deleted && (admin() || office() || isPM(p)); }
 function canHold(){ return admin() || office(); }
@@ -253816,7 +254041,7 @@ function todoFor(p, id, kind, label, note){
   var l = tasksGet(), t = l.filter(function(x){ return x && x.id === id; })[0], now = nowIso();
   if (t && !t.done) return false;
   if (t) { t.done = false; t.reopenedAt = now; t.updatedAt = now; t.label = label; }
-  else l.push({ id: id, kind: kind, pid: s(p.id), label: label, note: note || '', assignee: s(p.pm), forRole: s(p.pm) ? '' : 'office', addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: 'normal' });
+  else l.push({ id: id, kind: kind, pid: s(p.id), label: label, note: note || '', assignee: (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)), pmCc: (window._gcPaperCc ? window._gcPaperCc(p) : '') /* patch SUPERPORTAL */, forRole: (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)) ? '' : 'office', addedBy: 'CRM', addedAt: now, updatedAt: now, done: false, prio: 'normal' });
   tasksPut(l); return true;
 }
 function todoClose(id, why){ var l = tasksGet(), t = l.filter(function(x){ return x && x.id === id && !x.done; })[0]; if (!t) return; t.done = true; t.doneAt = nowIso(); t.updatedAt = t.doneAt; t.resolution = why; tasksPut(l); }
@@ -254284,7 +254509,7 @@ function docsPage(job){
       [6000, 15000].forEach(function(ms){ later(function(){ if (D.body.contains(ov)) refreshFiles(ov, p); }, ms); });
       return;
     }
-    if (!canEdit(proj(p.id) || p)) { toast('Only the office, an admin or the job\'s own PM can archive files.'); return; }
+    if (!canEdit(proj(p.id) || p) && !(function(){ try { return !!(W._gcSuperPortal && W._gcSuperPortal.can(proj(p.id) || p)); } catch (x) { return false; } })()) { toast('Only the office, an admin or the job\'s own PM or superintendent can archive files.'); return; }   /* patch SUPERPORTAL */
     var id = b.getAttribute('data-ji-arch') || b.getAttribute('data-ji-restore'), arch = b.hasAttribute('data-ji-arch');
     var d = docsAll().filter(function(x){ return x && s(x.id) === s(id); })[0];
     if (arch && !W.confirm('Archive "' + (d ? archLabel(d) : 'this file') + '"? It leaves the list and the customer portal; it is kept (♻ Restore brings it back).')) return;
@@ -255171,7 +255396,7 @@ function wanted(){
       if (n > 3) return;
       var job = s(p.name || p.client || p.id), lab = s(z.x.label).split(' — ')[0], req = required(z.x), past = n < 0;
       var when = (req ? 'required by ' : 'suggested by ') + nice(d) + (past ? ' — not sent yet' : '');
-      want['EPAHUD_' + p.id + '_' + z.x.k] = { p: p, assignee: s(p.pm) || 'Office', prio: past && req ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + ' — ' + when, note: s(z.x.label) + '\n' + s(z.d.txt) + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '\n' + (req ? 'Required — the job waits for it.' : 'Suggested — send it if it fits this job, or mark it N/A.') + '\nJob → 📑 Paperwork → 📤 Send… (or GrayCo Field → Needs you).' };
+      want['EPAHUD_' + p.id + '_' + z.x.k] = { p: p, assignee: (window._gcPaperTo ? window._gcPaperTo(p) : s(p.pm)) || 'Office' /* patch SUPERPORTAL */, prio: past && req ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + ' — ' + when, note: s(z.x.label) + '\n' + s(z.d.txt) + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '\n' + (req ? 'Required — the job waits for it.' : 'Suggested — send it if it fits this job, or mark it N/A.') + '\nJob → 📑 Paperwork → 📤 Send… (or GrayCo Field → Needs you).' };
       var tr = tier(p, z);
       if (tr >= 1) want['EPAHUD_ESC_' + p.id + '_' + z.x.k] = { p: p, assignee: 'Office', prio: req ? 'high' : 'med', label: '📑 ' + job + ': ' + lab + ' — not sent ' + bdAfter(d, t0) + ' business days after ' + nice(d) + ' — PM ' + (s(p.pm) || 'not set') + (tr >= 2 ? ' (office + admins)' : ' (office)'), note: s(z.x.label) + '\nSuggested by ' + nice(d) + ' — ' + s(z.d.txt) + (z.d.cite ? ' (' + z.d.cite + ')' : '') + '. The PM has it first; not sent ' + ESC_OFFICE_BD + '+ business days → the office' + (legacy(p) ? ' (an older job: it does not go up to the admins).' : paused() ? ' (⏸ data-entry mode: it does not go up to the admins).' : '; ' + ESC_ADMIN_BD + '+ → the admins.') };
     });
