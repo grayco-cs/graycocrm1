@@ -817,7 +817,7 @@ function signupDocs(p, t) {
   (p.lics || []).slice(0, 1).forEach(l => { if (l.file) docs.push(mk('license', l.file, { label: ['License', (l.state || '').toUpperCase(), l.type, l.number].filter(Boolean).join(' '), licState: (l.state || '').toUpperCase().slice(0, 2), licType: l.type, licNumber: l.number, expirationDate: null })); });
   return { docs, missingExp, claimed };
 }
-const SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
+const SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'TPO Roofing', 'EPDM Roofing', 'Metal Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
 /* patch TRADESPELL */
 const TRADE_TYPOS = [[/\bcocnrete\b/gi, 'concrete'], [/\bconcret\b/gi, 'concrete'], [/\bconrete\b/gi, 'concrete'], [/\bmasonary\b/gi, 'masonry'], [/\bmasonery\b/gi, 'masonry'], [/\bdrywal\b/gi, 'drywall'], [/\broffing\b/gi, 'roofing'], [/\bplumming\b/gi, 'plumbing'], [/\belectical\b/gi, 'electrical'], [/\bcarpentary\b/gi, 'carpentry'], [/\bpaintng\b/gi, 'painting'], [/\bflooing\b/gi, 'flooring']];
 function tradeSpell(x){ let v = String(x == null ? '' : x); TRADE_TYPOS.forEach(function(p){ v = v.replace(p[0], function(m){ return m[0] === m[0].toUpperCase() ? p[1][0].toUpperCase() + p[1].slice(1) : p[1]; }); }); return v; }

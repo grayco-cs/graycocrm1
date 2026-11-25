@@ -1602,7 +1602,7 @@ function sp(body){
    (PDF, a photo, Word …; the expiry date for insurance) / for workers' comp "Exempt (sole proprietor)"; one optional license row.
    "Will send later" is recorded as what they say (not a paper on file); bids still need the real papers (the bid-papers check). */
 var ACCEPT_DOCS = 'application/pdf,image/*,.heic,.heif,.doc,.docx,.rtf,.odt,.txt,.pages';
-var SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
+var SU_TRADES = ['Drywall', 'Paint', 'Framing', 'Flooring', 'Tile', 'Roofing', 'TPO Roofing', 'EPDM Roofing', 'Metal Roofing', 'Siding', 'Electrical', 'Plumbing', 'HVAC', 'Concrete', 'Masonry', 'Insulation', 'Cabinets', 'Windows & Doors', 'Demolition', 'Landscaping', 'Cleaning'];
 function signup(opts){
   opts = opts || {};
   if (opts.lang) LANG = opts.lang === 'es' ? 'es' : 'en';
