@@ -43,5 +43,22 @@ ok(r.envLog.length === 2 && r.envLog.some(x => x.id === 'e2'), 'environmental: t
 ok(r.equipment.length === 1 && r.equipment[0].pickedUp, 'mitigation: the equipment pickup (newer entry) is kept', r.equipment);
 const rm = vm.runInContext('subUnion', c2)([Object.assign({}, jPhone, { envLog: [{ id: 'e1', kind: 'air', at: '1', deleted: true, deletedAt: '6' }, jPhone.envLog[1]] })], [jPhone], []);
 ok(rm[0].envLog.find(x => x.id === 'e1').deleted === true, 'an entry marked deleted stays deleted (its newer version wins)', rm[0].envLog);
+// 4. CLEARSTICK (owner 11/25: "I deleted the address and now it's back, same on scope of work — if I enter anything it should be forever"):
+//    the keep-forever merge — a blank from a sync never beats a value, but a field a PERSON cleared stays cleared
+const c4 = vm.createContext({ JSON, Object, String, Array, Date, isFinite });
+vm.runInContext(cut('function stamp(r){', '/* ── the judgement'), c4);
+const meld = vm.runInContext('meld', c4);
+const OLD = '2026-11-01T21:46:19.108Z', NEW = '2026-11-25T18:40:00.000Z';
+const kept = { id: 'P9', address: 'Arkansas , multiple', scope: 'lead and asbestos job', updatedAt: OLD, _fe: { address: { v: 'Arkansas , multiple', at: OLD, by: 'a', was: [''] } } };
+const cleared = { id: 'P9', address: '', scope: '', updatedAt: NEW, _fe: { address: { v: '', at: NEW, by: 'a', was: ['Arkansas , multiple'] }, scope: { v: '', at: NEW, by: 'a', was: ['lead and asbestos job'] } } };
+let m4 = meld(kept, cleared);
+ok(m4.address === '' && m4.scope === '', 'CLEARSTICK: a person cleared the address and the scope → they stay cleared (either order)', m4);
+m4 = meld(cleared, kept);
+ok(m4.address === '' && m4.scope === '', '… in either order', m4);
+const syncBlank = { id: 'P9', address: '', scope: '', updatedAt: NEW, _fe: { address: { v: 'Arkansas , multiple', at: OLD, by: 'a', was: [''] } } };
+m4 = meld(kept, syncBlank);
+ok(m4.address === 'Arkansas , multiple' && m4.scope === 'lead and asbestos job', 'a blank that no person made (a sync / a short copy) still never wipes a value', m4);
+const SA = /'company','notes','customerNotes'[\s\S]{0,400}'scope','description','sector'/.test(html);
+ok(SA, 'scope, description and property are person-edited job fields (a clear is recorded as the person\'s edit)');
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -8047,7 +8047,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.357-2026-11-25-r39t -->
+<!-- GrayCo CRM Build: 33.358-2026-11-25-r39u -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -9019,7 +9019,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.357-2026-11-25-r39t");
+  console.log("[GC] Build 33.358-2026-11-25-r39u");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -9067,7 +9067,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.357-2026-11-25-r39t"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.358-2026-11-25-r39u"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -112857,6 +112857,10 @@ function meld(mine, theirs){
     Object.keys(newer).forEach(function(k){
       var nv = newer[k];
       if(filled(nv)){ out[k]=nv; return; }
+      /* patch CLEARSTICK: a field a PERSON cleared (the newer copy's own person-edit record for it is empty, and newer than any the
+         older copy has) stays cleared — clearing is an entry too */
+      try{ var fn = newer._fe && newer._fe[k], fo = older._fe && older._fe[k];
+        if(fn && typeof fn === 'object' && 'v' in fn && !filled(fn.v) && fn.at && (!fo || !fo.at || Date.parse(fn.at) >= Date.parse(fo.at))){ out[k]=nv; if(out._fe !== newer._fe){ out._fe = Object.assign({}, older._fe || {}, newer._fe || {}); } return; } }catch(_c){}
       /* the newer copy has nothing here. Keep what the older one knew rather
          than letting a blank overwrite a real value — that is the quiet way
          work disappears. */
@@ -131466,7 +131470,9 @@ var KEY = 'projects';
 var PF = ['status','pct','pm','contract','name','client','address','type','startDate','endDate','completionDate','autoPO',
           /* SAVES: the other short fields people edit on a job — the office changes the company on Desk while the phone adds a
              note: each is the newest PERSON edit of that field, so neither is lost to the other's whole-job copy */
-          'company','notes','customerNotes','clientPhone','clientEmail','phone','email','jobStage','leadSource','apm','estimator'];
+          'company','notes','customerNotes','clientPhone','clientEmail','phone','email','jobStage','leadSource','apm','estimator',
+          /* patch CLEARSTICK (owner 11/25: "I deleted the address and now it's back, same on scope of work — if I enter anything it should be forever"): */
+          'scope','description','sector','superintendent'];
 var PFS = {}; PF.forEach(function(f){ PFS[f] = 1; });
 var LSK = 'gc_field_edits';
 
