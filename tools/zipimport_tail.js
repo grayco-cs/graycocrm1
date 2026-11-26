@@ -162,8 +162,15 @@ var INTERNAL_RULES = [
   [/\bbids?\b|\bquotes?\b|bid response|bid form|pricing|price ?sheet|\bcosts?\b|cost ?sheet|budget|takeoff|margin|markup/, 'pricing / cost paperwork'],
   [/payroll|timesheet|pay ?stub|commission|\b1099\b|tax return/, 'payroll / tax paperwork'],
   [/vendor|supplier|purchase order/, 'vendor / supplier paperwork'],
-  [/internal|job sheet|onboarding|operations manual/, 'internal paperwork']
+  [/internal|job sheet|onboarding|operations manual/, 'internal paperwork'],
+  /* PORTALSTRICT (owner 11/26: "only paperwork for the work — contracts, schedules, notices etc.; no sub scopes, internal, money documents") */
+  [/invoice|\bbills?\b|pay ?app|payment|\bcheck\b|receipt|estimate|proposal|change order|retainage|lien|deposit|balance|statement|\$/, 'money paperwork (invoices, payments, estimates, change orders)'],
+  [/scope/, 'a scope (sub / internal scopes stay off the portal)'],
+  [/superintendent|hotels?|per ?diem|first day|toolbox|field forms?|legal checklist|labels?\b|\bsigns?\b|pickup|order checklist|read first|\bindex\b|training plan/, 'crew / field paperwork for GrayCo']
 ];
+/* PORTALSTRICT: the portal box starts ticked ONLY for customer paperwork about the work */
+var CUST_OK = /owner portal|for signature|signature|authorization|acknowledg|compliance (plan|package)|contract|agreement|schedule|look ?ahead|timeline|notice|notification|letter|memo|permit|plans?\b|drawings?|blueprint|specs?\b|specification|submittal|warranty|completion|closeout|close-out|inspection|report|minutes|meeting|safety plan|site plan|photo|certificate of occupancy|\bco\b cert|approval/;
+function custOk(path){ return CUST_OK.test(low(path).replace(/[_]+/g, ' ')); }
 function internalWhy(path){
   var t = low(path).replace(/[_]+/g, ' ');
   for (var i = 0; i < INTERNAL_RULES.length; i++) if (INTERNAL_RULES[i][0].test(t)) return INTERNAL_RULES[i][1];
@@ -519,7 +526,7 @@ function addRow(o){
   if (JUNK.test(o.path) || !o.name) return;
   var why = internalWhy(o.path);
   var r = { id: 'r' + S.rows.length, path: o.path, folder: o.path.split('/').slice(0, -1).join('/') || '(top level)', name: o.name, size: o.size, type: o.type || '', get: o.get, zipName: o.zipName || '',
-    cat: isPhoto(o.name, o.type) ? 'Other' : guessCat(o.path, o.type), portal: !why, portalWhy: why, auto: null, pid: '', status: '' };
+    cat: isPhoto(o.name, o.type) ? 'Other' : guessCat(o.path, o.type), portal: !why && custOk(o.path), portalWhy: why, portalNote: (!why && !custOk(o.path)) ? 'not clearly customer paperwork — tick to share it' : '', auto: null, pid: '', status: '' };   /* PORTALSTRICT */
   if (r.size > MAX_FILE) r.status = 'big';
   S.rows.push(r);
 }
@@ -610,7 +617,7 @@ function paint(){
       h += '<div class="row" data-zi-row="' + r.id + '"><div class="fn">' + esc(r.name) + '<small>' + (r.size ? kb(r.size) + ' · ' : '') + rowHow(r) + '</small></div>' +
         '<select class="rj" data-zi-job="' + r.id + '" aria-label="Job">' + rowOpts(r.pid) + '</select>' +
         '<select class="rc" data-zi-cat="' + r.id + '" aria-label="Category">' + CATS.map(function(c){ return '<option' + (c === r.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>' +
-        '<label class="pt"><input type="checkbox" data-zi-portal="' + r.id + '"' + (r.portal ? ' checked' : '') + '><span>Show in the customer’s portal' + (r.portalWhy ? '<br><span class="why">' + (r.portal ? '⚠ looks like ' : 'Off: looks like ') + esc(r.portalWhy) + ' — never shown to customers' + (r.portal ? ' (you turned it on)' : '') + '</span>' : '') + '</span></label></div>' + schedHtml(r);
+        '<label class="pt"><input type="checkbox" data-zi-portal="' + r.id + '"' + (r.portal ? ' checked' : '') + '><span>Show in the customer’s portal' + (!r.portalWhy && r.portalNote && !r.portal ? '<br><span class="why">Off: ' + esc(r.portalNote) + '</span>' : '') + (r.portalWhy ? '<br><span class="why">' + (r.portal ? '⚠ looks like ' : 'Off: looks like ') + esc(r.portalWhy) + ' — never shown to customers' + (r.portal ? ' (you turned it on)' : '') + '</span>' : '') + '</span></label></div>' + schedHtml(r);
     });
     h += '</div>';
   });

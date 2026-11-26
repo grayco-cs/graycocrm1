@@ -113,7 +113,7 @@ try {
   const cat = n => byName(S, n).cat;
   ok(cat('contract.pdf') === 'Contracts' && cat('permit.pdf') === 'Permits' && cat('plans.pdf') === 'Plans/Drawings', 'category guesses: Contracts / Permits / Plans/Drawings', S.rows.map(r => r.name + ':' + r.cat));
   const sub = byName(S, 'Sub invoice - Sample Drywall.pdf'), w9 = byName(S, 'W-9 Sample Drywall.pdf');
-  ok(byName(S, 'contract.pdf').portal === true && byName(S, 'plans.pdf').portal === true && byName(S, 'random.pdf').portal === true, '☑ customer portal ON by default', S.rows.map(r => r.name + ':' + r.portal));
+  ok(byName(S, 'contract.pdf').portal === true && byName(S, 'plans.pdf').portal === true && byName(S, 'random.pdf').portal === false && byName(S, 'scan001.pdf').portal === false, 'PORTALSTRICT (owner 11/26): ☑ portal ON only for customer paperwork (contract, plans …); a file that is not clearly customer paperwork starts OFF', S.rows.map(r => r.name + ':' + r.portal));
   ok(sub.portal === false && /sub/.test(sub.portalWhy) && w9.portal === false && /W-9/.test(w9.portalWhy), 'a sub invoice and a W-9 default OFF, with the reason', { sub, w9 });
   const why = await a.ev(() => document.querySelector('#gczi-ov').innerText.match(/Off: looks like[^\n]*/g));
   ok(why && why.length >= 2, 'the reason is on screen', why);
@@ -191,7 +191,7 @@ try {
   await a.ev(id => document.querySelector('#gczi-place [data-zp-go="' + id + '"]').click(), rid);
   await H.waitFor(a, () => !document.querySelector('#gczi-place [data-zp]'), null, 8000);
   const rd = (await docs(a)).find(d => d.name === 'random.pdf');
-  ok(rd && rd.pid === 'P1' && rd.portalShare === true && rd.portalLive === true, 'admin placed random.pdf on P1 — in the customer portal (its preview choice)', rd);
+  ok(rd && rd.pid === 'P1' && rd.portalShare !== true && rd.portalLive !== true, 'admin placed random.pdf on P1 — NOT in the customer portal (its preview choice: off, not customer paperwork)', rd);
   await sleep(500);
   const gone = await a.ev(() => { window._gcApprovalSetFresh && window._gcApprovalSetFresh(); return window._gcApprovalCurrent().groups.other.filter(y => /^zipimp_/.test(y.id)).length; });
   ok(gone === 0, 'every file placed → the card is gone', { gone, c: await a.ev(() => window._gcZipImport.list().map(b => b.files.map(f => [f.name, f.pid, !!f.ref, f.queued, f.updatedAt]))) });
