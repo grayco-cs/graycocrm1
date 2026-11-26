@@ -1381,7 +1381,8 @@ async function speedText(kind, x){
     return Object.assign(r0 || {}, { todo });
   }
   if (kind === 'unasg') {
-    let sug = s(obj(l.hold).state === 'held' && obj(l.hold).name) || s(x.suggest);
+    let sug = (obj(l.hold).state === 'held' ? s(obj(l.hold).name) : '') || s(x.suggest);   /* patch PITCH2: never the word "false" */
+    if (/^(false|true|null|undefined)$/i.test(sug)) sug = '';
     if (!sug && s(l.inboxId)) { try { if (await require('./automations.js').isOn('lead_auto_assign')) { const d = await lsaDefaultPm(); if (d) sug = s(d.name); } } catch (e) {} }   /* the 5 PM default assign (bid-inbox.js) */
     text = 'GrayCo: 👤 assign ' + label + (code ? ' ' + code : '') + ' — ' + w.line + ' came in ' + ago + ' ago and has no PM.' + (sug ? ' It goes to ' + clip(sug, 24) + ' at 5 PM unless you pick someone.' : '') + (code ? ' Reply GOOD ' + code + ' <PM> to assign.' : '') + ' ' + link;
     only = owners.map(o => o.email);

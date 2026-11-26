@@ -23,6 +23,11 @@
 const crypto = require('crypto');
 
 /* RULES-BEGIN — patch SALESBLOCK: the same text runs in the CRM page (index.html); keep it ES5 */
+/* patch PITCH2 (owner 11/26): form letters mass-sent to contractors — held even when they name a property or a renovation */
+var SG_TEMPLATE = [
+  ['form letter: "local real estate investor … foreclosure / before listing it"', /\b(i\x27m|i\u2019m|i\s+am)\s+(a|an)\s+(local\s+)?(real\s+estate\s+)?investor\b[\s\S]{0,400}\b(foreclos\w*|before\s+listing|list(ing)?\s+it\s+for\s+sale|flip(ping)?|wholesal\w*|bank[\s-]owned|reo\b)/i],
+  ['cold-pitch opener: "not sure who reads these"', /\bnot\s+sure\s+(who|if\s+anyone)\s+(reads|checks|sees|monitors)\s+(these|this|this\s+inbox|this\s+form|the\s+messages)\b|\bmight\s+not\s+(even\s+)?be\s+a\s+priority\b|\bnot\s+sure\s+(if\s+)?(this\s+is|i\x27m\s+reaching)\s+the\s+right\s+(person|place)\b/i]
+];
 var SG_STRONG = [
   ['vendor intro: "we are a … firm / agency"', /\b(we\s+are|we\x27re|i\s+am|i\x27m)\s+(a|an)\s+[^.!?\n]{0,40}\b(firm|agency|consultancy|consulting\s+(firm|company)|outsourcing\s+company|service\s+provider)\b/i, 1],
   ['bookkeeping / accounting services', /\b(bookkeeping|book\s*keeping|accounting\s+(firm|services|team)|tax\s+(preparation|services)|payroll\s+services|fractional\s+cfo|virtual\s+cfo)\b/i],
@@ -78,6 +83,7 @@ function sgWhy(text, sender){
   var t = sgStr(text), snd = sender && typeof sender === 'object' ? sender : { email: sgStr(sender) };
   if (!t.replace(/\s+/g, '')) return '';
   if (SG_ENV.test(t.replace(SG_ENV_NOT, ' '))) return '';   /* patch LEADBOTH: abatement / mold work is kept */
+  for (var tq = 0; tq < SG_TEMPLATE.length; tq++) if (SG_TEMPLATE[tq][1].test(t)) return SG_TEMPLATE[tq][0] + ' (score 9)';   /* patch PITCH2 */
   var why = [], score = 0, strong = 0, i;
   for (i = 0; i < SG_STRONG.length; i++) if (SG_STRONG[i][1].test(t)) { why.push(SG_STRONG[i][0]); score += 3; strong++; }
   for (i = 0; i < SG_WEAK.length; i++) if (SG_WEAK[i][1].test(t)) { why.push(SG_WEAK[i][0]); score += 1; }
