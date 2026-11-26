@@ -520,7 +520,7 @@ function signin(step, who){
 /* patch SUBSIGNUP: "New subcontractor? Create your account" — the form lives in portal-app.js (GCPartner.signup) and posts to the
    bid site's register (subportal.js): the account sees nothing until GrayCo approves it. A job invite (?invite=…&job=… or #invite=…)
    is passed through (invited sign-ups are approved at once) and fills in the e-mail. */
-var APP_JS = '/portal-app.js?v=33.357-rooftypes', SIGNUP_KEEP = {};
+var APP_JS = '/portal-app.js?v=33.358-custsigned', SIGNUP_KEEP = {};
 function loadApp(cb){
   if (window.GCPartner) return cb();
   var s = document.createElement('script'); s.src = APP_JS; s.onload = cb; s.onerror = function(){ notActive(tr('loadFail')); };
@@ -932,7 +932,111 @@ function estCards(){
 }
 
 /* ── DOCUMENTS & PROPOSALS ── */
-function docs(){
+function docs(){ return docs1().concat([generalBox(), signedBox()]); }   /* patch CUSTSIGNED: + 📤 Send us your signed documents · patch CUSTDOCS: + 📁 General documents */
+/* patch CUSTDOCS (owner 11/26): papers GrayCo keeps for the customer as a whole (every one of their jobs — e.g. one customer with 5
+   centers): V.generalDocs, the same list on each of their job pages. Nothing when there are none. */
+function generalBox(){
+  var g = (V && V.generalDocs) || [];
+  if (!g.length) return null;
+  var es = LANG === 'es';
+  var box = h('section', { class: 'card', id: 'gcGenDocs' }, [h('h2', { text: es ? '📁 Documentos generales' : '📁 General documents' }),
+    h('div', { class: 'muted', text: es ? 'Papeles de GrayCo para todos sus proyectos.' : 'Papers from GrayCo for all of your projects.' })]);
+  g.forEach(function(d){
+    var note = [d.cat, d.type === 'pdf' ? 'PDF' : (d.type === 'word' ? (es ? 'Archivo de Word' : 'Word file') : (d.type === 'image' ? (es ? 'Foto' : 'Photo') : (es ? 'Archivo' : 'File'))), dt(d.date)].filter(Boolean).join(' · ');
+    box.appendChild(h('div', { class: 'doc', 'data-gen-doc': d.id }, [h('span', { 'aria-hidden': 'true', style: 'font-size:20px', text: '📁' }),
+      h('div', { class: 'grow' }, [h('span', { class: 'n', text: d.title || 'Document' }), h('span', { class: 'muted', text: note })]),
+      h('div', { class: 'act' }, [h('a', { class: 'btn', href: d.url, target: '_blank', rel: 'noopener', text: d.type === 'word' ? (es ? 'Descargar' : 'Download') : (es ? 'Abrir' : 'Open') })])]));
+  });
+  return box;
+}
+/* ── patch CUSTSIGNED (owner 11/26): papers the customer signed on paper (not in the portal) → GrayCo. Pick files (PDF, photos incl. HEIC,
+   Word; 25 MB each; the phone camera works) + a note → each goes straight to GrayCo's private file storage (a one-time link from the
+   server, c-docs-url), then c-docs-up files them on THIS job's documents in the CRM and here ("Sent by you") and tells the job's
+   superintendent / PM. Nothing is sent to the customer: "✓ Sent — GrayCo has them" on this page. No pop-ups. ── */
+var CSIGN = { files: [], done: {} }, CSIGN_MAX = 25 * 1024 * 1024;
+var CSIGN_S = {
+  en: { h: '📤 Send us your signed documents', p: 'Signed a contract, change order or other paper on paper? Send it here — a PDF, a photo of each page, or a Word file (25 MB each).',
+    pick: '📎 Choose files', cam: '📷 Take a photo', note: 'Note for GrayCo (optional)', send: 'Send', none: 'Pick at least one file.', big: '{f} is over 25 MB — take a smaller photo or save the PDF smaller.',
+    type: '{f}: send a PDF, a photo (JPG, PNG, HEIC) or a Word file.', many: 'Up to 10 files at a time.', up: 'Sending {i} of {n}…', fail: 'It did not go through — try again, or call GrayCo {o}.',
+    ok: '✓ Sent — GrayCo has them.', okN: '{n} file(s) are in your Documents above as “Sent by you”.', rm: 'Remove', pv: 'Preview — the customer sends their papers from their own portal.', byYou: 'Sent by you' },
+  es: { h: '📤 Envíenos sus documentos firmados', p: '¿Firmó un contrato, una orden de cambio u otro papel en papel? Envíelo aquí — un PDF, una foto de cada página o un archivo de Word (25 MB cada uno).',
+    pick: '📎 Escoger archivos', cam: '📷 Tomar una foto', note: 'Nota para GrayCo (opcional)', send: 'Enviar', none: 'Escoja al menos un archivo.', big: '{f} pesa más de 25 MB — tome una foto más pequeña o guarde el PDF más pequeño.',
+    type: '{f}: envíe un PDF, una foto (JPG, PNG, HEIC) o un archivo de Word.', many: 'Hasta 10 archivos a la vez.', up: 'Enviando {i} de {n}…', fail: 'No se pudo enviar — intente otra vez o llame a GrayCo {o}.',
+    ok: '✓ Enviado — GrayCo los tiene.', okN: '{n} archivo(s) están en sus Documentos arriba como “Enviado por usted”.', rm: 'Quitar', pv: 'Vista previa — el cliente envía sus papeles desde su propio portal.', byYou: 'Enviado por usted' }
+};
+function cs(k, v){ var t = (CSIGN_S[LANG] || CSIGN_S.en)[k] || CSIGN_S.en[k] || k; if (v) Object.keys(v).forEach(function(x){ t = t.replace('{' + x + '}', v[x]); }); return t; }
+function csType(f){
+  var t = String(f.type || '').toLowerCase(), n = String(f.name || '').toLowerCase(), ext = (n.match(/\.([a-z0-9]+)$/) || [])[1] || '';
+  if (t === 'image/jpg') t = 'image/jpeg';
+  var byExt = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', heif: 'image/heic', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  var ok = { 'application/pdf': 1, 'image/jpeg': 1, 'image/png': 1, 'image/webp': 1, 'image/heic': 1, 'image/heif': 1, 'application/msword': 1, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 1 };
+  if (ok[t]) return t === 'image/heif' ? 'image/heic' : t;
+  return byExt[ext] || '';
+}
+function csHash(buf){ return crypto.subtle.digest('SHA-256', buf).then(function(d){ return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }); }
+function csSendOne(f, type){
+  return f.arrayBuffer().then(function(buf){ return csHash(buf).then(function(hash){
+    return acc('c-docs-url', { hash: hash, type: type, size: f.size, name: f.name }).then(function(r){
+      var j = r.data || {}; if (!j.ok) throw new Error(j.error || '');
+      var put = j.exists ? Promise.resolve() : fetch(j.url, { method: 'PUT', headers: Object.assign({ 'Content-Type': j.type || type, 'x-upsert': 'false' }, j.apikey ? { apikey: j.apikey } : {}), body: buf, credentials: 'omit' })
+        .then(function(x){ if (!x.ok && x.status !== 409) throw new Error(''); });
+      return put.then(function(){ return { path: j.path, name: f.name, size: f.size }; });
+    });
+  }); });
+}
+function signedBox(){
+  var key = PID || (V && V.job && V.job.id) || '_';
+  var msg = h('div', { class: 'muted', id: 'csMsg', role: 'status', 'aria-live': 'polite' });
+  var box = h('section', { class: 'card', id: 'csBox' }, [h('h2', { text: cs('h') }), h('div', { class: 'muted', text: cs('p') })]);
+  if (PREVIEW) { box.appendChild(h('div', { class: 'empty', text: cs('pv') })); return box; }
+  var done = CSIGN.done[key];
+  if (done) box.appendChild(h('div', { class: 'cs-ok', id: 'csOk', style: 'margin:10px 0;padding:10px 12px;border-radius:10px;background:#E8F5E9;color:#1B5E20;font-weight:700' }, [h('div', { text: cs('ok') }), h('div', { class: 'muted', style: 'font-weight:400', text: cs('okN', { n: done }) })]));
+  var list = h('div', { id: 'csList' });
+  var note = h('textarea', { class: 'inp', rows: '2', id: 'csNote', placeholder: cs('note'), maxlength: '1000' });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'csSend', text: cs('send') });
+  function say(t, bad){ msg.textContent = t || ''; msg.style.color = bad ? '#B71C1C' : ''; }
+  function paintList(){
+    list.innerHTML = '';
+    CSIGN.files.forEach(function(f, i){ list.appendChild(h('div', { class: 'doc' }, [h('span', { 'aria-hidden': 'true', style: 'font-size:20px', text: /^image\//.test(csType(f)) ? '🖼️' : '📄' }),
+      h('div', { class: 'grow' }, [h('span', { class: 'n', text: f.name || 'file' }), h('span', { class: 'muted', text: (Math.round(f.size / 1024 / 102.4) / 10 || 0.1) + ' MB' })]),
+      h('div', { class: 'act' }, [h('button', { type: 'button', class: 'btn', 'aria-label': cs('rm') + ' ' + (f.name || ''), text: '✕', on: { click: function(){ CSIGN.files.splice(i, 1); paintList(); } } })])])); });
+  }
+  function add(files){
+    say('');
+    files.forEach(function(f){
+      if (!csType(f)) return say(cs('type', { f: f.name || 'file' }), true);
+      if (f.size > CSIGN_MAX) return say(cs('big', { f: f.name || 'file' }), true);
+      if (CSIGN.files.length >= 10) return say(cs('many'), true);
+      if (!CSIGN.files.some(function(x){ return x.name === f.name && x.size === f.size; })) CSIGN.files.push(f);
+    });
+    paintList();
+  }
+  function picker(cam){
+    var i = h('input', { type: 'file', accept: cam ? 'image/*' : '.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.doc,.docx,application/pdf,image/*,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document', multiple: cam ? null : true, capture: cam ? 'environment' : null, style: 'display:none' });
+    i.addEventListener('change', function(){ add(Array.prototype.slice.call(i.files || [])); i.remove(); });
+    document.body.appendChild(i); i.click();
+  }
+  var pick = h('button', { type: 'button', class: 'btn', id: 'csPick', text: cs('pick'), on: { click: function(){ picker(false); } } });
+  var cam = h('button', { type: 'button', class: 'btn', id: 'csCam', text: cs('cam'), on: { click: function(){ picker(true); } } });
+  go.addEventListener('click', function(){
+    if (!CSIGN.files.length) return say(cs('none'), true);
+    var files = CSIGN.files.slice(), out = [], n = files.length;
+    go.disabled = pick.disabled = cam.disabled = true;
+    var step = Promise.resolve();
+    files.forEach(function(f, i){ step = step.then(function(){ say(cs('up', { i: i + 1, n: n })); return csSendOne(f, csType(f)).then(function(x){ out.push(x); }); }); });
+    step.then(function(){ return acc('c-docs-up', { files: out, note: note.value.trim() }); }).then(function(r){
+      var j = r.data || {}; if (!j.ok) throw new Error(j.error || '');
+      CSIGN.files = []; CSIGN.done[key] = (j.sent || 0) + (j.already || 0);
+      return api('view').then(function(v){ if (v.data && v.data.ok) V = v.data; }, function(){}).then(function(){ if (TAB === 'docs') draw(); });
+    }).catch(function(e){ go.disabled = pick.disabled = cam.disabled = false; say((e && e.message) || cs('fail', { o: OFFICE }), true); });
+  });
+  paintList();
+  box.appendChild(h('div', { class: 'act', style: 'display:flex;gap:8px;flex-wrap:wrap;margin:10px 0' }, [pick, cam]));
+  box.appendChild(list); box.appendChild(note);
+  box.appendChild(h('div', { style: 'margin-top:8px' }, [go])); box.appendChild(msg);
+  return box;
+}
+function docs1(){
   if (V.insurance) return insDocs();   /* patch INSP */
   var ec = estCards();   /* patch ESTPDF */
   if (ec.length) { var skip = { t: {}, id: {} }; (V.estimates || []).forEach(function(x){ skip.t[x.title] = 1; if (x.id) skip.id[x.id] = 1; }); return ec.concat(docs0(skip)); }   /* the estimate's own row is the card above (patch ESTPDF2: by its id, else its name) */
@@ -947,7 +1051,7 @@ function docs0(skip){
   if (!list.length) { var folded = !!(skip && skip.id && Object.keys(skip.id).length); box.appendChild(h('div', { class: 'empty', text: folded ? (LANG === 'es' ? 'Su estimado está arriba. Otros documentos (contratos, órdenes de cambio, garantías) aparecerán aquí.' : 'Your estimate is above. Other papers — contracts, change orders, warranties — will appear here.') : 'Nothing here yet — your proposal and papers will appear here.' })); return [box, wcard]; }   /* patch ESTPDF2 */
   var firstPreview = true;
   list.forEach(function(d){
-    var note = [d.kind === 'proposal' ? (d.status === 'Signed' ? 'Signed proposal' : 'Proposal') : (d.kind === 'gdoc' ? 'Google Doc' : (d.type === 'pdf' ? 'PDF' : (d.type === 'word' ? 'Word file' : 'File'))), dt(d.date), d.total ? usd(d.total) : ''].filter(Boolean).join(' · ');
+    var note = [d.byYou ? cs('byYou') : '', d.kind === 'proposal' ? (d.status === 'Signed' ? 'Signed proposal' : 'Proposal') : (d.kind === 'gdoc' ? 'Google Doc' : (d.type === 'pdf' ? 'PDF' : (d.type === 'word' ? 'Word file' : (d.type === 'image' ? 'Photo' : 'File')))), dt(d.date), d.total ? usd(d.total) : ''].filter(Boolean).join(' · ');   /* patch CUSTSIGNED: + "Sent by you" */
     var frame = null;
     var act = h('div', { class: 'act' });
     if (d.url) act.appendChild(h('a', { class: 'btn' + (d.kind === 'proposal' ? ' gold' : ''), href: d.url, target: '_blank', rel: 'noopener', text: d.type === 'word' ? 'Download' : 'Open' }));

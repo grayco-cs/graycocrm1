@@ -125,7 +125,32 @@ const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimat
                  'gc_portal_auto_posts',   /* patch AUTAI: approved weekly updates / voice posts */
                  'gc_senior_pm', 'gc_team_settings',   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
                  'gc_claim_help',   /* patch CLAIMHELP: "🛡 Your insurance claim" — the published steps + Q&A (_lib/claimhelp.js) */
-                 'schedule'];   /* patch SCHEDPICK: the plan steps the customer sees must be on the real schedule (no suggestions) */
+                 'schedule',   /* patch SCHEDPICK: the plan steps the customer sees must be on the real schedule (no suggestions) */
+                 'customerDocs'];   /* patch CUSTDOCS: a customer's general documents (all their jobs; 📦 Import ZIP → "👤 <customer> — all their jobs") */
+/* patch CUSTDOCS (owner 11/26: "general documents for all centers for this job with 5 different places … make sure that stuff is in the
+   customer's portal; it doesn't have to go to the projects' documents"): gc_kv customerDocs records belong to a CUSTOMER (the jobs'
+   client name as stored, + customerId when the jobs share one), not to a job. Each of that customer's job pages lists them as
+   "📁 General documents" — the same customer rule the portal uses for its jobs (the job's client, the same as customerMatch): the
+   record's customer must be this job's client (and its customerId, when both have one, must agree). Hidden (portalShare false),
+   archived or deleted records never show. A signed link per file, like the job's own papers. */
+function custKeyOf(v){ return low(v).replace(/\s+/g, ' ').trim(); }
+function generalDocsMine(data, p){
+  const ck = custKeyOf(p.client || p.customer || p.clientName), cid = s(p.customerId);
+  if (!ck) return [];
+  return arr(data.customerDocs).filter(function(d){
+    if (!d || d.deleted === true || d.archived === true || d.portalShare !== true || d.internal === true || d.portalNever === true) return false;
+    if (custKeyOf(d.customer) !== ck) return false;
+    if (s(d.customerId) && cid && s(d.customerId) !== cid) return false;
+    return !!refPath(d.ref);
+  });
+}
+async function generalDocsFor(data, p){
+  const list = generalDocsMine(data, p).sort(function(a, b){ return s(b.uploadedAt) < s(a.uploadedAt) ? -1 : 1; }).slice(0, 80);
+  if (!list.length) return [];
+  const signed = await signRefs(list.map(function(d){ return d.ref; }));
+  const ty = function(t){ t = low(t); return /pdf/.test(t) ? 'pdf' : (/word|\.docx?\b|msword|rtf/.test(t) ? 'word' : (/image|jpe?g|png|heic|webp/.test(t) ? 'image' : 'file')); };
+  return list.map(function(d){ const u = signed[d.ref]; return u ? { id: clip(d.id, 80), title: clip(d.name || 'Document', 90), cat: clip(d.cat, 40), date: ymd(d.uploadedAt || d.uploaded), type: ty(d.type + ' ' + d.name), url: u } : null; }).filter(Boolean);
+}
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -901,7 +926,7 @@ async function buildView(data, p, opts){
     if (!u) return;
     if (d.internal === true || d.portalNever === true) return;   /* patch ESTPDF: never an internal paper */
     addDoc({ kind: 'file', title: clip((d.name || 'Document') + (d.supersededBy ? ' (superseded)' : ''), 90), date: ymd(d.uploadedAt || d.uploaded || d.savedAt), superseded: d.supersededBy ? true : undefined,   /* patch ESTPDF: an older sent version stays, marked */
-      type: fileType(d.type + ' ' + d.name), url: u });
+      type: fileType(d.type + ' ' + d.name), url: u, byYou: (d.fromCustomer === true && s(d.source) === 'customer-portal') ? true : undefined });   /* patch CUSTSIGNED: "Sent by you" */
   });
   /* the papers behind approved change orders and customer invoices (when a PDF is attached) */
   cos.forEach(function(c){ arr(c.files).forEach(function(f, i){ const u = signed[f.ref]; if (u) addDoc({ kind: 'file', title: clip('Change order — ' + (c.desc || c.title || '') , 90), date: ymd(c.date || c.savedAt), type: fileType(f.type + ' ' + f.name), url: u }); }); });
@@ -957,6 +982,7 @@ async function buildView(data, p, opts){
     if (ist === undefined) { try { ist = (await kvRead([IN2.KEY]))[IN2.KEY]; } catch (e) { ist = null; } }
     view.inspections = IN2.custView(ist, p, new Date(Date.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
   } catch (e) { view.inspections = null; }
+  try { view.generalDocs = await generalDocsFor(data, p); } catch (e) { view.generalDocs = []; }   /* patch CUSTDOCS */
   try { require('./_lib/portaled.js').attach(view, p); } catch (e) {}   /* patch PORTALED: the portal editor's summary, checklist, scopes, milestones (PORTALPOL: no carrier rewrite — the customer's own insurance company is shown) */
   view.job.insurance = portalInsDetails(data, p);   /* patch PORTALPOL: "Your insurance" in the project details (carrier, claim number, adjuster — when stored) */
   if (ins) {   /* patch INSP: the insurance-claim view */

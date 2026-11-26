@@ -398,7 +398,7 @@ exports._papers = { bidPapersToCrm: function(){ return bidPapersToCrm.apply(null
 
 /* ── rate limits (per warm instance) ───────────────────────────────────────── */
 const hits = new Map();
-const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 }, signup: { req: 6, bad: 10 }, suconf: { req: 20, bad: 10 } };   /* signup / suconf: the public sign-up and its confirm (patch PORTALSIGNUP) */   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
+const LIMITS = { pub: { req: 120, bad: 10 }, signin: { req: 12, bad: 10 }, verify: { req: 25, bad: 10 }, app: { req: 600, bad: 20 }, bid: { req: 40, bad: 20 }, sched: { req: 60, bad: 20 }, pw: { req: 300, bad: 300 }, invmk: { req: 20, bad: 20 }, cdocs: { req: 40, bad: 20 },signup: { req: 6, bad: 10 }, suconf: { req: 20, bad: 10 } };   /* signup / suconf: the public sign-up and its confirm (patch PORTALSIGNUP) */   /* invmk: p-invoice-make send (patch SUBINVMAKE) */   /* pw: password sign-in, no lock-out for people (patch PWNOLOCK) */   /* sched: p-sched save / cancel (patch SUBSCHED) */   /* bid: p-bid-save (patch SUBBIDS) */
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
 function limited(ip, kind){
   const L = LIMITS[kind] || LIMITS.pub, key = kind + '|' + ip, now = Date.now();
@@ -1196,9 +1196,10 @@ async function questionsFor(pids){
 /* patch PORTALPOL: the customer wrote in the portal → the job's PM hears it (staff only; the job-message notifier's rules: push + staff text,
    🏖 Away cover, quiet hours, one per 5 minutes per thread). The link opens the job's portal editor in the CRM. */
 const CMN = { run: function(who, b){ return require('./_lib/jobmsgnotify.js').run(who, b); } };
-async function custMsgNotify(p, msgId, text){
+async function custMsgNotify(p, msgId, text, opt){
   const first = s(p.client).split(/\s+/)[0] || 'The customer';
-  return CMN.run({ email: 'customer@portal.invalid', name: first }, { pid: s(p.id), msgId: s(msgId), text: '💬 Portal: ' + clip(text, 1900), head: first + ' (customer portal) on ' + (s(p.name) || 'a job'), link: (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/?portaled=' + encodeURIComponent(s(p.id)) });
+  opt = opt || {};   /* patch CUSTSIGNED: opt.head / opt.tags (the job's superintendent) / opt.raw (no "💬 Portal:" prefix) */
+  return CMN.run({ email: 'customer@portal.invalid', name: first }, { pid: s(p.id), msgId: s(msgId), text: (opt.raw ? '' : '💬 Portal: ') + clip(text, 1900), head: s(opt.head) || (first + ' (customer portal) on ' + (s(p.name) || 'a job')), tags: Array.isArray(opt.tags) && opt.tags.length ? opt.tags.slice(0, 5) : undefined, link: (s(process.env.CRM_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/?portaled=' + encodeURIComponent(s(p.id)) });
 }
 async function pHome(ctx){
   const sub = ctx.sub, data = ctx.data, pids = ctx.jobs.map(function(p){ return s(p.id); });
@@ -2051,8 +2052,112 @@ async function customerAction(action, body, pids, event){
     let notified = null; try { notified = await custMsgNotify(p, cid, text); } catch (e) { notified = { ok: false }; }
     return { ok: true, id: cid, pmTold: !!(notified && notified.ok && arr(notified.to).length) };
   }
+  if (action === 'c-docs-url' || action === 'c-docs-up') {   /* patch CUSTSIGNED: 📤 Send us your signed documents */
+    if (body.preview === true) throw Fail(400, 'This is a preview — the customer sends their papers from their own portal.');
+    return action === 'c-docs-url' ? cDocsUrl(p, body) : cDocsUp(data, p, body, event);
+  }
   throw Fail(400, 'Bad request');
 }
+
+/* ═══ patch CUSTSIGNED (owner 11/26: "If they do not sign in the portal, have where they can upload signed documents … it will put them in
+   portals and in the CRM's documents for the jobs") — the customer half of 💎 📦 Import ZIP's "Show in the customer's portal".
+   On a job's Documents the customer picks one or more papers (PDF, photos incl. HEIC, Word; 25 MB each) + an optional note:
+     c-docs-url {projectId, hash, type, size, name} → a one-time signed upload link into the CRM's private bucket crm-files, named by
+                the file's SHA-256 like every CRM file (sb:crm-files/<sha>.<ext>; never over a file that is there) — no 6 MB body limit;
+     c-docs-up  {projectId, files:[{path, name, size}], note} → each stored file is checked by its first bytes (really a PDF / picture /
+                Word file), then the job's projectDocs gets one record per file (read-merge-write, _core.kvListUpdate: nobody else's
+                record is dropped; only this job's pid): source 'customer-portal', fromCustomer, portalShare + portalLive (it shows back
+                in their Documents as "Sent by you"), category Contracts (a photo: Other, unless its name / the note says signed /
+                contract / change order).
+   The job's superintendent (else its PM; else the owners) gets the STAFF notice a portal message makes (custMsgNotify →
+   _lib/jobmsgnotify.js): "📤 <customer> sent N signed document(s) for <job>". Nothing is sent to the customer — the page says
+   "✓ Sent — GrayCo has them" (standing rule: never contact customers automatically). Scoped exactly like c-send (link / session pids). */
+const CDOC_MAX = 25 * 1024 * 1024, CDOC_FILES = 10;
+const CDOC_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const CDOC_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heic', 'application/msword': 'doc' };
+CDOC_TYPES[CDOC_DOCX] = 'docx';
+const CDOC_EXT_TYPE = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', doc: 'application/msword', docx: CDOC_DOCX };
+const CDOC_SAY = { big: 'That file is too big (25 MB at most). Take a smaller photo, or save the PDF smaller and try again.', type: 'Send a PDF, a photo (JPG, PNG, HEIC) or a Word file.' };
+function cdocSniff(buf){
+  const t = sniff(buf); if (t) return t;
+  if (buf.length > 12 && buf.slice(4, 8).toString('latin1') === 'ftyp' && /hei[cxms]|hev[cx]|msf1/.test(buf.slice(8, 12).toString('latin1'))) return 'image/heic';
+  if (buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04) return CDOC_DOCX;   /* a .docx is a zip */
+  if (buf.length > 8 && buf.slice(0, 8).equals(Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]))) return 'application/msword';
+  return '';
+}
+function cdocCat(name, type, note){
+  if (/sign|contract|agreement|change.?order|\bc\.?o\.?\s?#?\d|addendum|work auth|waiver/i.test(s(name) + ' ' + s(note))) return 'Contracts';
+  return /^image\//.test(s(type)) ? 'Other' : 'Contracts';
+}
+async function cDocsUrl(p, body){
+  const hash = low(body.hash), type = low(body.type) === 'image/jpg' ? 'image/jpeg' : low(body.type), size = Math.round(num(body.size));
+  if (!/^[0-9a-f]{64}$/.test(hash)) throw Fail(400, 'Bad request');
+  const ext = CDOC_TYPES[type]; if (!ext) throw Fail(415, CDOC_SAY.type);
+  if (!(size > 0)) throw Fail(400, 'That file is empty.');
+  if (size > CDOC_MAX) throw Fail(413, CDOC_SAY.big);
+  const path = hash + '.' + ext;
+  let r; try { r = await fetch(sbUrl() + '/storage/v1/object/upload/sign/crm-files/' + path, { method: 'POST', headers: H(), body: '{}' }); } catch (e) { throw Fail(503, 'File storage cannot be reached just now. Try again in a minute.'); }
+  const j = await r.json().catch(function(){ return {}; });
+  if (!r.ok) { if (r.status === 409 || /exist|duplicate/i.test(JSON.stringify(j))) return { ok: true, exists: true, path: path }; throw Fail(502, 'The file could not be stored (' + r.status + '). Try again.'); }
+  const u = s(j.url || j.signedURL || j.signedUrl);
+  if (!/token=/.test(u)) throw Fail(502, 'The file could not be stored. Try again.');
+  return { ok: true, path: path, type: CDOC_EXT_TYPE[ext], url: /^https:/.test(u) ? u : sbUrl() + '/storage/v1' + (u[0] === '/' ? '' : '/') + u, apikey: process.env.SUPABASE_ANON_KEY || GC_SB_DEFAULT_ANON, max: CDOC_MAX };
+}
+async function cdocCheck(f){
+  const path = s(f && f.path); if (!/^[0-9a-f]{64}\.(pdf|jpg|png|webp|heic|doc|docx)$/.test(path)) throw Fail(400, 'Bad request');
+  let r; try { r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { headers: Object.assign(keyHeaders(svcKey()), { Range: 'bytes=0-63' }) }); } catch (e) { r = null; }
+  if (!r || !(r.ok || r.status === 206)) throw Fail(409, 'A file did not arrive (' + clip(f && f.name, 60) + '). Try again.');
+  let head = Buffer.alloc(0); try { head = Buffer.from(await r.arrayBuffer()); } catch (e) {}
+  const type = cdocSniff(head.length >= 12 ? head : Buffer.concat([head, Buffer.alloc(12)]));
+  const ext = path.split('.').pop();
+  if (!type || CDOC_TYPES[type] !== ext) throw Fail(415, CDOC_SAY.type + ' (' + clip(f && f.name, 60) + ')');
+  const cr = /\/(\d+)\s*$/.exec(s(r.headers && r.headers.get && r.headers.get('content-range')));
+  const size = cr ? +cr[1] : Math.round(num(f && f.size));
+  if (size > CDOC_MAX) throw Fail(413, CDOC_SAY.big + ' (' + clip(f && f.name, 60) + ')');
+  const name = clip(s(f && f.name).replace(/[\\/\u0000-\u001f]+/g, ' ').trim() || ('Signed document.' + ext), 120);
+  return { ref: 'sb:crm-files/' + path, hash: path.split('.')[0], type: type, size: size || 0, name: name };
+}
+async function cDocsUp(data, p, body, event){
+  const list = Array.isArray(body.files) ? body.files : [];
+  if (!list.length) throw Fail(400, 'Pick the papers to send.');
+  if (list.length > CDOC_FILES) throw Fail(400, 'Send up to ' + CDOC_FILES + ' files at a time.');
+  const note = clip(body.note, 1000);
+  const files = []; for (const f of list) files.push(await cdocCheck(f));
+  let tmA = null; try { const ss = event && !TOKEN_RE.test(s(gcHeader(event, 'x-portal-token'))) ? await sessionOf(gcHeader(event, 'x-portal-session')) : null; tmA = await teamMemberBySession(ss, 'customer'); } catch (e) { tmA = null; }   /* PORTALTEAM: who sent it */
+  const first = s(p.client).split(/\s+/)[0] || 'The customer', by = (tmA ? s(tmA.name) : (s(p.client) || 'Customer')) + ' (customer portal)';
+  const now = new Date().toISOString(), batch = newId('CDB'), pid = s(p.id);
+  const recs = files.map(function(f, i){
+    return { id: 'cdoc_' + Date.now().toString(36) + i + crypto.randomBytes(3).toString('hex'), pid: pid, name: f.name, cat: cdocCat(f.name, f.type, note), type: f.type, size: f.size, ref: f.ref, hash: f.hash,
+      uploaded: now.slice(0, 10), uploadedAt: now, by: by, source: 'customer-portal', fromCustomer: true, custBatch: batch, note: note || undefined,
+      portalShare: true, portalLive: true, portalLiveAt: now, portalLiveBy: by, savedAt: now, updatedAt: now };
+  });
+  /* a manifest (pieces) newer than the row means the CRM keeps projectDocs in pieces: never write the row over them */
+  try { const mr = await fetch(sbUrl() + '/rest/v1/gc_kv?select=key,updated_at,value&key=in.("projectDocs","projectDocs__manifest")', { headers: H() }); const m = mr.ok ? arr(await mr.json().catch(function(){ return []; })) : []; const man = m.find(function(x){ return x.key === 'projectDocs__manifest'; }), row = m.find(function(x){ return x.key === 'projectDocs'; });
+    let mv = man && man.value; if (typeof mv === 'string') { try { mv = JSON.parse(mv); } catch (e) { mv = null; } }
+    if (mv && mv.chunked && mv.count > 0 && (!row || s(man.updated_at) >= s(row.updated_at))) throw Fail(503, 'GrayCo\'s files are busy just now. Try again in a few minutes, or call ' + OFFICE_PHONE + '.'); }
+  catch (e) { if (e && e.status === 503) throw e; }
+  const added = [];
+  const w = await require('./portal.js')._core.kvListUpdate('projectDocs', function(l){
+    const have = {}; l.forEach(function(d){ if (d && s(d.pid) === pid && d.deleted !== true && d.fromCustomer === true) have[s(d.ref)] = 1; });
+    const nw = recs.filter(function(r, i, a){ return !have[r.ref] && a.findIndex(function(y){ return y.ref === r.ref; }) === i; });
+    added.length = 0; nw.forEach(function(r){ added.push(r); });
+    if (!nw.length) return null;
+    return { list: l.concat(nw), check: function(l2){ return nw.every(function(n){ return l2.some(function(y){ return y && y.id === n.id; }); }); } };
+  });
+  if (!w || !w.ok) throw Fail(503, 'Your papers could not be filed just now. Try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.');
+  kvCache = null;
+  const n = added.length;
+  let told = null;
+  if (n) {
+    const sup = [p.superintendent, p.superName, p.super].map(s).find(Boolean) || '';
+    const head = '📤 ' + first + ' sent ' + n + ' signed document' + (n === 1 ? '' : 's') + ' for ' + (s(p.name) || 'a job');
+    const text = head + ': ' + added.map(function(r){ return r.name; }).join(', ').replace(/@/g, '(at)') + (note ? ' — "' + note.replace(/@/g, '(at)') + '"' : '');
+    try { told = await custMsgNotify(p, batch, text, { head: head, tags: sup ? [sup] : [], raw: true }); } catch (e) { told = { ok: false }; }
+  }
+  return { ok: true, sent: n, already: files.length - n, staffTold: !!(told && told.ok && arr(told.to).length),
+    docs: added.map(function(r){ return { id: r.id, name: r.name, cat: r.cat, at: r.uploadedAt }; }) };
+}
+/* ═══ end patch CUSTSIGNED (server) ═══ */
 
 /* ═══ STAFF (the CRM) ═══════════════════════════════════════════════════════ */
 function staffName(data, who){ const u = arr(data.users).find(function(x){ return low(x.email) === who.email; }); return s(u && u.name) || who.name || who.email; }
@@ -2494,7 +2599,8 @@ exports.handler = async function (event) {
     if (/^c-/.test(action)) {
       const pids = await customerPids(event);
       if (!pids) { noteBad(ip, 'pub'); return notActive(headers, t0); }
-      if (/^c-team/.test(action)) return reply(200, await cTeam(event, action, body, pids));   /* patch PORTALTEAM: 👥 Household / My team */
+      if (/^c-team/.test(action)) return reply(200, await cTeam(event, action, body, pids));
+      if ((action === 'c-docs-url' || action === 'c-docs-up') && limited(ip, 'cdocs')) return reply(429, { ok: false, error: 'Too many papers sent from here. Wait a few minutes and try again.' });   /* patch CUSTSIGNED */   /* patch PORTALTEAM: 👥 Household / My team */
       return reply(200, await customerAction(action, body, pids, event));   /* patch PORTALTEAM: + event (who is writing) */
     }
     if (action === 'p-bid-request' && limited(ip, 'bid')) return reply(429, { ok: false, error: 'Too many requests sent from here. Wait a few minutes.' });   /* patch PLANREQ */

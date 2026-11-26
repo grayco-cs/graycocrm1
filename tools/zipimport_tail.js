@@ -491,12 +491,115 @@ function shell(id, title){
   ov.addEventListener('click', function(e){ var c = e.target.closest && e.target.closest('[data-zi="close"]'); if (c) { if (S && S.busy) { toast('Still importing — wait for it to finish.'); return; } ov.remove(); } });
   return ov.querySelector('[data-zi-body]');
 }
-function jobOpts(sel, extra){
-  return (extra || '') + jobsSorted().map(function(p){ return '<option value="' + esc(p.id) + '"' + (String(sel) === String(p.id) ? ' selected' : '') + '>' + esc(jobLabel(p)) + '</option>'; }).join('');
+function jobOpts(sel, extra, withCust){
+  return (extra || '') + jobsSorted().map(function(p){ return '<option value="' + esc(p.id) + '"' + (String(sel) === String(p.id) ? ' selected' : '') + '>' + esc(jobLabel(p)) + '</option>'; }).join('') + (withCust ? custOpts(sel) : '');
 }
 function rowOpts(sel){
-  return jobOpts(sel, '<option value=""' + (!sel ? ' selected' : '') + '>❓ Needs a job — the office picks it</option><option value="__skip"' + (sel === '__skip' ? ' selected' : '') + '>🚫 Leave this file out</option>');
+  return jobOpts(sel, '<option value=""' + (!sel ? ' selected' : '') + '>❓ Needs a job — the office picks it</option><option value="__skip"' + (sel === '__skip' ? ' selected' : '') + '>🚫 Leave this file out</option>', true);
 }
+
+/* ── patch CUSTDOCS (owner 11/26: "I have some general documents for all centers for this job with 5 different places — when I send
+   general zips, just make sure that stuff is in the customer's portal; it doesn't have to go to the projects' documents unless we do one
+   in each project if needed"). Under the jobs, every pulldown (the top one, each folder, each file) offers one choice per customer with
+   2+ jobs: "👤 <customer> — all their jobs (customer portal only)". Such a file is stored the same way (window._gcStoreFile → a
+   sb:crm-files ref) and recorded as the CUSTOMER's document — gc_kv "customerDocs" (read-merge-write, merged by id) — not on any job;
+   the customer portal shows it on each of their jobs as "📁 General documents" (netlify/functions/portal.js generalDocsFor). A file that
+   reads as sub / internal paperwork (or whose portal box is off) is left out here: a customer-only target has nowhere private to keep
+   it (said on screen). Re-import skips customer + name + size. Per file ☐ "also put a copy on each of their jobs" (off by default) adds
+   the usual job document on each of the customer's jobs. Customer 360 (👤) → 📄 Documents lists them with 🙈 Hide from portal /
+   🗄 Archive (staff; nothing is ever purged). ── */
+var CK = 'customerDocs', CLS = 'gc_custdocs_cache';
+function custKey(v){ return low(v).replace(/\s+/g, ' ').trim(); }
+function custGroups(){
+  var g = {}, out = [];
+  projects().forEach(function(p){ var n = s(p.client || p.customer), k = custKey(n); if (!k) return; if (!g[k]) { g[k] = { k: k, name: n, jobs: [], ids: {} }; out.push(g[k]); } g[k].jobs.push(p); g[k].ids[s(p.customerId)] = 1; });
+  return out.filter(function(x){ return x.jobs.length >= 2; }).sort(function(a, b){ return a.k.localeCompare(b.k); });
+}
+function isCust(v){ return /^__cust:/.test(s(v)); }
+function custVal(g){ return '__cust:' + encodeURIComponent(g.k); }
+function custOf(v){ if (!isCust(v)) return null; var k = ''; try { k = decodeURIComponent(s(v).slice(7)); } catch (e) { return null; } return custGroups().filter(function(g){ return g.k === k; })[0] || null; }
+function custOpts(sel){ var L = custGroups(); return L.length ? '<optgroup label="Customers with several jobs">' + L.map(function(g){ var v = custVal(g); return '<option value="' + esc(v) + '"' + (sel === v ? ' selected' : '') + '>👤 ' + esc(g.name) + ' — all their jobs (customer portal only)</option>'; }).join('') + '</optgroup>' : ''; }
+function custIdOf(g){ var ids = Object.keys(g.ids); return ids.length === 1 && ids[0] ? ids[0] : ''; }
+function cdupKey(k, name, size){ return 'c:' + k + '|' + low(name) + '|' + (+size || 0); }
+function custIndex(all){ var h = {}; arr(all).forEach(function(d){ if (!d || d.deleted === true) return; h[cdupKey(custKey(d.customer), d.name, d.size)] = 1; if (d.origSize) h[cdupKey(custKey(d.customer), d.name, d.origSize)] = 1; }); return h; }
+/* a row's target: a customer-only target never takes a staff-only file (nowhere private to keep it) */
+function setTarget(r, v){
+  r.custOff = ''; r.custWant = '';
+  if (isCust(v) && !r.portal) { r.custWant = v; r.custOff = r.portalWhy || 'a staff-only file (its portal box is off)'; r.pid = '__skip'; return; }
+  r.pid = v;
+}
+function custDocsLocal(){ try { return parseList(localStorage.getItem(CLS)); } catch (e) { return []; } }
+function custMerge(a, b){ var out = [], at = {}; arr(a).concat(arr(b)).forEach(function(x){ if (!x || !x.id) return; if (!(x.id in at)) { at[x.id] = out.length; out.push(x); } else out[at[x.id]] = newer(out[at[x.id]], x); }); return out; }
+function custDocsRead(){
+  var c = creds(); if (!c.k) return Promise.resolve(custDocsLocal());
+  return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + CK + '&select=value', { headers: hdr(c), cache: 'no-store' })
+    .then(function(r){ if (!r || !r.ok) throw new Error('read ' + (r && r.status)); return r.json(); })
+    .then(function(rows){ var l = custMerge(custDocsLocal(), parseList(rows && rows[0] && rows[0].value)); try { localStorage.setItem(CLS, JSON.stringify(l)); } catch (e) {} return l; })
+    .catch(function(e){ warn(e); return custDocsLocal(); });
+}
+/* add / change records: read the cloud list, merge by id (the newer updatedAt wins), write — nobody else's record is dropped */
+function custDocsSave(recs){
+  if (!recs.length) return Promise.resolve(0);
+  try { localStorage.setItem(CLS, JSON.stringify(custMerge(custDocsLocal(), recs))); } catch (e) {}
+  wq = wq.then(function(){
+    var c = creds(); if (!c.k) return 0;
+    return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + CK + '&select=value', { headers: hdr(c), cache: 'no-store' })
+      .then(function(r){ if (!r || !r.ok) throw new Error('read ' + (r && r.status)); return r.json(); })
+      .then(function(rows){
+        var l = custMerge(custMerge(parseList(rows && rows[0] && rows[0].value), custDocsLocal()), recs);
+        try { localStorage.setItem(CLS, JSON.stringify(l)); } catch (e) {}
+        personWrote([CK]);
+        return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: hdr(c, true), body: JSON.stringify({ key: CK, value: l, updated_at: nowIso() }) })
+          .then(function(r){ if (!r || !r.ok) throw new Error('write ' + (r && r.status)); return recs.length; });
+      })
+      .catch(function(e){ warn(e); later(function(){ custDocsSave(recs); }, 30000); return 0; });
+  });
+  return wq;
+}
+function custRec(g, ent, meta, batchId, by){
+  var at = nowIso();
+  return { id: 'gdoc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), customer: g.name, customerId: custIdOf(g) || undefined, jobIds: g.jobs.map(function(p){ return String(p.id); }),
+    name: ent.name, cat: ent.cat || 'Other', type: meta.type || ent.type || '', size: ent.size, storedSize: meta.size || ent.size, origSize: ent.size, ref: meta.ref, hash: meta.hash || '',
+    uploaded: at.slice(0, 10), uploadedAt: at, by: by, source: 'zip-import', zipBatch: batchId, zipPath: ent.path, portalShare: true, portalLive: true, portalLiveAt: at, portalLiveBy: by, savedAt: at, updatedAt: at };
+}
+/* Customer 360 → 📄 Documents: the customer's general documents (staff: open, hide from / show in the portal, archive / restore) */
+var C360 = { busy: false };
+function custDocsCard(cd, name){
+  var k = custKey(name); if (!k) return;
+  var box = cd.querySelector('[data-gc-custdocs]');
+  if (!box) { box = D.createElement('div'); box.setAttribute('data-gc-custdocs', k); box.style.cssText = 'margin-top:10px;border-top:1px solid #e5e7eb;padding-top:8px'; cd.appendChild(box); }
+  var list = custDocsLocal().filter(function(d){ return custKey(d.customer) === k && d.deleted !== true; });
+  var live = list.filter(function(d){ return d.archived !== true; }), arch = list.filter(function(d){ return d.archived === true; });
+  var staff = canImport();
+  var row = function(d){
+    return '<div class="gcd1-row" data-gcd="' + esc(d.id) + '"><div><b>📁 ' + esc(d.name) + '</b><div class="m">' + esc(d.cat || 'Other') + ' · ' + esc(s(d.uploadedAt).slice(0, 10)) + ' · ' + (d.archived ? 'archived' : (d.portalShare === true ? 'in the customer portal (all their jobs)' : 'hidden from the portal')) + '</div></div><span class="r">' +
+      '<button type="button" class="gcd1-btn s" data-gcd-open="' + esc(d.id) + '">Open</button>' +
+      (staff && !d.archived ? ' <button type="button" class="gcd1-btn s" data-gcd-share="' + esc(d.id) + '">' + (d.portalShare === true ? '🙈 Hide from portal' : '👁 Show in portal') + '</button> <button type="button" class="gcd1-btn s" data-gcd-arch="' + esc(d.id) + '">🗄 Archive</button>' : '') +
+      (staff && d.archived ? ' <button type="button" class="gcd1-btn s" data-gcd-unarch="' + esc(d.id) + '">↩ Restore</button>' : '') + '</span></div>';
+  };
+  var html = '<div class="gcd1-muted" style="font-weight:700;margin-bottom:4px">📁 GENERAL DOCUMENTS — every job’s customer portal (' + live.length + ')</div>' +
+    (live.length ? live.map(row).join('') : '<div class="gcd1-muted">None yet — 💎 📦 Import ZIP → “👤 ' + esc(name) + ' — all their jobs”.</div>') +
+    (arch.length ? '<details><summary class="gcd1-muted">Archived (' + arch.length + ')</summary>' + arch.map(row).join('') + '</details>' : '');
+  if (box.__h === html) return;
+  box.__h = html; box.innerHTML = html;
+  var by = function(id){ return list.filter(function(d){ return d.id === id; })[0]; };
+  var change = function(id, patch){ var d = by(id); if (!d) return; var n = Object.assign({}, d, patch, { updatedAt: nowIso(), changedBy: myName() }); custDocsSave([n]).then(function(){ custDecorate(true); }); try { localStorage.setItem(CLS, JSON.stringify(custMerge(custDocsLocal(), [n]))); } catch (e) {} custDocsCard(cd, name); };
+  box.querySelectorAll('[data-gcd-open]').forEach(function(b){ b.onclick = function(){ var d = by(b.getAttribute('data-gcd-open')); if (d && W._gcOpenRef) W._gcOpenRef(d.ref, d.name); }; });
+  box.querySelectorAll('[data-gcd-share]').forEach(function(b){ b.onclick = function(){ var d = by(b.getAttribute('data-gcd-share')); if (d) change(d.id, d.portalShare === true ? { portalShare: false, portalHiddenAt: nowIso() } : { portalShare: true, portalLive: true, portalLiveAt: nowIso(), portalLiveBy: myName() }); }; });
+  box.querySelectorAll('[data-gcd-arch]').forEach(function(b){ b.onclick = function(){ change(b.getAttribute('data-gcd-arch'), { archived: true, archivedAt: nowIso(), archivedBy: myName() }); }; });
+  box.querySelectorAll('[data-gcd-unarch]').forEach(function(b){ b.onclick = function(){ change(b.getAttribute('data-gcd-unarch'), { archived: false, restoredAt: nowIso() }); }; });
+}
+var c360At = 0;
+function custDecorate(force){
+  var cards = D.querySelectorAll('.gcd1-card[data-sec="docs"]'); if (!cards.length) return;
+  [].forEach.call(cards, function(cd){
+    var root = cd.closest('.gcd1-pn') || D, hEl = root.querySelector ? root.querySelector('.gcd1-hd h2') : null;
+    var name = s(hEl && hEl.textContent).replace(/^👤\s*/, ''); if (name) custDocsCard(cd, name);
+  });
+  if (force || Date.now() - c360At > 60000) { c360At = Date.now(); custDocsRead().then(function(){ [].forEach.call(D.querySelectorAll('.gcd1-card[data-sec="docs"]'), function(cd){ var root = cd.closest('.gcd1-pn') || D, hEl = root.querySelector ? root.querySelector('.gcd1-hd h2') : null; var name = s(hEl && hEl.textContent).replace(/^👤\s*/, ''); if (name) custDocsCard(cd, name); }); }); }
+}
+(function(){ var o = W._gcCustomer360; if (typeof o === 'function' && !o.__gcCustDocs) { var w = function(){ var r = o.apply(this, arguments); Promise.resolve(r).then(function(){ later(function(){ custDecorate(true); }, 80); later(custDecorate, 700); }); return r; }; w.__gcCustDocs = true; W._gcCustomer360 = w; } })();
+/* ── end patch CUSTDOCS helpers ── */
 function open(){
   if (!canImport()) { toast('Importing ZIPs is for admins, the office and PMs.'); return; }
   S = { rows: [], mode: 'auto', zips: [], busy: false, done: null };
@@ -505,7 +608,7 @@ function open(){
     '<div class="pick"><label class="btn">📦 Choose ZIP or files<input type="file" multiple data-zi-in="files" style="display:none"></label>' +
     '<label class="btn">📁 Choose a folder<input type="file" multiple webkitdirectory directory data-zi-in="dir" style="display:none"></label></div>' +
     '<label style="display:block;font-weight:700;font-size:13px;margin:6px 0 4px">Where do the files go?</label>' +
-    '<select class="jobsel" data-zi="mode">' + jobOpts('', '<option value="auto" selected>🔎 Read each file and place it (automatic)</option>') + '</select>' +
+    '<select class="jobsel" data-zi="mode">' + jobOpts('', '<option value="auto" selected>🔎 Read each file and place it (automatic)</option>', true) + '</select>' +   /* patch CUSTDOCS: + 👤 customers with several jobs */
     '<div data-zi="msg" class="mut" style="margin-top:8px"></div><div data-zi="list"></div><div data-zi="foot"></div>';
   body.querySelector('[data-zi="mode"]').onchange = function(){ S.mode = this.value; applyMode(); paint(); };
   Array.prototype.forEach.call(body.querySelectorAll('[data-zi-in]'), function(inp){
@@ -576,12 +679,14 @@ async function autoPlace(){
 function applyMode(){
   S.rows.forEach(function(r){
     if (r.status === 'big') { r.pid = '__skip'; return; }
-    r.pid = S.mode === 'auto' ? ((r.auto && r.auto.pid) || '') : S.mode;
+    setTarget(r, S.mode === 'auto' ? ((r.auto && r.auto.pid) || '') : S.mode);   /* patch CUSTDOCS */
   });
 }
 function rowHow(r){
   if (r.status === 'big') return '<span class="tag skip">over 50 MB — use 🔗 Add a link</span>';
+  if (r.pid === '__skip' && r.custOff) return '<span class="tag skip">🚫 left out — looks like ' + esc(r.custOff) + ': a customer-only target has nowhere private to keep it (pick a job to keep it staff only)</span>';   /* patch CUSTDOCS */
   if (r.pid === '__skip') return '<span class="tag skip">left out</span>';
+  if (isCust(r.pid)) { var cg = custOf(r.pid); if (cg && S.cdups && S.cdups[cdupKey(cg.k, r.name, r.size)]) return '<span class="tag dup">already in their general documents — skipped</span>'; return '<span class="tag ok">👤 ' + esc(cg ? cg.name : 'customer') + ' — customer portal only (all ' + (cg ? cg.jobs.length : '') + ' jobs), not on a job</span>'; }   /* patch CUSTDOCS */
   if (r.pid && S.dups && S.dups[dupKey(r.pid, r.name, r.size)]) return '<span class="tag dup">already on this job — skipped</span>';
   if (!r.pid) return '<span class="tag q">❓ needs a job' + (r.auto && r.auto.amb ? ' — ' + r.auto.amb.cands.length + ' jobs match the ' + esc(r.auto.amb.at) : ' — no PO / address / job name found') + '</span>';
   if (S.mode !== 'auto') return '<span class="tag ok">picked</span>';
@@ -589,8 +694,8 @@ function rowHow(r){
   return '<span class="tag ok">changed by you</span>';
 }
 function counts(){
-  var c = { go: 0, q: 0, skip: 0, dup: 0 };
-  S.rows.forEach(function(r){ if (r.pid === '__skip') c.skip++; else if (!r.pid) c.q++; else if (S.dups && S.dups[dupKey(r.pid, r.name, r.size)]) c.dup++; else c.go++; });
+  var c = { go: 0, q: 0, skip: 0, dup: 0, cust: 0 };
+  S.rows.forEach(function(r){ if (r.pid === '__skip') c.skip++; else if (isCust(r.pid)) { var cg = custOf(r.pid); if (cg && S.cdups && S.cdups[cdupKey(cg.k, r.name, r.size)]) c.dup++; else { c.go++; c.cust++; } } else if (!r.pid) c.q++; else if (S.dups && S.dups[dupKey(r.pid, r.name, r.size)]) c.dup++; else c.go++; });
   return c;
 }
 function paint(){
@@ -610,25 +715,27 @@ function paint(){
       h += '<div class="row" data-zi-row="' + r.id + '"><div class="fn">' + esc(r.name) + '<small>' + (r.size ? kb(r.size) + ' · ' : '') + rowHow(r) + '</small></div>' +
         '<select class="rj" data-zi-job="' + r.id + '" aria-label="Job">' + rowOpts(r.pid) + '</select>' +
         '<select class="rc" data-zi-cat="' + r.id + '" aria-label="Category">' + CATS.map(function(c){ return '<option' + (c === r.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>' +
-        '<label class="pt"><input type="checkbox" data-zi-portal="' + r.id + '"' + (r.portal ? ' checked' : '') + '><span>Show in the customer’s portal' + (r.portalWhy ? '<br><span class="why">' + (r.portal ? '⚠ looks like ' : 'Off: looks like ') + esc(r.portalWhy) + ' — never shown to customers' + (r.portal ? ' (you turned it on)' : '') + '</span>' : '') + '</span></label></div>' + schedHtml(r);
+        '<label class="pt"><input type="checkbox" data-zi-portal="' + r.id + '"' + (r.portal ? ' checked' : '') + '><span>Show in the customer’s portal' + (r.portalWhy ? '<br><span class="why">' + (r.portal ? '⚠ looks like ' : 'Off: looks like ') + esc(r.portalWhy) + ' — never shown to customers' + (r.portal ? ' (you turned it on)' : '') + '</span>' : '') + '</span></label>' +
+        (isCust(r.pid) ? '<label class="pt"><input type="checkbox" data-zi-copy="' + r.id + '"' + (r.copyJobs ? ' checked' : '') + '><span>Also put a copy on each of their jobs (' + ((custOf(r.pid) || { jobs: [] }).jobs.length) + ')</span></label>' : '') + '</div>' + schedHtml(r);   /* patch CUSTDOCS */
     });
     h += '</div>';
   });
   L.innerHTML = h;
   var c = counts();
   F.innerHTML = '<div class="foot"><button type="button" class="btn go" data-zi="go"' + (c.go + c.q ? '' : ' disabled') + '>⬆ Import ' + (c.go + c.q) + ' file' + (c.go + c.q === 1 ? '' : 's') + '</button>' +
-    '<span class="mut">' + c.go + ' to jobs · ' + c.q + ' need a job (they go to the office / admins on ✅ Approvals)' + (c.dup ? ' · ' + c.dup + ' already imported' : '') + (c.skip ? ' · ' + c.skip + ' left out' : '') + '</span>' +
+    '<span class="mut">' + (c.go - c.cust) + ' to jobs · ' + (c.cust ? c.cust + ' to customer portals (general documents) · ' : '') + c.q + ' need a job (they go to the office / admins on ✅ Approvals)' + (c.dup ? ' · ' + c.dup + ' already imported' : '') + (c.skip ? ' · ' + c.skip + ' left out' : '') + '</span>' +
     '<div class="bar" data-zi="bar" style="flex:1 1 100%;display:none"><i></i></div><div class="mut" data-zi="prog" style="flex:1 1 100%"></div></div>';
-  L.querySelectorAll('[data-zi-job]').forEach(function(sel){ sel.onchange = function(){ var r = rowById(sel.getAttribute('data-zi-job')); if (r) { r.pid = sel.value; paint(); } }; });
+  L.querySelectorAll('[data-zi-job]').forEach(function(sel){ sel.onchange = function(){ var r = rowById(sel.getAttribute('data-zi-job')); if (r) { setTarget(r, sel.value); paint(); } }; });   /* patch CUSTDOCS: setTarget */
+  L.querySelectorAll('[data-zi-copy]').forEach(function(cb){ cb.onchange = function(){ var r = rowById(cb.getAttribute('data-zi-copy')); if (r) r.copyJobs = cb.checked; }; });
   L.querySelectorAll('[data-zi-cat]').forEach(function(sel){ sel.onchange = function(){ var r = rowById(sel.getAttribute('data-zi-cat')); if (r) r.cat = sel.value; }; });
-  L.querySelectorAll('[data-zi-portal]').forEach(function(cb){ cb.onchange = function(){ var r = rowById(cb.getAttribute('data-zi-portal')); if (r) { r.portal = cb.checked; paint(); } }; });
-  L.querySelectorAll('[data-zi-fold]').forEach(function(sel){ sel.onchange = function(){ if (sel.value === '__mixed') return; var g = groups[+sel.getAttribute('data-zi-fold')]; g.rows.forEach(function(r){ if (r.status !== 'big') r.pid = sel.value; }); paint(); }; });
+  L.querySelectorAll('[data-zi-portal]').forEach(function(cb){ cb.onchange = function(){ var r = rowById(cb.getAttribute('data-zi-portal')); if (r) { r.portal = cb.checked; if (r.custWant && r.portal) setTarget(r, r.custWant); else if (isCust(r.pid) && !r.portal) setTarget(r, r.pid); paint(); } }; });   /* patch CUSTDOCS */
+  L.querySelectorAll('[data-zi-fold]').forEach(function(sel){ sel.onchange = function(){ if (sel.value === '__mixed') return; var g = groups[+sel.getAttribute('data-zi-fold')]; g.rows.forEach(function(r){ if (r.status !== 'big') setTarget(r, sel.value); }); paint(); }; });   /* patch CUSTDOCS: setTarget */
   schedWire(L);
   F.querySelector('[data-zi="go"]').onclick = run;
 }
 /* patch ZIPSCHED: under a schedule file — the rows found, the job's Schedule, Tentative */
 function schedHtml(r){
-  if (!r.sched || r.pid === '__skip') return '';
+  if (!r.sched || r.pid === '__skip' || isCust(r.pid)) return '';   /* patch CUSTDOCS: a customer target has no schedule */
   var x = r.sched, p = r.pid ? proj(r.pid) : null, n = x.items.length, on = schedPicked(r).length;
   var where = p ? esc(s(p.name)) + '’s Schedule' : 'the Schedule of the job the office picks';
   return '<div class="sch" data-zs="' + r.id + '"><label class="pt"><input type="checkbox" data-zs-on="' + r.id + '"' + (x.on ? ' checked' : '') + '><span>📅 <b>' + n + ' schedule item' + (n === 1 ? '' : 's') + ' found</b> → add ' + (on < n && x.on ? on + ' ' : '') + 'to ' + where + '</span></label>' +
@@ -644,7 +751,7 @@ function schedWire(L){
 }
 function rowById(id){ return S.rows.filter(function(r){ return r.id === id; })[0] || null; }
 /* the duplicate check reads the job files once a list is shown */
-function loadDups(){ return docsNow().then(function(all){ if (S) { S.dups = docIndex(all); paint(); } }); }
+function loadDups(){ return Promise.all([docsNow(), custDocsRead()]).then(function(x){ if (S) { S.dups = docIndex(x[0]); S.cdups = custIndex(x[1]); paint(); } }); }   /* patch CUSTDOCS: + the customers' general documents */
 
 async function run(){
   if (!S || S.busy) return;
@@ -656,6 +763,7 @@ async function run(){
   var by = myName(), bid = uid('zi_'), at = nowIso();
   var batch = { id: bid, at: at, by: by, byEmail: myEmail(), zips: S.zips.slice(), mode: S.mode === 'auto' ? 'automatic' : 'one job', files: [] };
   var dups = docIndex(await docsNow()), waiting = waitingIndex();
+  var cdups = custIndex(await custDocsRead()), cRecs = [], custN = {}, copies = 0;   /* patch CUSTDOCS */
   var todo = S.rows.filter(function(r){ return r.pid !== '__skip'; }), done = 0, placed = 0, queued = 0, skipped = 0, failed = 0, recs = [], perJob = {};
   var sRecs = [], sFound = 0, sJobs = {};   /* patch ZIPSCHED */
   var schedFor = function(r){ var it = schedPicked(r); sFound += r.sched ? r.sched.items.length : 0; if (!r.pid || !it.length) return 0; var L = schedRecs(r.pid, it, r.sched.tent, { file: r.name, batch: bid, by: by }); sRecs = sRecs.concat(L); sJobs[r.pid] = 1; return L.length; };
@@ -666,6 +774,24 @@ async function run(){
     try {
       var blob = null;
       if (!r.size) { blob = await r.get(); r.size = blob.size; }
+      if (isCust(r.pid)) {   /* patch CUSTDOCS: the customer's general document (all their jobs' portals), not on a job */
+        var cg = custOf(r.pid);
+        if (!cg) { failed++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, failed: 'that customer has no jobs now', updatedAt: nowIso() }); done++; continue; }
+        var ck = cdupKey(cg.k, r.name, r.size);
+        if (cdups[ck]) { skipped++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, cust: cg.name, skipped: 'already imported', updatedAt: nowIso() }); done++; continue; }
+        if (!blob) blob = await r.get();
+        if (blob.size > MAX_FILE) { failed++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: blob.size, failed: 'over 50 MB', updatedAt: nowIso() }); done++; continue; }
+        var cfile = blob instanceof File && blob.name === r.name ? blob : new File([blob], r.name, { type: r.type || blob.type || '' });
+        var cmeta = await W._gcStoreFile(cfile, { kind: 'doc', name: r.name });
+        if (!cmeta || !cmeta.ref) throw new Error('no reference');
+        var cent = { id: 'f' + i, name: r.name, path: r.path, size: r.size, type: cmeta.type || r.type || '', ref: cmeta.ref, hash: cmeta.hash || '', storedSize: cmeta.size || r.size, cat: r.cat, portal: true, portalWhy: '', cust: cg.name, how: 'customer portal only (' + cg.jobs.length + ' jobs)', updatedAt: nowIso() };
+        var crec = custRec(cg, cent, cmeta, bid, by); cRecs.push(crec); cdups[ck] = 1; custN[cg.k] = (custN[cg.k] || 0) + 1;
+        cent.custDocId = crec.id; cent.placedAt = crec.uploadedAt; cent.placedBy = by;
+        if (r.copyJobs) { cent.copies = []; cg.jobs.forEach(function(p){ var k2 = dupKey(p.id, r.name, r.size); if (dups[k2]) return; var jr = docRec(p.id, cent, cmeta, bid, by); jr.customerDocId = crec.id; recs.push(jr); dups[k2] = 1; copies++; cent.copies.push(String(p.id)); perJob[p.id] = (perJob[p.id] || 0) + 1; }); }
+        batch.files.push(cent); done++;
+        if (recs.length >= 25) { await addDocs(recs.splice(0)); }
+        continue;
+      }
       var key = r.pid ? dupKey(r.pid, r.name, r.size) : dupKey('?', r.name, r.size);
       if ((r.pid ? dups : waiting)[key]) { skipped++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, pid: r.pid || '', skipped: 'already imported', schedItems: r.pid ? schedFor(r) : 0, updatedAt: nowIso() }); continue; }   /* a re-run adds no schedule row twice (same job + title + start) */
       if (!blob) blob = await r.get();
@@ -689,14 +815,17 @@ async function run(){
     done++;
   }
   if (recs.length) await addDocs(recs.splice(0));
+  var cAdded = 0; try { cAdded = await custDocsSave(cRecs); } catch (e) { warn(e); }   /* patch CUSTDOCS */
   var sAdded = 0; try { sAdded = await addSched(sRecs); } catch (e) { warn(e); }   /* patch ZIPSCHED */
   bar.firstChild.style.width = '100%';
-  batch.counts = { placed: placed, waiting: queued, skipped: skipped, failed: failed, schedFound: sFound, schedAdded: sAdded, schedJobs: Object.keys(sJobs).length };
+  batch.custDocs = Object.keys(custN).map(function(k){ var g = custGroups().filter(function(x){ return x.k === k; })[0]; return { customer: g ? g.name : k, n: custN[k] }; });   /* patch CUSTDOCS */
+  batch.counts = { custDocs: cRecs.length, custSaved: cAdded, jobCopies: copies, placed: placed, waiting: queued, skipped: skipped, failed: failed, schedFound: sFound, schedAdded: sAdded, schedJobs: Object.keys(sJobs).length };
   batch.jobs = Object.keys(perJob).map(function(pid){ var p = proj(pid); return { pid: pid, name: p ? s(p.name) : pid, n: perJob[pid] }; });
   prog.textContent = 'Saving the import log…';
   await saveBatch(batch);
   S.busy = false;
   var h = '<div class="sum"><b>✓ Import finished.</b><br>' + placed + ' file' + (placed === 1 ? '' : 's') + ' put on ' + batch.jobs.length + ' job' + (batch.jobs.length === 1 ? '' : 's') +
+    (cRecs.length ? '<br>👤 ' + cRecs.length + ' general document' + (cRecs.length === 1 ? '' : 's') + ' put in ' + batch.custDocs.length + ' customer' + (batch.custDocs.length === 1 ? '’s' : 's’') + ' portal (every one of their jobs)' + (copies ? ' · ' + copies + ' job cop' + (copies === 1 ? 'y' : 'ies') : '') + (cAdded < cRecs.length ? ' — <span style="color:#b91c1c">not saved to the cloud yet, it retries</span>' : '') + '.' : '') +   /* patch CUSTDOCS */
     (queued ? '<br>❓ ' + queued + ' file' + (queued === 1 ? '' : 's') + ' need a job — sent to the office and admins (✅ Approvals → “📦 Files from a ZIP need a job”).' : '') +
     (sFound ? '<br>📅 ' + sAdded + ' schedule item' + (sAdded === 1 ? '' : 's') + ' added to ' + Object.keys(sJobs).length + ' job schedule' + (Object.keys(sJobs).length === 1 ? '' : 's') + (sRecs.length > sAdded ? ' (' + (sRecs.length - sAdded) + ' already there)' : '') + '.' : '') +
     (skipped ? '<br>' + skipped + ' already imported before — skipped.' : '') + (failed ? '<br><span style="color:#b91c1c">' + failed + ' could not be saved (see the log).</span>' : '') + '</div>';
@@ -745,6 +874,7 @@ function fresh(){
 }
 function watch(){
   wrapSet();
+  try { custDecorate(false); } catch (e) { warn(e); }   /* patch CUSTDOCS: Customer 360's 📄 Documents */
   try { var n = items().map(function(x){ return x.id + ':' + waitingFiles(x.b).length; }).join('|'); if (n !== sig) { sig = n; fresh(); } } catch (e) { warn(e); }
 }
 function openPlace(bid){
@@ -819,6 +949,9 @@ W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 W._gcZipImport = { open: open, openPlace: openPlace, match: match, placeByPath: placeByPath, internalWhy: internalWhy, guessCat: guessCat,
   schedFromText: schedFromText, rowsToItems: rowsToItems, ymd: ymd,
   refresh: function(){ return refresh(true); }, list: cache, items: items, canImport: canImport,
+  custGroups: custGroups, custDocs: custDocsRead, custDecorate: custDecorate,   /* patch CUSTDOCS */
+  _t: { add: function(f){ return addInputs(f); }, run: function(){ return run(); }, mode: function(v){ S.mode = v; applyMode(); paint(); }, target: function(name, v){ var r = S.rows.filter(function(x){ return x.name === name; })[0]; if (r) { setTarget(r, v); paint(); } return r; },
+    copy: function(name, on){ var r = S.rows.filter(function(x){ return x.name === name; })[0]; if (r) r.copyJobs = !!on; return r; }, custVal: custVal, rowHow: function(name){ var r = S.rows.filter(function(x){ return x.name === name; })[0]; return r ? rowHow(r) : ''; }, opts: function(){ return jobOpts('', '', true); } },   /* patch CUSTDOCS: tests */
   state: function(){ return S ? { rows: S.rows.map(function(r){ return { path: r.path, name: r.name, size: r.size, pid: r.pid, auto: r.auto, cat: r.cat, portal: r.portal, portalWhy: r.portalWhy, sched: r.sched ? { on: r.sched.on, tent: r.sched.tent, n: r.sched.items.length, items: r.sched.items } : null }; }), mode: S.mode, busy: S.busy, done: !!S.done } : null; } };
 try { console.log('[GC] 📦 Import ZIP of job files (💎 menu) — _gcZipImport'); } catch (e) {}
 })();

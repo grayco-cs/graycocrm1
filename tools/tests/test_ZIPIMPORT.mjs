@@ -99,7 +99,7 @@ try {
   const opened = await H.waitFor(a, () => { const o = document.getElementById('gczi-ov'); return o && o.getClientRects().length ? getComputedStyle(o.querySelector('.gczi')).backgroundColor : null; }, null, 8000);
   ok(opened === 'rgb(255, 255, 255)', 'the sheet opens, light (white) panel', opened);
   const modeOpts = await a.ev(() => [...document.querySelectorAll('#gczi-ov [data-zi="mode"] option')].map(o => o.textContent));
-  ok(/automatic/.test(modeOpts[0]) && modeOpts.length === 9 && modeOpts.some(t => /Head Start - Center 1 — 456 Oak Ave.* — H201/.test(t)) && modeOpts.some(t => /K791/.test(t)), 'job pulldown: automatic first, then every job (name — address — PO)', modeOpts.slice(0, 4));
+  ok(/automatic/.test(modeOpts[0]) && modeOpts.length === 9 + modeOpts.filter(t => /^👤/.test(t)).length && modeOpts.some(t => /Head Start - Center 1 — 456 Oak Ave.* — H201/.test(t)) && modeOpts.some(t => /K791/.test(t)) && (modeOpts.length === 9 || modeOpts[9] === '👤 Head Start — all their jobs (customer portal only)'), 'job pulldown: automatic first, then every job (name — address — PO), then the customer with several jobs (patch CUSTDOCS)', modeOpts);
 
   const S = await loadZip(a, ZIPBUF);
   ok(S && S.rows.length === 8, '8 files read from the ZIP (the __MACOSX junk is left out)', S && S.rows.map(r => r.path));
