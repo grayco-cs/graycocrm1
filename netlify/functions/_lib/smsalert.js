@@ -101,7 +101,7 @@ const _D = {
       x.lsaCheck = d.noAnswer ? 'no_answer' : d.good ? 'good' : 'bad'; x.leadExtra = Object.assign({}, obj(x.leadExtra), { lsaCheck: x.lsaCheck }); x.lsaDecidedBy = d.by; x.lsaDecidedAt = at; x.lsaVia = 'text';
       if (!d.noAnswer && !s(x.contactedAt)) { x.contactedAt = at; x.contactedBy = s(d.by) + ' (text)'; } else if (d.noAnswer) x.lastAttemptAt = at;   /* NODUP: they called — no "reach out" reminders */
       if (d.noAnswer) { x.noAnswerAt = at; x.noAnswerCount = (+x.noAnswerCount || 0) + 1; }
-      else if (!d.good) { x.lsaReason = d.reason; x.lostReason = (d.isLsa === false ? 'Not a real lead (' : 'LSA — not a real lead (') + d.reason + ')'; }
+      else if (!d.good) { x.lsaReason = d.reason; x.lsaReasonBy = s(d.by); x.lsaReasonByEmail = low(d.byEmail); x.lsaReasonAt = at; x.leadExtra = Object.assign({}, obj(x.leadExtra), { badReason: { text: s(d.reason), by: s(d.by), byEmail: low(d.byEmail), at } }); /* patch BADWHY: the reason with who and when */ x.lostReason = (d.isLsa === false ? 'Not a real lead (' : 'LSA — not a real lead (') + d.reason + ')'; }
       if (d.good && d.pm && d.pm.name && !(d.keepPm && s(x.pm) && low(x.pmEmail) === low(d.pm.email))) {   /* LSAPM: the PM texted with GOOD (LSASEND: a PM's own GOOD on his lead changes nothing here) */
         x.pm = d.pm.name; x.pmEmail = low(d.pm.email); x.assignedBy = s(d.by) + ' (text)'; x.assignedAt = at; x.assignConfirmed = true; x.leadRole = x.leadRole || 'insurance';
         if (x.hold) x.hold = Object.assign({}, x.hold, { state: 'approved', name: d.pm.name, email: low(d.pm.email), doneAt: at, doneBy: s(d.by) + ' (text)' });
@@ -118,7 +118,7 @@ const _D = {
     if (d.good) { try { await _D.tasksDone(['LSA25_' + s(d.leadId)], 'marked good by ' + s(d.by)); } catch (e) {} }   /* LSAFLOW2: qualified */
     if (!d.good && d.isLsa !== false && !d.noTodo) { try { const by = new Date(_D.now() + LSA_DISPUTE_WINDOW_H * 3600e3), byS = mdhOf(+by);   /* LEADWATCH: Google's 48 hours */
       out.todo = await core().officeTodo('LSADISPUTE_' + s(d.leadId), '⚖️ Dispute ' + clip(d.name || tidy(d.phone), 40) + ' (Google LSA) in Google Ads by ' + byS,
-        s(d.by) + ' texted BAD: ' + s(d.reason) + '. Open ' + (s(d.link) || 'https://ads.google.com/localservices/leads') + ' → find ' + (d.phone ? tidy(d.phone) : d.name) + ' → Dispute lead (pick the reason). Office or marketing can do it.'); } catch (e) {} }
+        'Reason (paste into Google\'s dispute form): "' + s(d.reason) + '" — ' + s(d.by) + ', ' + mdhOf(_D.now()) + '. Open ' + (s(d.link) || 'https://ads.google.com/localservices/leads') + ' → find ' + (d.phone ? tidy(d.phone) : d.name) + ' → Dispute lead (pick the reason). Office or marketing can do it.'); } catch (e) {} }
     return out;
   },
   /* LSASEND: the lead is the PM's (not yet good) → inbox + gc_lsa_decisions (the CRM page) + the normal "assigned" notice */
@@ -1628,7 +1628,7 @@ async function lsaList(days){
     const info = R ? R.cardInfo(x) : {};
     const chk = low(x.lsaCheck || ex.lsaCheck) || 'pending';
     return { id: s(x.id), code: lsaCode(x.id), title: s(x.title), name: s(obj(x.contact).name), phone: phone10(obj(x.contact).phone), at: isFinite(t) ? new Date(t).toISOString() : '', status: s(x.status), check: chk,
-      reason: s(x.lsaReason), decidedBy: s(x.lsaDecidedBy), disputed: s(x.lsaDisputedAt || ex.lsaDisputedAt), disputedBy: s(x.lsaDisputedBy), pm: s(x.pm), pmEmail: low(x.pmEmail), call: !!(ex.lsaCall || x.lsaCall), emergency: !!(x.emergency || ex.emergency), link: s(ex.lsaLink),
+      reason: s(x.lsaReason), reasonBy: s(x.lsaReasonBy || x.lsaDecidedBy), reasonAt: s(x.lsaReasonAt || (s(x.lsaReason) ? x.lsaDecidedAt : '')), decidedBy: s(x.lsaDecidedBy),   /* patch BADWHY */ disputed: s(x.lsaDisputedAt || ex.lsaDisputedAt), disputedBy: s(x.lsaDisputedBy), pm: s(x.pm), pmEmail: low(x.pmEmail), call: !!(ex.lsaCall || x.lsaCall), emergency: !!(x.emergency || ex.emergency), link: s(ex.lsaLink),
       info, intake: ex.intake || null, repeats: +ex.lsaRepeats || 0, merged: s(x.mergedInto), dismissed: x.status === 'dismissed' };
   }).filter(Boolean).sort((a, b) => s(b.at).localeCompare(s(a.at)));
 }
@@ -1709,7 +1709,8 @@ async function escSend(leadId, step, e){
     if (!mk.length) return { nobody: true, why: 'nobody in marketing' };
     let r = null; try { r = await _D.officeTask({ id: 'LSABADMKT_' + s(leadId), kind: 'lsa_bad_mkt', leadId: s(leadId), code: s(e.code), assignees: mk, prio: 'med', personal: false,
       label: '⚖️ Bad Google LSA lead ' + s(e.code) + ': ' + clip(s(e.name), 40) + ' — ' + clip(s(e.why) || 'marked bad', 60) + (e.by ? ' (per ' + clip(s(e.by), 24) + ')' : ''),
-      note: 'For marketing: a Google LSA lead was marked BAD. Dispute in Google: ' + s(e.link) + (e.dueS ? ' — by ' + s(e.dueS) : '') + '. Nothing to text; the office disputes it.' }); } catch (er) { r = null; }
+      badReason: s(e.why), badBy: s(e.by), badAt: s(e.at),   /* patch BADWHY: the To-Do list shows it prominently */
+      note: 'Reason (paste into Google\'s dispute form): "' + (s(e.why) || 'no reason given') + '"' + (e.by ? ' — ' + s(e.by) : '') + (e.at ? ', ' + mdhOf(Date.parse(e.at) || now()) : '') + '.\nFor marketing: a Google LSA lead was marked BAD. Dispute in Google: ' + s(e.link) + (e.dueS ? ' — by ' + s(e.dueS) : '') + '. Nothing to text; the office disputes it.' }); } catch (er) { r = null; }
     return { inapp: true, todo: r };
   }
   const tg = await escTargets(step, e.item || {});
@@ -1811,9 +1812,14 @@ async function lsaBad(o){
     out.admins = res; out.escStep = ESC_STEPS[Math.min(step, ESC_STEPS.length - 1)];
     await _D.kvCas(SKEY, v => { const st = loadState(v); st.lsaEsc = obj(st.lsaEsc); st.lsaEsc[leadId] = Object.assign({}, e, { step: Math.min(step, ESC_STEPS.length - 1), last: e.at }); return st; }).catch(() => {}); }
   /* (c) the office: confirm and dispute */
-  try { out.todo = await _D.officeTask({ id: 'LSADISPUTE_' + leadId, kind: 'lsa_dispute', leadId, code, due: new Date(due).toISOString().slice(0, 10),
-    label: '⚖️ Bad lead per ' + clip(byName, 30) + ' — confirm and dispute by ' + dueS + ': ' + nm + (ph.length === 10 ? ' ' + tidy(ph) : '') + ' (Google LSA ' + code + ')',
-    note: byName + ' says: "' + why + '". Confirm it is not a real lead, then dispute it in Google: ' + link + ' → find ' + (ph.length === 10 ? tidy(ph) : nm) + ' → Dispute lead (pick the reason). Then tap ✓ Disputed in Google on the lead (or text DISPUTED ' + code + ') — that closes it for everyone.' }); } catch (e) { out.todo = { error: s(e && e.message) }; }
+  try { out.todo = await _D.officeTask({ id: 'LSADISPUTE_' + leadId, kind: 'lsa_dispute', leadId, code, due: new Date(due).toISOString().slice(0, 10), badReason: why, badBy: byName, badAt: new Date(now()).toISOString(),   /* patch BADWHY */
+    label: '⚖️ Bad lead per ' + clip(byName, 30) + ' — confirm and dispute by ' + dueS + ': ' + nm + (ph.length === 10 ? ' ' + tidy(ph) : '') + ' (Google LSA ' + code + ') — "' + clip(why, 60) + '"',   /* patch BADWHY */
+    note: 'Reason (paste into Google\'s dispute form): "' + why + '" — ' + byName + ', ' + mdhOf(now()) + '.\nConfirm it is not a real lead, then dispute it in Google: ' + link + ' → find ' + (ph.length === 10 ? tidy(ph) : nm) + ' → Dispute lead (pick the reason). Then tap ✓ Disputed in Google on the lead (or text DISPUTED ' + code + ') — that closes it for everyone.' }); } catch (e) { out.todo = { error: s(e && e.message) }; }
+  /* patch BADWHY: marketing's "📞 Google LSA call came in" To-Do (LSAMKT) shows the reason too, while it is open */
+  try { const mid = 'LSAMKT_' + leadId, at1 = new Date(now()).toISOString(); out.mkt = await core().kvListUpdate('gc_office_tasks', l => { const t0 = l.find(x => x && x.id === mid && !x.done); if (!t0 || t0.badReason === why) return null;
+    t0.badReason = why; t0.badBy = byName; t0.badAt = at1; t0.label = clip('👎 BAD: ' + clip(why, 60) + ' · ' + s(t0.label).replace(/^👎 BAD: [^·]*· /, ''), 200);
+    t0.note = ('Reason (paste into Google\'s dispute form): "' + why + '" — ' + byName + ', ' + mdhOf(now()) + '.\n' + s(t0.note).replace(/^Reason \(paste into Google[^\n]*\n/, '')).slice(0, 2000); t0.updatedAt = at1;
+    return { list: l, check: l2 => l2.some(x => x && x.id === mid && x.badReason === why) }; }); } catch (e) {}
   return out;
 }
 async function lsaDisputed(o){
