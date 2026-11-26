@@ -491,6 +491,59 @@ async function inboundSms(p){
   if (viaLocal) out.route.via = viaLocal;
   /* patch LOCALNUMS: sticky — the customer texted this number of ours; a person's answer goes back on it unless a local number matches their area code (staff / subs keep their own) */
   if (!(who && (who.kind === 'staff' || who.kind === 'sub')) && (lnTo || RT.isOurs(toNum, set, env) || toNum === phone10(env('TWILIO_FROM')))) { try { if (await LNS().remember(ph, toNum, 'texted us')) out.sticky = toNum; } catch (e) {} }
+  /* patch TEXTROUTE (owner 11/26: "make sure they name the address so the message goes to the right project … or if its a new project so it
+     can create a lead instantly"): a text we cannot put on exactly one job (a number not on file, a number on several jobs, a customer with no
+     job) → the job whose address it names, NEW / new work → a lead now, else ONE question (the auto-answer switch, data-entry mode, the reply
+     limits and the 7 PM – 7 AM hold as for every automatic answer); their answer → that job / a lead / an office To-Do. _lib/textroute.js */
+  const TR = require('./_lib/textroute.js'); let trd = { action: 'today' }, trReserved = false, trCanAsk = false;
+  try {
+    let cantWhy = '';
+    trCanAsk = true;
+    if (optedOut) { trCanAsk = false; cantWhy = 'opted out'; }
+    else if (!set.autoOn) { trCanAsk = false; cantWhy = 'automatic answers are off'; }
+    else if (!ready()) { trCanAsk = false; cantWhy = 'texting is not set up'; }
+    else {
+      try { if (await require('./_lib/pause').isPaused()) { trCanAsk = false; cantWhy = 'data-entry mode is on'; } } catch (e) { trCanAsk = false; cantWhy = 'data-entry mode unknown'; }
+      if (trCanAsk) { try { if (!(await require('./_lib/automations.js').isOn('text_auto_answers'))) { trCanAsk = false; cantWhy = 'Text auto-answers is off in ⚡ Automations'; } } catch (e) { trCanAsk = false; cantWhy = 'Automations unknown'; } }
+      if (trCanAsk && !S.whenAllows(set, now(), null)) { trCanAsk = false; cantWhy = 'outside the hours set for automatic answers'; }
+    }
+    const lo = (st0.lastOut || {})[ph], lastPid = lo && lo.pid && Date.now() - Date.parse(lo.at || 0) < RT.LAST_DAYS * 86400000 ? s(lo.pid) : '';
+    let emerg0 = !!rt.urgent; try { emerg0 = emerg0 || !!RT.topics(body).emergency; } catch (e) {}
+    const trMap = st0.troute && typeof st0.troute === 'object' ? st0.troute : {};
+    trd = TR.decide({ who, own, tr: trMap[ph], body, purpose, rule: S.pickRule(body, set, { pid: '' }), emergency: emerg0, lastPid, projects: data.projects, deleted: data.gc_deleted_projects, ph, now: now(), canAsk: trCanAsk, cantWhy });
+    if (trd.reply && trd.step === 'answer' && !trCanAsk) trd.reply = '';   /* the answer's "thanks" only while automatic answers may go out */
+    if (trd.action !== 'today') {
+      const pkey = trd.step === 'ask' ? sid : s(trd.pending && trd.pending.sid), rkey = trd.step + ':' + pkey;
+      await stateCas(st => {
+        st.troute = TR.prune(st.troute, now()); st.auto = st.auto && typeof st.auto === 'object' ? st.auto : {};
+        const cur = st.troute[ph] || {}, replied = Array.isArray(cur.replied) ? cur.replied.slice(-10) : [];
+        trReserved = false;
+        if (trd.reply) {   /* one reply per step, and the same per-number daily limit as every automatic answer */
+          const list = (Array.isArray(st.auto[ph]) ? st.auto[ph] : []).filter(x => x && now() - Date.parse(x.at) < 86400000);
+          if (replied.indexOf(rkey) < 0 && list.length < set.maxPerDay) { list.push({ at, rule: 'textroute_' + trd.step }); replied.push(rkey); trReserved = true; }
+          st.auto[ph] = list;
+        }
+        if (trd.action === 'ask') { if (!trReserved) return true; st.troute[ph] = { step: 'asked', at, sid, body: clip(body, 600), replied }; }
+        else if (trd.action === 'job') st.troute[ph] = { step: 'filed', pid: trd.pid, at, replied };
+        else if (trd.action === 'todo') st.troute[ph] = { step: 'office', at: cur.step === 'office' ? s(cur.at) || at : at, todo: s(cur.todo) || 'SMSWHICH_' + ph + '_' + sid, replied };
+        else if (trd.action === 'lead') delete st.troute[ph];
+        return true;
+      }).catch(() => {});
+      if (trd.action === 'ask' && !trReserved) trd = { action: 'today', why: 'the question was already sent / reply limit reached' };
+      if (trd.action === 'todo') { const st1 = await stateGet().catch(() => ({})); trd.todoId = s(st1.troute && st1.troute[ph] && st1.troute[ph].todo) || 'SMSWHICH_' + ph + '_' + sid; }
+    }
+  } catch (e) { trd = { action: 'today', error: s(e && e.message) }; }
+  out.textRoute = { action: trd.action, why: s(trd.why), pid: s(trd.pid) || undefined, step: s(trd.step) || undefined };
+  if (trd.action !== 'today') {
+    /* the job they named (the PM / super of THAT job hears), or nobody's job yet (📥 Unsorted, the office) — never the job the phone match guessed */
+    const trWho = trd.action === 'job' ? { kind: 'customer', pid: trd.pid, job: trd.job, name: s(who && who.name) } : (who ? Object.assign({}, who, { pid: '', job: null }) : null);
+    pid = trd.action === 'job' ? trd.pid : ''; job = trd.action === 'job' ? trd.job : null;
+    if (who && who.kind === 'customer') { who = Object.assign({}, who, trd.action === 'job' && trd.mine ? { pid, job } : { pid: '', job: null }); }
+    try { const rt2 = RT.route({ data, who: trWho, purpose, body, last: null, pmOf: j => { try { return core().pmOf(data, j); } catch (e) { return null; } }, insurance: insP, oncall: onP, leadsPerson: set.leadsPerson ? { name: '', email: set.leadsPerson } : null });
+      rt.to = rt2.to; rt.office = rt2.office || trd.action === 'todo'; rt.pid = pid; rt.job = job; rt.why = (rt2.why ? rt2.why + ' · ' : '') + 'which project: ' + s(trd.why);
+      out.route = Object.assign({}, out.route, { to: rt.to.map(x => x.email || x.name), office: rt.office, why: rt.why }); } catch (e) {}
+  }
+  const trNotOnFile = trd.action === 'job' && !trd.mine;   /* an address someone named is not "the phone on file" (the menu's job details stay for that phone) */
   const name = s(who && who.name);
   const label = jobLabelOf(job);
   const shown = (name || tidy(ph)) + (who && who.kind === 'sub' ? ' (sub)' : '');
@@ -498,6 +551,29 @@ async function inboundSms(p){
   out.msg = await postJobMsg({ id: 'SMS_' + sid, pid, authorId: 'sms:' + ph, authorName: '📱 ' + shown + (viaLocal ? ' (text via ' + viaLocal + ')' : ' (text)'), text: clip(body, 1600), tags: RT.tagsFor(rt.to, data.users), at, source: 'sms', channel: 'sms', dir: 'in', smsFrom: ph,
     smsTo: toNum, viaLocal: viaLocal || undefined, purpose, routedTo: rt.to.map(x => ({ name: s(x.name), email: s(x.email), why: s(x.why) })), office: !!rt.office, urgent: !!rt.urgent, urgency: rt.urgent ? 'asap' : '' });
   await commsAdd(pid, { id: 'sms_' + sid, kind: 'text', dir: 'in', at, from: tidy(ph), fromName: name, text: body });
+  /* patch TEXTROUTE: their answer named a job → the first text (in 📥 Unsorted while we asked) moves to that job too */
+  if (trd.action === 'job' && trd.pending && s(trd.pending.sid)) {
+    const mid = 'SMS_' + s(trd.pending.sid), tags = RT.tagsFor(rt.to, data.users);
+    try { out.moved = await core().kvListUpdate('gc_job_messages', l => { const m = l.find(x => x && s(x.id) === mid); if (!m || s(m.pid) === pid) return null; m.pid = pid; m.tags = Array.from(new Set((Array.isArray(m.tags) ? m.tags : []).concat(tags))); m.routedTo = rt.to.map(x => ({ name: s(x.name), email: s(x.email), why: s(x.why) })); m.movedBy = 'the address they texted'; m.movedAt = at; return { list: l, check: l2 => l2.some(x => x && s(x.id) === mid && s(x.pid) === pid) }; }); } catch (e) {}
+    await commsAdd(pid, { id: 'sms_' + s(trd.pending.sid), kind: 'text', dir: 'in', at: s(trd.pending.at) || at, from: tidy(ph), fromName: name, text: s(trd.pending.body) });
+  }
+  /* patch TEXTROUTE: they were asked and named no job we know → one office To-Do with both texts (later texts are added to it) */
+  if (trd.action === 'todo') {
+    const tid = s(trd.todoId) || 'SMSWHICH_' + ph + '_' + sid, first = trd.pending || null, ts = v => s(v).slice(0, 16).replace('T', ' ') + ' UTC';
+    const tline = ts(at) + ' — ' + clip(body, 600) + ' [' + sid + ']';
+    try {
+      out.whichTodo = await core().kvListUpdate('gc_office_tasks', function(l){
+        const t = l.find(x => x && s(x.id) === tid);
+        if (t) { if (s(t.note).indexOf(sid) >= 0) return null; t.note = clip(s(t.note) + '\n' + tline, 2000); t.done = false; t.updatedAt = at; return { list: l, check: () => true }; }
+        const note = 'A text to the GrayCo number we could not put on a project. We asked: "' + TR.ASK + '"\n'
+          + (first ? 'First text ' + ts(first.at) + ': ' + clip(first.body, 600) + '\nTheir answer ' : 'Text ') + tline
+          + '\nFind the job (Job Messages → 📥 Unsorted → move it) or make a lead, then text them back.';
+        const item = { id: tid, label: '📱 Which project? Text from ' + (name || tidy(ph)), note, pid: '', phone: tidy(ph), assignees: [], office: true, prio: 'high', urgency: 'soon',
+          due: at.slice(0, 10), kind: 'sms_which', addedBy: 'Text message (Twilio)', addedAt: at, updatedAt: at, createdAt: at, done: false };
+        return { list: l.concat([item]), check: l2 => l2.some(x => x && s(x.id) === tid) };
+      });
+    } catch (e) { out.whichTodo = { ok: false }; }
+  }
   /* 2) a missed-call lead / call-back to-do this number already has: the text is added there too (patch AUTO6) */
   const line = '📱 Text from ' + tidy(ph) + ' (' + at.slice(0, 16).replace('T', ' ') + ' UTC): ' + clip(body, 1000);
   if (own.lead) {
@@ -522,17 +598,20 @@ async function inboundSms(p){
   out.rule = rule ? rule.id : '';
   /* 4) a new number (or a known person without a job asking for an estimate / with an emergency) → a lead, routed by the lead roles */
   /* patch SMSROUTE: a new number on the leads line is always a lead; on the main line only when it asks for work (an estimate / an emergency) */
-  const wantLead = !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || !who || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
+  const wantLead = trd.action === 'lead' ? (!own.lead && !own.todo) : ['ask', 'job', 'todo'].indexOf(trd.action) >= 0 ? false   /* patch TEXTROUTE */
+    : !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || !who || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
+  const trFirst = trd.action === 'lead' && trd.pending && s(trd.pending.body) ? 'Text message ' + s(trd.pending.at).slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(trd.pending.body, 600) + '\n(asked which project — they answered:) ' : '';   /* patch TEXTROUTE */
   if (wantLead) {
     const f = { type: INS_WORDS.test(body) ? 'storm' : 'estimate', name: name || 'Texter ' + tidy(ph), email: '', phone: ph, address: '', city: '', state: '', zip: '',
-      message: 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200), company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '',
+      message: trFirst + 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200), company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '',
       project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: rule && rule.id === 'emergency' ? 'Emergency' : '' };
     try {
       const lsid = crypto.createHash('sha256').update('text|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
       const r = await WI().fileLead(f, { sid: lsid, source: 'Text message', how: 'a text message to the GrayCo number', formLabel: 'Text message',
-        title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph, textBody: clip(body, 8000) } });   /* patch LEADMAILMSG: the full text */
+        title: 'Text message — ' + (name || tidy(ph)), leadExtra: Object.assign({ textMessage: true, smsFrom: ph, textBody: clip((trFirst ? s(trd.pending.body) + '\n' : '') + body, 8000) }, trd.action === 'lead' ? { textRoute: clip(trd.why, 120) } : {}) });   /* patch LEADMAILMSG: the full text */
       out.newLead = r.id; out.action = r.action;
       await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
+      if (trFirst) { try { await TL().onInbound({ leadId: r.id, ph, body: s(trd.pending.body), at: s(trd.pending.at) || at, id: s(trd.pending.sid) || sid + 'a' }); } catch (e) {} }   /* patch TEXTROUTE: the first text describes the work */
       try { out.textLead = await TL().onInbound({ leadId: r.id, ph, body, at, id: sid }); if (out.textLead && out.textLead.item && r.rec) ['title', 'contact', 'address', 'city', 'state', 'zip', 'notes', 'leadExtra'].forEach(k => { if (out.textLead.item[k] !== undefined) r.rec[k] = out.textLead.item[k]; }); } catch (e) {}   /* patch TEXTLEAD */
       out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
     } catch (e) { out.leadError = s(e && e.message); }
@@ -569,9 +648,16 @@ async function inboundSms(p){
   /* patch SMSMENU: customers (and unknown numbers) on the Customers / default number get the 1–5 menu, answered from the CRM;
      1–3 and the warranty only for the phone on file; 4 → the PM calls back; 5 → on call + the PM, ASAP; anything else → the PM */
   const MN = require('./_lib/smsmenu.js'), menu = { done: false };
+  /* patch TEXTROUTE: the question / the answer's thanks is THE automatic answer for this text (one per step, reserved above); an answer the
+     office now has gets nothing else (no menu, no second answer) */
+  if (trd.action === 'ask' || trd.step === 'answer' || trd.action === 'todo') {
+    menu.done = true; menu.choice = 'which_project'; out.menu = menu.choice;
+    if (trReserved && trd.reply && !paused && !optedOut) menu.reply = S.safe(trd.reply);
+    else { menu.reply = ''; menu.why = trd.action === 'todo' ? 'the office has it (which project?)' : 'already answered this step'; }
+  }
   const menuLine = ['customers', 'main'].indexOf(purpose) >= 0 && !(who && (who.kind === 'sub' || who.kind === 'staff' || who.kind === 'lead'));
-  if (menuLine && set.autoOn && !optedOut && !paused) {
-    const onFile = !!(who && who.kind === 'customer');
+  if (!menu.done && menuLine && set.autoOn && !optedOut && !paused) {
+    const onFile = !!(who && who.kind === 'customer') && !trNotOnFile;   /* patch TEXTROUTE */
     const isMenuWord = MN.MENU_WORD.test(body) || S.HELP.test(body);
     let c = isMenuWord ? 'menu' : (MN.choice(body) || MN.intent(body));
     if (!c && rule && MN.RULE_TO[rule.id]) c = MN.RULE_TO[rule.id];   /* one of the approved answers matched (keywords, or the small model only classifying) */
@@ -651,7 +737,7 @@ async function inboundSms(p){
     if (rt.urgent) { try { offEmails = offEmails.concat(await L().alertsApi().recipients([])); } catch (e) {} if (!offEmails.length) offEmails = ['office@grayco-cs.com']; }   /* patch EMERG: + every admin */
     const pushList = Array.from(new Set(rt.to.map(x => low(x.email)).concat(offEmails).filter(Boolean)));
     if (pushList.length) { try { out.push = await core().pushTo(pushList, { title: (rt.urgent ? '🚨 ' : '📱 ') + 'Text from ' + clip(shown, 60), body: clip(body, 160), tag: 'sms-' + ph, url: '/?jobmsg=' + encodeURIComponent(pid || 'unsorted') }); } catch (e) { out.push = { ok: false }; } }
-    if (rt.urgent || !reply || menu.needHuman) {   /* patch SMSMENU: a menu answer that still needs a person counts too */
+    if ((rt.urgent || !reply || menu.needHuman) && trd.action !== 'todo') {   /* patch TEXTROUTE: the which-project To-Do is the office's To-Do · patch SMSMENU: a menu answer that still needs a person counts too */
       const tid = 'SMSR_' + ph, names = rt.to.map(x => s(x.name)).filter(Boolean);
       const tline = at.slice(0, 16).replace('T', ' ') + ' UTC — ' + clip(body, 600) + (rt.why ? '  [' + rt.why + ']' : '');
       try {

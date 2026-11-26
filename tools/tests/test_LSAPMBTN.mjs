@@ -47,12 +47,17 @@ async function run(label, mobile){
   await P.page().click('#gc-lsa-pm [data-pmb="good"]'); await sleep(1200);
   const g1 = await P.ev(() => { const b = document.querySelector('#gc-lsa-pm'); const g = b && b.querySelector('[data-pmb="good"]'); return { t: b ? b.textContent : '', pressed: g && g.getAttribute('aria-pressed'), l: (window._crm.leads.find(x => x.id === 'LEADIN-p1') || {}).lsaPmOkAt }; });
   ok(label + ': 👍 → ?lsamark { LI-p1, good } and the bar says so', POSTS.some(p => p.leadId === 'LI-p1' && p.verdict === 'good') && /You marked it 👍 Good/.test(g1.t) && g1.pressed === 'true' && !!g1.l, { POSTS, g1 });
-  await P.ev(() => { window.prompt = () => 'selling solar panels'; });
-  await P.page().click('#gc-lsa-pm [data-pmb="bad"]'); await sleep(1400);
+  await P.page().click('#gc-lsa-pm [data-pmb="bad"]'); await sleep(500);   /* patch BADWHY: the reason is typed in a box under the bar — no pop-up */
+  const bw = await P.ev(() => { const b = document.querySelector('#gcl-drawer .gc-bw'); return b ? { n: b.querySelectorAll('[data-bw-pick]').length, after: b.previousElementSibling && b.previousElementSibling.id } : null; });
+  ok(label + ': 👎 opens the reason box under the bar (quick picks + type your own), not a pop-up', bw && bw.n === 5 && bw.after === 'gc-lsa-pm' && !P.dialogs.length, { bw, d: P.dialogs });
+  await P.page().fill('#gcl-drawer .gc-bw [data-bw-txt]', 'selling solar panels');
+  await P.page().click('#gcl-drawer .gc-bw [data-bw-save]'); await sleep(1400);
   const b1 = await P.ev(() => { const b = document.querySelector('#gc-lsa-pm'); const a = b && b.querySelector('a[data-pmb="link"]'), d = b && b.querySelector('[data-pmb="disputed"]'); const l = window._crm.leads.find(x => x.id === 'LEADIN-p1') || {};
     return { t: b ? b.textContent : '', href: a && a.getAttribute('href'), tgt: a && a.getAttribute('target'), d: !!d, dh: d && d.getBoundingClientRect().height, chk: l.lsaCheck, why: l.lsaReason, toast: [...document.querySelectorAll('[role=status]')].map(x => x.textContent).join(' | ') }; });
-  ok(label + ': 👎 asks why → ?lsamark { LI-p1, bad, the reason }', POSTS.some(p => p.leadId === 'LI-p1' && p.verdict === 'bad' && p.reason === 'selling solar panels'), POSTS);
+  ok(label + ': 👎 + the typed reason → ?lsamark { LI-p1, bad, the reason }', POSTS.some(p => p.leadId === 'LI-p1' && p.verdict === 'bad' && p.reason === 'selling solar panels'), POSTS);
   ok(label + ': the lead is BAD; the bar: ⚖️ Dispute in Google ↗ (its own link, new tab) + ✓ Disputed in Google', b1.chk === 'bad' && b1.why === 'selling solar panels' && b1.href === 'https://c.gle/DEMOPM1' && b1.tgt === '_blank' && b1.d && b1.dh >= 48 && /Marked BAD/.test(b1.t), b1);
+  const rb = await P.ev(() => { const b = document.querySelector('#gcl-drawer #gc-bad-why'); const l = window._crm.leads.find(x => x.id === 'LEADIN-p1') || {}; return { t: b ? b.textContent : '', by: l.lsaReasonBy, at: l.lsaReasonAt }; });
+  ok(label + ': BADWHY: the lead keeps who and when, and its page shows "👎 BAD LEAD — selling solar panels"', /selling solar panels/.test(rb.t) && /BAD LEAD/.test(rb.t) && !!rb.by && !!rb.at, rb);
   ok(label + ': the toast says the dispute link is on its way by text', /dispute link is on its way by text/.test(b1.toast), b1.toast);
   await P.page().click('#gc-lsa-pm [data-pmb="disputed"]'); await sleep(1400);
   const d1 = await P.ev(() => { const b = document.querySelector('#gc-lsa-pm'); const l = window._crm.leads.find(x => x.id === 'LEADIN-p1') || {}; return { t: b ? b.textContent : '', at: l.lsaDisputedAt, btns: b ? b.querySelectorAll('button').length : -1 }; });
@@ -61,6 +66,7 @@ async function run(label, mobile){
   ok(label + ': another PM\'s Google lead — no bar', await P.ev(() => !document.querySelector('#gcl-drawer #gc-lsa-pm')));
   await P.ev(() => window._gcLeadsHub.open('L-web')); await sleep(2000);
   ok(label + ': a website lead — no bar', await P.ev(() => !document.querySelector('#gcl-drawer #gc-lsa-pm')));
+  ok(label + ': no alert / confirm / prompt', !P.dialogs.length, P.dialogs);
   ok(label + ': no page errors', !P.errs.length, P.errs);
   await P.close(); OPEN.length = 0;
 }
