@@ -195,6 +195,32 @@ let card1 = null;
   ok('4 a decided card cannot be approved afterwards (409)', late.st === 409, late);
 }
 
+/* ═══ 4b. patch PORTALJOBS: a customer with several jobs — the approver ticks ☑ this job + the customer's other jobs ═══ */
+{
+  const NEWM = 'jordan.office@freemail.test';
+  await start({ name: 'Jordan Sample', email: NEWM, address: '123 Maple St', zip: '38104', phone: '901-555-0177' }); await confirm(NEWM);
+  const cm = queue().find(x => x.kind === 'portal_signup' && x.meta && x.meta.signupId === rowOf(NEWM).id);
+  ok('4b the card lists the customer\'s other jobs (same customer) and never another customer\'s', !!cm && cm.jobId === 'PJA' && (cm.meta.related || []).map(j => j.id).join() === 'PJA2' && /Their other jobs \(1\)/.test(cm.html), cm && cm.meta);
+  const g = await st('tok-pm', 's-su-get', { id: cm.id });
+  ok('4b s-su-get gives the picker: customer + related jobs', g.st === 200 && g.b.customer === 'Jordan Sample' && g.b.related.map(j => j.id).join() === 'PJA2', g.b);
+  const crew = await st('tok-staff', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA2'] });
+  ok('4b plain staff cannot tick / approve (403) and their ticks are not saved', crew.st === 403 && !(queue().find(x => x.id === cm.id).meta.pick || []).length && queue().find(x => x.id === cm.id).status === 'waiting', crew);
+  const wrong = await st('tok-pm', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA2', 'PJB'] });
+  ok('4b ticking another customer\'s job is refused (400), nothing granted', wrong.st === 400 && rowOf(NEWM).status === 'approval', wrong);
+  const ap = await st('tok-pm', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA', 'PJA2'] });
+  const r = rowOf(NEWM);
+  ok('4b approve with "all of Jordan Sample\'s jobs" → one grant, pids [PJA, PJA2] (pid kept = this job)', ap.st === 200 && ap.b.ok && r.status === 'granted' && r.grant.pid === 'PJA' && JSON.stringify(r.grant.pids) === '["PJA","PJA2"]', { ap, g: r.grant });
+  const mail = MAIL.filter(x => (x.to || []).includes(NEWM)).slice(-1)[0];
+  ok('4b … "connected to your 2 projects" e-mail', !!mail && /your 2 projects/.test(mail.html), mail && mail.subject);
+  const si = await codeSignin(NEWM);
+  ok('4b … that e-mail now sees BOTH of Jordan\'s jobs, never Riley\'s or Casey\'s', si.st === 200 && JSON.stringify(await jobsOf(si.b.session)) === '["PJA","PJA2"]', si.b.session ? await jobsOf(si.b.session) : si);
+  const v = await pas(si.b.session, 'c-msgs', { projectId: 'PJB' });
+  ok('4b … another customer\'s job cannot be opened (404)', v.st === 404, v);
+  const rm = await st('tok-office', 's-su-remove', { id: r.id });
+  const after = await codeSignin(NEWM);
+  ok('4b 🗄 Remove access (per grant) takes away all the jobs it gave', rm.st === 200 && rowOf(NEWM).status === 'removed' && after.nomail === true, { rm, after });
+}
+
 /* ═══ 5. no match → office To-Do; 6. nothing revealed ═══ */
 {
   await start({ name: 'Pat Nobody', email: 'pat@nowhere.test', address: '1 Nowhere Road', zip: '38111', po: 'PO-0000', contractName: 'Pat Nobody' });
@@ -210,6 +236,25 @@ let card1 = null;
   const v1 = await start({ name: '', email: 'x@freemail.test', address: '1 A St' });
   ok('6 a missing field → a plain "enter your name" (nothing about any job)', v1.st === 400 && /Enter your name/.test(v1.b.error), v1);
   ok('6 nothing a customer sees in this run mentions subs / bids', [a1, a2, c, cardAns].every(x => !LEAKS.test(JSON.stringify(x))));
+}
+
+/* ═══ 5b. patch PORTALJOBS: the "no job matched" To-Do → 🔗 Match to jobs… (office / admin picks) ═══ */
+{
+  const pat = rowOf('pat@nowhere.test'), td = todos().find(x => x.id === 'psu_' + pat.id);
+  ok('5b the no-match To-Do carries its action (kind portal_signup_match + the sign-up id)', !!td && td.kind === 'portal_signup_match' && td.signupId === pat.id && /Match to jobs/.test(td.note), td);
+  const g = await st('tok-office', 's-su-get', { id: pat.id });
+  ok('5b s-su-get on the To-Do\'s sign-up: canMatch for the office', g.st === 200 && g.b.canMatch === true && !g.b.job, g.b);
+  const pm = await st('tok-pm', 's-su-match', { id: pat.id, pids: ['PJA'] });
+  const none = await st('tok-office', 's-su-match', { id: pat.id, pids: [] });
+  const gone = await st('tok-office', 's-su-match', { id: pat.id, pids: ['NOPE'] });
+  ok('5b a PM cannot match (403); no job picked → 400; an unknown job → 404; nothing granted', pm.st === 403 && none.st === 400 && gone.st === 404 && rowOf('pat@nowhere.test').status === 'todo', { pm, none, gone });
+  const m = await st('tok-office', 's-su-match', { id: pat.id, pids: ['PJB', 'PJC'] });
+  const r = rowOf('pat@nowhere.test'), t2 = todos().find(x => x.id === 'psu_' + pat.id);
+  ok('5b the office matches to 2 jobs → granted (via matched, who kept), the To-Do is done', m.st === 200 && m.b.jobs === 2 && r.status === 'granted' && r.grant.via === 'matched' && JSON.stringify(r.grant.pids) === '["PJB","PJC"]' && r.grant.by.email === 'office@grayco.test' && t2.done === true, { m, r: r.grant, t2 });
+  const si = await codeSignin('pat@nowhere.test');
+  ok('5b … Pat sees exactly the 2 picked jobs', si.st === 200 && JSON.stringify(await jobsOf(si.b.session)) === '["PJB","PJC"]', si.b.session ? await jobsOf(si.b.session) : si);
+  const again = await st('tok-office', 's-su-match', { id: pat.id, pids: ['PJA'] });
+  ok('5b a matched sign-up cannot be matched again (404)', again.st === 404, again);
 }
 
 /* ═══ 7. Other ═══ */
@@ -305,6 +350,52 @@ let LINK = '';
     && T.gc_portal_session.filter(x => x.kind === 'customer' && !x.revoked && x.ident === PA._core.hmac('e:' + NEW1)).length === 0, { rm, after, sessBefore });
   ok('11 … and they can no longer sign in to that job', (await codeSignin(NEW1)).nomail === true);
   ok('11 the job and customer records are untouched by the whole run', JSON.stringify(KV.projects) === PROJ0 && JSON.stringify(KV.customers) === CUST0);
+}
+
+/* ═══ 12. patch PORTALJOBS2: several addresses · company e-mail domain · customer name → one card, all their jobs offered ═══ */
+{
+  const P0 = KV.projects;
+  const HS = [['PHS1', 'Brinkley - CDI', '101 Demo Ave, Brinkley, AR 72021'], ['PHS2', 'Clarendon - CSI', '202 Sample St, Clarendon, AR 72029'], ['PHS3', 'Des Arc - CDI', '404 Example Ln, Des Arc, AR 72040']]
+    .map(([id, name, address], i) => ({ id, name, address, client: 'Sample Head Start', clientEmail: 'director' + i + '@headstart-demo.test', pm: 'Sample PM', status: 'Active', customerId: i < 2 ? 'CHS' : '' }));
+  const FM = { id: 'PFM', name: 'Free-mail Job', address: '5 Gmail Way, Memphis, TN 38104', client: 'Quinn Free', clientEmail: 'quinn@gmail.com', pm: 'Sample PM', status: 'Active' };
+  KV.projects = P0.concat(HS, [FM]);
+  /* a) a company e-mail domain → a card (not let in), all 3 Head Start jobs offered, never anyone else's */
+  const DE = 'rramos@headstart-demo.test';
+  await start({ name: 'R Ramos', email: DE, address: '999 Unknown Rd', phone: '901-555-0166' });
+  const c1 = await confirm(DE);
+  const cd = queue().find(x => x.meta && x.meta.signupId === rowOf(DE).id);
+  ok('12 company e-mail domain → not let in by itself; a ✅ Approvals card "matched by company e-mail domain"', c1.st === 200 && !c1.b.in && !!cd && /company e-mail domain/.test(cd.title), { c1: c1.b, t: cd && cd.title });
+  const offered = [cd.jobId].concat((cd.meta.related || []).map(j => j.id)).sort();
+  ok('12 … the card offers ALL 3 Head Start jobs (and nothing else)', JSON.stringify(offered) === '["PHS1","PHS2","PHS3"]', offered);
+  const g = await st('tok-office', 's-su-get', { id: cd.id });
+  ok('12 … s-su-get lists the other 2 for the ticks', g.st === 200 && JSON.stringify([cd.jobId].concat(g.b.related.map(j => j.id)).sort()) === '["PHS1","PHS2","PHS3"]', g.b.related);
+  const bad = await st('tok-office', 's-su-decide', { id: cd.id, op: 'approve', pids: offered.concat(['PJB']) });
+  ok('12 … a job the card did not offer cannot be ticked (400)', bad.st === 400, bad);
+  const ap = await st('tok-office', 's-su-decide', { id: cd.id, op: 'approve', pids: offered });
+  const si = await codeSignin(DE);
+  ok('12 one tap (all ticked) → that e-mail sees all 3 Head Start jobs, nothing else', ap.st === 200 && si.st === 200 && JSON.stringify(await jobsOf(si.b.session)) === '["PHS1","PHS2","PHS3"]', { ap, jobs: si.b.session ? await jobsOf(si.b.session) : si });
+  /* b) a free-mail domain never matches by domain */
+  const FE = 'someone.else@gmail.com';
+  await start({ name: 'Zed Nobody', email: FE, address: '1 Nowhere Road' }); await confirm(FE);
+  ok('12 a free-mail domain (gmail) never matches: no card, the office To-Do', !queue().some(x => x.meta && x.meta.signupId === rowOf(FE).id) && todos().some(x => x.id === 'psu_' + rowOf(FE).id));
+  /* c) the customer / company name typed as "Company or name on the contract" + several addresses */
+  const NE = 'site.lead@freemail.test';
+  const s0 = await start({ name: 'Lee Lead', email: NE, address: '1 Nowhere Road', addresses: ['404 Example Ln', '202 Sample St'], zip: '', contractName: 'Head Start' });
+  const rr = rowOf(NE);
+  ok('12 su-start keeps every address they typed (addresses[])', s0.st === 200 && JSON.stringify(rr.addresses) === '["1 Nowhere Road","404 Example Ln","202 Sample St"]', rr.addresses);
+  await confirm(NE);
+  const cn = queue().find(x => x.meta && x.meta.signupId === rowOf(NE).id);
+  ok('12 the customer name ("Head Start") + a second address → a card with all 3 Head Start jobs offered', !!cn && /name/.test(cn.title) && JSON.stringify([cn.jobId].concat(cn.meta.related.map(j => j.id)).sort()) === '["PHS1","PHS2","PHS3"]', cn && { t: cn.title, rel: cn.meta.related.map(j => j.id), j: cn.jobId });
+  ok('12 … the card shows the addresses they typed and the evidence', /404 Example Ln/.test(cn.html) && /address: &quot;/.test(cn.html), cn.html.slice(0, 600));
+  const CE = 'office.mgr@freemail.test';
+  await start({ name: 'Morgan Mgr', email: CE, address: '77 Unknown Pkwy', contractName: 'Head Start' }); await confirm(CE);
+  const cc = queue().find(x => x.meta && x.meta.signupId === rowOf(CE).id);
+  ok('12 the company name alone ("Head Start", no address match) → a card "customer / company name", all 3 offered', !!cc && /customer \/ company name/.test(cc.title) && JSON.stringify([cc.jobId].concat(cc.meta.related.map(j => j.id)).sort()) === '["PHS1","PHS2","PHS3"]', cc && cc.title);
+  /* d) the exact e-mail on ONE job → in at once, plus the jobs filed under the same customer record (customerId), never a same-name job without it */
+  const XE = 'director0@headstart-demo.test';
+  const sx = await codeSignin(XE);
+  ok('12 the e-mail on one job → in, with the other job under the same customer record (PHS1 + PHS2), not PHS3 (no customerId)', sx.st === 200 && JSON.stringify(await jobsOf(sx.b.session)) === '["PHS1","PHS2"]', sx.b.session ? await jobsOf(sx.b.session) : sx);
+  KV.projects = P0;
 }
 
 /* ═══ B. the pages (Chromium) — phone and desk ═══ */

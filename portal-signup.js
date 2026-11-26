@@ -19,7 +19,7 @@ var T = {
     custWhy: 'Your own project page: updates, photos, documents and payments. Tell us who you are and where the job is — GrayCo connects you to your job.',
     linkNote: 'GrayCo sent you this link for your project. Fill in your details — we confirm your e-mail first.',
     otherWhy: 'Not a customer, sub or supplier? Send GrayCo a note — we confirm your e-mail first.',
-    name: 'Your name', email: 'E-mail', mobile: 'Mobile number', phone: 'Phone (optional)', addr: 'Job address (street)', zip: 'ZIP', po: 'PO or job number (optional)', contract: 'Name on the contract (optional)', msg: 'Your message',
+    name: 'Your name', email: 'E-mail', mobile: 'Mobile number', phone: 'Phone (optional)', addr: 'What is the job address (or addresses) we are working on for you?', addrShort: 'Job address', addrMore: '+ Another address', addrN: 'Another job address', addrDel: 'Remove', zip: 'ZIP', po: 'PO or job number (optional)', contract: 'Company or name on the contract (optional)', msg: 'Your message',
     go: 'Sign up', send: 'Send', back: '‹ Back', toSignin: 'I already have an account — sign in', need: 'Please fill in: {f}', badEmail: 'Enter a valid e-mail address.', badPhone: 'Enter your 10-digit mobile number.',
     checkT: '✉️ Check your e-mail', again: 'Send it again', againDone: '✓ Sent again — check your e-mail', wait: 'Please wait a minute, then try again.', fail: 'That did not go through. Check your connection and try again.',
     confT: 'Confirm your e-mail', confWhy: 'Tap the button to confirm your e-mail and finish signing up.', confGo: 'Confirm my e-mail', confBusy: 'Confirming…', doneT: '✅ Thank you', home: 'Go to sign in',
@@ -28,7 +28,7 @@ var T = {
     custWhy: 'Su propia página del proyecto: avances, fotos, documentos y pagos. Díganos quién es y dónde es el trabajo — GrayCo lo conecta con su trabajo.',
     linkNote: 'GrayCo le envió este enlace para su proyecto. Escriba sus datos — primero confirmamos su correo.',
     otherWhy: '¿No es cliente, subcontratista ni proveedor? Envíe una nota a GrayCo — primero confirmamos su correo.',
-    name: 'Su nombre', email: 'Correo', mobile: 'Celular', phone: 'Teléfono (opcional)', addr: 'Dirección del trabajo (calle)', zip: 'Código postal', po: 'PO o número de trabajo (opcional)', contract: 'Nombre en el contrato (opcional)', msg: 'Su mensaje',
+    name: 'Su nombre', email: 'Correo', mobile: 'Celular', phone: 'Teléfono (opcional)', addr: '¿Cuál es la dirección (o direcciones) del trabajo que hacemos para usted?', addrShort: 'Dirección del trabajo', addrMore: '+ Otra dirección', addrN: 'Otra dirección de trabajo', addrDel: 'Quitar', zip: 'Código postal', po: 'PO o número de trabajo (opcional)', contract: 'Empresa o nombre en el contrato (opcional)', msg: 'Su mensaje',
     go: 'Registrarme', send: 'Enviar', back: '‹ Atrás', toSignin: 'Ya tengo cuenta — entrar', need: 'Por favor llene: {f}', badEmail: 'Escriba un correo válido.', badPhone: 'Escriba su celular de 10 dígitos.',
     checkT: '✉️ Revise su correo', again: 'Enviar otra vez', againDone: '✓ Enviado otra vez — revise su correo', wait: 'Espere un minuto y vuelva a intentar.', fail: 'No se pudo enviar. Revise su conexión e intente otra vez.',
     confT: 'Confirme su correo', confWhy: 'Toque el botón para confirmar su correo y terminar su registro.', confGo: 'Confirmar mi correo', confBusy: 'Confirmando…', doneT: '✅ Gracias', home: 'Ir a entrar',
@@ -58,7 +58,7 @@ function css(){
     + '.su2-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}@media(min-width:620px){.su2-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.su2-grid.addr{grid-template-columns:minmax(0,1fr) 120px}}'
     + '.su2 .back{align-self:flex-start;background:none;border:none;color:var(--navy2,#1A3A5F);font:600 15px inherit;font-family:inherit;cursor:pointer;min-height:40px;padding:0}'
     + '.su2-note{background:var(--goldBg,#FCF0CF);border:1px solid var(--gold,#D4A017);border-radius:10px;padding:10px 12px;font-size:14px;line-height:1.45}.su2-req{color:#8a1c1c}'
-    + '#siNewHere{margin-top:2px}';
+    + '#siNewHere{margin-top:2px}.su2-more{display:flex;flex-direction:column;gap:8px}.su2-addrrow{display:flex;gap:8px}.su2-addrrow .inp{flex:1 1 auto;min-width:0}.su2-addrrow .btn{flex:0 0 52px;min-height:44px}#su2AddAddr{align-self:flex-start}';
   document.head.appendChild(st);
 }
 function main(){ return $('main'); }
@@ -118,6 +118,17 @@ function form(kind){
     h('div', { class: 'su2-grid two' }, [fld(kind === 'other' ? t('phone') : t('mobile'), inp('phone', { type: 'tel', inputmode: 'tel', autocomplete: 'tel', maxlength: '40' }), kind !== 'other')])];
   if (kind === 'customer') {
     kids.push(h('div', { class: 'su2-grid addr' }, [fld(t('addr'), inp('address', { autocomplete: 'street-address', maxlength: '160' }), true), fld(t('zip'), inp('zip', { inputmode: 'numeric', autocomplete: 'postal-code', maxlength: '10' }))]));
+    /* patch PORTALJOBS2: more than one job address (a customer with several jobs) — "+ Another address", up to 10 */
+    var more = h('div', { class: 'su2-more', id: 'su2More' });
+    var addMore = function(val){
+      var n = more.querySelectorAll('[data-su2-addr]').length; if (n >= 9) return null;
+      var el = h('input', { class: 'inp', 'data-su2-addr': String(n + 2), maxlength: '160', autocomplete: 'off', 'aria-label': t('addrN') }); if (val) el.value = val;
+      var row = h('div', { class: 'su2-addrrow' }, [el, h('button', { type: 'button', class: 'btn', 'aria-label': t('addrDel'), text: '✕', on: { click: function(){ row.remove(); keepMore(); } } })]);
+      el.addEventListener('input', keepMore); more.appendChild(row); return el;
+    };
+    var keepMore = function(){ KEEP.addresses = [].map.call(more.querySelectorAll('[data-su2-addr]'), function(x){ return x.value; }); };
+    (KEEP.addresses || []).forEach(function(a){ addMore(a); });
+    kids.push(more, h('button', { type: 'button', class: 'btn', id: 'su2AddAddr', text: t('addrMore'), on: { click: function(){ var el = addMore(''); if (el) el.focus(); } } }));
     kids.push(h('div', { class: 'su2-grid two' }, [fld(t('po'), inp('po', { maxlength: '40' })), fld(t('contract'), inp('contractName', { maxlength: '120' }))]));
   } else kids.push(fld(t('msg'), inp('message', { maxlength: '2000', rows: '4' }), true));
   kids.push(err, go);
@@ -125,12 +136,12 @@ function form(kind){
   function v(k){ return F[k] ? String(F[k].value || '').trim() : ''; }
   go.addEventListener('click', function(){
     err.textContent = '';
-    var need = [['name', t('name')], ['email', t('email')]].concat(kind === 'customer' ? [['phone', t('mobile')], ['address', t('addr')]] : [['message', t('msg')]]).filter(function(x){ return !v(x[0]); });
+    var need = [['name', t('name')], ['email', t('email')]].concat(kind === 'customer' ? [['phone', t('mobile')], ['address', t('addrShort')]] : [['message', t('msg')]]).filter(function(x){ return !v(x[0]); });
     if (need.length) { err.textContent = t('need', { f: need.map(function(x){ return x[1]; }).join(', ') }); F[need[0][0]].focus(); return; }
     if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v('email'))) { err.textContent = t('badEmail'); F.email.focus(); return; }
     if (kind === 'customer' && v('phone').replace(/\D/g, '').length < 10) { err.textContent = t('badPhone'); F.phone.focus(); return; }
     var body = { action: 'su-start', kind: kind, name: v('name'), email: v('email').toLowerCase(), phone: v('phone'), lang: lang() };
-    if (kind === 'customer') { body.address = v('address'); body.zip = v('zip'); body.po = v('po'); body.contractName = v('contractName'); if (JOB) body.job = JOB; }
+    if (kind === 'customer') { body.address = v('address'); body.addresses = [].map.call(document.querySelectorAll('[data-su2-addr]'), function(x){ return String(x.value || '').trim(); }).filter(Boolean); body.zip = v('zip'); body.po = v('po'); body.contractName = v('contractName'); if (JOB) body.job = JOB; }
     else body.message = v('message');
     go.disabled = true;
     post(body).then(function(r){

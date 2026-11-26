@@ -8047,7 +8047,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.366-2026-11-26-r41 -->
+<!-- GrayCo CRM Build: 33.367-2026-11-26-r42 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -9019,7 +9019,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.366-2026-11-26-r41");
+  console.log("[GC] Build 33.367-2026-11-26-r42");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -9067,7 +9067,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.366-2026-11-26-r41"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.367-2026-11-26-r42"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -149420,6 +149420,7 @@ function srcStored(out){
       if (t.kind === 'job_done') o.act = { l: '🏁 Mark complete', f: function(){ call('_gcJobDoneApprove', id); } };   /* JOBDONE */
       else if (t.kind === 'job_contact') o.act = { l: '📇 Fill them in', f: function(){ call('_gcJobContactSheet'); } };   /* JOBCONTACT */
       else if (t.kind === 'sub_confirm') o.act = { l: '👷 Confirm them', f: function(){ call('_gcSubConfirmSheet'); } };   /* SUBCONFIRM */
+      else if (t.kind === 'portal_signup_match' && t.signupId) o.act = { l: '🔗 Match to jobs…', f: function(){ call('_gcPortalSignupMatch', s(t.signupId)); } };   /* PORTALJOBS */
       else if (t.kind === 'scope_review') o.act = { l: '📋 Open the scope', f: function(){ call('_gcScopeReviewOpen', id); } };   /* SCOPEVER */
       else if (t.kind === 'paid_before') o.act = { l: '✓ Review & mark paid', f: function(){ call('_gcPaidBeforeSheet'); } };   /* PAIDBEFORE */
       else if (t.kind === 'lsa_check') o.act = { l: '🔎 Decide', f: function(){ call('_gcLsaDecide', id); } };   /* LSACHECK */
@@ -260339,13 +260340,17 @@ try { console.log('[GC] ＋ New bid job on the 🏗 Bid portal screen — _gcNew
    2. ✅ Approvals card "<name> asks for portal access to <job> (<address>) — matched by name + address" (kind portal_signup): the evidence
       (what they typed, the job, what matched) and ✅ Approve — let them in · ↪ Not this job (office / admin: pick another job, or ✖ Deny).
       Who may decide is the approval list's own rule (the job's PM, the office, an admin) — checked on the server.
-   No pop-ups: everything opens inline on the card. Console: _gcPortalSignup.state(). */
+   (PORTALJOBS2: all the offered jobs start ticked — the customer's jobs and every job the sign-up matched by company e-mail / name.)
+   3. patch PORTALJOBS (owner 11/26, a customer with several jobs): the card lists the customer's other jobs — ☑ this job (always),
+      ☐ All of <customer>'s jobs (N) and one tick per job; ✅ Approve grants every ticked job. The office To-Do "no job match" gets
+      🔗 Match to jobs… (office / admin): find and tick one or several jobs → they are let in to those. A person always picks.
+   No pop-ups on the card: everything opens inline. Console: _gcPortalSignup.state(). */
 (function(){
 'use strict';
 var W = window, D = document; if (W.__gcPortalSignupUi) return; W.__gcPortalSignupUi = 1;
 var ST = W.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
 var FN = '/.netlify/functions/portal-access';
-var JOB = {}, OPEN = {}, NOTE = {}, CARD = {}, PICK = {}, ARM = {};
+var JOB = {}, OPEN = {}, NOTE = {}, CARD = {}, PICK = {}, ARM = {}, TICK = {};   /* TICK[aq] = { pid: 1 } the customer's other jobs ticked (PORTALJOBS) */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
@@ -260444,7 +260449,9 @@ function wireStrip(st){
 }
 
 /* ══ 2. the ✅ Approvals card ══ */
-var HOW = { name: 'Name', address: 'Address', po: 'PO / job #', email: 'E-mail', phone: 'Phone' };
+/* patch PORTALJOBS2: until the approver changes them, ALL the jobs the card offers are ticked (one tap lets them in to all) */
+function ticks(aq){ if (TICK[aq]) return TICK[aq]; var d = CARD[aq] && CARD[aq].d, o = {}; arr(d && d.related).forEach(function(r){ o[r.id] = 1; }); return o; }
+var HOW = { name: 'Name', address: 'Address', po: 'PO / job #', email: 'E-mail', phone: 'Phone', domain: 'Company e-mail' };
 function hosts(){
   var out = [];
   D.querySelectorAll('._ap2Card[data-id^="appr_psu_"],._apCard[data-id^="appr_psu_"]').forEach(function(el){ out.push({ el: el, aq: el.getAttribute('data-id') }); });
@@ -260462,15 +260469,22 @@ function cardHtml(aq){
   if (!d) return '<div class="gcps-n bad">⚠ ' + esc(c.err || 'Could not load the sign-up.') + '</div>';
   var u = d.signup, j = d.job || {}, h = '<dl>';
   var row = function(k, v){ if (s(v)) h += '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>'; };
-  row('They typed', [u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', [u.address, u.zip].filter(Boolean).join(' '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · '));
+  row('They typed', [u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', (arr(u.addresses).length ? u.addresses : [u.address]).map(function(a, i){ return i === 0 ? [a, u.zip].filter(Boolean).join(' ') : a; }).join(' / '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · '));
   row('Job', [poL(j.po), j.name, j.address, j.client ? 'customer: ' + j.client : ''].filter(Boolean).join(' · '));
   arr(d.evidence).forEach(function(w){ row('✓ ' + (HOW[w.k] || w.k), '"' + w.typed + '" = "' + w.crm + '"' + (w.note ? ' (' + w.note + ')' : '')); });
   if (u.link && u.link.pid) row('Link', 'came through GrayCo\'s 🔗 sign-up link for this job');
   if (u.link && u.link.bad) row('Link', 'a ' + u.link.bad + ' sign-up link (ignored)');
   h += '</dl>';
   if (u.status !== 'approval') { h += '<div class="gcps-n">' + esc(ST_LABEL[u.status] || u.status) + '</div>'; return h + (NOTE[aq] ? '<div class="gcps-n">' + esc(NOTE[aq]) + '</div>' : ''); }
-  h += '<div class="gcps-bs"><button type="button" class="ok" data-gcps-c="approve">✅ Approve — let them in</button><button type="button" data-gcps-c="other" aria-expanded="' + (PICK[aq] ? 'true' : 'false') + '">↪ Not this job</button></div>'
-    + '<div class="gcps-m">Approve adds their e-mail and mobile as an extra portal contact on this job (nothing on the job or the customer record is changed) and e-mails them that they are connected.</div>';
+  var rel = arr(d.related), tk = ticks(aq), nT = rel.filter(function(r){ return tk[r.id]; }).length;
+  if (rel.length) {   /* patch PORTALJOBS: which of the customer's jobs they get */
+    h += '<div class="gcps-jobs" style="margin:6px 0 2px"><div style="font-weight:800;font-size:12px;color:#8A5A00">LET THEM IN TO</div>'
+      + '<label style="display:flex;gap:8px;align-items:center;min-height:40px"><input type="checkbox" checked disabled style="width:20px;height:20px"> <span><b>This job</b> — ' + esc(j.name) + '</span></label>'
+      + '<label style="display:flex;gap:8px;align-items:center;min-height:40px"><input type="checkbox" data-gcps-all' + (nT === rel.length ? ' checked' : '') + ' style="width:20px;height:20px"> <span><b>All of ' + esc(d.customer || 'the customer') + '\'s jobs (' + (rel.length + 1) + ')</b></span></label>'
+      + rel.map(function(r){ return '<label style="display:flex;gap:8px;align-items:center;min-height:40px;margin-left:22px"><input type="checkbox" data-gcps-tick="' + esc(r.id) + '"' + (tk[r.id] ? ' checked' : '') + ' style="width:20px;height:20px"> <span>' + esc([poL(r.po), r.name, r.address].filter(Boolean).join(' · ')) + '</span></label>'; }).join('') + '</div>';
+  }
+  h += '<div class="gcps-bs"><button type="button" class="ok" data-gcps-c="approve">✅ Approve — let them in' + (nT ? ' (' + (nT + 1) + ' jobs)' : '') + '</button><button type="button" data-gcps-c="other" aria-expanded="' + (PICK[aq] ? 'true' : 'false') + '">↪ Not this job</button></div>'
+    + '<div class="gcps-m">Approve adds their e-mail and mobile as an extra portal contact on this job' + (rel.length ? ' and every job you ticked' : '') + ' (nothing on the job or the customer record is changed) and e-mails them that they are connected.</div>';
   if (PICK[aq]) {
     var qv = s(PICK[aq].q), res = [];
     if (qv.length >= 2) { var ql = low(qv); res = projects().filter(function(p){ return String(p.id) !== String(j.id) && low([p.name, p.address, p.client, p.autoPO, p.po].join(' ')).indexOf(ql) > -1; }).slice(0, 12); }
@@ -260488,7 +260502,7 @@ function decorateCards(){
     hs.forEach(function(x){
       var blk = x.el.querySelector(':scope > .gcps-card');
       loadCard(x.aq);
-      var sig = JSON.stringify([CARD[x.aq] && CARD[x.aq].at, CARD[x.aq] && CARD[x.aq].busy, PICK[x.aq], NOTE[x.aq], ARM['dn' + x.aq]]);
+      var sig = JSON.stringify([CARD[x.aq] && CARD[x.aq].at, CARD[x.aq] && CARD[x.aq].busy, PICK[x.aq], NOTE[x.aq], ARM['dn' + x.aq], TICK[x.aq]]);
       if (blk && blk.__sig === sig) return;
       var focused = blk && D.activeElement && blk.contains(D.activeElement) && D.activeElement.hasAttribute('data-gcps-q');
       if (!blk) { blk = D.createElement('div'); blk.className = 'gcps-card'; blk.setAttribute('data-gcps-aq', x.aq); x.el.appendChild(blk); wireCard(blk, x.aq); }
@@ -260508,7 +260522,7 @@ function wireCard(blk, aq){
     e.stopPropagation();   /* the card around it opens its preview on a tap — not for these */
     var b = e.target.closest && e.target.closest('[data-gcps-c]'); if (!b) return;
     var a = b.getAttribute('data-gcps-c');
-    if (a === 'approve') { NOTE[aq] = 'Approving…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'approve' }).then(function(j){ after(aq, j, '✅ Approved — they can sign in now; their "you are connected" e-mail went out.'); }); }
+    if (a === 'approve') { var tk0 = ticks(aq), pids = Object.keys(tk0).filter(function(k){ return tk0[k]; }); NOTE[aq] = 'Approving…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'approve', pids: pids }).then(function(j){ after(aq, j, '✅ Approved' + (pids.length ? ' for ' + (pids.length + 1) + ' jobs' : '') + ' — they can sign in now; their "you are connected" e-mail went out.'); }); }
     if (a === 'other') { PICK[aq] = PICK[aq] ? null : { q: '' }; NOTE[aq] = ''; return decorateCards(); }
     if (a === 'move') { NOTE[aq] = 'Linking to that job…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'move', pid: b.getAttribute('data-pid') }).then(function(j){ after(aq, j, '✅ Linked to the job you picked — they can sign in now.'); }); }
     if (a === 'deny') {
@@ -260518,9 +260532,60 @@ function wireCard(blk, aq){
     }
   });
   blk.addEventListener('input', function(e){ if (e.target && e.target.hasAttribute('data-gcps-q')) { PICK[aq] = { q: e.target.value }; decorateCards(); } });
+  blk.addEventListener('change', function(e){   /* patch PORTALJOBS: the ticks */
+    var t = e.target; if (!t) return; var d = CARD[aq] && CARD[aq].d; if (!d) return;
+    if (t.hasAttribute('data-gcps-all')) { var o = {}; if (t.checked) arr(d.related).forEach(function(r){ o[r.id] = 1; }); TICK[aq] = o; return decorateCards(); }
+    if (t.hasAttribute('data-gcps-tick')) { var o2 = Object.assign({}, ticks(aq)); if (t.checked) o2[t.getAttribute('data-gcps-tick')] = 1; else delete o2[t.getAttribute('data-gcps-tick')]; TICK[aq] = o2; decorateCards(); }
+  });
   blk.addEventListener('keydown', function(e){ e.stopPropagation(); });
 }
 
+/* ══ 3. patch PORTALJOBS: 🔗 Match to jobs… (the office To-Do "Portal sign-up — no job match"; office / admin) ══ */
+W._gcPortalSignupMatch = function(id){
+  css(); var old = D.getElementById('gcps-match'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gcps-match'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100250;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  var st = { d: null, err: '', q: '', sel: {}, busy: false, msg: '' };
+  var box = D.createElement('div'); box.className = 'gcps-card'; box.style.cssText = 'background:#fff;border-radius:14px;max-width:560px;width:100%;padding:16px;box-sizing:border-box;margin-top:24px';
+  ov.appendChild(box); D.body.appendChild(ov);
+  function paint(){
+    var h = '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:17px">🔗 Match to jobs</b><button type="button" data-m="x">✕ Close</button></div>';
+    if (!st.d) h += st.err ? '<div class="gcps-n bad">⚠ ' + esc(st.err) + '</div>' : '<div class="gcps-m">Loading the sign-up…</div>';
+    else {
+      var u = st.d.signup;
+      h += '<dl style="margin-top:8px"><dt>They typed</dt><dd>' + esc([u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', [u.address, u.zip].filter(Boolean).join(' '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · ')) + '</dd></dl>';
+      if (!st.d.canMatch) h += '<div class="gcps-n">' + esc(u.status === 'granted' ? '🟢 Already let in.' : 'Only the office or an admin matches a sign-up to jobs, while it is waiting.') + '</div>';
+      else {
+        var ql = low(st.q), sel = Object.keys(st.sel), res = ql.length >= 2 ? projects().filter(function(p){ return low([p.name, p.address, p.client, p.autoPO, p.po].join(' ')).indexOf(ql) > -1; }).slice(0, 30) : [];
+        h += '<div class="gcps-pick"><input type="search" data-m-q placeholder="Find their job(s): customer, name, address or PO" value="' + esc(st.q) + '">';
+        if (ql.length >= 2 && res.length > 1) h += '<button type="button" data-m="all">☑ Tick all ' + res.length + ' shown</button>';
+        h += '<div class="gcps-res">' + res.map(function(p){ return '<label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-m-pid="' + esc(p.id) + '"' + (st.sel[p.id] ? ' checked' : '') + ' style="width:20px;height:20px"> <span>' + esc([poL(p.autoPO || p.po), p.name, p.address, p.client].filter(Boolean).join(' · ')) + '</span></label>'; }).join('')
+          + (ql.length >= 2 && !res.length ? '<div class="gcps-m">No job matches “' + esc(st.q) + '”.</div>' : '') + '</div>';
+        if (sel.length) h += '<div class="gcps-m"><b>Picked (' + sel.length + '):</b> ' + esc(sel.map(function(pid){ var p = projects().find(function(x){ return String(x.id) === pid; }); return p ? p.name : pid; }).join(' · ')) + '</div>';
+        h += '<button type="button" class="ok" data-m="go"' + (sel.length && !st.busy ? '' : ' disabled') + '>' + (st.busy ? 'Matching…' : '🔗 Let them in to ' + sel.length + ' job' + (sel.length === 1 ? '' : 's')) + '</button>'
+          + '<div class="gcps-m">Their e-mail and mobile become an extra portal contact on each job you pick (nothing on the jobs or the customer is changed) and they get a "you are connected" e-mail.</div></div>';
+      }
+    }
+    if (st.msg) h += '<div class="gcps-n' + (/^⚠/.test(st.msg) ? ' bad' : '') + '">' + esc(st.msg) + '</div>';
+    var f = D.activeElement && D.activeElement.hasAttribute && D.activeElement.hasAttribute('data-m-q');
+    box.innerHTML = h;
+    if (f) { var qi = box.querySelector('[data-m-q]'); if (qi) { qi.focus(); try { qi.setSelectionRange(qi.value.length, qi.value.length); } catch (e) {} } }
+  }
+  ov.addEventListener('click', function(e){
+    if (e.target === ov) { ov.remove(); return; }
+    var b = e.target.closest && e.target.closest('[data-m]'); if (!b) return; var a = b.getAttribute('data-m');
+    if (a === 'x') { ov.remove(); return; }
+    if (a === 'all') { [].forEach.call(box.querySelectorAll('[data-m-pid]'), function(x){ st.sel[x.getAttribute('data-m-pid')] = 1; }); return paint(); }
+    if (a === 'go') { var pids = Object.keys(st.sel); if (!pids.length) return; st.busy = true; st.msg = ''; paint();
+      api({ action: 's-su-match', id: id, pids: pids }).then(function(j){ st.busy = false; if (j.ok) { st.msg = '✅ Matched to ' + j.jobs + ' job' + (j.jobs === 1 ? '' : 's') + ' — they can sign in now; their "you are connected" e-mail went out.'; st.d.canMatch = false; st.d.signup.status = 'granted'; } else st.msg = '⚠ ' + (j.error || 'Try again.'); paint(); }); }
+  });
+  ov.addEventListener('input', function(e){ if (e.target && e.target.hasAttribute('data-m-q')) { st.q = e.target.value; paint(); } });
+  ov.addEventListener('change', function(e){ var t = e.target; if (t && t.hasAttribute('data-m-pid')) { if (t.checked) st.sel[t.getAttribute('data-m-pid')] = 1; else delete st.sel[t.getAttribute('data-m-pid')]; paint(); } });
+  ov.addEventListener('keydown', function(e){ e.stopPropagation(); if (e.key === 'Escape') ov.remove(); });
+  paint();
+  api({ action: 's-su-get', id: id }).then(function(j){ if (j.ok) { st.d = j; var u = j.signup || {}; st.q = s(u.contractName || u.name).split(/\s+/).slice(-1)[0] || ''; } else st.err = j.error; paint(); });
+  return true;
+};
 function tick(){ try { decorateJobs(); } catch (e) { warn(e); } decorateCards(); }
 var q = false;
 try { new MutationObserver(function(){ if (q) return; q = true; Promise.resolve().then(function(){ q = false; tick(); }); }).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) { warn(e); }

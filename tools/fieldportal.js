@@ -86,7 +86,7 @@ function perms(p){
 }
 
 /* ── the customer portal (patch Q's link: /portal.html#t=<43>; the staff preview adds &p=1) ── */
-var LINK = /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/, MADE = {};
+var LINK = /^https:\/\/[^\s]+\/(?:portal\.html)?#t=[A-Za-z0-9_-]{43}$/, MADE = {};
 function linkOf(p){ if (!p || p.portalOff) return ''; var u = s(p.portalUrl); if (!LINK.test(u)) u = s(MADE[p.id]); return LINK.test(u) ? u : ''; }
 function previewUrl(p){ var u = linkOf(p); return u ? u + '&p=1' : ''; }
 
