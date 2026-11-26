@@ -111,7 +111,7 @@ function jobs(){
   try { if (typeof W._gcFPSort === 'function') l = W._gcFPSort(l); } catch (e) {}
   return l;
 }
-var LINK = /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/, MADE = {};
+var LINK = /^https:\/\/[^\s]+\/(?:portal\.html)?#t=[A-Za-z0-9_-]{43}$/, MADE = {};
 function linkOf(p){ if (!p || p.portalOff) return ''; var u = s(p.portalUrl); if (!LINK.test(u)) u = s(MADE[p.id]); return LINK.test(u) ? u : ''; }
 function proj(pid){ return allJobs().filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
 

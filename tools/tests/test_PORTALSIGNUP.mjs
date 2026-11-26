@@ -195,6 +195,32 @@ let card1 = null;
   ok('4 a decided card cannot be approved afterwards (409)', late.st === 409, late);
 }
 
+/* ═══ 4b. patch PORTALJOBS: a customer with several jobs — the approver ticks ☑ this job + the customer's other jobs ═══ */
+{
+  const NEWM = 'jordan.office@freemail.test';
+  await start({ name: 'Jordan Sample', email: NEWM, address: '123 Maple St', zip: '38104', phone: '901-555-0177' }); await confirm(NEWM);
+  const cm = queue().find(x => x.kind === 'portal_signup' && x.meta && x.meta.signupId === rowOf(NEWM).id);
+  ok('4b the card lists the customer\'s other jobs (same customer) and never another customer\'s', !!cm && cm.jobId === 'PJA' && (cm.meta.related || []).map(j => j.id).join() === 'PJA2' && /Jordan Sample(&#39;|')s other jobs \(1\)/.test(cm.html), cm && cm.meta);
+  const g = await st('tok-pm', 's-su-get', { id: cm.id });
+  ok('4b s-su-get gives the picker: customer + related jobs', g.st === 200 && g.b.customer === 'Jordan Sample' && g.b.related.map(j => j.id).join() === 'PJA2', g.b);
+  const crew = await st('tok-staff', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA2'] });
+  ok('4b plain staff cannot tick / approve (403) and their ticks are not saved', crew.st === 403 && !(queue().find(x => x.id === cm.id).meta.pick || []).length && queue().find(x => x.id === cm.id).status === 'waiting', crew);
+  const wrong = await st('tok-pm', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA2', 'PJB'] });
+  ok('4b ticking another customer\'s job is refused (400), nothing granted', wrong.st === 400 && rowOf(NEWM).status === 'approval', wrong);
+  const ap = await st('tok-pm', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA', 'PJA2'] });
+  const r = rowOf(NEWM);
+  ok('4b approve with "all of Jordan Sample\'s jobs" → one grant, pids [PJA, PJA2] (pid kept = this job)', ap.st === 200 && ap.b.ok && r.status === 'granted' && r.grant.pid === 'PJA' && JSON.stringify(r.grant.pids) === '["PJA","PJA2"]', { ap, g: r.grant });
+  const mail = MAIL.filter(x => (x.to || []).includes(NEWM)).slice(-1)[0];
+  ok('4b … "connected to your 2 projects" e-mail', !!mail && /your 2 projects/.test(mail.html), mail && mail.subject);
+  const si = await codeSignin(NEWM);
+  ok('4b … that e-mail now sees BOTH of Jordan\'s jobs, never Riley\'s or Casey\'s', si.st === 200 && JSON.stringify(await jobsOf(si.b.session)) === '["PJA","PJA2"]', si.b.session ? await jobsOf(si.b.session) : si);
+  const v = await pas(si.b.session, 'c-msgs', { projectId: 'PJB' });
+  ok('4b … another customer\'s job cannot be opened (404)', v.st === 404, v);
+  const rm = await st('tok-office', 's-su-remove', { id: r.id });
+  const after = await codeSignin(NEWM);
+  ok('4b 🗄 Remove access (per grant) takes away all the jobs it gave', rm.st === 200 && rowOf(NEWM).status === 'removed' && after.nomail === true, { rm, after });
+}
+
 /* ═══ 5. no match → office To-Do; 6. nothing revealed ═══ */
 {
   await start({ name: 'Pat Nobody', email: 'pat@nowhere.test', address: '1 Nowhere Road', zip: '38111', po: 'PO-0000', contractName: 'Pat Nobody' });
@@ -210,6 +236,25 @@ let card1 = null;
   const v1 = await start({ name: '', email: 'x@freemail.test', address: '1 A St' });
   ok('6 a missing field → a plain "enter your name" (nothing about any job)', v1.st === 400 && /Enter your name/.test(v1.b.error), v1);
   ok('6 nothing a customer sees in this run mentions subs / bids', [a1, a2, c, cardAns].every(x => !LEAKS.test(JSON.stringify(x))));
+}
+
+/* ═══ 5b. patch PORTALJOBS: the "no job matched" To-Do → 🔗 Match to jobs… (office / admin picks) ═══ */
+{
+  const pat = rowOf('pat@nowhere.test'), td = todos().find(x => x.id === 'psu_' + pat.id);
+  ok('5b the no-match To-Do carries its action (kind portal_signup_match + the sign-up id)', !!td && td.kind === 'portal_signup_match' && td.signupId === pat.id && /Match to jobs/.test(td.note), td);
+  const g = await st('tok-office', 's-su-get', { id: pat.id });
+  ok('5b s-su-get on the To-Do\'s sign-up: canMatch for the office', g.st === 200 && g.b.canMatch === true && !g.b.job, g.b);
+  const pm = await st('tok-pm', 's-su-match', { id: pat.id, pids: ['PJA'] });
+  const none = await st('tok-office', 's-su-match', { id: pat.id, pids: [] });
+  const gone = await st('tok-office', 's-su-match', { id: pat.id, pids: ['NOPE'] });
+  ok('5b a PM cannot match (403); no job picked → 400; an unknown job → 404; nothing granted', pm.st === 403 && none.st === 400 && gone.st === 404 && rowOf('pat@nowhere.test').status === 'todo', { pm, none, gone });
+  const m = await st('tok-office', 's-su-match', { id: pat.id, pids: ['PJB', 'PJC'] });
+  const r = rowOf('pat@nowhere.test'), t2 = todos().find(x => x.id === 'psu_' + pat.id);
+  ok('5b the office matches to 2 jobs → granted (via matched, who kept), the To-Do is done', m.st === 200 && m.b.jobs === 2 && r.status === 'granted' && r.grant.via === 'matched' && JSON.stringify(r.grant.pids) === '["PJB","PJC"]' && r.grant.by.email === 'office@grayco.test' && t2.done === true, { m, r: r.grant, t2 });
+  const si = await codeSignin('pat@nowhere.test');
+  ok('5b … Pat sees exactly the 2 picked jobs', si.st === 200 && JSON.stringify(await jobsOf(si.b.session)) === '["PJB","PJC"]', si.b.session ? await jobsOf(si.b.session) : si);
+  const again = await st('tok-office', 's-su-match', { id: pat.id, pids: ['PJA'] });
+  ok('5b a matched sign-up cannot be matched again (404)', again.st === 404, again);
 }
 
 /* ═══ 7. Other ═══ */

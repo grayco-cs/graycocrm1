@@ -1637,11 +1637,11 @@ async function kvListUpdate(key, mutate){
   }
   return { ok: false, error: 'busy' };
 }
-async function officeTodo(id, label, note){
+async function officeTodo(id, label, note, extra){
   try {
     id = s(id);
     const now = new Date().toISOString();
-    const item = { id: id, label: label, note: note, addedBy: 'Customer portal', addedAt: now, updatedAt: now, done: false };
+    const item = Object.assign({}, extra && typeof extra === 'object' ? extra : {}, { id: id, label: label, note: note, addedBy: 'Customer portal', addedAt: now, updatedAt: now, done: false });   /* patch PORTALJOBS: + kind / signupId (the To-Do's one action) */
     const has = function(l){ return l.some(function(t){ return s(t.id) === id; }); };
     const r = await kvListUpdate('gc_office_tasks', function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
     return r.ok;
