@@ -260340,6 +260340,7 @@ try { console.log('[GC] ＋ New bid job on the 🏗 Bid portal screen — _gcNew
    2. ✅ Approvals card "<name> asks for portal access to <job> (<address>) — matched by name + address" (kind portal_signup): the evidence
       (what they typed, the job, what matched) and ✅ Approve — let them in · ↪ Not this job (office / admin: pick another job, or ✖ Deny).
       Who may decide is the approval list's own rule (the job's PM, the office, an admin) — checked on the server.
+   (PORTALJOBS2: all the offered jobs start ticked — the customer's jobs and every job the sign-up matched by company e-mail / name.)
    3. patch PORTALJOBS (owner 11/26, a customer with several jobs): the card lists the customer's other jobs — ☑ this job (always),
       ☐ All of <customer>'s jobs (N) and one tick per job; ✅ Approve grants every ticked job. The office To-Do "no job match" gets
       🔗 Match to jobs… (office / admin): find and tick one or several jobs → they are let in to those. A person always picks.
@@ -260448,7 +260449,9 @@ function wireStrip(st){
 }
 
 /* ══ 2. the ✅ Approvals card ══ */
-var HOW = { name: 'Name', address: 'Address', po: 'PO / job #', email: 'E-mail', phone: 'Phone' };
+/* patch PORTALJOBS2: until the approver changes them, ALL the jobs the card offers are ticked (one tap lets them in to all) */
+function ticks(aq){ if (TICK[aq]) return TICK[aq]; var d = CARD[aq] && CARD[aq].d, o = {}; arr(d && d.related).forEach(function(r){ o[r.id] = 1; }); return o; }
+var HOW = { name: 'Name', address: 'Address', po: 'PO / job #', email: 'E-mail', phone: 'Phone', domain: 'Company e-mail' };
 function hosts(){
   var out = [];
   D.querySelectorAll('._ap2Card[data-id^="appr_psu_"],._apCard[data-id^="appr_psu_"]').forEach(function(el){ out.push({ el: el, aq: el.getAttribute('data-id') }); });
@@ -260466,14 +260469,14 @@ function cardHtml(aq){
   if (!d) return '<div class="gcps-n bad">⚠ ' + esc(c.err || 'Could not load the sign-up.') + '</div>';
   var u = d.signup, j = d.job || {}, h = '<dl>';
   var row = function(k, v){ if (s(v)) h += '<dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd>'; };
-  row('They typed', [u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', [u.address, u.zip].filter(Boolean).join(' '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · '));
+  row('They typed', [u.name, u.email + ' (confirmed)', u.phone ? u.phone + ' (not confirmed)' : '', (arr(u.addresses).length ? u.addresses : [u.address]).map(function(a, i){ return i === 0 ? [a, u.zip].filter(Boolean).join(' ') : a; }).join(' / '), u.po ? 'PO ' + u.po : '', u.contractName ? 'contract: ' + u.contractName : ''].filter(Boolean).join(' · '));
   row('Job', [poL(j.po), j.name, j.address, j.client ? 'customer: ' + j.client : ''].filter(Boolean).join(' · '));
   arr(d.evidence).forEach(function(w){ row('✓ ' + (HOW[w.k] || w.k), '"' + w.typed + '" = "' + w.crm + '"' + (w.note ? ' (' + w.note + ')' : '')); });
   if (u.link && u.link.pid) row('Link', 'came through GrayCo\'s 🔗 sign-up link for this job');
   if (u.link && u.link.bad) row('Link', 'a ' + u.link.bad + ' sign-up link (ignored)');
   h += '</dl>';
   if (u.status !== 'approval') { h += '<div class="gcps-n">' + esc(ST_LABEL[u.status] || u.status) + '</div>'; return h + (NOTE[aq] ? '<div class="gcps-n">' + esc(NOTE[aq]) + '</div>' : ''); }
-  var rel = arr(d.related), tk = TICK[aq] || {}, nT = rel.filter(function(r){ return tk[r.id]; }).length;
+  var rel = arr(d.related), tk = ticks(aq), nT = rel.filter(function(r){ return tk[r.id]; }).length;
   if (rel.length) {   /* patch PORTALJOBS: which of the customer's jobs they get */
     h += '<div class="gcps-jobs" style="margin:6px 0 2px"><div style="font-weight:800;font-size:12px;color:#8A5A00">LET THEM IN TO</div>'
       + '<label style="display:flex;gap:8px;align-items:center;min-height:40px"><input type="checkbox" checked disabled style="width:20px;height:20px"> <span><b>This job</b> — ' + esc(j.name) + '</span></label>'
@@ -260519,7 +260522,7 @@ function wireCard(blk, aq){
     e.stopPropagation();   /* the card around it opens its preview on a tap — not for these */
     var b = e.target.closest && e.target.closest('[data-gcps-c]'); if (!b) return;
     var a = b.getAttribute('data-gcps-c');
-    if (a === 'approve') { var pids = Object.keys(TICK[aq] || {}).filter(function(k){ return TICK[aq][k]; }); NOTE[aq] = 'Approving…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'approve', pids: pids }).then(function(j){ after(aq, j, '✅ Approved' + (pids.length ? ' for ' + (pids.length + 1) + ' jobs' : '') + ' — they can sign in now; their "you are connected" e-mail went out.'); }); }
+    if (a === 'approve') { var tk0 = ticks(aq), pids = Object.keys(tk0).filter(function(k){ return tk0[k]; }); NOTE[aq] = 'Approving…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'approve', pids: pids }).then(function(j){ after(aq, j, '✅ Approved' + (pids.length ? ' for ' + (pids.length + 1) + ' jobs' : '') + ' — they can sign in now; their "you are connected" e-mail went out.'); }); }
     if (a === 'other') { PICK[aq] = PICK[aq] ? null : { q: '' }; NOTE[aq] = ''; return decorateCards(); }
     if (a === 'move') { NOTE[aq] = 'Linking to that job…'; decorateCards(); return api({ action: 's-su-decide', id: aq, op: 'move', pid: b.getAttribute('data-pid') }).then(function(j){ after(aq, j, '✅ Linked to the job you picked — they can sign in now.'); }); }
     if (a === 'deny') {
@@ -260532,7 +260535,7 @@ function wireCard(blk, aq){
   blk.addEventListener('change', function(e){   /* patch PORTALJOBS: the ticks */
     var t = e.target; if (!t) return; var d = CARD[aq] && CARD[aq].d; if (!d) return;
     if (t.hasAttribute('data-gcps-all')) { var o = {}; if (t.checked) arr(d.related).forEach(function(r){ o[r.id] = 1; }); TICK[aq] = o; return decorateCards(); }
-    if (t.hasAttribute('data-gcps-tick')) { var o2 = Object.assign({}, TICK[aq] || {}); if (t.checked) o2[t.getAttribute('data-gcps-tick')] = 1; else delete o2[t.getAttribute('data-gcps-tick')]; TICK[aq] = o2; decorateCards(); }
+    if (t.hasAttribute('data-gcps-tick')) { var o2 = Object.assign({}, ticks(aq)); if (t.checked) o2[t.getAttribute('data-gcps-tick')] = 1; else delete o2[t.getAttribute('data-gcps-tick')]; TICK[aq] = o2; decorateCards(); }
   });
   blk.addEventListener('keydown', function(e){ e.stopPropagation(); });
 }

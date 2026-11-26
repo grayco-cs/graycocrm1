@@ -28,6 +28,10 @@
 //             ☐ all of <customer>'s jobs (N) or single jobs → s-su-decide {op:'approve', pids} → every ticked job is granted.
 //           • the office To-Do for "no job matched" (kind portal_signup_match) → 🔗 Match to jobs… (office / admin picks jobs) → s-su-match.
 //           The grant keeps its shape ({ pid, keys, via, at, by }) + pids (the list); grantPids reads pids (or pid on older grants).
+//   patch PORTALJOBS2 (owner 11/26): the sign-up asks "What is the job address (or addresses) we are working on for you?" (one or
+//           more: addresses[]); matching also uses the COMPANY e-mail domain (never a free-mail one: gmail, yahoo, outlook …) and the
+//           customer / company name (e.g. "Head Start"). A domain or name match is a ✅ Approvals card with ALL the matched customer's
+//           jobs offered and pre-ticked in the CRM — one tap; never an automatic grant (only the exact e-mail on a job lets in by itself).
 'use strict';
 const crypto = require('crypto');
 
@@ -55,6 +59,10 @@ function nowIso(){ return new Date().toISOString(); }
 function Fail(status, message, extra){ const e = new Error(message); e.status = status; e.extra = extra; return e; }
 
 /* ── matching ─────────────────────────────────────────────────────────────── */
+/* patch PORTALJOBS2: a company e-mail domain matches; a free-mail one never does */
+const FREEMAIL = /^(gmail|googlemail|yahoo|ymail|rocketmail|outlook|hotmail|live|msn|icloud|me|mac|aol|aim|comcast|att|sbcglobal|bellsouth|verizon|charter|cox|earthlink|protonmail|proton|pm|gmx|mail|zoho|yandex|fastmail|hey|tutanota|frontier|windstream|centurylink|optonline|juno|netzero|q|inbox|email)\./;
+function domainOf(e){ const m = /@([a-z0-9.-]+\.[a-z]{2,})$/.exec(low(e)); if (!m) return ''; const d = m[1].replace(/^(mail|email|smtp)\./, ''); return FREEMAIL.test(d) ? '' : d; }
+function addrsOf(row){ const l = (Array.isArray(row.addresses) && row.addresses.length ? row.addresses : [row.address]).map(s).filter(Boolean); return l.filter(function(a, i){ return l.indexOf(a) === i; }); }
 const NAME_SKIP = { and: 1, mr: 1, mrs: 1, ms: 1, dr: 1, jr: 1, sr: 1, ii: 1, iii: 1, the: 1, llc: 1, inc: 1, co: 1, family: 1 };
 function nameTokens(v){ return low(v).replace(/&/g, ' ').replace(/[^a-z\s'-]/g, ' ').replace(/['-]/g, '').split(/\s+/).filter(function(w){ return w && !NAME_SKIP[w]; }); }
 /* "Jane Smith" matches "John & Jane Smith" and "Smith, Jane"; not "John Smith" (that one goes to a person) */
@@ -91,17 +99,21 @@ function evidenceFor(data, p, row){
   const c = custOf(data, p), why = [];
   const names = [p.client, p.customerName, p.customer, c.name, c.company, [c.firstName, c.lastName].filter(Boolean).join(' ')].filter(function(x){ return s(x); });
   const hitName = names.find(function(n){ return nameMatch(row.name, n) || (row.contractName && nameMatch(row.contractName, n)); });
+  const hitCo = row.contractName ? names.find(function(n){ return nameMatch(row.contractName, n); }) : '';   /* patch PORTALJOBS2: the company / contract name they typed */
   if (hitName) why.push({ k: 'name', typed: nameMatch(row.name, hitName) ? row.name : row.contractName, crm: s(hitName) });
   const addrs = [p.address, p.jobAddress, c.address].filter(function(x){ return s(x); });
-  const hitAddr = row.address ? addrs.find(function(a){ return addrMatch(row.address, row.zip, a); }) : '';
-  if (hitAddr) why.push({ k: 'address', typed: [row.address, row.zip].filter(Boolean).join(' '), crm: s(hitAddr) });
+  let hitAddr = '', hitTyped = '';
+  addrsOf(row).some(function(t, i){ const z = i === 0 ? row.zip : ''; const a = addrs.find(function(x){ return addrMatch(t, z, x); }); if (a) { hitAddr = a; hitTyped = [t, z].filter(Boolean).join(' '); } return !!a; });   /* patch PORTALJOBS2: any of the addresses they typed */
+  if (hitAddr) why.push({ k: 'address', typed: hitTyped, crm: s(hitAddr) });
   const pos = [p.autoPO, p.po, p.jobNumber, p.jobNo].map(normPo).filter(Boolean);
   if (row.po && pos.indexOf(normPo(row.po)) > -1) why.push({ k: 'po', typed: row.po, crm: s(p.autoPO || p.po || p.jobNumber || p.jobNo) });
   const emails = [p.clientEmail, p.email, c.email].map(low).filter(Boolean), phones = [p.clientPhone, p.phone, c.phone].map(phone10).filter(Boolean);
   if (row.email && emails.indexOf(low(row.email)) > -1) why.push({ k: 'email', typed: row.email, crm: row.email });
+  const dom = domainOf(row.email);   /* patch PORTALJOBS2: the same company e-mail domain (never free-mail) */
+  if (dom && !why.some(function(x){ return x.k === 'email'; })) { const hit = emails.find(function(e){ return domainOf(e) === dom; }); if (hit) why.push({ k: 'domain', typed: '@' + dom, crm: hit.replace(/^[^@]*/, '…') }); }
   if (phone10(row.phone) && phones.indexOf(phone10(row.phone)) > -1) why.push({ k: 'phone', typed: row.phone, crm: row.phone, note: 'not confirmed — typed by them' });
   const has = function(k){ return why.some(function(x){ return x.k === k; }); };
-  return { why: why, name: has('name'), addr: has('address'), po: has('po'), phone: has('phone'), score: (has('name') ? 4 : 0) + (has('address') ? 3 : 0) + (has('po') ? 3 : 0) + (has('phone') ? 1 : 0) };
+  return { why: why, name: has('name'), addr: has('address'), po: has('po'), phone: has('phone'), domain: has('domain'), company: !!hitCo, score: (has('name') ? 4 : 0) + (has('address') ? 3 : 0) + (has('po') ? 3 : 0) + (has('domain') ? 3 : 0) + (has('phone') ? 1 : 0) };
 }
 /* patch PORTALJOBS: the same customer's live jobs (customerId, else the client name) — what the approver may tick */
 function custJobs(live, p){
@@ -142,9 +154,10 @@ async function start(body, ip, D){
   if (!name) throw Fail(400, lang === 'es' ? 'Escriba su nombre.' : 'Enter your name.');
   if (!okEmail(email)) throw Fail(400, lang === 'es' ? 'Escriba un correo válido.' : 'Enter a valid e-mail address.');
   const phone = clip(body.phone, 40);
+  const addresses = [body.address].concat(Array.isArray(body.addresses) ? body.addresses : []).map(function(a){ return clip(a, 160); }).filter(Boolean).filter(function(a, i, l){ return l.indexOf(a) === i; }).slice(0, 10);   /* patch PORTALJOBS2 */
   if (kind === 'customer') {
     if (!phone10(phone)) throw Fail(400, lang === 'es' ? 'Escriba su número de celular (10 dígitos).' : 'Enter your mobile number (10 digits).');
-    if (!s(body.address)) throw Fail(400, lang === 'es' ? 'Escriba la dirección del trabajo.' : 'Enter the job address.');
+    if (!addresses.length) throw Fail(400, lang === 'es' ? 'Escriba la dirección del trabajo.' : 'Enter the job address.');
   } else if (!s(body.message)) throw Fail(400, lang === 'es' ? 'Escriba su mensaje.' : 'Type your message.');
   const same = { ok: true, sent: true, verify: true, message: MSG[lang].check };
   const t = Date.now(), list = await rows(D);
@@ -154,7 +167,7 @@ async function start(body, ip, D){
   const jt = s(body.job) ? linkRead(D, body.job) : null;
   const token = crypto.randomBytes(32).toString('base64url');
   const row = { id: 'SU' + t.toString(36) + crypto.randomBytes(4).toString('hex'), kind: kind, status: 'unconfirmed', lang: lang, name: name, email: email, phone: phone,
-    address: clip(body.address, 160), zip: clip(s(body.zip).replace(/[^0-9-]/g, ''), 10), po: clip(body.po, 40), contractName: clip(body.contractName, 120), message: clip(body.message, 2000),
+    address: addresses[0] || '', addresses: addresses, zip: clip(s(body.zip).replace(/[^0-9-]/g, ''), 10), po: clip(body.po, 40), contractName: clip(body.contractName, 120), message: clip(body.message, 2000),
     link: jt ? (jt.ok ? { pid: jt.pid, exp: jt.exp } : { bad: jt.why }) : null, verifyHash: sha(token), verifyExp: new Date(t + VERIFY_MS).toISOString(),
     ipKey: D.hmac('ip|' + ip).slice(0, 16), createdAt: nowIso(), updatedAt: nowIso(), mailedAt: nowIso(), history: [] };
   log(row, 'signed up on the portal (' + kind + ')' + (jt ? (jt.ok ? ' through a GrayCo sign-up link' : ' with a ' + jt.why + ' sign-up link') : ''));
@@ -217,14 +230,21 @@ async function confirm(body, ip, D){
   const strong = cands.filter(function(c){ return c.ev.name && (c.ev.addr || c.ev.po); });
   if (strong.length) {
     const how = 'matched by name + ' + (strong[0].ev.addr && strong[0].ev.po ? 'address + PO' : strong[0].ev.addr ? 'address' : 'PO');
-    await card(D, data, row, strong[0].p, strong[0].ev, how, strong.slice(1, 4).map(function(c){ return jobBrief(c.p); }));
+    await card(D, data, row, strong[0].p, strong[0].ev, how, strong.slice(1, 4).map(function(c){ return jobBrief(c.p); }), strong.slice(1).map(function(c){ return c.p; }));
+    return { ok: true, waiting: true, message: MSG[lang].wait };
+  }
+  /* patch PORTALJOBS2: the company e-mail domain, the customer / company name, or address + PO / phone → a person decides (all of them offered) */
+  const company = cands.filter(function(c){ return c.ev.domain || c.ev.company || (c.ev.addr && (c.ev.po || c.ev.phone)); });   /* a person's name alone stays with the office (To-Do) */
+  if (company.length) {
+    const e0 = company[0].ev, how = 'matched by ' + [e0.domain ? 'company e-mail domain' : '', e0.company ? 'customer / company name' : '', e0.addr ? 'address' : '', e0.po ? 'PO' : '', e0.phone ? 'phone' : ''].filter(Boolean).join(' + ');
+    await card(D, data, row, company[0].p, e0, how + (company.length > 1 ? ' (' + company.length + ' jobs)' : ''), [], company.slice(1).map(function(c){ return c.p; }));
     return { ok: true, waiting: true, message: MSG[lang].wait };
   }
   /* 4. no match: the office */
   const weak = cands.slice(0, 3).map(function(c){ return '• ' + [c.p.name, c.p.address].filter(Boolean).join(' — ') + ' (' + c.ev.why.map(function(w){ return w.k; }).join(', ') + ')'; }).join('\n');
   await D.core().officeTodo('psu_' + row.id, '🏠 Portal sign-up — no job match: ' + row.name + ' (' + row.email + ')',
     'A customer signed up on portal.grayco-cs.com (e-mail confirmed) and no job matched their name + address.\n'
-    + 'Name: ' + row.name + '\nE-mail: ' + row.email + '\nMobile: ' + row.phone + '\nJob address: ' + [row.address, row.zip].filter(Boolean).join(' ')
+    + 'Name: ' + row.name + '\nE-mail: ' + row.email + '\nMobile: ' + row.phone + '\nJob address' + (addrsOf(row).length > 1 ? 'es: ' : ': ') + addrsOf(row).map(function(a, i){ return i === 0 ? [a, row.zip].filter(Boolean).join(' ') : a; }).join(' / ')
     + (row.po ? '\nPO / job #: ' + row.po : '') + (row.contractName ? '\nName on the contract: ' + row.contractName : '')
     + (weak ? '\nClose (not enough to match):\n' + weak : '')
     + '\nTo connect them: tap 🔗 Match to jobs… and pick their job(s) (one or several) — or open their job → 🏠 Portal → 🔗 Portal sign-up link, and send it to them (they sign up again through it). They were told: "GrayCo will connect your account to your job, usually within one business day."',
@@ -234,21 +254,22 @@ async function confirm(body, ip, D){
 }
 
 /* ── the ✅ Approvals card ─────────────────────────────────────────────────── */
-async function card(D, data, row, p, ev, how, others){
+async function card(D, data, row, p, ev, how, others, matched){
   const C = D.core(), j = jobBrief(p), qid = 'appr_psu_' + row.id;
-  const related = custJobs(D.liveProjects(data), p).filter(function(x){ return s(x.id) !== s(p.id); }).slice(0, 60).map(jobBrief);   /* patch PORTALJOBS */
+  const rel0 = custJobs(D.liveProjects(data), p).concat(Array.isArray(matched) ? matched : []);   /* patch PORTALJOBS(2): the customer's jobs + every job that matched */
+  const related = rel0.filter(function(x, i){ return s(x.id) !== s(p.id) && rel0.findIndex(function(y){ return s(y.id) === s(x.id); }) === i; }).slice(0, 60).map(jobBrief);
   const title = row.name + ' asks for portal access to ' + (j.name || 'a job') + (j.address ? ' (' + j.address + ')' : '') + ' — ' + how;
   const tr = function(k, v){ return '<tr><td style="color:#55626F;padding:2px 10px 2px 0;vertical-align:top">' + esc(k) + '</td><td style="padding:2px 0">' + v + '</td></tr>'; };
   const html = '<p><b>' + esc(title) + '</b></p><table style="font-size:14px">'
-    + tr('They typed', esc([row.name, row.email + ' (confirmed)', row.phone + ' (not confirmed)', [row.address, row.zip].filter(Boolean).join(' '), row.po ? 'PO ' + row.po : '', row.contractName ? 'contract: ' + row.contractName : ''].filter(Boolean).join(' · ')))
+    + tr('They typed', esc([row.name, row.email + ' (confirmed)', row.phone + ' (not confirmed)', addrsOf(row).map(function(a, i){ return i === 0 ? [a, row.zip].filter(Boolean).join(' ') : a; }).join(' / '), row.po ? 'PO ' + row.po : '', row.contractName ? 'contract: ' + row.contractName : ''].filter(Boolean).join(' · ')))
     + tr('The job', esc([j.po ? (/^po\b/i.test(j.po) ? j.po : 'PO ' + j.po) : '', j.name, j.address, j.client ? 'customer: ' + j.client : ''].filter(Boolean).join(' · ')))
     + tr('Matched', esc(ev.why.map(function(w){ return w.k + ': "' + w.typed + '" = "' + w.crm + '"' + (w.note ? ' (' + w.note + ')' : ''); }).join(' · ') || 'nothing but the link'))
-    + (related.length ? tr(s(p.client) + '\'s other jobs (' + related.length + ')', esc(related.map(function(o){ return o.name; }).join(' · ')) + ' — tick them on the card in the CRM to let them in to those too') : '')
+    + (related.length ? tr('Their other jobs (' + related.length + ')', esc(related.map(function(o){ return o.name; }).join(' · ')) + ' — all ticked on the card in the CRM (untick any that are not theirs)') : '')
     + (others && others.length ? tr('Also close', esc(others.map(function(o){ return [o.name, o.address].filter(Boolean).join(' — '); }).join(' · '))) : '')
     + '</table><p style="font-size:13px;color:#55626F">Approve: their e-mail and mobile become an extra portal contact on this job (nothing on the job or the customer record is changed) and they get a "you are connected" e-mail. Not this job: pick the right job, or deny.</p>';
   await C.queueApproval({ id: qid, kind: KIND, pid: s(p.id), jobName: j.name, pm: C.pmOf(data, p), title: title, to: row.email, subject: title, html: html, attachments: [],
-    meta: { signupId: row.id, pid: s(p.id), how: how, evidence: ev.why, typed: { name: row.name, email: row.email, phone: row.phone, address: row.address, zip: row.zip, po: row.po, contractName: row.contractName }, others: others || [], related: related } });
-  await upd(D, row.id, function(x){ x.status = 'approval'; x.outcome = 'card'; x.apprId = qid; x.pid = s(p.id); log(x, '✅ Approvals card (' + how + ')'); });
+    meta: { signupId: row.id, pid: s(p.id), how: how, evidence: ev.why, typed: { name: row.name, email: row.email, phone: row.phone, address: row.address, addresses: addrsOf(row), zip: row.zip, po: row.po, contractName: row.contractName }, others: others || [], related: related } });
+  await upd(D, row.id, function(x){ x.status = 'approval'; x.outcome = 'card'; x.apprId = qid; x.pid = s(p.id); x.relatedIds = related.map(function(r){ return r.id; }); log(x, '✅ Approvals card (' + how + ')'); });
 }
 
 /* a grant: this person may open these jobs (e-mail, and phone when a person approved it) — each job's link made if it is missing.
@@ -286,7 +307,7 @@ async function onApproved(item, now, D){
   if (!row) return { ok: false, error: 'The sign-up is not on the list any more.' };
   const by = (item.approvals || []).slice(-1)[0] || null;
   /* patch PORTALJOBS: the jobs the approver ticked (this job + the customer's other jobs) — checked again: live and the same customer */
-  const live = D.liveProjects(data), same = custJobs(live, p);
+  const live = D.liveProjects(data), relIds = (Array.isArray(m.related) ? m.related : []).map(function(r){ return s(r && r.id); }), same = custJobs(live, p).concat(live.filter(function(x){ return relIds.indexOf(s(x.id)) > -1; }));
   const picked = [p].concat((Array.isArray(m.pick) ? m.pick : []).map(s).filter(function(x){ return x !== s(p.id); }).map(function(x){ return same.find(function(j){ return s(j.id) === x; }); }).filter(Boolean));
   const keys = ['e:' + low(row.email)].concat(phone10(row.phone) ? ['p:' + phone10(row.phone)] : []);
   const g = await grant(D, data, id, picked, keys, by ? { email: by.email, name: by.by, role: by.role } : null, 'approved');
@@ -308,6 +329,12 @@ async function onRejected(item, me, D){
   await upd(D, id, function(x){ x.status = 'denied'; x.decidedAt = nowIso(); x.decidedBy = me ? { email: low(me.email), name: s(me.by), role: s(me.role) } : null; log(x, 'not approved (no access)', me ? { email: me.email, name: me.by, role: me.role } : null); });
 }
 
+/* the jobs the card offers besides its own: the customer's jobs + the ones the sign-up matched (kept on the card), live only */
+function relatedFor(D, data, x, p){
+  const live = D.liveProjects(data), out = custJobs(live, p);
+  (Array.isArray(x.relatedIds) ? x.relatedIds : []).forEach(function(id){ const j = live.find(function(y){ return s(y.id) === s(id); }); if (j) out.push(j); });
+  return out.filter(function(j, i){ return s(j.id) !== s(p.id) && out.findIndex(function(y){ return s(y.id) === s(j.id); }) === i; }).slice(0, 60).map(jobBrief);
+}
 /* ── staff ─────────────────────────────────────────────────────────────────── */
 /* the approval list's answer → this door's: its own status (403 not yours, 409 already decided …) */
 function aqOut(r){ const o = (r && r.out) || {}; if (!r || r.status >= 400) throw Fail(r ? r.status : 502, s(o.error) || 'Could not do that — try again.'); return Object.assign({}, o, { item: undefined }); }
@@ -329,9 +356,9 @@ async function staff(action, body, who, D){
     const x = (await rows(D)).find(function(r){ return s(r.id) === s(body.id) || s(r.apprId) === s(body.id); });
     if (!x) throw Fail(404, 'That sign-up is not on the list.');
     const data = await D.crmData(false), p = x.pid ? D.liveProjects(data).find(function(j){ return s(j.id) === s(x.pid); }) : null;
-    return { ok: true, signup: { id: x.id, kind: x.kind, status: x.status, name: x.name, email: x.email, phone: x.phone, address: x.address, zip: x.zip, po: x.po, contractName: x.contractName, link: x.link || null, createdAt: x.createdAt, confirmedAt: x.confirmedAt, history: x.history || [] },
+    return { ok: true, signup: { id: x.id, kind: x.kind, status: x.status, name: x.name, email: x.email, phone: x.phone, address: x.address, addresses: addrsOf(x), zip: x.zip, po: x.po, contractName: x.contractName, link: x.link || null, createdAt: x.createdAt, confirmedAt: x.confirmedAt, history: x.history || [] },
       job: p ? jobBrief(p) : null, evidence: p ? evidenceFor(data, p, x).why : [], canMove: isOfficeOrAdmin(D, who),
-      customer: p ? s(p.client) : '', related: p ? custJobs(D.liveProjects(data), p).filter(function(j){ return s(j.id) !== s(p.id); }).slice(0, 60).map(jobBrief) : [],   /* patch PORTALJOBS */
+      customer: p ? s(p.client) : '', related: p ? relatedFor(D, data, x, p) : [],   /* patch PORTALJOBS(2) */
       granted: x.status === 'granted' ? grantList(x.grant) : [], canMatch: x.kind === 'customer' && x.status === 'todo' && isOfficeOrAdmin(D, who) };
   }
   if (action === 's-su-decide') {   /* ✅ Approve · ↪ Not this job → another job · ✖ Deny — the approval list's own rules (role: the job's PM, office, admin) */
@@ -348,7 +375,7 @@ async function staff(action, body, who, D){
         if (pick.length) {
           const data = await D.crmData(true), live = D.liveProjects(data), p0 = live.find(function(j){ return s(j.id) === s(x.pid); });
           if (!p0) throw Fail(404, 'That job is not active.');
-          const same = custJobs(live, p0).map(function(j){ return s(j.id); });
+          const same = custJobs(live, p0).map(function(j){ return s(j.id); }).concat(((it0.meta && it0.meta.related) || []).map(function(r){ return s(r && r.id); }));   /* + the jobs the card offered (PORTALJOBS2) */
           if (pick.some(function(v){ return same.indexOf(v) < 0; })) throw Fail(400, 'Only this customer\'s own jobs can be ticked.');
         }
         const sv = await C.kvListUpdate(C.AQ_KEY, function(l){ const it = l.find(function(y){ return s(y.id) === x.apprId; }); if (!it || it.status !== 'waiting') return { list: null, result: it };

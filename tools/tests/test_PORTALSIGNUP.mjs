@@ -200,7 +200,7 @@ let card1 = null;
   const NEWM = 'jordan.office@freemail.test';
   await start({ name: 'Jordan Sample', email: NEWM, address: '123 Maple St', zip: '38104', phone: '901-555-0177' }); await confirm(NEWM);
   const cm = queue().find(x => x.kind === 'portal_signup' && x.meta && x.meta.signupId === rowOf(NEWM).id);
-  ok('4b the card lists the customer\'s other jobs (same customer) and never another customer\'s', !!cm && cm.jobId === 'PJA' && (cm.meta.related || []).map(j => j.id).join() === 'PJA2' && /Jordan Sample(&#39;|')s other jobs \(1\)/.test(cm.html), cm && cm.meta);
+  ok('4b the card lists the customer\'s other jobs (same customer) and never another customer\'s', !!cm && cm.jobId === 'PJA' && (cm.meta.related || []).map(j => j.id).join() === 'PJA2' && /Their other jobs \(1\)/.test(cm.html), cm && cm.meta);
   const g = await st('tok-pm', 's-su-get', { id: cm.id });
   ok('4b s-su-get gives the picker: customer + related jobs', g.st === 200 && g.b.customer === 'Jordan Sample' && g.b.related.map(j => j.id).join() === 'PJA2', g.b);
   const crew = await st('tok-staff', 's-su-decide', { id: cm.id, op: 'approve', pids: ['PJA2'] });
@@ -350,6 +350,52 @@ let LINK = '';
     && T.gc_portal_session.filter(x => x.kind === 'customer' && !x.revoked && x.ident === PA._core.hmac('e:' + NEW1)).length === 0, { rm, after, sessBefore });
   ok('11 … and they can no longer sign in to that job', (await codeSignin(NEW1)).nomail === true);
   ok('11 the job and customer records are untouched by the whole run', JSON.stringify(KV.projects) === PROJ0 && JSON.stringify(KV.customers) === CUST0);
+}
+
+/* ═══ 12. patch PORTALJOBS2: several addresses · company e-mail domain · customer name → one card, all their jobs offered ═══ */
+{
+  const P0 = KV.projects;
+  const HS = [['PHS1', 'Brinkley - CDI', '101 Demo Ave, Brinkley, AR 72021'], ['PHS2', 'Clarendon - CSI', '202 Sample St, Clarendon, AR 72029'], ['PHS3', 'Des Arc - CDI', '404 Example Ln, Des Arc, AR 72040']]
+    .map(([id, name, address], i) => ({ id, name, address, client: 'Sample Head Start', clientEmail: 'director' + i + '@headstart-demo.test', pm: 'Sample PM', status: 'Active', customerId: i < 2 ? 'CHS' : '' }));
+  const FM = { id: 'PFM', name: 'Free-mail Job', address: '5 Gmail Way, Memphis, TN 38104', client: 'Quinn Free', clientEmail: 'quinn@gmail.com', pm: 'Sample PM', status: 'Active' };
+  KV.projects = P0.concat(HS, [FM]);
+  /* a) a company e-mail domain → a card (not let in), all 3 Head Start jobs offered, never anyone else's */
+  const DE = 'rramos@headstart-demo.test';
+  await start({ name: 'R Ramos', email: DE, address: '999 Unknown Rd', phone: '901-555-0166' });
+  const c1 = await confirm(DE);
+  const cd = queue().find(x => x.meta && x.meta.signupId === rowOf(DE).id);
+  ok('12 company e-mail domain → not let in by itself; a ✅ Approvals card "matched by company e-mail domain"', c1.st === 200 && !c1.b.in && !!cd && /company e-mail domain/.test(cd.title), { c1: c1.b, t: cd && cd.title });
+  const offered = [cd.jobId].concat((cd.meta.related || []).map(j => j.id)).sort();
+  ok('12 … the card offers ALL 3 Head Start jobs (and nothing else)', JSON.stringify(offered) === '["PHS1","PHS2","PHS3"]', offered);
+  const g = await st('tok-office', 's-su-get', { id: cd.id });
+  ok('12 … s-su-get lists the other 2 for the ticks', g.st === 200 && JSON.stringify([cd.jobId].concat(g.b.related.map(j => j.id)).sort()) === '["PHS1","PHS2","PHS3"]', g.b.related);
+  const bad = await st('tok-office', 's-su-decide', { id: cd.id, op: 'approve', pids: offered.concat(['PJB']) });
+  ok('12 … a job the card did not offer cannot be ticked (400)', bad.st === 400, bad);
+  const ap = await st('tok-office', 's-su-decide', { id: cd.id, op: 'approve', pids: offered });
+  const si = await codeSignin(DE);
+  ok('12 one tap (all ticked) → that e-mail sees all 3 Head Start jobs, nothing else', ap.st === 200 && si.st === 200 && JSON.stringify(await jobsOf(si.b.session)) === '["PHS1","PHS2","PHS3"]', { ap, jobs: si.b.session ? await jobsOf(si.b.session) : si });
+  /* b) a free-mail domain never matches by domain */
+  const FE = 'someone.else@gmail.com';
+  await start({ name: 'Zed Nobody', email: FE, address: '1 Nowhere Road' }); await confirm(FE);
+  ok('12 a free-mail domain (gmail) never matches: no card, the office To-Do', !queue().some(x => x.meta && x.meta.signupId === rowOf(FE).id) && todos().some(x => x.id === 'psu_' + rowOf(FE).id));
+  /* c) the customer / company name typed as "Company or name on the contract" + several addresses */
+  const NE = 'site.lead@freemail.test';
+  const s0 = await start({ name: 'Lee Lead', email: NE, address: '1 Nowhere Road', addresses: ['404 Example Ln', '202 Sample St'], zip: '', contractName: 'Head Start' });
+  const rr = rowOf(NE);
+  ok('12 su-start keeps every address they typed (addresses[])', s0.st === 200 && JSON.stringify(rr.addresses) === '["1 Nowhere Road","404 Example Ln","202 Sample St"]', rr.addresses);
+  await confirm(NE);
+  const cn = queue().find(x => x.meta && x.meta.signupId === rowOf(NE).id);
+  ok('12 the customer name ("Head Start") + a second address → a card with all 3 Head Start jobs offered', !!cn && /name/.test(cn.title) && JSON.stringify([cn.jobId].concat(cn.meta.related.map(j => j.id)).sort()) === '["PHS1","PHS2","PHS3"]', cn && { t: cn.title, rel: cn.meta.related.map(j => j.id), j: cn.jobId });
+  ok('12 … the card shows the addresses they typed and the evidence', /404 Example Ln/.test(cn.html) && /address: &quot;/.test(cn.html), cn.html.slice(0, 600));
+  const CE = 'office.mgr@freemail.test';
+  await start({ name: 'Morgan Mgr', email: CE, address: '77 Unknown Pkwy', contractName: 'Head Start' }); await confirm(CE);
+  const cc = queue().find(x => x.meta && x.meta.signupId === rowOf(CE).id);
+  ok('12 the company name alone ("Head Start", no address match) → a card "customer / company name", all 3 offered', !!cc && /customer \/ company name/.test(cc.title) && JSON.stringify([cc.jobId].concat(cc.meta.related.map(j => j.id)).sort()) === '["PHS1","PHS2","PHS3"]', cc && cc.title);
+  /* d) the exact e-mail on ONE job → in at once, plus the jobs filed under the same customer record (customerId), never a same-name job without it */
+  const XE = 'director0@headstart-demo.test';
+  const sx = await codeSignin(XE);
+  ok('12 the e-mail on one job → in, with the other job under the same customer record (PHS1 + PHS2), not PHS3 (no customerId)', sx.st === 200 && JSON.stringify(await jobsOf(sx.b.session)) === '["PHS1","PHS2"]', sx.b.session ? await jobsOf(sx.b.session) : sx);
+  KV.projects = P0;
 }
 
 /* ═══ B. the pages (Chromium) — phone and desk ═══ */

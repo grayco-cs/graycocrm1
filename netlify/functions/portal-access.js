@@ -612,6 +612,10 @@ async function customerMatch(data, id, noTeam){
     const phones = [p.clientPhone, p.phone, c.phone].map(phone10).filter(Boolean);
     if ((id.kind === 'email' && emails.indexOf(id.value) > -1) || (id.kind === 'phone' && phones.indexOf(id.value) > -1)) pids.push(s(p.id));
   });
+  /* patch PORTALJOBS2 (owner 11/26: "show all their jobs once they're linked"): their e-mail / phone is on a job → the other jobs the
+     CRM files under the SAME customer record (customerId) open too. Only that link — a name or a domain alone never lets anyone in. */
+  if (pids.length) { const cids = {}; liveProjects(data).forEach(function(p){ if (pids.indexOf(s(p.id)) > -1 && s(p.customerId)) cids[s(p.customerId)] = 1; });
+    liveProjects(data).forEach(function(p){ if (s(p.customerId) && cids[s(p.customerId)] && pids.indexOf(s(p.id)) < 0) pids.push(s(p.id)); }); }
   let suOnly = null;   /* patch PORTALSIGNUP: + the one job a portal sign-up was let into (staff link + name, or ✅ Approvals) */
   if (!noTeam) { try { const g = await SUL().grantPids(suDeps(), id), had = pids.length; g.pids.forEach(function(x){ if (pids.indexOf(x) < 0 && liveProjects(data).some(function(p){ return s(p.id) === x; })) pids.push(x); }); if (!had && pids.length) suOnly = g; } catch (e) {} }
   if (!pids.length) return noTeam ? null : teamCustMatch(data, id);   /* patch PORTALTEAM: a household / company member */
