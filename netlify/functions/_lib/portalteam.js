@@ -298,8 +298,18 @@ function custKeys(p, c){
   [p && p.clientPhone, p && p.phone, c && c.phone].map(phone10).filter(Boolean).forEach(function(x){ const k = keyCust('p:' + x); if (out.indexOf(k) < 0) out.push(k); });
   return out;
 }
+/* patch TEAMCO (owner 11/26: "for commercial jobs dont say household say company"): the job's own Commercial / Residential pick
+   (jobType), its type / division, a GC / government / school / church / non-profit customer, or a customer that is plainly a company
+   by its name (Head Start, … Inc / LLC / Center / Authority …) → 👥 My team (company); "Household" only for a homeowner. */
+const CO_TYPE = /commercial|industrial|\bgc\b|general contractor|property|business|tenant|\bti\b|government|municipal|county|city of|school|church|non-?profit|institution|multi-?family|apartment|hoa\b|retail|office/i;
+const CO_NAME = /\b(inc|llc|l\.l\.c|corp|corporation|company|companies|group|ltd|lp|llp|pllc|plc|partners|holdings|enterprises|services|solutions|construction|contractors?|builders?|properties|property|management|realty|development|investments?|associates|foundation|association|authority|district|county|city|school|schools|academy|university|college|ministries|center|centers|centre|hospital|clinic|hotel|apartments|hoa|head start|agency|department|dept|council|institute|international|industries|systems|partnership)\b\.?/i;
 function commercial(p, c){
-  return !!p && (p.gcJob === true || /commercial|\bgc\b|property|business/i.test(s(p.projectType) + ' ' + s(p.customerType)) || /^(gc|commercial|business|company|pm|property)/i.test(s(c && c.type)));
+  if (!p) return false;
+  if (/^res/i.test(s(p.jobType)) && !p.gcJob) return false;
+  return !!(p.gcJob === true || /^com/i.test(s(p.jobType)) || CO_TYPE.test([p.projectType, p.customerType, p.type, p.division, p.sector, p.market].map(s).join(' '))
+    || /^(gc|commercial|business|company|pm|property|government|school|church)/i.test(s(c && (c.type || c.kind)))
+    || !!s(c && c.company) && low(c.company) !== low(c.name) && CO_NAME.test(s(c.company))
+    || CO_NAME.test(s(p.client || p.customer)));
 }
 /* the customer company key → the sign-in it stands for ({ kind, value, key } like portal-access identOf) */
 function custIdent(key){ const m = /^cu:(e|p):(.+)$/.exec(s(key)); if (!m) return null; return m[1] === 'e' ? { kind: 'email', value: m[2], key: 'e:' + m[2] } : { kind: 'phone', value: m[2], key: 'p:' + m[2] }; }

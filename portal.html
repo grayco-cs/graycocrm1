@@ -281,6 +281,9 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 var FN = '/.netlify/functions/portal';
 var ACC = '/.netlify/functions/portal-access';
 var OFFICE = '901-585-0944';
+/* patch PAYCARD: "We do not take credit cards yet" — or, once an admin saves a pay link in the CRM, 💳 Pay by credit card */
+function payCardH(){ var c = V && V.payCard; if (!(c && /^https:\/\//.test(c.url || ''))) return [h('span', { class: 'muted', style: 'display:block;margin-top:6px', text: 'We do not take credit cards yet.' })];
+  return [h('span', { style: 'display:block;margin-top:8px' }, [h('b', { text: 'We accept credit cards. ' }), c.note ? c.note + ' ' : '']), h('a', { class: 'btn', href: c.url, target: '_blank', rel: 'noopener', style: 'display:inline-block;margin-top:6px', text: '💳 Pay by credit card' })]; }
 var V = null, PHOTOS = null, TAB = 'home', token = '', session = '', JOBS = null, PID = '', MSGS = null, UNREAD = 0, UNREADQ = 0;
 var S = {
   en: { title: 'GrayCo Portal', welcome: 'Welcome to your GrayCo Portal', openLink: 'Sign in with your e-mail (or mobile number) and password — or just open the link we sent you.', who: 'E-mail or mobile number', sendCode: 'Send me a code',
@@ -1024,7 +1027,7 @@ function pay(){
       h('div', null, [h('span', { class: 'muted', text: 'Change orders' }), h('b', { text: usd((m.changeOrders || []).reduce(function(t, c){ return t + (Number(c.amount) || 0); }, 0)) })])
     ]),
     h('div', { class: 'how' }, [h('b', { text: 'How to pay' }),
-      h('span', null, ['Pay by ', h('b', { text: 'check' }), ' made out to ' + coName() + ', or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '. Every payment shows on your ', h('b', { text: 'final invoice' }), '.'])])
+      h('span', null, ['Pay by ', h('b', { text: 'check' }), ' made out to ' + coName() + ', or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + ', or ', h('b', { text: 'direct deposit' }), ' (call ' + OFFICE + ' or e-mail billing@grayco-cs.com for our bank details). Every payment shows on your ', h('b', { text: 'final invoice' }), '.'])].concat(payCardH()))   /* patch PAYDD + PAYCARD */
   ]));
   var fi = m.finalInvoice;
   out.push(h('section', { class: 'card' }, [h('div', { class: 'row' }, [h('h2', { text: 'Final invoice' }), fi ? h('span', { class: 'pill ' + (fi.balance > 0 ? 'due' : 'ok'), text: fi.balance > 0 ? 'Balance ' + usd(fi.balance) : 'Paid — thank you!' }) : null]),
@@ -1185,7 +1188,7 @@ function insPay(){
   (m.upgrades || []).forEach(function(u){ owe.appendChild(h('div', { class: 'line' }, [h('span', { text: u.title }), h('span', { text: usd(u.amount) })])); });
   owe.appendChild(h('div', { class: 'line total' }, [h('span', { text: 'Your part (deductible + upgrades)' }), h('span', { text: usd(m.youOwe) })]));
   owe.appendChild(h('div', { class: 'how' }, [h('b', { text: 'How to pay your part' }),
-    h('span', null, ['A ', h('b', { text: 'check' }), ' made out to ' + coName() + ', or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '.'])]));
+    h('span', null, ['A ', h('b', { text: 'check' }), ' made out to ' + coName() + ', or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + ', or ', h('b', { text: 'direct deposit' }), ' (call ' + OFFICE + ' or e-mail billing@grayco-cs.com for our bank details).'])].concat(payCardH())));   /* patch PAYDD + PAYCARD */
   out.push(owe);
   var chk = h('section', { class: 'card', id: 'insChecks' }, [h('h2', { text: 'Insurance checks' })]);
   if (m.claimTotal) chk.appendChild(h('div', { class: 'line' }, [h('span', { text: 'Approved by your insurance company' }), h('span', { text: usd(m.claimTotal) })]));

@@ -8047,7 +8047,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.367-2026-11-26-r42 -->
+<!-- GrayCo CRM Build: 33.368-2026-11-26-r43 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -9019,7 +9019,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.367-2026-11-26-r42");
+  console.log("[GC] Build 33.368-2026-11-26-r43");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -9067,7 +9067,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.367-2026-11-26-r42"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.368-2026-11-26-r43"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -127602,7 +127602,10 @@ async function doSave(pid, change){
   var all = null; try { all = window._gcProjectsRaw ? await window._gcProjectsRaw() : await window.idbGet('projects'); } catch (e) {}
   try { window.__GC_MANUAL_SAVE__ = true; if (window._gcManualNow) window._gcManualNow('customer portal'); } catch (e) {}
   var hit = false, next = null, saved = null;
-  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(recent[pid] && s(recent[pid].updatedAt) > s(p.updatedAt) ? recent[pid] : p); return saved; } return p; });
+  /* patch SYNCSAFE: the newest copy of this job this computer has (screen, disk, its own last save) — never an older one */
+  function newest(p){ var c = [p, recent[pid]]; try { var sc = (window._crm && window._crm.projects || []).filter(function(x){ return x && String(x.id) === String(pid); })[0]; if (sc) c.push(sc); } catch (e) {}
+    c = c.filter(Boolean); c.sort(function(a, b){ var ta = Date.parse(a.updatedAt || a.savedAt || 0) || 0, tb = Date.parse(b.updatedAt || b.savedAt || 0) || 0; return tb - ta; }); return c[0] || p; }
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(newest(p)); return saved; } return p; });
   if (hit) { try { await window.idbSet('projects', next); } catch (e) {} }
   try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (!saved) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
   if (!hit) { var cur = proj(pid); if (cur && !saved) saved = put(cur); }
@@ -132039,9 +132042,12 @@ async function rawJobs(){ try{ if(window._gcProjectsRaw){ var r = await window._
 window._gcxPatchJob = async function(pid, patch, why){
   if(!pid || !patch || typeof patch !== 'object') return false;
   var list = await rawJobs(), hit = false, at = nowISO(), by = me();
+  var scr = null; try{ scr = (window._crm && window._crm.projects || []).filter(function(x){ return x && x.id === pid; })[0] || null; }catch(e){}
   var next = list.map(function(p){
     if(!p || p.id !== pid) return p;
     hit = true;
+    /* patch SYNCSAFE: the screen's copy when it is newer than the disk's — never send an older job "changed now" */
+    try{ if(scr && (Date.parse(scr.updatedAt || scr.savedAt || 0) || 0) > (Date.parse(p.updatedAt || p.savedAt || 0) || 0)) p = scr; }catch(e){}
     var o = Object.assign({}, p, patch), fe = Object.assign({}, p._fe || {});
     Object.keys(patch).forEach(function(f){
       if(!PFS[f] || same(p[f], patch[f])) return;
@@ -133373,7 +133379,10 @@ async function doSave(pid, change){
   var all = null; try { all = window._gcProjectsRaw ? await window._gcProjectsRaw() : await window.idbGet('projects'); } catch (e) {}
   try { window.__GC_MANUAL_SAVE__ = true; if (window._gcManualNow) window._gcManualNow('insurance portal'); } catch (e) {}
   var hit = false, next = null, saved = null;
-  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(recent[pid] && s(recent[pid].updatedAt) > s(p.updatedAt) ? recent[pid] : p); return saved; } return p; });
+  /* patch SYNCSAFE: the newest copy of this job this computer has (screen, disk, its own last save) — never an older one */
+  function newest(p){ var c = [p, recent[pid]]; try { var sc = (window._crm && window._crm.projects || []).filter(function(x){ return x && String(x.id) === String(pid); })[0]; if (sc) c.push(sc); } catch (e) {}
+    c = c.filter(Boolean); c.sort(function(a, b){ var ta = Date.parse(a.updatedAt || a.savedAt || 0) || 0, tb = Date.parse(b.updatedAt || b.savedAt || 0) || 0; return tb - ta; }); return c[0] || p; }
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(newest(p)); return saved; } return p; });
   if (hit) { try { await window.idbSet('projects', next); } catch (e) {} }
   try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (!saved) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
   if (!hit) { var cur = proj(pid); if (cur && !saved) saved = put(cur); }
@@ -147528,7 +147537,12 @@ function sectionCount(sec){
   return n + ' setting' + (n === 1 ? '' : 's');
 }
 function embedHtml(r){
-  if (r.embed === 'portal') return '<label style="display:flex;gap:8px;align-items:center;font-weight:700;margin-top:4px"><input type="checkbox" id="gc-adm-autosend" disabled> Send new customers their portal link by e-mail</label><span id="gc-adm-autosend-msg" class="w"></span>';
+  if (r.embed === 'portal') return '<label style="display:flex;gap:8px;align-items:center;font-weight:700;margin-top:4px"><input type="checkbox" id="gc-adm-autosend" disabled> Send new customers their portal link by e-mail</label><span id="gc-adm-autosend-msg" class="w"></span>'
+    + '<div id="gc-adm-card" style="margin-top:10px;border-top:1px solid #e2e8f0;padding-top:8px"><div style="font-weight:700">💳 Credit card payments <span id="gc-adm-card-st" class="w"></span></div>'
+    + '<div class="w" style="margin:2px 0 6px">When you sign up with a card company (Stripe, Square, QuickBooks Payments…), paste its pay link here. Until then the portal says "We do not take credit cards yet."</div>'
+    + '<input id="gc-adm-card-url" type="url" placeholder="https://… (the card company\u2019s pay link)" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px" disabled>'
+    + '<input id="gc-adm-card-note" type="text" maxlength="240" placeholder="How to pay by card (optional), e.g. Put your invoice number in the memo. A 3% card fee applies." style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px" disabled>'
+    + '<div style="display:flex;gap:8px;margin-top:6px"><button type="button" class="gc-adm-btn" id="gc-adm-card-save" disabled>Save</button><button type="button" class="gc-adm-btn ghost" id="gc-adm-card-off" disabled>No credit cards</button></div></div>';   /* patch PAYCARD */
   if (r.embed === 'news') return '<button type="button" class="gc-adm-btn ghost" id="gc-adm-news" style="margin-top:4px"' + (W._gcNews ? '' : ' disabled') + '>How many are on GrayCo News?</button> <span id="gc-adm-news-msg" class="w"></span>';
   if (r.embed === 'version') { var live = ST8.v, mine = s(W.__GC_BUILD_ID__ || '');
     return '<div class="w" style="color:#334155">Running here: <b>' + esc(mine || 'unknown') + '</b> · Live: <b>' + esc(live || (ST8.at ? 'no answer' : 'checking…')) + '</b> '
@@ -147587,11 +147601,24 @@ function paintHub(){
   if (cur) wireEmbeds(m);
   if (cur && cur.render) { var box = m.querySelector('[data-adm-custom]'); try { cur.render(box); } catch (e) { box.textContent = 'Could not draw this section: ' + (e && e.message || e); } }
 }
+/* patch PAYCARD: ⚙ Admin → 💳 Credit card payments (the portal's "How to pay") */
+function cardPaint(m, c){
+  c = c || {}; var u = m.querySelector('#gc-adm-card-url'), n = m.querySelector('#gc-adm-card-note'), sv = m.querySelector('#gc-adm-card-save'), of = m.querySelector('#gc-adm-card-off'), st = m.querySelector('#gc-adm-card-st');
+  if (!u) return;
+  u.value = s(c.url); n.value = s(c.note); [u, n, sv, of].forEach(function(x){ x.disabled = false; });
+  st.textContent = c.url ? ' — ON: customers see 💳 Pay by credit card' : ' — none yet: customers see "We do not take credit cards yet"';
+  function save(card){ sv.disabled = of.disabled = true;
+    fetch('/.netlify/functions/portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings', set: { card: card } }) })
+      .then(function(r){ return r.json(); }).then(function(j){ if (j && j.ok) { cardPaint(m, j.card); toast(j.card && j.card.url ? '💳 Saved — the customer portal now says "We accept credit cards".' : 'Saved — the portal says "We do not take credit cards yet".'); } else { sv.disabled = of.disabled = false; toast((j && j.error) || 'Could not save.'); } })
+      .catch(function(){ sv.disabled = of.disabled = false; toast('Could not reach the portal server.'); }); }
+  sv.onclick = function(){ var v = s(u.value).trim(); if (v && !/^https:\/\//.test(v)) { toast('The pay link must start with https://'); return; } save({ url: v, note: s(n.value).trim() }); };
+  of.onclick = function(){ save({ url: '', note: '' }); };
+}
 function wireEmbeds(m){
   var a = m.querySelector('#gc-adm-autosend');
   if (a) {
     fetch('/.netlify/functions/portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings' }) })
-      .then(function(r){ return r.json(); }).then(function(j){ if (j && j.ok) { a.checked = j.autoSend !== false; a.disabled = false; } else { var x = m.querySelector('#gc-adm-autosend-msg'); if (x) x.textContent = ' — the portal server did not answer (is it set up? see Setup checklist).'; } })
+      .then(function(r){ return r.json(); }).then(function(j){ if (j && j.ok) { a.checked = j.autoSend !== false; a.disabled = false; try { cardPaint(m, j.card); } catch (_c) {} } else { var x = m.querySelector('#gc-adm-autosend-msg'); if (x) x.textContent = ' — the portal server did not answer (is it set up? see Setup checklist).'; } })
       .catch(function(){ var x = m.querySelector('#gc-adm-autosend-msg'); if (x) x.textContent = ' — the portal server did not answer.'; });
     a.onchange = function(){ var v = !!a.checked; a.disabled = true;
       fetch('/.netlify/functions/portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings', set: { autoSend: v } }) })
@@ -213294,13 +213321,26 @@ function jobHtml(p){
   var P = W._gcPortal || {}, url = linkOf(p), h = '';
   if (typeof P.post === 'function') h += '<button type="button" class="spx-b pri" data-spx-a="post" data-pid="' + esc(p.id) + '">📣 Post to customer</button>';
   if (url) h += '<a class="spx-b" data-spx-a="see" href="' + esc(url + '&p=1') + '" target="_blank" rel="noopener">👁 See what they see</a>';
-  else if (!p.portalOff && typeof P.link === 'function') h += '<button type="button" class="spx-b" data-spx-a="make" data-pid="' + esc(p.id) + '">🏠 Make portal</button>';
+  else if (!p.portalOff && typeof P.link === 'function') h += '<button type="button" class="spx-b" data-spx-a="make" data-pid="' + esc(p.id) + '"' + (AUTOMK[p.id] === 1 ? ' disabled>Making the link…' : '>🏠 Make portal') + '</button>';
+  try { if (W._gcPortalEd && typeof W._gcPortalEd.open === 'function' && (typeof W._gcPortalEd.can !== 'function' || W._gcPortalEd.can(p.id))) h += '<button type="button" class="spx-b" data-spx-a="edit" data-pid="' + esc(p.id) + '">✏️ Edit portal</button>'; } catch (e) {}   /* patch PORTALEDTAB */
   if (subOk(p) && W._gcFP && typeof W._gcFP.sub === 'function') h += '<button type="button" class="spx-b" data-spx-a="sub" data-pid="' + esc(p.id) + '">🔧 Sub portal</button>';
   var meta = [s(p.client || p.customer), s(p.address), s(p.status)].filter(Boolean).join(' · ');
   return '<div class="spx-job" data-spx-pid="' + esc(p.id) + '"><b>' + esc(p.name || p.address || 'Job') + (p.portalOff ? '<span class="spx-chip">portal off</span>' : !url ? '<span class="spx-chip">no portal yet</span>' : '') + '</b><span class="m">' + esc(meta) + '</span><div class="spx-acts">' + h + '</div></div>';
 }
+/* patch PORTALEDTAB: the jobs on the tab with no link get it made, one after another (nothing is sent to the customer) */
+var AUTOMK = {};
+function autoMake(all){
+  var P = W._gcPortal || {}; if (typeof P.link !== 'function' || navigator.onLine === false) return;
+  var todo = all.filter(function(p){ return !p.portalOff && !linkOf(p) && !AUTOMK[p.id]; }).slice(0, 25);
+  if (!todo.length) return;
+  todo.forEach(function(p){ AUTOMK[p.id] = 1; });
+  (function next(){ var p = todo.shift(); if (!p) { paint(); return; }
+    Promise.resolve(P.link(p.id)).then(function(u){ if (u && LINK.test(u)) { MADE[p.id] = u; STATS.made++; AUTOMK[p.id] = 2; } else AUTOMK[p.id] = 3; }, function(){ AUTOMK[p.id] = 3; })
+      .then(function(){ later(next, 600); }); })();
+}
 function paint(){
   var el = UI.el; if (!el || !D.body.contains(el)) return;
+  try { if (canTab()) autoMake(jobs()); } catch (e) {}
   var all = jobs(), q = low(UI.q), l = q ? all.filter(function(p){ return low([p.name, p.client, p.customer, p.address, p.po].join(' ')).indexOf(q) >= 0; }) : all;
   var list = el.querySelector('.spx-list'), n = el.querySelector('.spx-hd .n');
   if (n) n.textContent = all.length + ' job' + (all.length === 1 ? '' : 's');
@@ -213323,6 +213363,7 @@ function mount(el){
     if (a === 'see') return;   /* the link opens the tab itself */
     if (!p || !custOk(p)) { toast('This job is not one of yours.'); return; }
     var P = W._gcPortal || {};
+    if (a === 'edit') { try { W._gcPortalEd.open(p.id); } catch (e2) { toast('The portal editor did not open — reload the CRM.'); } return; }   /* patch PORTALEDTAB */
     try {
       if (a === 'post' && typeof P.post === 'function') { STATS.posts++; P.post(p.id); return; }
       if (a === 'sub' && subOk(p) && W._gcFP && W._gcFP.sub) { W._gcFP.sub(p.id); return; }
@@ -221386,7 +221427,10 @@ async function doSave(pid, change){
   var all = null; try { all = W._gcProjectsRaw ? await W._gcProjectsRaw() : await W.idbGet('projects'); } catch (e) {}
   try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('claim help'); } catch (e) {}
   var hit = false, next = null, saved = null;
-  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(recent[pid] && s(recent[pid].updatedAt) > s(p.updatedAt) ? recent[pid] : p); return saved; } return p; });
+  /* patch SYNCSAFE: the newest copy of this job this computer has (screen, disk, its own last save) — never an older one */
+  function newest(p){ var c = [p, recent[pid]]; try { var sc = (window._crm && window._crm.projects || []).filter(function(x){ return x && String(x.id) === String(pid); })[0]; if (sc) c.push(sc); } catch (e) {}
+    c = c.filter(Boolean); c.sort(function(a, b){ var ta = Date.parse(a.updatedAt || a.savedAt || 0) || 0, tb = Date.parse(b.updatedAt || b.savedAt || 0) || 0; return tb - ta; }); return c[0] || p; }
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(newest(p)); return saved; } return p; });
   if (hit) { try { await W.idbSet('projects', next); } catch (e) {} }
   try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (!saved) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
   if (!hit) { var cur = proj(pid); if (cur && !saved) saved = put(cur); }

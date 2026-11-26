@@ -1561,7 +1561,7 @@ function mailHtml(kind, v, link){
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
     '<p style="font-size:15px;line-height:1.5">' + lead + '</p>' +
     '<p style="font-size:15px;line-height:1.5"><b>Amount due: ' + usd(v.money.due) + '</b>' + (inv.number ? ' (invoice ' + esc(inv.number) + ')' : '') + '</p>' +
-    '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> — hand it to ' + esc(pmName) + '. Every payment shows on your final invoice.</p>' +
+    '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> — hand it to ' + esc(pmName) + '. Or <b>direct deposit</b> — call (901) 585-0944 or e-mail billing@grayco-cs.com for our bank details. Every way to pay (and card payments, once GrayCo takes them) is on the Payments tab of your portal. Every payment shows on your final invoice.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoice in my GrayCo Portal</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions about this invoice? ' + esc(billingEmail()) + ' · ' + OFFICE_PHONE + (v.pm.phone ? ' (or ' + esc(pmName) + ' at ' + esc(v.pm.phone) + ')' : '') + '.</p>' +   /* patch BILL */
     '</div></div>';
@@ -1699,7 +1699,7 @@ function invoiceMailHtml(doc, pmPhone){
     '<p style="font-size:15px">Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
     '<p style="font-size:15px;line-height:1.5">Your ' + (doc.isFinal ? 'final ' : '') + 'invoice from GrayCo is attached \u2014 open it in any browser on your phone or computer; its \u2b07\ufe0f Download PDF button saves it as a PDF.</p>' +   /* patch CUSTPORTAL: the attachment is the CRM's own invoice */
     '<p style="font-size:15px;line-height:1.5"><b>Invoice #' + esc(doc.number) + ' \u2014 ' + usd(doc.total) + '</b>' + (doc.balance !== doc.total ? ' (balance due ' + usd(doc.balance) + ')' : '') + (doc.due ? '<br>Due ' + esc(doc.due) : '') + '</p>' +
-    '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> \u2014 hand it to ' + esc(doc.pm || 'your Project Manager') + '.</p>' +
+    '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> \u2014 hand it to ' + esc(doc.pm || 'your Project Manager') + '. Or <b>direct deposit</b> — call (901) 585-0944 or e-mail billing@grayco-cs.com for our bank details. Every way to pay (and card payments, once GrayCo takes them) is on the Payments tab of your portal.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">View your invoice in my GrayCo Portal</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call us at ' + OFFICE_PHONE + (pmPhone ? ' or ' + esc(doc.pm) + ' at ' + esc(pmPhone) : '') + '.</p>' +
     '</div></div>';
@@ -2474,17 +2474,19 @@ async function runReminders(opts){
    texting provider is connected, so sendText() is only the hook. Never twice: gc_portal.sent_at
    (+ sent_via) is claimed before anything is sent. No e-mail on file: ONE Office to-do. */
 const SETTINGS_KEY = 'gc_portal_settings';
+/* patch PAYCARD: the credit-card pay link (https only) + how-to words; empty = GrayCo takes no cards yet */
+function cardOf(c){ c = c && typeof c === 'object' ? c : {}; const url = s(c.url).trim(); return { url: /^https:\/\/[^\s<>"']{4,300}$/.test(url) ? url : '', note: clip(s(c.note).replace(/[<>]/g, ''), 240), by: clip(c.by, 120), at: s(c.at) }; }
 async function settingsGet(){
   try {
     const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value&key=eq.' + SETTINGS_KEY, { headers: H() });
     if (r.ok) { const rows = await r.json(); let v = rows && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
-      if (v && typeof v === 'object') return { autoSend: v.autoSend !== false, text: v.text === true, by: s(v.by), at: s(v.at) }; }
+      if (v && typeof v === 'object') return { autoSend: v.autoSend !== false, text: v.text === true, by: s(v.by), at: s(v.at), card: cardOf(v.card) }; }
   } catch (e) {}
-  return { autoSend: true, text: false, by: '', at: '' };   /* the owner asked for ON */
+  return { autoSend: true, text: false, by: '', at: '', card: cardOf(null) };   /* the owner asked for ON */
 }
 async function settingsSet(patch, by){
   const cur = await settingsGet();
-  const next = { autoSend: patch.autoSend == null ? cur.autoSend : !!patch.autoSend, text: patch.text == null ? cur.text : !!patch.text, by: clip(by, 120), at: new Date().toISOString() };
+  const next = { autoSend: patch.autoSend == null ? cur.autoSend : !!patch.autoSend, text: patch.text == null ? cur.text : !!patch.text, card: patch.card == null ? cur.card : cardOf(patch.card), by: clip(by, 120), at: new Date().toISOString() };
   const r = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
     body: JSON.stringify({ key: SETTINGS_KEY, value: next, updated_at: next.at }) });
   if (!r.ok) throw new Error('settings write ' + r.status);
@@ -2912,7 +2914,15 @@ exports.handler = async function (event) {
     if (!svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (Netlify → Environment variables).' });
     if (action === 'settings') {
       try {
-        if (body.set && typeof body.set === 'object') return reply(200, headers, Object.assign({ ok: true }, await settingsSet(body.set, who.email)));
+        if (body.set && typeof body.set === 'object') {
+          if (body.set.card != null) {   /* patch PAYCARD: admins only; a link that is not https:// is refused, never stored */
+            if (!require('./_lib/staff-role.js').isAdmin(who)) return reply(403, headers, { ok: false, error: 'Only an admin changes the credit card payments.' });
+            const cu = s(body.set.card && body.set.card.url).trim();
+            if (cu && !/^https:\/\/[^\s<>"']{4,300}$/.test(cu)) return reply(400, headers, { ok: false, error: 'The pay link must start with https://' });
+            body.set.card = Object.assign({}, body.set.card, { by: who.email, at: new Date().toISOString() });
+          }
+          return reply(200, headers, Object.assign({ ok: true }, await settingsSet(body.set, who.email)));
+        }
         return reply(200, headers, Object.assign({ ok: true }, await settingsGet()));
       } catch (e) { return reply(502, headers, { ok: false, error: 'Could not save the setting. Try again.' }); }
     }
@@ -3064,6 +3074,7 @@ exports.handler = async function (event) {
     return reply(200, headers, { ok: true, html: v.html, number: v.number });
   }
   const view = await buildView(data, p);
+  try { const cd = (await settingsGet()).card; view.payCard = cd.url ? { url: cd.url, note: cd.note } : null; } catch (e) { view.payCard = null; }   /* patch PAYCARD */
   try { const sa = await subcLib().readAll(exports._core); view.crew = subcLib().crewFor(p, sa.subs, subcLib().recOf(sa.list, p.id)); } catch (e) { view.crew = []; }   /* patch SUBCONTACT: only the approved subs' shared fields */
   /* when was it last opened (at most once every 10 minutes per link) */
   const last = row.last_viewed_at ? Date.parse(row.last_viewed_at) : 0;
