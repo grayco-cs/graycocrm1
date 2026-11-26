@@ -82,7 +82,7 @@ const T = {
     noPending: 'No pending approval requests.',
     noLinks: 'No links saved. Add plan room URLs and other resources.',
     // AI feature
-    aiHelpText: 'Upload PDF plans first, then click "Auto-Fill from Plans" to let Claude extract the address, scope, and key specifications automatically.',
+    aiHelpText: 'Upload PDF plans first, then click "Auto-Fill from Plans" to read the address, scope, and key specifications automatically.',
     aiSuccess: 'Plan analysis complete. Review and edit the auto-filled fields below.',
     aiError: 'Could not analyze plans. Please fill the fields manually.',
     // Misc
@@ -404,7 +404,7 @@ const T = {
     noJobsAdmin: 'Aún no hay trabajos. Haga clic en "Agregar Trabajo" para crear el primero.',
     noPending: 'No hay solicitudes de aprobación pendientes.',
     noLinks: 'No hay enlaces guardados. Agregue URLs de planos y otros recursos.',
-    aiHelpText: 'Suba primero los planos en PDF, luego haga clic en "Auto-Llenar desde los Planos" para que Claude extraiga automáticamente la dirección, el alcance y las especificaciones clave.',
+    aiHelpText: 'Suba primero los planos en PDF, luego haga clic en "Auto-Llenar desde los Planos" para leer automáticamente la dirección, el alcance y las especificaciones clave.',
     aiSuccess: 'Análisis de planos completo. Revise y edite los campos auto-llenados a continuación.',
     aiError: 'No se pudieron analizar los planos. Por favor complete los campos manualmente.',
     role: 'Rol', admin: 'Administrador', sub: 'Subcontratista',
@@ -1540,6 +1540,12 @@ function BidApp() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <LangToggle lang={lang} setLang={(l) => { setLang(l); if (user && user.role === 'sub' && !impersonatedFrom && user.lang !== l) { setUsers(users.map(u => u.id === user.id ? { ...u, lang: l } : u)); setUser({ ...user, lang: l }); } }} />
+              {(user.role === 'sub' || user.role === 'supplier') && a2hsAvailable() && (   /* patch A2HS: always here (outside the installed app) */
+                <button type="button" id="bids-a2-btn" onClick={a2hsOpen} aria-label={A2T[lang === 'es' ? 'es' : 'en'].btn} title={A2T[lang === 'es' ? 'es' : 'en'].btn}
+                  style={{ minHeight: 40, padding: '0 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: '#fff', color: styles.navy, border: `1px solid ${styles.navy}`, borderRadius: styles.radiusFull, fontFamily: styles.fontBody }}>
+                  📲 {A2T[lang === 'es' ? 'es' : 'en'].btn}
+                </button>
+              )}
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em' }}>{user.name}</div>
                 <div style={{ fontSize: 11, color: styles.text2 }}>
@@ -1673,6 +1679,7 @@ function BidApp() {
           </div>
         )}
 
+        {!impersonatedFrom && <BidsA2hs lang={lang} user={user} />}   {/* patch A2HS */}
         {/* MAIN CONTENT */}
         <main className="main-pad" style={{ flex: 1, maxWidth: 1280, margin: '0 auto', padding: '40px 28px', width: '100%' }}>
           {activeJob ? (
@@ -1788,6 +1795,106 @@ function BidApp() {
    AUTH SCREEN
    ============================================================ */
 /* English / Español — a clear toggle, remembered on this device */
+/* patch A2HS (owner 11/26: "make sure they know they can share to their home screen and then its like an app … and how to do it"):
+   signed-in subs / suppliers on bids.grayco-cs.com —
+   · on a phone, a card "📲 Add GrayCo Bids to your home screen" → Show me how · Not now (30 days);
+   · always (outside the installed app): 📲 in the header and "📲 Add to home screen" in My Settings → the same steps for both phones
+     (iPhone: Safari → Share □↑ → Add to Home Screen → Add; Android: Chrome ⋮ → Install app / Add to Home screen).
+   The site has a manifest ("GrayCo Bids", the GrayCo icons) and no service worker. Not inside the CRM (EMBEDDED). */
+const A2T = {
+  en: { card: '📲 Add GrayCo Bids to your home screen', why: 'Then it opens with one tap, like an app — jobs to bid, plans and your bids.', how: 'Show me how', not: 'Not now',
+    title: '📲 Use GrayCo Bids like an app', sub: 'Add it to your phone’s home screen — then it opens with one tap, like an app. Nothing to download from a store.',
+    install: '📲 Install now', yours: 'Your phone', ok: 'Got it', btn: 'Add to home screen', note: 'Then open GrayCo Bids from your home screen and sign in once.',
+    inApp: 'You are in another app’s browser: tap its ⋯ menu → Open in Safari first.',
+    i1: <>Open this page in <b>Safari</b>.</>, i2: <>Tap <b>Share</b> □↑ (at the bottom of Safari; on iPad at the top).</>, i3: <>Scroll down and tap <b>Add to Home Screen</b>.</>, i4: <>Tap <b>Add</b> (top right). Done!</>,
+    a1: <>Open this page in <b>Chrome</b>.</>, a2: <>Tap the <b>⋮</b> menu (top right).</>, a3: <>Tap <b>Install app</b> (or <b>Add to Home screen</b>).</>, a4: <>Tap <b>Install</b>. Done!</> },
+  es: { card: '📲 Agregue GrayCo Bids a su pantalla de inicio', why: 'Así abre con un toque, como una app — trabajos para licitar, planos y sus ofertas.', how: 'Muéstreme cómo', not: 'Ahora no',
+    title: '📲 Use GrayCo Bids como una app', sub: 'Agréguelo a la pantalla de inicio de su teléfono — y abre con un toque, como una app. No hay que bajar nada de una tienda.',
+    install: '📲 Instalar ahora', yours: 'Su teléfono', ok: 'Entendido', btn: 'Agregar a la pantalla de inicio', note: 'Luego abra GrayCo Bids desde su pantalla de inicio y entre una vez.',
+    inApp: 'Está en el navegador de otra app: toque su menú ⋯ → Abrir en Safari primero.',
+    i1: <>Abra esta página en <b>Safari</b>.</>, i2: <>Toque <b>Compartir</b> □↑ (abajo en Safari; en iPad arriba).</>, i3: <>Baje y toque <b>Agregar a inicio</b>.</>, i4: <>Toque <b>Agregar</b> (arriba a la derecha). ¡Listo!</>,
+    a1: <>Abra esta página en <b>Chrome</b>.</>, a2: <>Toque el menú <b>⋮</b> (arriba a la derecha).</>, a3: <>Toque <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>).</>, a4: <>Toque <b>Instalar</b>. ¡Listo!</> },
+};
+const A2_KEY = 'gc_bids_a2hs_dismiss', A2_DAYS = 30;
+const A2_UA = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+const A2_IOS = /iphone|ipad|ipod/i.test(A2_UA) || (/Macintosh/.test(A2_UA) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+const A2_ANDROID = /android/i.test(A2_UA);
+const A2_IOS_OTHER = A2_IOS && /crios|fxios|edgios|opios|gsa\/|fban|fbav|instagram|line\/|snapchat|twitter|linkedinapp|; wv\)/i.test(A2_UA);
+let a2Bip = null;
+if (typeof window !== 'undefined') window.addEventListener('beforeinstallprompt', e => { try { e.preventDefault(); } catch (x) { /* ignore */ } a2Bip = e; window.dispatchEvent(new Event('gc-bids-bip')); });
+function a2Standalone() { try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; } }
+function a2Dismissed() { try { const v = Number(localStorage.getItem(A2_KEY)) || 0; return v && Date.now() - v < A2_DAYS * 864e5; } catch (e) { return false; } }
+function a2hsOpen() { try { window.dispatchEvent(new Event('gc-bids-a2hs')); } catch (e) { /* ignore */ } }
+function a2hsAvailable() { return !EMBEDDED && !a2Standalone(); }
+function A2Phone({ L, kind }) {
+  const me = kind === 'ios' ? A2_IOS : A2_ANDROID;
+  const steps = kind === 'ios' ? [L.i1, L.i2, L.i3, L.i4] : [L.a1, L.a2, L.a3, L.a4];
+  return (
+    <div id={'bids-a2-' + kind} style={{ marginTop: 12, border: me ? `2px solid ${styles.accent}` : `1px solid ${styles.border}`, borderRadius: 14, padding: '6px 12px 8px' }}>
+      <div style={{ fontWeight: 700, fontSize: 16, margin: '6px 0 2px', display: 'flex', gap: 8, alignItems: 'center' }}>
+        {kind === 'ios' ? '🍎 iPhone / iPad' : '🤖 Android'}
+        {me && <span style={{ fontSize: 12, background: styles.accent, color: styles.navy, borderRadius: 999, padding: '2px 8px' }}>{L.yours}</span>}
+      </div>
+      {steps.map((st, i) => (
+        <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: i ? `1px solid ${styles.border}` : 'none', fontSize: 15, lineHeight: 1.35 }}>
+          <span style={{ flex: 'none', width: 26, height: 26, borderRadius: 13, background: styles.navy, color: '#fff', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+          <span>{st}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function BidsA2hs({ lang, user }) {
+  const L = A2T[lang === 'es' ? 'es' : 'en'];
+  const who = user && (user.role === 'sub' || user.role === 'supplier');
+  const [open, setOpen] = useState(false);
+  const [card, setCard] = useState(false);
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const o = () => { setCard(false); setOpen(true); };
+    const b = () => bump(n => n + 1);
+    window.addEventListener('gc-bids-a2hs', o); window.addEventListener('gc-bids-bip', b);
+    return () => { window.removeEventListener('gc-bids-a2hs', o); window.removeEventListener('gc-bids-bip', b); };
+  }, []);
+  useEffect(() => {
+    if (!who || !a2hsAvailable() || a2Dismissed() || !(A2_IOS || A2_ANDROID || a2Bip)) return undefined;
+    const tm = setTimeout(() => setCard(true), 2500);
+    return () => clearTimeout(tm);
+  }, [who]);
+  if (!a2hsAvailable()) return null;
+  const not = () => { try { localStorage.setItem(A2_KEY, String(Date.now())); } catch (e) { /* ignore */ } setCard(false); };
+  const install = () => { const e = a2Bip; a2Bip = null; setOpen(false); try { if (e) e.prompt(); } catch (x) { /* ignore */ } };
+  const font = { fontFamily: styles.fontBody };
+  return (
+    <>
+      {card && who && !open && (
+        <div id="bids-a2-card" role="dialog" aria-label={L.card} style={{ ...font, position: 'fixed', left: 12, right: 12, bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', zIndex: 9000, maxWidth: 520, margin: '0 auto', background: styles.navy, color: '#fff', borderRadius: 18, padding: 16, boxShadow: '0 12px 36px rgba(0,0,0,.35)' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <img src="./portal-icon-192.png" alt="" width="52" height="52" style={{ borderRadius: 12, flex: 'none' }} />
+            <div><div style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.25 }}>{L.card}</div><div style={{ fontSize: 14, marginTop: 4, color: '#D7DBF0', lineHeight: 1.35 }}>{L.why}</div></div>
+          </div>
+          <button type="button" id="bids-a2-how" onClick={() => { setCard(false); setOpen(true); }} style={{ ...font, display: 'block', width: '100%', minHeight: 52, marginTop: 14, border: 'none', borderRadius: 12, background: styles.accent, color: styles.navy, fontWeight: 700, fontSize: 17, cursor: 'pointer' }}>{L.how}</button>
+          <button type="button" id="bids-a2-not" onClick={not} style={{ ...font, display: 'block', width: '100%', minHeight: 44, marginTop: 6, border: 'none', background: 'transparent', color: '#D7DBF0', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>{L.not}</button>
+        </div>
+      )}
+      {open && (
+        <div id="bids-a2-sheet" role="dialog" aria-label={L.title} onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}
+          style={{ ...font, position: 'fixed', inset: 0, zIndex: 9001, background: 'rgba(20,6,101,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', color: styles.text, width: '100%', maxWidth: 520, borderRadius: '20px 20px 0 0', padding: '20px 18px calc(24px + env(safe-area-inset-bottom, 0px))', maxHeight: '92vh', overflow: 'auto', boxSizing: 'border-box' }}>
+            <div style={{ fontSize: 19, fontWeight: 700 }}>{L.title}</div>
+            <div style={{ fontSize: 14, color: styles.text2, margin: '4px 0 6px' }}>{L.sub}</div>
+            {a2Bip && <button type="button" id="bids-a2-install" onClick={install} style={{ ...font, display: 'block', width: '100%', minHeight: 50, marginTop: 8, border: 'none', borderRadius: 12, background: styles.accent, color: styles.navy, fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>{L.install}</button>}
+            {A2_IOS_OTHER && <div style={{ marginTop: 10, padding: '10px 12px', background: styles.accentSoft || '#FCF0CF', borderRadius: 10, fontSize: 14 }}>{L.inApp}</div>}
+            {A2_ANDROID ? <><A2Phone L={L} kind="android" /><A2Phone L={L} kind="ios" /></> : <><A2Phone L={L} kind="ios" /><A2Phone L={L} kind="android" /></>}
+            <div style={{ marginTop: 12, padding: '10px 12px', background: styles.accentSoft || '#FCF0CF', borderRadius: 10, fontSize: 14 }}>{L.note}</div>
+            <button type="button" id="bids-a2-ok" onClick={() => setOpen(false)} style={{ ...font, display: 'block', width: '100%', minHeight: 48, marginTop: 14, border: 'none', borderRadius: 12, background: styles.navy, color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>{L.ok}</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function LangToggle({ lang, setLang }) {
   const b = (l, label) => (
     <button type="button" data-lang={l} onClick={() => setLang(l)} aria-pressed={lang === l} style={{
@@ -6178,6 +6285,12 @@ function SubSettings({ t, user, subDocs, setSubDocs, bids, jobs, showToast, onSa
     <div>
       <SectionHeader icon={Settings} title={t.mySettings} count={docs.length} />
       {(user.role === 'sub' || user.role === 'supplier') && onSaveProfile && <CompanyProfileCard t={t} user={user} onSave={onSaveProfile} showToast={showToast} />}
+      {(user.role === 'sub' || user.role === 'supplier') && a2hsAvailable() && (   /* patch A2HS: the permanent link in My Settings */
+        <div id="bids-a2-settings" style={{ marginBottom: 18, padding: '12px 14px', border: `1px dashed ${styles.border}`, borderRadius: styles.radius, background: '#fff', display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', fontSize: 14 }}>
+          <span>{A2T[t === T.es ? 'es' : 'en'].why}</span>
+          <Btn size="sm" variant="secondary" onClick={a2hsOpen}>📲 {A2T[t === T.es ? 'es' : 'en'].btn}</Btn>
+        </div>
+      )}
 
       {/* PORTAL STATS — sub's bid history at a glance */}
       <Card style={{ marginBottom: 18 }}>

@@ -414,6 +414,7 @@ function noteBad(ip, kind){ const h = hits.get((kind || 'pub') + '|' + ip); if (
 const MAIL = {
   en: {
     codeSubj: 'Your GrayCo Portal code', codeHead: 'Your sign-in code', codeBody: 'Enter this code on the GrayCo Portal. It works for 10 minutes. If you did not ask for it, ignore this e-mail.',
+    appTip: "Tip: add it to your phone's home screen and it works like an app — iPhone: Share → Add to Home Screen; Android: ⋮ → Install app.",   /* patch A2HS */
     linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).',
     linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).', scopeBtn: 'Review and sign',
     coSignSubj: 'Change order to sign — ', coSignBody: 'GrayCo sent you a change order to your scope on this job. Open your portal to review it and sign it, or ask a question.',
@@ -422,6 +423,7 @@ const MAIL = {
   },
   es: {
     codeSubj: 'Su código del Portal GrayCo', codeHead: 'Su código para entrar', codeBody: 'Escriba este código en el Portal GrayCo. Sirve por 10 minutos. Si usted no lo pidió, ignore este correo.',
+    appTip: 'Consejo: agréguelo a la pantalla de inicio de su teléfono y funciona como una app — iPhone: Compartir → Agregar a inicio; Android: ⋮ → Instalar app.',   /* patch A2HS */
     linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).',
     linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', scopeBtn: 'Revisar y firmar',
     coSignSubj: 'Orden de cambio para firmar — ', coSignBody: 'GrayCo le envió una orden de cambio a su alcance en este trabajo. Abra su portal para revisarla y firmarla, o hacer una pregunta.',
@@ -429,7 +431,7 @@ const MAIL = {
     foot: '¿Preguntas? Llame a GrayCo al ' + OFFICE_PHONE + '.'
   }
 };
-function mailHtml(head, body, big, button){
+function mailHtml(head, body, big, button, tip){   /* patch A2HS: tip = one small line under the button (the home-screen tip) */
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     /* patch MAILHEAD (owner 11/23: "more white and navy and look better, not faded"): white header + the full-colour logo + a navy bar with the title */
     '<div style="background:#ffffff;padding:16px 20px 12px;border-radius:12px 12px 0 0;text-align:center;border:1px solid #E2DCCD;border-bottom:0">' +
@@ -439,6 +441,7 @@ function mailHtml(head, body, big, button){
     '<p style="font-size:15px;line-height:1.5">' + esc(body) + '</p>' +
     (big ? '<p style="font-size:32px;font-weight:bold;letter-spacing:6px;text-align:center;margin:18px 0">' + esc(big) + '</p>' : '') +
     (button ? '<p style="text-align:center;margin:22px 0"><a href="' + esc(button.href) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">' + esc(button.label) + '</a></p>' : '') +
+    (tip ? '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">📲 ' + esc(tip) + '</p>' : '') +
     '<p style="font-size:12px;color:#55626F">GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769</p></div></div>';
 }
 async function sendMail(to, subject, html){
@@ -2198,7 +2201,7 @@ async function staffAction(action, body, who){
     if (!okEmail(to)) throw Fail(400, 'This sub has no e-mail on file. Use Text or Copy link.');
     const l = await subLinkCreate(sid, sub.name, me);
     const L = MAIL[lang(body.lang || sub.lang)];
-    const res = await sendMail(to, L.linkSubj, mailHtml(L.linkHead, L.linkBody, '', { href: linkFor(l.token), label: L.linkBtn }));
+    const res = await sendMail(to, L.linkSubj, mailHtml(L.linkHead, L.linkBody, '', { href: linkFor(l.token), label: L.linkBtn }, L.appTip));
     if (!res.ok) throw Fail(502, res.skipped === 'no-key' ? 'E-mail is not set up on Netlify (RESEND_API_KEY). Use Text or Copy link.' : 'The e-mail did not go out. Try again, or use Text / Copy link.');
     await dbPatch('gc_sub_link', 'token=' + eq(l.token), { sent_at: new Date().toISOString(), sent_via: 'email' });
     return { ok: true, sent: true, url: linkFor(l.token) };
@@ -2221,7 +2224,7 @@ async function staffAction(action, body, who){
     if (ok) {   /* patch BPFAST: the papers copy and the approval e-mail run side by side (the Approve click waited for both, one after the other) */
       const L = MAIL[lang(prof.lang)];
       await Promise.all([ (async function(){ try { prof.papersCrm = await papersToCrm(r.id); if (prof.papersCrm.length) await dbPost('sp_rows?on_conflict=key', [{ key: r.key, collection: 'users', id: r.id, user_id: r.id, email: low(prof.email), data: prof, updated_at: new Date().toISOString(), updated_by: who.email }], 'resolution=merge-duplicates,return=minimal'); } catch (e) {} })(),   /* patch SIGNUPPAPERS: the papers go with them into the CRM's Subs */
-        already ? Promise.resolve(null) : require('./_lib/custquiet.js').run('reply', () => sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn }))) ]);   /* patch SIGNUPNOTE: the approval e-mail answers their sign-up — goes in data-entry mode too */   /* SUBSIGNUP: already in — no e-mail */
+        already ? Promise.resolve(null) : require('./_lib/custquiet.js').run('reply', () => sendMail(prof.email, L.approvedSubj, mailHtml(L.approvedSubj, L.approvedBody, '', { href: portalBase(), label: L.approvedBtn }, L.appTip))) ]);   /* patch SIGNUPNOTE: the approval e-mail answers their sign-up — goes in data-entry mode too */   /* SUBSIGNUP: already in — no e-mail */
     }
     return { ok: true, approved: ok, checked: ok && already };
   }
@@ -2525,6 +2528,7 @@ exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments)
   _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
 
 /* LEGAL2-patch */
+exports._a2hs = { mailHtml: mailHtml, MAIL: MAIL };   /* patch A2HS: tests (the home-screen tip in the sub link / approval e-mails) */
 exports._portalpol = { CMN: CMN, questionsFor: questionsFor, custMsgNotify: custMsgNotify };   /* patch PORTALPOL: tests */
 exports._sched = { schedFor: schedFor, bidJobsFor: bidJobsFor };   /* patch VOICESCHED: tests · BIDLIST */
 exports._bids = { myBidOut: myBidOut, awardOut: awardOut, bidHasPdf: bidHasPdf, readAfterSave: function(){ return bidReadAfterSave.apply(null, arguments); } };   /* patch BIDSCOPE: tests */

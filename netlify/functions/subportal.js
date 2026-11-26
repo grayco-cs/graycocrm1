@@ -1420,7 +1420,9 @@ async function deleteAuthUser(id){
 
 /* ── e-mail ───────────────────────────────────────────────────────────────── */
 function portalLink(){ return PORTAL_ORIGIN + '/'; }
-function mailHtml(title, lines, button){
+/* patch A2HS: the home-screen tip for the bid-site invite / sign-up / approval e-mails (one small line under the button) */
+function appTip(es){ return es ? 'Consejo: agréguelo a la pantalla de inicio de su teléfono y funciona como una app — iPhone: Compartir → Agregar a inicio; Android: ⋮ → Instalar app.' : "Tip: add it to your phone's home screen and it works like an app — iPhone: Share → Add to Home Screen; Android: ⋮ → Install app."; }
+function mailHtml(title, lines, button, tip){
   return '<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F172A">' +
     /* patch MAILHEAD (owner 11/23: "I don't want it to say GrayCo Bids, I want that to be more white and navy and look better, not faded"):
        a white header with the full-colour logo (its own white box — phones' dark mode can't wash it out) and a solid navy bar under it */
@@ -1428,6 +1430,7 @@ function mailHtml(title, lines, button){
     '<div style="padding:20px;border:1px solid #EDE9E0;border-top:0"><h2 style="margin:0 0 12px;font-size:18px">' + esc(title) + '</h2>' +
     lines.map(function(l){ return '<p style="margin:0 0 10px;line-height:1.5">' + l + '</p>'; }).join('') +
     (button ? '<p style="margin:18px 0 0"><a href="' + esc(button.href) + '" style="background:#D4A017;color:#140665;padding:11px 18px;border-radius:999px;text-decoration:none;font-weight:700">' + esc(button.label) + '</a></p>' : '') +
+    (tip ? '<p style="margin:16px 0 0;font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">📲 ' + esc(tip) + '</p>' : '') +
     '<p style="margin:18px 0 0;font-size:12px;color:#64748B">GrayCo Construction Services, LLC · ' + require('./_lib/brand.js').companyAddress() + ' · ' + OFFICE_PHONE + '</p></div></div>';
 }
 async function sendMail(to, subject, html){
@@ -2062,12 +2065,12 @@ async function notify(n){
       mailHtml('Bienvenido, ' + s(n.user.name).split(' ')[0], [
         'GrayCo Construction Services aprobó a <b>' + esc(n.user.company) + '</b> para el sitio de licitaciones de GrayCo.',
         'Entre en bids.grayco-cs.com con su correo y su contraseña para ver los trabajos abiertos, los planos y licitar.'
-      ], { href: portalLink(), label: 'Abrir bids.grayco-cs.com' }));
+      ], { href: portalLink(), label: 'Abrir bids.grayco-cs.com' }, appTip(true)));
     return sendMail(n.user.email, 'You can now sign in at bids.grayco-cs.com',
       mailHtml('Welcome, ' + s(n.user.name).split(' ')[0], [
         'GrayCo Construction Services approved <b>' + esc(n.user.company) + '</b> for the GrayCo bid site.',
         'Sign in at bids.grayco-cs.com with your e-mail and password to see open jobs and plans, and to bid.'
-      ], { href: portalLink(), label: 'Open bids.grayco-cs.com' }));
+      ], { href: portalLink(), label: 'Open bids.grayco-cs.com' }, appTip(false)));
   }
   if (n.kind === 'new-mquote' && n.job) {   /* patch SUPPLIER */
     const q = n.q;
@@ -2914,7 +2917,7 @@ exports.handler = async function (event) {
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
 exports._sv = { svUnconfirmed, svConfirm, svResend, SV_MSG, svConfirmCode };   /* + patch LATECODE */   /* SIGNUPVERIFY: portal-access / sub-accounts / tests */
 exports._papers = { paperToken, paperUser, cleanPaper, signupPapers, signupUpload, PAPER_TYPES };   /* patch SIGNUPPAPERS: tests */
-exports._hub = { autoOpened: autoOpened, crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
+exports._hub = { appTip: appTip, autoOpened: autoOpened, crmPapersOf: function(){ return crmPapersOf.apply(null, arguments); }, mergeCrm: mergeCrm, kvListUpd, matReqsOpen, matReqDecide, inviteSend, withSupplierMaterials, noPrices, crmSiteWalkPush, poSync, poData, poView, poLink, poCands, poCacheClear: function(){ poCache = null; kvCache = null; }, kvRead, listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, subPlans, plansOf, subScope, signAll, isDraft, papersMissing, plansImport, plansGuess, bidLines,
   requestPlans, planReqAct, planReqsFor, notifyPlanRequests, subReqView, planReqContacts, prOpen, plansCount };   /* patch PLANREQ */   /* patch SYS2: + the Q&A save, the sub view, plans · patch SUBBIDS: + subScope / signAll / isDraft (the sub portal's 📋 Jobs to bid) */
 exports._hub.tradeFit = tradeFit; exports._hub.jobTrades = jobTrades;   /* patch TRADEVIS */
 Object.assign(exports._hub, { addendumNum, sfTell, sfDone, sfPing, sfPid, dueOver, dueAt, onTheirList, plansZip, zipBuild, planReqAct, toCrmThread, crmSubFor });   /* patch SUBFLOW */

@@ -104,8 +104,8 @@ export async function wireCrm(c, BUILD, F){
   });
 }
 /* the bid site (bids.grayco-cs.com) in its own browser context */
-export async function bidsCtx(browser, BUILD, F, kind){
-  const ctx = await browser.newContext(Object.assign({ serviceWorkers: 'block' }, kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width: 1366, height: 860 } }));
+export async function bidsCtx(browser, BUILD, F, kind, extra){   /* extra: more context options (patch A2HS: a phone's userAgent) */
+  const ctx = await browser.newContext(Object.assign({ serviceWorkers: 'block' }, kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width: 1366, height: 860 } }, extra || {}));
   ctx.__popups = [];
   ctx.on('page', p => ctx.__popups.push(p));
   await ctx.route('**/*', async r => {
