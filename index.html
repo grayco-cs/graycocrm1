@@ -8047,7 +8047,7 @@ W.__GC_STATUSFIX__ = { isTerm:isTerm, norm:norm, sig:sig, stampChanged:stampChan
   firstYear:firstYear, jobYearOf:jobYearOf, stats:function(){ return Object.assign({}, stats); }, _last:LAST };
 })(window);
 </script>
-<!-- GrayCo CRM Build: 33.365-2026-11-26-r40b -->
+<!-- GrayCo CRM Build: 33.366-2026-11-26-r41 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -9019,7 +9019,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.365-2026-11-26-r40b");
+  console.log("[GC] Build 33.366-2026-11-26-r41");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -9067,7 +9067,7 @@ try { console.log('[GC] ACCTFIX2: costs count once approved (_gcCostGate), refun
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.365-2026-11-26-r40b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.366-2026-11-26-r41"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -127641,7 +127641,7 @@ function queue(pid, add){
   if (add && i < 0) q.push(pid); if (!add && i >= 0) q.splice(i, 1);
   jSet(QUEUE, q);
 }
-function linkOf(p){ return p && !p.portalOff && /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/.test(s(p.portalUrl)) ? s(p.portalUrl) : ''; }
+function linkOf(p){ return p && !p.portalOff && /^https:\/\/[^\s]+\/(?:portal\.html)?#t=[A-Za-z0-9_-]{43}$/.test(s(p.portalUrl)) ? s(p.portalUrl) : ''; }
 async function ensureLink(pid, why){
   var p = proj(pid); if (!p) { lastError[pid] = 'Open a job first'; return ''; }
   if (linkOf(p)) return linkOf(p);
@@ -127746,15 +127746,19 @@ function scanNew(){
   if (!ready()) return;
   var list = crm().projects; if (!Array.isArray(list) || list === lastList) return;
   lastList = list;
-  var cut = Date.now() - 7 * 86400e3, todo = [];
+  var cut = Date.now() - 7 * 86400e3, todo = [], old = [];
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
     if (!p || !p.id || attempted[p.id] || linkOf(p) || p.portalOff) continue;
     if (/lost|dead|cancel/.test(low(p.status))) continue;
-    if (createdMs(p) < cut) continue;
+    if (createdMs(p) < cut) {   /* patch PORTALAUTO: an older open job gets its link too — the link only, nothing is sent */
+      if (p.history || p.recordOnly || p.deleted || p.tombstoned || /complete|closed|archiv|void|history/.test(low(p.status))) continue;
+      attempted[p.id] = 1; old.push(String(p.id)); continue;
+    }
     attempted[p.id] = 1; todo.push(String(p.id));
   }
   (function next(){ var pid = todo.shift(); if (!pid) return; ensureLink(pid, 'new job').then(function(){ nST(next, 1500); }); })();
+  (function nextOld(){ var pid = old.shift(); if (!pid) return; ensureLink(pid, 'auto').then(function(){ nST(nextOld, 2500); }); })();   /* patch PORTALAUTO */
 }
 function drainQueue(){
   if (!ready() || (navigator.onLine === false)) return;
@@ -133358,7 +133362,7 @@ function shownIns(d){
   var t = s(d.cat) + ' | ' + s(d.name) + ' | ' + s(d.kind);
   return !INTERNAL_DOC.test(t) && CUSTOMER_DOC.test(t);
 }
-function linkOf(p){ return p && !p.portalOff && /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/.test(s(p.portalUrl)) ? s(p.portalUrl) : ''; }
+function linkOf(p){ return p && !p.portalOff && /^https:\/\/[^\s]+\/(?:portal\.html)?#t=[A-Za-z0-9_-]{43}$/.test(s(p.portalUrl)) ? s(p.portalUrl) : ''; }
 
 /* ── saving (the same way patch Q and the rest of the CRM save a job / a paper) ── */
 var saving = Promise.resolve();
@@ -212273,7 +212277,8 @@ function perms(p){
 }
 
 /* ── the customer portal (patch Q's link: /portal.html#t=<43>; the staff preview adds &p=1) ── */
-var LINK = /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/, MADE = {};
+/* patch PORTALLINK: crm…/portal.html#t= or portal.grayco-cs.com/#t= */
+var LINK = /^https:\/\/[^\s]+\/(?:portal\.html)?#t=[A-Za-z0-9_-]{43}$/, MADE = {};
 function linkOf(p){ if (!p || p.portalOff) return ''; var u = s(p.portalUrl); if (!LINK.test(u)) u = s(MADE[p.id]); return LINK.test(u) ? u : ''; }
 function previewUrl(p){ var u = linkOf(p); return u ? u + '&p=1' : ''; }
 
@@ -213250,7 +213255,7 @@ function jobs(){
   try { if (typeof W._gcFPSort === 'function') l = W._gcFPSort(l); } catch (e) {}
   return l;
 }
-var LINK = /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/, MADE = {};
+var LINK = /^https:\/\/[^\s]+\/(?:portal\.html)?#t=[A-Za-z0-9_-]{43}$/, MADE = {};
 function linkOf(p){ if (!p || p.portalOff) return ''; var u = s(p.portalUrl); if (!LINK.test(u)) u = s(MADE[p.id]); return LINK.test(u) ? u : ''; }
 function proj(pid){ return allJobs().filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
 
@@ -260729,7 +260734,7 @@ function mergeLists(a, b){
   arr(a).concat(arr(b)).forEach(function(x){
     if (!x || !x.id) return;
     if (!(x.id in at)) { at[x.id] = out.length; out.push(x); return; }
-    var y = out[at[x.id]], n = newer(y, x), m = Object.assign({}, n === y ? x : y, n); m.files = mergeFiles(y.files, x.files); out[at[x.id]] = m;
+    var y = out[at[x.id]], n = newer(y, x), m = Object.assign({}, n === y ? x : y, n); m.files = mergeFiles(y.files, x.files); if (y.contractReads || x.contractReads) m.contractReads = mergeFiles(y.contractReads, x.contractReads); out[at[x.id]] = m;
   });
   return out.sort(function(p, q){ return s(q.at).localeCompare(s(p.at)); });
 }
@@ -260983,6 +260988,129 @@ function addSched(recs){
   });
 }
 
+/* ── patch CONTRACTREAD (owner 11/26, Clarendon - CSI: "I entered a contract, it should have read the contract and took the info out
+   of it for the contract price"): a contract-type file in the import (category Contracts, or its name says contract / agreement /
+   award / notice to proceed / purchase order / bid proposal form / schedule of values) is read — PDF (_gcPdfText), Word
+   (_gcDocxText), Excel (SheetJS) — for a LABELLED total: Contract Sum / Price / Amount, Total Contract, Award Amount, Total Base
+   Bid, Grand Total (and "Total" on a schedule of values). The largest of the strongest labels wins; unit prices, insurance limits,
+   per-day amounts, dates and phone numbers are never read; no label = nothing. Sub / vendor / change-order / pay-app paperwork and a
+   file that went to several jobs never set a job's contract. Several files on one job → the most confident one.
+   An empty / $0 contract is set (window._gcxPatchJob: a person's edit by the importer, SYNC-A) and the job remembers where it came
+   from (contractFrom); a job that already has a contract is never changed — its page shows "📄 <file> says $X — the job shows $Y
+   · ✅ Use $X · Keep" under the money tiles until someone answers. Kept in gc_zip_import (contractReads), so every computer sees it. ── */
+var CT_NAME = /contract|agreement|\baward|notice to proceed|\bntp\b|purchase order|bid proposal|proposal form|bid form|schedule of values|\bsov\b/i;
+var CT_NOT = /\bsubs?\b|subcontract|sub-?contractor|sub.?agreement|vendor|supplier|\bw-?9\b|\bcoi\b|insurance|payroll|change.?order|\bc\.?o\.?\s?#?\d|pay ?app|invoice|lien|waiver|amendment/i;
+var CT_STRONG = /(original\s+)?contract\s+(sum|price|amount|total|value)|total\s+contract(\s+(sum|price|amount|value))?|award(ed)?\s+amount|amount\s+of\s+(the\s+)?award|total\s+base\s+bid|base\s+bid\s+total|total\s+bid(\s+amount|\s+price)?|grand\s+total|lump\s+sum(\s+price|\s+amount)?|total\s+project\s+(cost|price|amount)/i;
+var CT_WEAK = /^\s*(sov\s+)?total\b|\btotal\s*(:|\$)|\btotals?\s*$/i;
+var CT_BAD = /insurance|limit|occurrence|aggregate|liquidated|per\s+day|per\s+diem|retain|deductible|bond\s+amount|penalty|unit\s+price|allowance|per\s+(sf|sq|lf|ea|hour|hr|unit|each)|\/\s?(sf|lf|hr|ea|day)\b|hourly|rate/i;
+var MONEY = /\$\s*\d[\d,]*(?:\.\d{2})?|\b\d{1,3}(?:,\d{3})+(?:\.\d{2})?\b/g;
+function moneyIn(t){ var m, out = []; MONEY.lastIndex = 0; while ((m = MONEY.exec(t))) { var after = t.slice(m.index + m[0].length, m.index + m[0].length + 14); if (/^\s*(\/|per\b|each\b|ea\b|sf\b|lf\b|hr\b)/i.test(after)) continue; var v = parseFloat(m[0].replace(/[$,\s]/g, '')); if (v >= 500 && v < 1e9) out.push(v); } return out; }
+/* text → { amount, label, conf } (conf 3 = a contract-sum label, 2 = "Total" on a schedule of values) or null */
+function contractFromText(text, sov){
+  var lines = String(text || '').split(/\n+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean), best = null;
+  var take = function(v, label, conf){ if (!best || conf > best.conf || (conf === best.conf && v > best.amount)) best = { amount: Math.round(v * 100) / 100, label: label, conf: conf }; };
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i], m = CT_STRONG.exec(l), conf = 3;
+    if (!m && sov && CT_WEAK.test(l)) { m = CT_WEAK.exec(l); conf = 2; }
+    if (!m) continue;
+    var tail = l.slice(m.index + m[0].length), ctx = l.slice(Math.max(0, m.index - 40), m.index + m[0].length + 40);
+    if (CT_BAD.test(ctx)) continue;
+    var vs = moneyIn(tail.slice(0, 200));
+    if (!vs.length && i + 1 < lines.length && !CT_STRONG.test(lines[i + 1]) && lines[i + 1].length < 200) vs = moneyIn(lines[i + 1]);   /* the amount on the next line (cell-per-line PDFs) */
+    if (!vs.length) continue;
+    take(Math.max.apply(null, vs), m[0].replace(/\s+/g, ' ').trim(), conf);
+  }
+  return best;
+}
+/* a sheet (rows of cells) → the same: a row whose words are a contract-sum / total label, its largest amount */
+function contractFromRows(rows, sov){
+  var best = null;
+  arr(rows).forEach(function(r){
+    var words = arr(r).filter(function(c){ return typeof c === 'string' && /[a-z]{3}/i.test(c); }).join(' '), nums = [];
+    arr(r).forEach(function(c){ var v = typeof c === 'number' ? c : (/^\s*\$?\s*[\d,]+(\.\d+)?\s*$/.test(String(c)) ? parseFloat(String(c).replace(/[$,\s]/g, '')) : NaN); if (isFinite(v) && v >= 500 && v < 1e9) nums.push(v); });
+    if (!words || !nums.length || CT_BAD.test(words)) return;
+    var conf = CT_STRONG.test(words) ? 3 : (sov && /^\s*(grand\s+)?totals?\b|\btotals?\s*$/i.test(words) ? 2 : 0);
+    if (!conf) return;
+    var v = Math.max.apply(null, nums);
+    if (!best || conf > best.conf || (conf === best.conf && v > best.amount)) best = { amount: Math.round(v * 100) / 100, label: words.slice(0, 60), conf: conf };
+  });
+  return best;
+}
+function isContractFile(r){ return /\.(pdf|docx|xlsx|xls)$/i.test(r.name) && !CT_NOT.test(r.path) && (r.cat === 'Contracts' || CT_NAME.test(r.path)); }
+async function readContract(get, name, path){
+  var b = await get(); if (b.size > 25 * 1048576) return null;
+  var ext = ((/\.([a-z0-9]+)$/i.exec(name) || [])[1] || '').toLowerCase(), sov = /schedule of values|\bsov\b/i.test(path);
+  if (ext === 'pdf' && typeof W._gcPdfText === 'function') { var t = s(await W._gcPdfText(new Uint8Array(await b.arrayBuffer()))); return contractFromText(t, sov || /schedule of values/i.test(t.slice(0, 2000))); }
+  if (ext === 'docx' && typeof W._gcDocxText === 'function') { var t2 = s(await W._gcDocxText(new Uint8Array(await b.arrayBuffer()))); return contractFromText(t2, sov || /schedule of values/i.test(t2.slice(0, 2000))); }
+  if (/^xls/.test(ext)) {
+    var XL = await loadXlsx(), wb = XL.read(new Uint8Array(await b.arrayBuffer()), { type: 'array', raw: true }), best = null;
+    wb.SheetNames.forEach(function(n){ var ws = wb.Sheets[n]; if (!ws || !ws['!ref']) return; var rows = XL.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true, blankrows: false });
+      var sv = sov || rows.slice(0, 6).some(function(r){ return /schedule of values/i.test(arr(r).join(' ')); }); var x = contractFromRows(rows, sv); if (x && (!best || x.conf > best.conf || (x.conf === best.conf && x.amount > best.amount))) best = x; });
+    return best;
+  }
+  return null;
+}
+function money2(n){ return '$' + (Math.round((+n || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function curContract(p){ return parseFloat(String(p && (p.contract != null && p.contract !== '' ? p.contract : p.contractAmount) || '').replace(/[$,\s]/g, '')) || 0; }
+/* one read → the job: set it when the job has none, else an open "Use / Keep" note */
+async function applyContract(pid, rd, file, batch, by){
+  var p = proj(pid); if (!p || !rd) return null;
+  var cur = curContract(p), at = nowIso();
+  var rec = { id: 'ct_' + String(pid) + '_' + low(file).replace(/[^a-z0-9]+/g, '_').slice(0, 40), pid: String(pid), job: s(p.name), file: file, amount: rd.amount, label: rd.label, conf: rd.conf, was: cur, at: at, by: by, updatedAt: at };
+  if (!cur) {
+    var ok = false;
+    if (typeof W._gcxPatchJob === 'function') { try { ok = await W._gcxPatchJob(String(pid), { contract: rd.amount, contractFrom: { file: file, amount: rd.amount, label: rd.label, at: at, by: by, zipBatch: batch.id } }, 'Contract ' + money2(rd.amount) + ' read from ' + file); } catch (e) { warn(e); } }
+    rec.state = ok ? 'set' : 'open';
+  } else rec.state = Math.abs(cur - rd.amount) < 0.01 ? 'same' : 'open';
+  batch.contractReads = arr(batch.contractReads).filter(function(x){ return x.id !== rec.id; }).concat([rec]);
+  return rec;
+}
+function ctLine(x){ return x.state === 'set' ? '💲 Contract price read: ' + esc(x.job) + ' ' + money2(x.amount) + ' (from ' + esc(x.file) + ')'
+  : x.state === 'open' ? '💲 ' + esc(x.job) + ': ' + esc(x.file) + ' says ' + money2(x.amount) + ' — the job shows ' + money2(x.was) + ' (✅ Use / Keep on the job page)'
+  : x.state === 'same' ? '💲 ' + esc(x.job) + ': ' + esc(x.file) + ' says ' + money2(x.amount) + ' — the same as the job' : ''; }
+/* the job page: the open note (and the last read, as the job's own record of where its contract came from) */
+function ctFor(pid){ var out = []; cache().forEach(function(b){ arr(b.contractReads).forEach(function(x){ if (x && String(x.pid) === String(pid)) out.push({ x: x, b: b }); }); }); return out.sort(function(a, c){ return s(c.x.updatedAt).localeCompare(s(a.x.updatedAt)); }); }
+function ctStrip(){ var b = [].slice.call(D.querySelectorAll('main button, #root button')).filter(function(x){ return /^Files & Docs \(/.test(s(x.textContent)); })[0]; return b ? b.parentElement : null; }
+var ctSig = '';
+function ctPaint(){
+  try {
+    var op = W._gcOpenProject, pid = op && op.id, el = D.getElementById('gc-zipct');
+    var st = pid && canImport() ? ctStrip() : null;
+    if (!st) { if (el) el.remove(); return; }
+    var L = ctFor(pid), open = L.filter(function(o){ return o.x.state === 'open'; }), p = proj(pid) || op, cur = curContract(p);
+    open = open.filter(function(o){ return Math.abs(cur - o.x.amount) >= 0.01; });
+    var last = L.filter(function(o){ return o.x.state === 'set' || o.x.state === 'used'; })[0];
+    var sig = pid + '|' + cur + '|' + open.map(function(o){ return o.x.id + o.x.amount; }).join(',') + '|' + (last ? last.x.id + last.x.state : '');
+    if (!open.length && !last) { if (el) el.remove(); return; }
+    if (el && el.__sig === sig && el.nextElementSibling === st) return;
+    if (!el) { el = D.createElement('div'); el.id = 'gc-zipct'; el.setAttribute('data-gc-keep', '1'); }
+    el.__sig = sig;
+    el.style.cssText = 'margin:8px 0;display:flex;flex-direction:column;gap:6px;font:13px Inter,-apple-system,Arial,sans-serif';
+    el.innerHTML = open.map(function(o){ var x = o.x;
+      return '<div data-ct="' + esc(x.id) + '" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#fffbeb;border:1px solid #fcd34d;color:#78350f;border-radius:10px;padding:8px 12px">' +
+        '<span style="flex:1 1 240px;min-width:0;overflow-wrap:anywhere">📄 <b>' + esc(x.file) + '</b> says <b>' + money2(x.amount) + '</b> — the job shows ' + money2(cur) + (x.label ? ' <span style="color:#92400e;font-size:12px">(“' + esc(x.label) + '”)</span>' : '') + '</span>' +
+        '<button type="button" data-ct-use="' + esc(x.id) + '" style="border:1px solid #15803d;background:#16a34a;color:#fff;border-radius:8px;padding:6px 12px;font:700 13px inherit;cursor:pointer">✅ Use ' + money2(x.amount) + '</button>' +
+        '<button type="button" data-ct-keep="' + esc(x.id) + '" style="border:1px solid #d6dbe3;background:#fff;color:#334155;border-radius:8px;padding:6px 12px;font:600 13px inherit;cursor:pointer">Keep</button></div>'; }).join('') +
+      (last && !open.length ? '<div style="color:#64748b;font-size:12px">📄 Contract ' + money2(last.x.amount) + ' read from ' + esc(last.x.file) + ' · ' + esc(s(last.x.updatedAt).slice(0, 10)) + (last.x.state === 'used' ? ' (used by ' + esc(last.x.decidedBy || '') + ')' : ' (ZIP import by ' + esc(last.x.by) + ')') + '</div>' : '');
+    st.parentNode.insertBefore(el, st);
+    el.querySelectorAll('[data-ct-use],[data-ct-keep]').forEach(function(bt){ bt.onclick = function(){ var use = bt.hasAttribute('data-ct-use'); ctDecide(pid, bt.getAttribute(use ? 'data-ct-use' : 'data-ct-keep'), use); }; });
+  } catch (e) { warn(e); }
+}
+async function ctDecide(pid, id, use){
+  var hit = null; ctFor(pid).forEach(function(o){ if (o.x.id === id && !hit) hit = o; }); if (!hit) return;
+  var x = hit.x, by = myName(), at = nowIso();
+  if (use) {
+    var ok = false; try { ok = typeof W._gcxPatchJob === 'function' && await W._gcxPatchJob(String(pid), { contract: x.amount, contractFrom: { file: x.file, amount: x.amount, label: x.label, at: at, by: by, zipBatch: hit.b.id, replaced: x.was } }, 'Contract ' + money2(x.amount) + ' from ' + x.file); } catch (e) { warn(e); }
+    if (!ok) { toast('Could not change the job — open it and try again.'); return; }
+  }
+  var b = hit.b; b.contractReads = arr(b.contractReads).map(function(y){ return y.id === id ? Object.assign({}, y, { state: use ? 'used' : 'kept', decidedBy: by, decidedAt: at, updatedAt: at }) : y; });
+  await saveBatch(b);
+  toast(use ? '✅ Contract set to ' + money2(x.amount) : 'Kept ' + money2(curContract(proj(pid))));
+  ctSig = ''; var el = D.getElementById('gc-zipct'); if (el) el.__sig = ''; later(ctPaint, 50);
+}
+var ctReadAt = 0;
+SI.call(W, function(){ try { if (D.hidden) return; var op = W._gcOpenProject; if (op && op.id && canImport() && Date.now() - ctReadAt > 60000) { ctReadAt = Date.now(); refresh(false).then(ctPaint); } ctPaint(); } catch (e) {} }, 1500);
+
 /* ── the sheet ── */
 var S = null;   /* { rows: [...], mode, zips, busy, done } */
 function css(){
@@ -261192,6 +261320,7 @@ async function run(){
   var dups = docIndex(await docsNow()), waiting = waitingIndex();
   var todo = S.rows.filter(function(r){ return r.pid !== '__skip'; }), done = 0, placed = 0, queued = 0, skipped = 0, failed = 0, recs = [], perJob = {};
   var sRecs = [], sFound = 0, sJobs = {};   /* patch ZIPSCHED */
+  var ctCand = [];   /* patch CONTRACTREAD: contract-type files placed / skipped as already there / sent to the office */
   var schedFor = function(r){ var it = schedPicked(r); sFound += r.sched ? r.sched.items.length : 0; if (!r.pid || !it.length) return 0; var L = schedRecs(r.pid, it, r.sched.tent, { file: r.name, batch: bid, by: by }); sRecs = sRecs.concat(L); sJobs[r.pid] = 1; return L.length; };
   for (var i = 0; i < todo.length; i++) {
     var r = todo[i];
@@ -261201,7 +261330,7 @@ async function run(){
       var blob = null;
       if (!r.size) { blob = await r.get(); r.size = blob.size; }
       var key = r.pid ? dupKey(r.pid, r.name, r.size) : dupKey('?', r.name, r.size);
-      if ((r.pid ? dups : waiting)[key]) { skipped++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, pid: r.pid || '', skipped: 'already imported', schedItems: r.pid ? schedFor(r) : 0, updatedAt: nowIso() }); continue; }   /* a re-run adds no schedule row twice (same job + title + start) */
+      if ((r.pid ? dups : waiting)[key]) { skipped++; var sk = { id: 'f' + i, name: r.name, path: r.path, size: r.size, pid: r.pid || '', skipped: 'already imported', schedItems: r.pid ? schedFor(r) : 0, updatedAt: nowIso() }; batch.files.push(sk); if (r.pid && isContractFile(r)) ctCand.push({ r: r, ent: sk }); continue; }   /* a re-run adds no schedule row twice (same job + title + start) */
       if (!blob) blob = await r.get();
       if (blob.size > MAX_FILE) { failed++; batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: blob.size, failed: 'over 50 MB', updatedAt: nowIso() }); continue; }
       var file = blob instanceof File && blob.name === r.name ? blob : new File([blob], r.name, { type: r.type || blob.type || '' });
@@ -261218,14 +261347,27 @@ async function run(){
         if (r.sched) { sFound += r.sched.items.length; var pk = schedPicked(r); if (pk.length) ent.sched = { tent: !!r.sched.tent, items: pk.map(function(x){ return { t: x.t, s: x.s, e: x.e, du: x.du, who: x.who, trade: x.trade }; }) }; }   /* patch ZIPSCHED: goes with the file to 📥 Place */
       }
       batch.files.push(ent);
+      if (isContractFile(r)) ctCand.push({ r: r, ent: ent });
       if (recs.length >= 25) { await addDocs(recs.splice(0)); }
     } catch (e) { failed++; warn(e); batch.files.push({ id: 'f' + i, name: r.name, path: r.path, size: r.size, failed: s(e && e.message || e).slice(0, 120), updatedAt: nowIso() }); }
     done++;
   }
   if (recs.length) await addDocs(recs.splice(0));
   var sAdded = 0; try { sAdded = await addSched(sRecs); } catch (e) { warn(e); }   /* patch ZIPSCHED */
+  /* patch CONTRACTREAD: the contract price — one read per file; a file that went to several jobs sets none; the best read per job */
+  var ctMulti = {}, ctBest = {};
+  ctCand.forEach(function(c){ var k = low(c.r.name) + '|' + c.r.size; (ctMulti[k] = ctMulti[k] || {})[c.r.pid || '?'] = 1; });
+  for (var ci = 0; ci < ctCand.length; ci++) {
+    var c = ctCand[ci]; if (Object.keys(ctMulti[low(c.r.name) + '|' + c.r.size]).length > 1) continue;
+    prog.textContent = 'Reading the contract price in ' + c.r.name + '…';
+    var rd = null; try { rd = await readContract(c.r.get, c.r.name, c.r.path); } catch (e) { warn(e); }
+    if (!rd) continue;
+    c.ent.contractRead = rd;
+    if (c.r.pid) { var cb = ctBest[c.r.pid]; if (!cb || rd.conf > cb.rd.conf || (rd.conf === cb.rd.conf && rd.amount > cb.rd.amount)) ctBest[c.r.pid] = { rd: rd, file: c.r.name }; }
+  }
+  for (var cp in ctBest) { try { await applyContract(cp, ctBest[cp].rd, ctBest[cp].file, batch, by); } catch (e) { warn(e); } }
   bar.firstChild.style.width = '100%';
-  batch.counts = { placed: placed, waiting: queued, skipped: skipped, failed: failed, schedFound: sFound, schedAdded: sAdded, schedJobs: Object.keys(sJobs).length };
+  batch.counts = { placed: placed, waiting: queued, skipped: skipped, failed: failed, schedFound: sFound, schedAdded: sAdded, schedJobs: Object.keys(sJobs).length, contractsSet: arr(batch.contractReads).filter(function(x){ return x.state === 'set'; }).length, contractsToCheck: arr(batch.contractReads).filter(function(x){ return x.state === 'open'; }).length };
   batch.jobs = Object.keys(perJob).map(function(pid){ var p = proj(pid); return { pid: pid, name: p ? s(p.name) : pid, n: perJob[pid] }; });
   prog.textContent = 'Saving the import log…';
   await saveBatch(batch);
@@ -261233,6 +261375,7 @@ async function run(){
   var h = '<div class="sum"><b>✓ Import finished.</b><br>' + placed + ' file' + (placed === 1 ? '' : 's') + ' put on ' + batch.jobs.length + ' job' + (batch.jobs.length === 1 ? '' : 's') +
     (queued ? '<br>❓ ' + queued + ' file' + (queued === 1 ? '' : 's') + ' need a job — sent to the office and admins (✅ Approvals → “📦 Files from a ZIP need a job”).' : '') +
     (sFound ? '<br>📅 ' + sAdded + ' schedule item' + (sAdded === 1 ? '' : 's') + ' added to ' + Object.keys(sJobs).length + ' job schedule' + (Object.keys(sJobs).length === 1 ? '' : 's') + (sRecs.length > sAdded ? ' (' + (sRecs.length - sAdded) + ' already there)' : '') + '.' : '') +
+    arr(batch.contractReads).map(function(x){ var t = ctLine(x); return t ? '<br>' + t : ''; }).join('') +
     (skipped ? '<br>' + skipped + ' already imported before — skipped.' : '') + (failed ? '<br><span style="color:#b91c1c">' + failed + ' could not be saved (see the log).</span>' : '') + '</div>';
   h += batch.jobs.map(function(j){ return '<div class="row"><div class="fn">📁 ' + esc(j.name) + '</div><span class="mut">' + j.n + ' file' + (j.n === 1 ? '' : 's') + '</span></div>'; }).join('');
   S.done = h; paint();
@@ -261318,6 +261461,9 @@ function placeOne(b, fid, pid){
       /* patch ZIPSCHED: the schedule rows found in the file go on that job's Schedule now */
       return f.sched && arr(f.sched.items).length ? addSched(schedRecs(pid, f.sched.items, f.sched.tent, { file: f.name, batch: b.id, by: by })).then(function(n){ f.schedAdded = n; }, function(e){ warn(e); }) : null;
     }).then(function(){
+      /* patch CONTRACTREAD: the contract price read from the file goes to the job it is placed on */
+      return f.contractRead ? applyContract(pid, f.contractRead, f.name, b, by).then(function(x){ if (x) toast(ctLine(x).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&')); }, function(e){ warn(e); }) : null;
+    }).then(function(){
       f.pid = String(pid); f.docId = rec ? rec.id : ''; f.placedAt = nowIso(); f.placedBy = by; f.placedFrom = 'approvals'; f.updatedAt = nowIso();
       var p = proj(pid); toast('📥 ' + f.name + ' → ' + (p ? p.name : 'the job'));
       return saveBatch(b);
@@ -261351,6 +261497,7 @@ wrapSet(); SI.call(W, watch, 3000);
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 
 W._gcZipImport = { open: open, openPlace: openPlace, match: match, placeByPath: placeByPath, internalWhy: internalWhy, guessCat: guessCat,
+  contractFromText: contractFromText, contractFromRows: contractFromRows, ctPaint: ctPaint,
   schedFromText: schedFromText, rowsToItems: rowsToItems, ymd: ymd,
   refresh: function(){ return refresh(true); }, list: cache, items: items, canImport: canImport,
   state: function(){ return S ? { rows: S.rows.map(function(r){ return { path: r.path, name: r.name, size: r.size, pid: r.pid, auto: r.auto, cat: r.cat, portal: r.portal, portalWhy: r.portalWhy, sched: r.sched ? { on: r.sched.on, tent: r.sched.tent, n: r.sched.items.length, items: r.sched.items } : null }; }), mode: S.mode, busy: S.busy, done: !!S.done } : null; } };
