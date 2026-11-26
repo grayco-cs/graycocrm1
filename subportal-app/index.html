@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#140665" />
+    <!-- patch A2HS: the bid site can be added to the phone's home screen and opens like an app ("GrayCo Bids"); no service worker -->
+    <link rel="manifest" href="./bids.webmanifest" />
+    <link rel="apple-touch-icon" href="./portal-icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="GrayCo Bids" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>GrayCo Bids</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

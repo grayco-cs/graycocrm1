@@ -1513,6 +1513,7 @@ function draw(){
   if (wide && TAB === 'home') {
     main.appendChild(h('div', { class: 'two' }, [h('aside', { class: 'col-l' }, parts.slice(0, 3)), h('section', { class: 'col-r' }, parts.slice(3))]));
   } else parts.forEach(function(p){ if (p) main.appendChild(p); });
+  if (TAB === 'home') { var a2l = a2Line(); if (a2l) main.appendChild(a2l); }   /* patch A2HS */
   markTabs();
 }
 function reloadHome(){ return api('p-home').then(function(r){ HOME = r; if (!JOB) draw(); paintHello(); }, function(){}); }
@@ -1524,7 +1525,7 @@ function setLang(l, tell){
   LANG = l === 'es' ? 'es' : 'en';
   try { localStorage.setItem('gc_lang', LANG); } catch (e) {}
   if (H && H.setLang) H.setLang(LANG);
-  buildTabs();
+  buildTabs(); a2Btn();
   if (HOME) { paintHello(); if (JOB) drawJob(); else draw(); }
   if (tell) api('p-lang', { lang: LANG }).catch(function(){});
 }
@@ -2148,7 +2149,47 @@ function pgPoSheet(r, n){
   });
 }
 
+/* patch A2HS (owner 11/26: "make sure they know they can share to their home screen and then its like an app … customer and subs
+   portal … and how to do it"): the sub / company portal as an app on the phone —
+   · first visit on a phone: a card "📲 Put GrayCo Portal on your home screen?" → Show me how (the two-phone steps) · Not now (30 days);
+   · always: the 📲 button in the header and a line at the foot of Jobs → the same steps (iPhone: Safari → Share □↑ → Add to Home
+     Screen → Add; Android: Chrome ⋮ → Install app / Add to Home screen). Gone inside the installed app. The steps are portal-pwa.js's
+     window.GCA2HS sheet (plain help, nothing of the customer portal). portal.html's small GCP bar is not shown to subs any more. */
+Object.assign(L.en, { a2Title: '📲 Put GrayCo Portal on your home screen?', a2Why: 'Then it opens with one tap, like an app — your jobs, schedule, pay and papers.', a2How: 'Show me how', a2Not: 'Not now',
+  a2Btn: 'Add to home screen — how', a2Line: '📲 <b>Use it like an app</b> — add GrayCo Portal to your phone\u2019s home screen.', a2LineGo: 'How?', a2Note: 'Then open GrayCo from your home screen and sign in once — it remembers you.' });
+Object.assign(L.es, { a2Title: '📲 ¿Poner el Portal GrayCo en su pantalla de inicio?', a2Why: 'Así abre con un toque, como una app — sus trabajos, calendario, pagos y papeles.', a2How: 'Muéstreme cómo', a2Not: 'Ahora no',
+  a2Btn: 'Agregar a la pantalla de inicio — cómo', a2Line: '📲 <b>Úselo como una app</b> — agregue el Portal GrayCo a la pantalla de inicio de su teléfono.', a2LineGo: '¿Cómo?', a2Note: 'Luego abra GrayCo desde su pantalla de inicio y entre una vez — se acuerda de usted.' });
+var A2_KEY = 'gc_sub_a2hs_dismiss', A2_DAYS = 30;
+function a2(){ var A = window.GCA2HS; return A && !A.standalone() ? A : null; }
+function a2Show(){ var A = a2(); if (!A) return; a2Hide(); A.show({ name: t('portal'), es: LANG === 'es', note: t('a2Note') }); }
+function a2Hide(){ var c = document.getElementById('gcs-a2-card'); if (c) c.remove(); }
+function a2Dismissed(){ var v = 0; try { v = Number(localStorage.getItem(A2_KEY)) || 0; } catch (e) {} return v && Date.now() - v < A2_DAYS * 864e5; }
+function a2Btn(){
+  var A = a2(), b = document.getElementById('gcs-a2-btn');
+  if (!A) { if (b) b.remove(); return; }
+  var bar = document.querySelector('.hbtns.l'); if (!bar) return;
+  if (!b) { b = h('button', { type: 'button', class: 'lang', id: 'gcs-a2-btn', text: '📲', on: { click: a2Show } }); bar.appendChild(b); }
+  b.setAttribute('aria-label', t('a2Btn')); b.setAttribute('title', t('a2Btn'));
+}
+function a2Line(){
+  if (!a2()) return null;
+  return h('div', { class: 'gca-help', id: 'gcs-a2-line', style: 'margin:14px 0 4px;padding:12px 14px;border:1px dashed var(--edge,#E2DCCD);border-radius:12px;background:#fff;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:15px;line-height:1.4' }, [
+    (function(){ var sp = document.createElement('span'); sp.innerHTML = t('a2Line'); return sp; })(), h('button', { type: 'button', class: 'btn sm', id: 'gcs-a2-how2', text: t('a2LineGo'), on: { click: a2Show } })]);
+}
+function a2Card(){
+  var A = a2();
+  if (!A || !A.phone() || a2Dismissed() || document.getElementById('gcs-a2-card') || document.getElementById('gca-two') || /(?:^#|&)p=1(?:&|$)/.test(location.hash || '')) return;
+  A.css();
+  var old = document.getElementById('gcp-install'); if (old) old.remove();
+  document.body.appendChild(h('div', { class: 'gca-card', id: 'gcs-a2-card', role: 'dialog', 'aria-label': t('a2Title') }, [
+    h('div', { class: 'top' }, [(function(){ var im = document.createElement('img'); im.src = '/portal-icon-192.png'; im.alt = ''; im.width = 52; im.height = 52; return im; })(), h('div', {}, [h('h3', { text: t('a2Title') }), h('p', { text: t('a2Why') })])]),
+    h('button', { type: 'button', class: 'gca-go', id: 'gcs-a2-how', text: t('a2How'), on: { click: a2Show } }),
+    h('button', { type: 'button', class: 'gca-no', id: 'gcs-a2-not', text: t('a2Not'), on: { click: function(){ try { localStorage.setItem(A2_KEY, String(Date.now())); } catch (e) {} a2Hide(); } } })
+  ]));
+}
+
 window.GCPartner = {
+  a2hs: true,   /* patch A2HS: portal.html's GCP bar leaves subs to this file */
   start: function(opts){
     session = opts.session; H = opts.host;
     var saved = ''; try { saved = localStorage.getItem('gc_lang') || ''; } catch (e) {}
@@ -2159,6 +2200,7 @@ window.GCPartner = {
       HOME = r;
       if (!saved && r.lang && r.lang !== LANG) setLang(r.lang, false);
       paintHello(); draw();
+      a2Btn(); setTimeout(a2Card, 2500);   /* patch A2HS */
       var m = /[#&]job=([A-Za-z0-9_.:-]{1,80})/.exec(location.hash || ''); if (m) openJob(m[1], 'overview');
       try { if (sessionStorage.getItem('gc_go') === 'papers' || /[#&]go=papers/.test(location.hash || '')) { sessionStorage.removeItem('gc_go'); goTab('papers'); } } catch (e) {}   /* patch PAPERS1 */
       setInterval(function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); }, 60000);

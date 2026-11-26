@@ -1,0 +1,17 @@
+{
+  "id": "./?app=grayco-bids",
+  "name": "GrayCo Bids",
+  "short_name": "GrayCo Bids",
+  "description": "GrayCo's bid site — jobs to bid, plans and your bids.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#140665",
+  "theme_color": "#140665",
+  "icons": [
+    { "src": "./portal-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./portal-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./portal-icon-180.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

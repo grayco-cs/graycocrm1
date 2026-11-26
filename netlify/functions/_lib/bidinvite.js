@@ -34,14 +34,14 @@ function inviteMail(job, link, es, supplier, hasAccount){
     'Plans, scopes and specs are on the GrayCo bid site (bids.grayco-cs.com).',
     hasAccount ? 'Sign in with your e-mail and password.' : 'No account yet? The link makes one — approved and linked to this job.'
   ];
-  return { subject, html: H.mailHtml(es ? 'Invitación a ofertar' : 'Invitation to bid', lines.filter(Boolean), { href: link, label: hasAccount ? (es ? 'Entrar y ver el trabajo' : 'Sign in and see the job') : (es ? 'Crear mi cuenta' : 'Sign up and see the job') }) };
+  return { subject, html: H.mailHtml(es ? 'Invitación a ofertar' : 'Invitation to bid', lines.filter(Boolean), { href: link, label: hasAccount ? (es ? 'Entrar y ver el trabajo' : 'Sign in and see the job') : (es ? 'Crear mi cuenta' : 'Sign up and see the job') }, H.appTip ? H.appTip(es) : '') };   /* patch A2HS */
 }
 function signupMail(link, es, name){
   const H = SP(), first = s(name).split(/\s+/)[0];
   const subject = es ? 'Su enlace para el sitio de licitaciones de GrayCo' : 'Your sign-up link for the GrayCo bid site';
   const lines = es ? [(first ? 'Hola ' + H.esc(first) + ', ' : '') + 'GrayCo Construction Services le invita al sitio de licitaciones de GrayCo (bids.grayco-cs.com): los trabajos abiertos, los planos y sus ofertas.', 'Toque el botón para crear su cuenta — queda aprobada.']
     : [(first ? 'Hi ' + H.esc(first) + ', ' : '') + 'GrayCo Construction Services invites you to the GrayCo bid site (bids.grayco-cs.com): open jobs, plans and your bids in one place.', 'Tap the button to make your account — it is approved.'];
-  return { subject, html: H.mailHtml(es ? 'Únase a la lista de licitaciones de GrayCo' : 'Join GrayCo\'s bid list' /* MAILHEAD */, lines, { href: link, label: es ? 'Crear mi cuenta' : 'Make my account' }) };
+  return { subject, html: H.mailHtml(es ? 'Únase a la lista de licitaciones de GrayCo' : 'Join GrayCo\'s bid list' /* MAILHEAD */, lines, { href: link, label: es ? 'Crear mi cuenta' : 'Make my account' }, H.appTip ? H.appTip(es) : '') };   /* patch A2HS */
 }
 function link(inv, hasAccount, supplier){
   const O = SP().PORTAL_ORIGIN;

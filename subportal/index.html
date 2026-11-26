@@ -6,12 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#140665" />
+    <!-- patch A2HS: the bid site can be added to the phone's home screen and opens like an app ("GrayCo Bids"); no service worker -->
+    <link rel="manifest" href="./bids.webmanifest" />
+    <link rel="apple-touch-icon" href="./portal-icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="GrayCo Bids" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>GrayCo Bids</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script src="./legal2.js"></script><script>document.addEventListener("DOMContentLoaded",function(){try{window.GCLegal&&window.GCLegal.boot({bid:true,base:"https://portal.grayco-cs.com"})}catch(e){}});</script><!-- LEGAL2-patch -->
-    <script type="module" crossorigin src="./assets/index-NMh3XHps.js"></script>
+    <script type="module" crossorigin src="./assets/index-DTjeFI3Q.js"></script>
   </head>
   <body style="margin: 0;">
     <div id="root"></div>

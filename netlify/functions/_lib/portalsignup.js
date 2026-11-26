@@ -322,7 +322,8 @@ async function connectedMail(D, row, ps){
     D.mailHtml(es ? 'Ya está conectado' : 'You are connected',
       es ? 'Hola ' + first + ', GrayCo conectó su cuenta con ' + where + '. Entre en ' + D.portalBase().replace(/^https:\/\//, '') + ' con ' + row.email + ' — toque "¿Olvidó su contraseña?" para recibir un código.'
          : 'Hi ' + first + ', GrayCo connected your account to ' + where + '. Sign in at ' + D.portalBase().replace(/^https:\/\//, '') + ' with ' + row.email + ' — tap "Forgot password?" to get a sign-in code.',
-      '', { href: D.portalBase() + '/', label: es ? 'Abrir mi Portal GrayCo' : 'Open my GrayCo Portal' }));
+      '', { href: D.portalBase() + '/', label: es ? 'Abrir mi Portal GrayCo' : 'Open my GrayCo Portal' },
+      es ? 'Consejo: agréguelo a la pantalla de inicio de su teléfono y funciona como una app — iPhone: Compartir → Agregar a inicio; Android: ⋮ → Instalar app.' : "Tip: add it to your phone's home screen and it works like an app — iPhone: Share → Add to Home Screen; Android: ⋮ → Install app."));   /* patch A2HS: the home-screen tip */
 }
 async function onRejected(item, me, D){
   const id = s((item.meta || {}).signupId); if (!id) return;
@@ -428,4 +429,4 @@ async function staff(action, body, who, D){
   throw Fail(400, 'Bad request');
 }
 
-module.exports = { KEY, KIND, MSG, start, confirm, staff, grantPids, grantKeysForIdent, onApproved, onRejected, linkMakeToken, linkRead, nameMatch, addrMatch, evidenceFor };
+module.exports = { connectedMail, KEY, KIND, MSG, start, confirm, staff, grantPids, grantKeysForIdent, onApproved, onRejected, linkMakeToken, linkRead, nameMatch, addrMatch, evidenceFor };

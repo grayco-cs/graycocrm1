@@ -407,7 +407,7 @@ function inviteMail(job, link, es){
     due ? 'Bids are due <b>' + SP.esc(due) + '</b>.' : '', s(job.tradesSought) ? 'Trades: ' + SP.esc(job.tradesSought) : '',
     'Plans, scope and the bid form are on the GrayCo bid site. No account yet? The link makes one already linked to this job.'
   ];
-  return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? 'Invitación a licitar' : 'Invitation to bid', lines.filter(Boolean), { href: link, label: es ? 'Ver el trabajo y licitar' : 'See the job and bid' }) };
+  return { subject: subject.slice(0, 240), html: SP.mailHtml(es ? 'Invitación a licitar' : 'Invitation to bid', lines.filter(Boolean), { href: link, label: es ? 'Ver el trabajo y licitar' : 'See the job and bid' }, SP.appTip ? SP.appTip(es) : '') };   /* patch A2HS */
 }
 
 async function invite(who, b){

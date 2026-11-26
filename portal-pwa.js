@@ -11,7 +11,12 @@
    3. NUMBERS: what is new per section (server: portal.js action app) on the tabs, and the total on the app icon
       (navigator.setAppBadge). Opening a section clears its number (Home after a few seconds on screen).
    4. 🔔 Turn on notifications (Web Push) — offered inside the installed app (iPhone only asks from there).
-   Customers only: the sub portal (portal-app.js) and the GC page never see any of this. */
+   5. patch A2HS (owner 11/26: "make sure they know they can share to their home screen and then its like an app … and how to do it"):
+      a small line under the header on Home, "📲 Use it like an app — How?", that never goes away (also after "Not now"; gone only inside the
+      installed app), and in the 📲 menu: the steps for BOTH phones (iPhone: Safari → Share □↑ → Add to Home Screen → Add;
+      Android: Chrome ⋮ → Install app / Add to Home screen). The two-phone sheet is window.GCA2HS — plain help, no customer data —
+      and the sub portal (portal-app.js) uses the same sheet for its own card and 📲 button.
+   Customers only (1–5): the sub portal (portal-app.js) and the GC page never see any of this — except the GCA2HS sheet itself. */
 (function(){
 'use strict';
 if (window.GCPortalApp) return;
@@ -77,7 +82,14 @@ var CSS = ''
   + '.gca-menu{position:absolute;top:calc(62px + env(safe-area-inset-top,0px));left:12px;z-index:65;background:#fff;color:var(--ink,#14202E);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.28);min-width:250px;padding:6px;text-align:left}'
   + '.gca-menu button{display:flex;width:100%;min-height:46px;align-items:center;gap:10px;border:none;background:transparent;border-radius:10px;font:600 15px inherit;font-family:inherit;color:inherit;cursor:pointer;padding:0 12px;text-align:left}.gca-menu button:hover{background:#F6F3EC}'
   + '.gca-menu .ok{color:var(--green,#1D5E2C);font-size:14px;padding:10px 12px}.gca-mbtn{position:relative}.gca-mbtn .badge{position:absolute;top:-4px;right:-6px;margin:0}'
-  + '#tabs .badge.gca-b{background:#B42318}';
+  + '#tabs .badge.gca-b{background:#B42318}'
+  /* patch A2HS: the Home line + the two-phone sheet */
+  + '.gca-help{margin:12px 16px 0;padding:12px 14px;border:1px dashed var(--edge,#E2DCCD);border-radius:12px;background:#fff;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:15px;line-height:1.4}'
+  + '.gca-help button{min-height:40px;border:none;border-radius:10px;background:var(--navy,#0F1D2F);color:#fff;font:700 14px inherit;font-family:inherit;padding:0 14px;cursor:pointer}'
+  + '.gca-ph{margin:12px 0 0;border:1px solid var(--rule,#EFEAE0);border-radius:14px;padding:4px 12px 6px}.gca-ph.me{border:2px solid var(--gold,#D4A017)}'
+  + '.gca-ph h4{margin:8px 0 2px;font-size:16px;display:flex;gap:8px;align-items:center}.gca-ph h4 .me{font-size:12px;font-weight:700;background:var(--gold,#D4A017);color:var(--navy,#0F1D2F);border-radius:999px;padding:2px 8px}'
+  + '.gca-ph .gca-step{padding:9px 0;font-size:15px}.gca-ph .gca-n{width:26px;height:26px;font-size:14px}.gca-ph .gca-ico{width:38px;height:38px}'
+  + '.gca-dots{font-weight:900;font-size:22px;line-height:1;color:var(--ink,#14202E)}';
 function css(){ if ($('gca-css')) return; var st = document.createElement('style'); st.id = 'gca-css'; st.textContent = CSS; document.head.appendChild(st); }
 var SHARE_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 10H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2"/><path d="M12 15V2"/><path d="M8 6l4-4 4 4"/></svg>';
 var ADD_SVG = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
@@ -164,6 +176,71 @@ function howTo(){
 }
 function closeHowTo(){ var o = $('gca-howto'); if (o) o.remove(); }
 
+/* ── 5. patch A2HS: the two-phone how-to (window.GCA2HS — the customer portal here, the sub portal in portal-app.js) ── */
+var ANDROID = /android/i.test(ua);
+function phoneSteps(kind, opts){
+  var sp = !!opts.es, t2 = function(en, es){ return sp ? es : en; };
+  var me = kind === 'ios' ? IOS : ANDROID, step = function(n, ico, html){ return h('div', { class: 'gca-step' }, [h('span', { class: 'gca-n', text: String(n) }), ico ? h('span', { class: 'gca-ico', html: ico }) : null, h('span', { html: html })]); };
+  var kids = kind === 'ios' ? [
+    h('h4', {}, ['🍎 iPhone / iPad', me ? h('span', { class: 'me', text: t2('Your phone', 'Su teléfono') }) : null]),
+    step(1, null, t2('Open this page in <b>Safari</b>.', 'Abra esta página en <b>Safari</b>.')),
+    step(2, SHARE_SVG, t2('Tap <b>Share</b> □↑ (' + (IPAD ? 'at the top' : 'at the bottom') + ' of Safari).', 'Toque <b>Compartir</b> □↑ (' + (IPAD ? 'arriba' : 'abajo') + ' en Safari).')),
+    step(3, ADD_SVG, t2('Scroll down and tap <span class="gca-pill">Add to Home Screen</span>', 'Baje y toque <span class="gca-pill">Agregar a inicio</span>')),
+    step(4, '<b style="font-size:14px">' + t2('Add', 'Agregar') + '</b>', t2('Tap <b>Add</b> (top right). Done!', 'Toque <b>Agregar</b> (arriba a la derecha). ¡Listo!'))
+  ] : [
+    h('h4', {}, ['🤖 Android', me ? h('span', { class: 'me', text: t2('Your phone', 'Su teléfono') }) : null]),
+    step(1, null, t2('Open this page in <b>Chrome</b>.', 'Abra esta página en <b>Chrome</b>.')),
+    step(2, '<span class="gca-dots">⋮</span>', t2('Tap the <b>⋮</b> menu (top right).', 'Toque el menú <b>⋮</b> (arriba a la derecha).')),
+    step(3, ADD_SVG, t2('Tap <span class="gca-pill">Install app</span> (or <b>Add to Home screen</b>).', 'Toque <span class="gca-pill">Instalar app</span> (o <b>Agregar a la pantalla principal</b>).')),
+    step(4, '<b style="font-size:13px">' + t2('Install', 'Instalar') + '</b>', t2('Tap <b>Install</b>. Done!', 'Toque <b>Instalar</b>. ¡Listo!'))
+  ];
+  return h('div', { class: 'gca-ph' + (me ? ' me' : ''), id: 'gca-two-' + kind }, kids);
+}
+function closeTwo(){ var o = $('gca-two'); if (o) o.remove(); }
+/* opts: { name: 'GrayCo Portal', es: true|false, install: function (optional — else the browser's own prompt when it has one), note: '' } */
+function twoPhones(opts){
+  opts = opts || {}; css(); closeTwo(); closeHowTo();
+  var sp = !!opts.es, t2 = function(en, es){ return sp ? es : en; }, name = opts.name || 'GrayCo Portal';
+  var ev = installEvt();
+  var go = (opts.install || ev) && !standalone() ? h('button', { type: 'button', class: 'gca-go', id: 'gca-two-install', text: '📲 ' + t2('Install now', 'Instalar ahora'), on: { click: function(){
+    closeTwo();
+    if (opts.install) return opts.install();
+    var e = installEvt(); if (!e) return; bip = null; window.__gcBip = null; try { e.prompt(); } catch (x) {}
+  } } }) : null;
+  var ios = phoneSteps('ios', opts), and = phoneSteps('android', opts);
+  var kids = [
+    h('h3', { text: '📲 ' + t2('Use ' + name + ' like an app', 'Use ' + name + ' como una app') }),
+    h('p', { class: 'sub', text: t2('Add it to your phone\u2019s home screen — then it opens with one tap, like an app. Nothing to download from a store.', 'Agréguelo a la pantalla de inicio de su teléfono — y abre con un toque, como una app. No hay que bajar nada de una tienda.') }),
+    go,
+    IOS_OTHER ? h('p', { class: 'gca-note', id: 'gca-two-safari', text: t2('You are in another app\u2019s browser: tap its ⋯ menu → Open in Safari first.', 'Está en el navegador de otra app: toque su menú ⋯ → Abrir en Safari primero.') }) : null
+  ].concat(ANDROID ? [and, ios] : [ios, and]).concat([
+    opts.note ? h('p', { class: 'gca-note', text: opts.note }) : null,
+    h('button', { type: 'button', class: 'btn', id: 'gca-two-ok', style: 'width:100%;margin-top:14px', text: t2('Got it', 'Entendido'), on: { click: closeTwo } })
+  ]);
+  var ov = h('div', { class: 'gca-ov' + (IPAD ? ' gca-ipad' : ''), id: 'gca-two', role: 'dialog', 'aria-label': t2('How to add ' + name + ' to your home screen', 'Cómo agregar ' + name + ' a la pantalla de inicio'), on: { click: function(e2){ if (e2.target === ov) closeTwo(); } } },
+    [h('div', { class: 'gca-sheet' }, kids)]);
+  document.body.appendChild(ov);
+  return ov;
+}
+window.GCA2HS = { show: twoPhones, close: closeTwo, css: css, standalone: standalone, ios: IOS, android: ANDROID, iosOther: IOS_OTHER, installEvt: installEvt, phone: function(){ return IOS || ANDROID || !!installEvt(); } };
+
+/* the customer's Home: the line that never goes away (only inside the installed app) */
+function custTwo(){ return twoPhones({ name: 'GrayCo Portal', es: es(), install: installEvt() && !standalone() ? install : null,
+  note: T('🔔 Then open GrayCo from your home screen — it opens signed in.', '🔔 Luego abra GrayCo desde su pantalla de inicio — abre con su sesión.') }); }
+function paintHelp(){
+  var cur = $('gca-help'), m = main();
+  var want = customer() && !preview() && !standalone() && m && m.tab === 'home';
+  if (!want) { if (cur) cur.remove(); return; }
+  if (cur) { if (cur.getAttribute('data-lang') === (es() ? 'es' : 'en')) return; cur.remove(); }
+  var mainEl = $('main'); if (!mainEl || !mainEl.parentNode) return;
+  css();
+  var line = h('div', { class: 'gca-help', id: 'gca-help', 'data-lang': es() ? 'es' : 'en' }, [
+    h('span', { html: T('📲 <b>Use it like an app</b> — add GrayCo Portal to your phone\u2019s home screen.', '📲 <b>Úselo como una app</b> — agregue el Portal GrayCo a la pantalla de inicio de su teléfono.') }),
+    h('button', { type: 'button', id: 'gca-help-how', text: T('How?', '¿Cómo?'), on: { click: custTwo } })
+  ]);
+  mainEl.parentNode.insertBefore(line, mainEl);   /* a small line under the header, above Home (Home redraws never touch it) */
+}
+
 /* ── 2. the 📲 menu in the header ── */
 function menuBtn(){
   var b = $('gca-mbtn'); if (b) return b;
@@ -180,6 +257,7 @@ function toggleMenu(){
   if (standalone()) items.push(h('div', { class: 'ok', text: T('✓ You are using the GrayCo app', '✓ Está usando la app de GrayCo') }));
   else if (canInstall()) items.push(h('button', { type: 'button', id: 'gca-m-add', text: '📲 ' + T('Add to Home Screen', 'Agregar a la pantalla de inicio'), on: { click: function(){ closeMenu(); install(); } } }));
   else if (ls('gc_pwa_installed')) items.push(h('div', { class: 'ok', text: T('✓ The GrayCo app is on this device', '✓ La app de GrayCo está en este equipo') }));
+  if (!standalone()) items.push(h('button', { type: 'button', id: 'gca-m-how', text: '📲 ' + T('How to use it like an app (iPhone & Android)', 'Cómo usarlo como una app (iPhone y Android)'), on: { click: function(){ closeMenu(); custTwo(); } } }));   /* patch A2HS */
   if (pushPossible()) items.push(PUSH.on ? h('button', { type: 'button', id: 'gca-m-push', text: '🔕 ' + T('Turn off notifications', 'Apagar avisos'), on: { click: function(){ closeMenu(); pushOff(); } } })
     : h('button', { type: 'button', id: 'gca-m-push', text: '🔔 ' + T('Turn on notifications', 'Activar avisos'), on: { click: function(){ closeMenu(); pushOn(); } } }));
   var m = main();
@@ -291,9 +369,9 @@ if (pushSupported()) { try { navigator.serviceWorker.getRegistration('/').then(f
 var wasCustomer = false;
 function tick(){
   var c = customer();
-  if (c && !wasCustomer) { wasCustomer = true; var old = $('gcp-install'); if (old) old.remove(); paintMenu(); load(); deepLink(); setTimeout(showCard, 2500); }
-  else if (!c && wasCustomer) { wasCustomer = false; U = null; hideCard(); paintMenu(); }
-  else if (c) { var k = (main() || {}).pid + '|' + (main() || {}).tab; if (k !== lastKey) { var pidChanged = lastKey && lastKey.split('|')[0] !== k.split('|')[0]; lastKey = k; if (pidChanged) load(); else onTab(); } paintBadges(); if (!$('gca-mbtn')) paintMenu(); if (installEvt() && !$('gca-card')) showCard(); }
+  if (c && !wasCustomer) { wasCustomer = true; var old = $('gcp-install'); if (old) old.remove(); paintMenu(); paintHelp(); load(); deepLink(); setTimeout(showCard, 2500); }
+  else if (!c && wasCustomer) { wasCustomer = false; U = null; hideCard(); paintMenu(); paintHelp(); }
+  else if (c) { var k = (main() || {}).pid + '|' + (main() || {}).tab; if (k !== lastKey) { var pidChanged = lastKey && lastKey.split('|')[0] !== k.split('|')[0]; lastKey = k; if (pidChanged) load(); else onTab(); } paintBadges(); paintHelp(); if (!$('gca-mbtn')) paintMenu(); if (installEvt() && !$('gca-card')) showCard(); }
 }
 function watch(){
   var t = $('tabs');
@@ -308,7 +386,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 window.GCPortalApp = {
   /* the GCP block's old bar asks: true = a customer (this file's card), false = sub / GC, null = not known yet */
   owns: function(){ if (window.GCPartner || window.__GCG_WANT__) return false; return customer() ? true : null; },
-  install: install, howTo: howTo, prepare: prepare, pushOn: pushOn, pushOff: pushOff, reload: load,
+  install: install, howTo: howTo, twoPhones: custTwo, prepare: prepare, pushOn: pushOn, pushOff: pushOff, reload: load,
   state: function(){ return { unread: U, total: total(), push: PUSH, canInstall: canInstall(), standalone: standalone(), ios: IOS, iosOther: IOS_OTHER }; }
 };
 })();

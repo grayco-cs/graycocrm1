@@ -70,7 +70,7 @@ function inviteMail(job, link, es, supplier, hasAccount){
     supplier ? 'The material list and the plans are on the GrayCo bid site.' : (s(job.tradesSought) ? 'Trades: ' + H.esc(job.tradesSought) + '. ' : '') + 'Plans, scopes and specs are on the GrayCo bid site.',
     hasAccount ? 'Sign in with your e-mail and password.' : 'No account yet? The link makes one already linked to this job.'
   ];
-  return { subject: subject.slice(0, 240), html: H.mailHtml(es ? 'Invitación a ofertar' : 'Invitation to bid', lines.filter(Boolean), { href: link, label: hasAccount ? (es ? 'Entrar y ver el trabajo' : 'Sign in and see the job') : (es ? 'Crear mi cuenta y ver el trabajo' : 'Sign up and see the job') }) };
+  return { subject: subject.slice(0, 240), html: H.mailHtml(es ? 'Invitación a ofertar' : 'Invitation to bid', lines.filter(Boolean), { href: link, label: hasAccount ? (es ? 'Entrar y ver el trabajo' : 'Sign in and see the job') : (es ? 'Crear mi cuenta y ver el trabajo' : 'Sign up and see the job') }, H.appTip ? H.appTip(es) : '') };   /* patch A2HS */
 }
 function acceptedMail(job, quote, es){
   const H = SP(), t = title(job);

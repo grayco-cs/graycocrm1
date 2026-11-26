@@ -2227,6 +2227,7 @@ function dismissed(){ var t = Number(ls('gc_pwa_dismiss')) || 0; return t && Dat
 function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent || '') && !/crios|fxios|edgios/i.test(navigator.userAgent || ''); }
 function offer(){
   if (window.GCPortalApp) { var own = window.GCPortalApp.owns(); if (own === true) return; if (own === null) { setTimeout(offer, 1500); return; } }   /* patch PORTALAPP: customers get portal-pwa.js's card */
+  if (window.GCPartner && window.GCPartner.a2hs) return;   /* patch A2HS: subs get portal-app.js's card, 📲 button and steps */
   if (PREVIEW_ANY || standalone() || dismissed() || $('gcp-install')) return;
   if (!installEvt && !isIOS()) return;
   css();
