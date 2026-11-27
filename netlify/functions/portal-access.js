@@ -1286,7 +1286,7 @@ async function pScore(ctx){
 function punchIsSub(x, sub){ return s(x.subId) ? s(x.subId) === s(sub.id) : rowIsSub({ name: x.assignee || x.sub }, sub); }
 function schedFor(data, jobs, sub){
   const pids = new Set(jobs.map(function(p){ return s(p.id); })), nm = jobs.reduce(function(m, p){ m[s(p.id)] = s(p.name); return m; }, {});
-  return arr(data.schedule).filter(function(x){ return x.deleted !== true && x.private !== true && x.scope !== 'personal' && pids.has(s(x.pid)) && (s(x.subId) === s(sub.id) || rowIsSub({ name: x.vendor || x.sub || x.assignee }, sub)); })   /* patch VOICESCHED: never a deleted or 🔒 personal row */
+  return arr(data.schedule).filter(function(x){ return x.deleted !== true && x.private !== true && x.scope !== 'personal' && x.tentative !== true && x.scope !== 'tentative' && pids.has(s(x.pid))   /* patch CONTRACTREAD2: a tentative schedule (📋 Tentative tab, not posted yet) is not the schedule */ && (s(x.subId) === s(sub.id) || rowIsSub({ name: x.vendor || x.sub || x.assignee }, sub)); })   /* patch VOICESCHED: never a deleted or 🔒 personal row */
     .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(SS().clean(x.title), 160), pid: s(x.pid), job: nm[s(x.pid)] || '', fromSub: !!s(x.subEntryId) }; })   /* patch SUBSCHED: fromSub = a day the sub entered themselves */   /* patch SUBPORTAL3: SS().clean */   /* patch SUBTXT: + id */
     .filter(function(x){ return x.date; }).sort(function(a, b){ return (a.date + a.time).localeCompare(b.date + b.time); });
 }
