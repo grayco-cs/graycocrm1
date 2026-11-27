@@ -182,7 +182,7 @@ async function scheduleOf(pid){
   let rows = [];
   try { rows = arr((await core().kvRead(['schedule'])).schedule); } catch (e) {}
   rows = require('./schedvis.js').visible(rows);   /* patch SCHEDPICK: never a template suggestion or a hidden duplicate bookend */
-  return rows.filter(function(x){ return x && pidOf(x) === s(pid) && x.deleted !== true && x.internal !== true && x.private !== true && x.customerVisible !== false; })
+  return rows.filter(function(x){ return x && pidOf(x) === s(pid) && x.deleted !== true && x.internal !== true && x.private !== true && x.customerVisible !== false && x.tentative !== true && !/^(tentative|personal)$/i.test(s(x.scope)); })   /* patch PORTALSCHED: a tentative (not posted) row is not the schedule */
     .map(function(x){ return { title: clip(x.title || x.name || x.task, 90), date: ymd(x.date || x.start), end: ymd(x.endDate || x.end), insp: !!(x.insId || x.type === 'inspection') || undefined }; })
     .filter(function(x){ return x.title && x.date; }).sort(function(a, b){ return a.date < b.date ? -1 : 1; }).slice(0, 80);
 }
@@ -191,11 +191,13 @@ async function gcView(data, p, opts){
   const C = core();
   const v = await C.buildView(data, p);
   const st = await jobState(p.id);
+  let schedRows = data && Array.isArray(data.schedule) ? data.schedule : null;   /* patch PORTALSCHED: the plan steps are checked against the real schedule */
+  if (!schedRows) { try { schedRows = arr((await C.kvRead(['schedule'])).schedule); } catch (e) { schedRows = []; } }
   const docs = docsForGc(await companyDocs());   /* patch COMPANYDOCS: only the ones marked "share with GCs" */
   const out = {
     ok: true, kind: 'gc', office: { phone: OFFICE_PHONE },
     company: gcCompany(data, p),
-    job: { name: v.job.name, po: v.job.po, address: v.job.address, stage: v.job.stage, stageName: v.job.stageName, steps: v.job.steps },
+    job: { name: v.job.name, po: v.job.po, address: v.job.address, stage: v.job.stage, stageName: v.job.stageName, steps: (C.portalSteps ? C.portalSteps(p, schedRows) : v.job.steps) },   /* patch PORTALSCHED: the plan steps only — the GC portal lists the schedule rows itself (schedule) */
     pm: v.pm,
     schedule: (await scheduleOf(p.id)).filter(function(x){ return p.portalInspections !== false || !x.insp; }).map(function(x){ return { title: x.title, date: x.date, end: x.end }; }),   /* patch INSPECT2: the job's switch hides its inspection items too */
     updates: arr(v.posts).map(function(x){ return { at: x.at, by: x.by, text: x.text, photos: x.photos }; }),
