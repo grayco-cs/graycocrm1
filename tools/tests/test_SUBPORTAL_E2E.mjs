@@ -257,7 +257,16 @@ async function run(kind, job){
   ok(tag + 'signed in as the sub (link session) → Home lists the job', !!home, S.calls.join(' ') + ' | ' + S.errs.join(' | '));
   if (!home) { await S.b.close(); return S; }
   await sleep(500);
-  await shot(p, N() + '_home', 'Home: Today, Needs you, Money, This week, My calendar, Your jobs, PM contact');
+  await shot(p, N() + '_home', 'Home: ✍ To sign → Today (punch items / new messages folded in) → 🏠 My jobs (one short row each, Open ›) → the PM');
+  /* patch SUBHOME2 (owner 11/27: "make the simpler home and combine the tabs") */
+  const hl = await p.evaluate(() => { const at = s => { const e = document.querySelector(s); return e ? [...document.querySelectorAll('#main > *')].indexOf(e.closest('#main > *')) : -1; };
+    const row = document.querySelector('[data-myjob]');
+    return { today: at('[data-today-card]'), myjobs: at('[data-myjobs]'), pm: at('#main > .card .pm'), tosign: at('[data-tosign]'), bids: !!document.querySelector('#bidsBtn, [data-bidbtncard], [data-bidlist]'),
+      rowPo: row ? row.querySelectorAll('[data-copy-po], .po').length : -1, rowBtns: row ? row.querySelectorAll('button').length : -1, rowText: row ? row.innerText : '', copyPo: document.querySelectorAll('#main [data-copy-po]').length,
+      oldCard: !!document.querySelector('.myjob, [data-myjob-docs], [data-myjob-scopes]'), needsInToday: !!document.querySelector('[data-today-card] [data-need]') || !document.querySelector('[data-need]'), oldNeeds: !!document.querySelector('section.needs'),
+      a2: (() => { const l = document.getElementById('gcs-a2-line'); return !l || l === document.querySelector('#main').lastElementChild; })() }; });
+  ok(tag + 'Home: To sign → Today → My jobs → PM, no bid list, no separate "Needs you" card, the 📲 line (if any) last', (hl.tosign < 0 || hl.tosign < hl.today) && hl.today >= 0 && hl.today < hl.myjobs && hl.myjobs < hl.pm && !hl.bids && !hl.oldNeeds && hl.needsInToday && hl.a2, hl);
+  ok(tag + 'Home: My jobs is one short row per job (name, address, badge, one Open ›) — no PO / Copy PO there, PO + Copy PO only once on Home', hl.rowPo === 0 && hl.rowBtns === 1 && hl.rowText.indexOf(job.name) >= 0 && !hl.oldCard && hl.copyPo <= 1, hl);
   p.__full = true; await shot(p, N() + '_home_full', 'Home (whole page)'); p.__full = false;
   let t0 = await text(p);
   ok(tag + 'Home: only the sub\'s own job (never the other sub\'s job)', t0.indexOf(job.name) >= 0 && t0.indexOf(JOB2.name) < 0);
@@ -266,8 +275,12 @@ async function run(kind, job){
   await p.click('#tabs button[data-tab="home"]'); await sleep(300);
   await shot(p, N() + '_jobs', 'Jobs tab: the sub\'s jobs');
   await p.click('[data-myjob-open="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(600);
-  await shot(p, N() + '_job_overview', 'Job: overview — address + Maps, PO, dates, PM, customer, schedule, site notes' + (kind === 'desktop' ? ' (left) + Scope (right)' : ''));
-  p.__full = true; await shot(p, N() + '_job_overview_full', 'Job overview (whole page)'); p.__full = false;
+  await shot(p, N() + '_job_overview', 'Job: the head (address + Maps, PO + Copy PO, dates · % done, PM) + Scope · Photos · Invoices · Messages' + (kind === 'desktop' ? ' (left: the head + everything on the job; right: the tabs)' : ''));
+  p.__full = true; await shot(p, N() + '_job_overview_full', 'Job: the Scope tab (whole page) — scope, change orders, plans, then everything on the job'); p.__full = false;
+  const jt = await p.$$eval('[data-jtab]', a => a.map(x => x.getAttribute('data-jtab')));
+  ok(tag + 'a job has 4 tabs: Scope · Photos · Invoices · Messages (it opens on Scope)', jt.join() === 'scope,photos,invoices,messages' && (await p.getAttribute('[data-jtab="scope"]', 'aria-selected')) === 'true', jt);
+  const head = await p.$eval('[data-jobhead]', x => x.innerText).catch(() => '');
+  ok(tag + 'the job page holds what the Home card had: address, PO + Copy PO, dates, % done, the PM', head.indexOf(job.address.split(',')[0]) >= 0 && /PO/.test(head) && /% done/.test(head) && /Sample PM/.test(head) && (!(job.autoPO || job.po) || !!(await p.$('[data-jobhead] [data-copy-po]'))), head);
   const t1 = await text(p);
   const maps = await p.$eval('a[href*="google.com/maps"]', a => a.href).catch(() => '');
   ok(tag + '1. name, full address, Maps / directions link', t1.indexOf(job.name) >= 0 && t1.indexOf(job.address.split(',')[0]) >= 0 && /maps\/search\/\?api=1&query=/.test(maps), maps);
@@ -300,8 +313,10 @@ async function run(kind, job){
   await closeSheet(p);
   const signB = await p.$('[data-accept]');
   if (signB) { await signB.click(); await sleep(500); await shot(p, N() + '_scope_sign', 'Review & sign the sub agreement (E-SIGN consent, typed name, drawn signature)'); await closeSheet(p); }
-  await clickTab(p, 'cos');
-  await shot(p, N() + '_change_orders', 'Change orders (none on the sample job)');
+  const cosIn = await p.evaluate(() => { const c = document.getElementById('jobCos'); return !!c && c.offsetParent !== null && !document.querySelector('[data-jtab="cos"]'); });
+  ok(tag + 'change orders are a section under the scope on the Scope tab (no tab of their own)', cosIn);
+  await p.$eval('#jobCos', e => e.scrollIntoView()); await sleep(300);
+  await shot(p, N() + '_change_orders', 'Change orders — a section under the scope (none on the sample job)');
   /* photos */
   await clickTab(p, 'photos');
   await p.waitForFunction(() => !document.querySelector('#phLoad') || /No photos/.test(document.querySelector('#phLoad').textContent), null, { timeout: 20000 }).catch(() => {});
@@ -336,16 +351,18 @@ async function run(kind, job){
   ok(tag + '6. …with a small thumbnail of its own (the grid never downloads the full photo)', mine.length === 2 && mine.every(r => r.thumbRef && r.thumbRef !== r.ref), JSON.stringify(mine.map(r => [r.ref, r.thumbRef])));
   await shot(p, N() + '_photos_after_upload', 'Photos after the upload (their own photos show too)');
   /* progress / mark done */
-  await clickTab(p, 'progress');
-  await shot(p, N() + '_progress', 'Progress: % done + what got done today (+ photos)');
+  await clickTab(p, 'photos'); await p.click('[data-jump="jobProgress"]'); await sleep(300);
+  ok(tag + 'progress is a section of the Photos tab (no tab of its own)', !!(await p.$('#jobProgress #pgSend')) && !(await p.$('[data-jtab="progress"]')));
+  await shot(p, N() + '_progress', 'Photos tab → 📈 Progress: % done + what got done today (+ photos)');
   await p.evaluate(() => { const r = document.getElementById('pgPct'); r.value = '100'; r.dispatchEvent(new Event('input')); });
   await p.fill('#pgNote', 'Drywall done — ready for paint');
   await p.click('#pgSend'); await sleep(1500);
   ok(tag + '6. mark the work done (progress 100%)', DB.T.gc_sub_event.some(e => e.kind === 'progress' && e.data.pct === 100 && e.project_id === pid));
   await shot(p, N() + '_progress_done', 'Progress posted: 100% done');
   /* punch */
-  await clickTab(p, 'punch');
-  await shot(p, N() + '_punch', 'Punch list: the sub\'s items, Mark done with a photo');
+  await clickTab(p, 'photos'); await p.click('[data-jump="jobPunch"]'); await sleep(300);
+  ok(tag + 'the punch list is a section of the Photos tab (no tab of its own)', !!(await p.$('#jobPunch [data-punch="PU1"]')) && !(await p.$('[data-jtab="punch"]')));
+  await shot(p, N() + '_punch', 'Photos tab → 🔨 Punch list: the sub\'s items, Mark done with a photo');
   const pt = await text(p);
   ok(tag + '6. the sub\'s punch items (2), never another sub\'s', /nail pops/.test(pt) && /corner bead/.test(pt) && !/OTHER-SUB/.test(pt));
   const [fc2] = await Promise.all([p.waitForEvent('filechooser', { timeout: 5000 }), p.click('[data-punch="PU1"]')]);
@@ -356,7 +373,8 @@ async function run(kind, job){
   await shot(p, N() + '_punch_done', 'Punch item marked done (with its photo)');
   /* invoices */
   await clickTab(p, 'invoices');
-  await shot(p, N() + '_invoices', 'Invoices on this job (the submitted one) + Send an invoice');
+  await shot(p, N() + '_invoices', 'Invoices on this job (the submitted one) + 💵 Invoice this job · Send an invoice · Make an invoice');
+  ok(tag + 'Invoices tab: 💵 Invoice this job (it was on the Home card), Send an invoice, Make an invoice', !!(await p.$('#jobQuickInv')) && !!(await p.$('#jobNewInv')) && !!(await p.$('#jobMakeInv')));
   await p.click('#jobNewInv'); await sleep(400);
   await p.fill('#invAmt', '3200'); await p.fill('#invNum', 'SD-1002');
   await shot(p, N() + '_invoice_new', 'Send an invoice: job, for (scope), amount, invoice #, PO (filled in), note, file');
@@ -387,6 +405,24 @@ async function run(kind, job){
   await p.fill('#msgText', 'Running 15 minutes late tomorrow.'); await p.click('#msgSend'); await sleep(800);
   ok(tag + '5. message GrayCo (the PM\'s thread), never another sub\'s messages', DB.T.gc_portal_msg.some(m => m.party === 's:' + SUB.id && /15 minutes late/.test(m.text)) && !/OTHER-SUB/.test(await text(p)));
   await shot(p, N() + '_messages_sent', 'Message sent');
+  /* patch SUBHOME2: links with the old tab names land on the tab that holds them now, scrolled to the section */
+  const links = [['&tab=punch', 'photos', 'jobPunch'], ['&tab=progress', 'photos', 'jobProgress'], ['&tab=cos', 'scope', 'jobCos'], ['&co=SC1', 'scope', ''], ['&tab=messages', 'messages', 'msgList'], ['&tab=overview', 'scope', ''], ['', 'scope', '']];
+  const lres = [];
+  for (const [hs, tab, sec] of links) {
+    await p.evaluate(h => { location.hash = h; }, '#job=' + pid + hs); await p.reload(); await p.waitForSelector('#jobBack', { timeout: 20000 }).catch(() => {}); await sleep(1800);
+    lres.push(Object.assign({ hs }, await p.evaluate(([tab, sec]) => { const e = sec && document.getElementById(sec), b = e && e.getBoundingClientRect(), on = document.querySelector('[data-jtab][aria-selected="true"]');
+      return { ok: !!on && on.getAttribute('data-jtab') === tab && (!sec || (!!b && b.top < innerHeight - 40 && b.bottom > 0)), tab: on && on.getAttribute('data-jtab'), top: b && Math.round(b.top) }; }, [tab, sec])));
+  }
+  ok(tag + 'links: #job=…&tab=punch / progress → Photos at that section, &tab=cos / &co= → Scope (change orders), &tab=messages → Messages, overview / none → Scope', lres.every(x => x.ok), JSON.stringify(lres));
+  await p.evaluate(() => { location.hash = ''; }); await p.reload(); await p.waitForSelector('[data-myjob-open="' + pid + '"]', { timeout: 20000 }); await sleep(500);
+  /* Spanish */
+  await p.evaluate(() => window.GCPartner.setLang('es', false)); await sleep(400);
+  const esHome = await text(p);
+  await p.click('[data-myjob-open="' + pid + '"]'); await p.waitForSelector('#jobBack', { timeout: 15000 }); await sleep(500);
+  const esTabs = await p.$$eval('[data-jtab]', a => a.map(x => x.textContent));
+  ok(tag + 'Spanish: Home (🏠 Mis trabajos, Abrir ›) and the 4 tabs Alcance · Fotos · Facturas · Mensajes', /Mis trabajos/.test(esHome) && /Abrir ›/.test(esHome) && esTabs.length === 4 && /^Alcance/.test(esTabs[0]) && /^Fotos/.test(esTabs[1]) && /^Facturas/.test(esTabs[2]) && /^Mensajes/.test(esTabs[3]), esTabs);
+  await clickTab(p, 'photos'); await shot(p, N() + '_photos_es', 'Photos tab in Spanish (Fotos · Avance · Lista final)');
+  await p.evaluate(() => window.GCPartner.setLang('en', false)); await sleep(300);
   /* home cards: calendar, late */
   await p.click('#jobBack'); await sleep(300); await p.click('#tabs button[data-tab="home"]'); await sleep(400);
   const lb = await p.$('.late-btn'); if (lb) { await lb.click(); await sleep(300); await lb.scrollIntoViewIfNeeded(); await shot(p, N() + '_late', 'Can\'t make it / running late → straight to the PM'); }

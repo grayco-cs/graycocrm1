@@ -79,7 +79,8 @@ T.sp_rows.push(spRow('subdocs', 'u_b1', docsOf([{ id: 'd4', type: 'w9' }, { id: 
 /* patch SUBSIMPLE: a bid needs a real PDF — each sub's stored bid PDF (an 'upload' event, as p-upload / p-upload-done make) */
 ['SA', 'SB', 'SE'].forEach(k => T.gc_sub_event.push({ id: 'EuplPdf' + k, kind: 'upload', sub_id: k, project_id: null, data: { ref: 'sb:crm-files/' + k.toLowerCase().repeat(32).slice(0, 64).replace(/[^0-9a-f]/g, 'c') + '.pdf', name: 'Bid ' + k + '.pdf', type: 'application/pdf', size: 1500 }, created_at: now }));
 /* patch SUBSIMPLE: the bid list is behind "🔨 Jobs open for bids (N)" on Home — tap it */
-async function openBids(p){ await p.waitForSelector('#bidsBtn', { timeout: 30000 }); if ((await p.getAttribute('#bidsBtn', 'aria-expanded')) !== 'true') await p.click('#bidsBtn'); }
+/* patch SUBHOME2: the bid list lives in the Bids tab (Home has no 🔨 button any more) */
+async function openBids(p){ await p.waitForFunction(() => !!(window.GCPartner && window.GCPartner._state && window.GCPartner._state().home), null, { timeout: 30000 }); await p.click('#tabs button[data-tab="bids"]'); await p.waitForSelector('#main .card.bids', { timeout: 15000 }).catch(() => {}); }
 const SESS = {};
 ['A', 'B', 'C', 'D', 'E'].forEach((k, i) => { const tok = String.fromCharCode(65 + i).repeat(43), link = String.fromCharCode(97 + i).repeat(43); SESS[k] = tok;
   T.gc_portal_session.push({ id: sha(tok), kind: 'partner', sub_id: SUBS[k].id, links: [link], expires_at: new Date(Date.now() + 864e5).toISOString(), last_seen_at: now });

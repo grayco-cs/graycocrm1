@@ -118,7 +118,7 @@ function codesCard(pid){
   box.appendChild(b);
   return card(t('codes'), [box]);
 }
-var LANG = 'en', session = '', H = null, HOME = null, JOB = null, TAB = 'home', JTAB = 'overview', root = null;
+var LANG = 'en', session = '', H = null, HOME = null, JOB = null, TAB = 'home', JTAB = 'scope', root = null;
 function t(k, v){ var s = (L[LANG] && L[LANG][k]) || L.en[k] || k; if (v) Object.keys(v).forEach(function(x){ s = s.replace('{' + x + '}', v[x]); }); return s; }
 
 /* ── tiny DOM helpers ── */
@@ -178,11 +178,10 @@ function copyPo(po){
 function poRow(po){ return po ? h('span', { class: 'po-row' }, [h('b', { class: 'po', 'data-po': po, text: t('po') + ' ' + po }), ' ', h('button', { type: 'button', class: 'btn sm', 'data-copy-po': po, text: '📋 ' + t('copyPo'), on: { click: function(){ copyPo(po); } } })]) : null; }
 function checkin(pid, op, btn){ busy(btn, true); api('p-checkin', { projectId: pid, op: op }).then(function(){ busy(btn, false); btn.textContent = '✓ ' + t(op === 'done' ? 'doneSent' : 'hereSent'); btn.disabled = true; }, function(e){ busy(btn, false); toast(e.message, true); }); }
 function dayButtons(pid){
-  var hb = h('button', { type: 'button', class: 'btn', 'data-here': pid, text: t('here') }); hb.addEventListener('click', function(){ checkin(pid, 'here', hb); });
-  var db = h('button', { type: 'button', class: 'btn', 'data-doneday': pid, text: t('doneDay') }); db.addEventListener('click', function(){ checkin(pid, 'done', db); });
-  return h('div', { class: 'btns3 daybtns' }, [hb, h('button', { type: 'button', class: 'btn gold', 'data-addph': pid, text: t('addPhotos'), on: { click: function(){ addPhotos(pid); } } }), db]);
+  var p = dayPair(pid);
+  return h('div', { class: 'btns3 daybtns' }, [p[0], h('button', { type: 'button', class: 'btn gold', 'data-addph': pid, text: t('addPhotos'), on: { click: function(){ addPhotos(pid); } } }), p[1]]);
 }
-function todayCard(x){
+function todayCard(x, needs){
   var c = x.customer || {};
   return h('div', { class: 'post today-job', 'data-today': x.id }, [
     h('div', { class: 'row' }, [h('b', { text: x.name }), x.time ? h('span', { class: 'muted', text: x.time }) : null]),
@@ -191,7 +190,8 @@ function todayCard(x){
     poRow(x.po),
     h('div', { class: 'muted', text: t('todayHint') }),
     dayButtons(x.id),
-    h('button', { type: 'button', class: 'lnk', text: t('open') + ' ›', on: { click: function(){ openJob(x.id, 'overview'); } } })]);
+    needs && needs.length ? h('div', { class: 'ss-needs', 'data-today-needs': x.id }, needs) : null,   /* patch SUBHOME2: this job's punch items / new messages, one short line each */
+    h('button', { type: 'button', class: 'lnk', 'data-today-open': x.id, text: t('open') + ' ›', on: { click: function(){ openJob(x.id, 'scope'); } } })]);
 }
 function todayYmd(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function lateRow(x, line){
@@ -304,19 +304,19 @@ function sheet(title, kids){
 function field(label, input){ return h('label', { class: 'fld' }, [h('span', { text: label }), input]); }
 
 /* ── HOME ── */
-function needRow(n){
-  var label, go = null;
-  if (n.kind === 'scope') label = t('nScope') + ' — ' + n.job;
-  else if (n.kind === 'co') label = t('nCo') + ' — ' + n.job;
-  else if (n.kind === 'punch') label = t('nPunch') + ': ' + n.title + ' — ' + n.job;
-  else if (n.kind === 'message') label = t('nMsg') + ' (' + n.count + ') — ' + n.job;
+function needRow(n, short){   /* patch SUBHOME2: short = a line under today's job (no job name) */
+  var label, go = null, jn = short ? '' : ' — ' + n.job;
+  if (n.kind === 'scope') label = t('nScope') + jn;
+  else if (n.kind === 'co') label = t('nCo') + jn;
+  else if (n.kind === 'punch') label = (short ? '🔨 ' : '') + t('nPunch') + ': ' + n.title + jn;
+  else if (n.kind === 'message') label = (short ? '💬 ' : '') + t('nMsg') + ' (' + n.count + ')' + jn;
   else if (n.kind === 'coi-expired') label = t('nCoiExp');
   else if (n.kind === 'coi-expiring') label = t('nCoiSoon', { d: n.days });
   else if (n.kind === 'w9') label = t('nW9');
   else if (n.kind === 'paper-rejected') label = (n.paper === 'w9' ? t('w9') : t('coi')) + ' — ' + t('rejectedP', { r: n.reason });   /* patch SUBDOCDENY */
   if (n.pid) go = function(){ openJob(n.pid, n.kind === 'scope' ? 'scope' : n.kind === 'co' ? 'cos' : n.kind === 'punch' ? 'punch' : n.kind === 'message' ? 'messages' : 'overview'); };
   else go = function(){ goTab('papers'); };
-  return h('button', { type: 'button', class: 'need', on: { click: go } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }), h('span', { text: label }), h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })]);
+  return h('button', { type: 'button', class: 'need' + (short ? ' sm' : ''), 'data-need': n.kind + (n.pid ? '|' + n.pid : ''), on: { click: go } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }), h('span', { text: label }), h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })]);
 }
 function jobRow(j){
   var tags = [];
@@ -642,20 +642,28 @@ function contactCard(title, name, phone, email){
     h('div', { class: 'btns3' }, [h('a', { class: 'btn gold', href: telOf(phone), text: '📞 ' + t('call') }), h('a', { class: 'btn', href: smsOf(phone), text: '💬 ' + t('text') }), email ? h('a', { class: 'btn', href: 'mailto:' + email, text: '✉️ ' + t('email') }) : null])]);
 }
 function home(){
-  /* patch SUBSIMPLE (owner 11/20): top to bottom — ✍ To sign · today · what needs them · MY JOBS (every one, all open, all the
-     info) · one button "🔨 Jobs open for bids (N)" (the list opens only when tapped) · finished jobs · their PM */
+  /* patch SUBHOME2 (owner 11/27: "make the simpler home and combine the tabs"): top to bottom — ✍ To sign · Today (what needs
+     them is folded in: one short line per punch item / new messages on today's job, the rest as a count on the job's row) ·
+     🏠 My jobs (one short row per job: name, address, a badge, one Open ›; everything else is on the job page) · their PM ·
+     the small 📲 line. The bid list lives in the Bids tab. */
   ssCss();
   var v = HOME, out = [];
   var ts = tsCard(); if (ts) out.push(ts);
-  if ((v.today || []).length) out.push(card(t('today'), v.today.map(todayCard), 'today'));   /* patch SUBPHOTOS */
+  var today = v.today || [], tIds = today.map(function(x){ return x.id; }), jIds = (v.jobs || []).map(function(j){ return j.id; });
   var needs = (v.needs || []).filter(function(n){ return !(v.toSign && (n.kind === 'scope' || n.kind === 'co')); });
+  var jobNeed = function(n){ return !!n.pid && (n.kind === 'punch' || n.kind === 'message'); };
+  /* a punch item / new messages on today's job → a line under that job; on another job → the count on its My jobs row;
+     the rest (papers, a receipt without a PO, a job not in the list) → its own line in Today */
+  var loose = needs.filter(function(n){ return !(jobNeed(n) && (tIds.indexOf(n.pid) >= 0 || jIds.indexOf(n.pid) >= 0)); });
   var pgN = pgNeedRows();   /* patch POGUARD: 🧾 Add the PO for your receipt */
-  if (needs.length || pgN.length) out.push(card(t('needs'), pgN.concat(needs.map(needRow)), 'needs'));
+  if (today.length || loose.length || pgN.length) out.push(h('section', { class: 'card today', 'data-today-card': '1' }, [h('h2', { text: t('today') })]
+    .concat(today.map(function(x){ return todayCard(x, needs.filter(function(n){ return jobNeed(n) && n.pid === x.id; }).map(function(n){ return needRow(n, true); })); }))
+    .concat(today.length ? [] : [h('div', { class: 'muted', text: t('noToday') })])
+    .concat(loose.length || pgN.length ? [h('div', { class: 'ss-needs', 'data-needs': '1' }, pgN.concat(loose.map(function(n){ return needRow(n); })))] : [])));
   var G = jobGroups(v.jobs || []), cur = G.now.concat(G.next);
   out.push(h('section', { class: 'card myjobs', 'data-myjobs': '1' }, [h('h2', { text: t('ssMyJobs') + (cur.length ? ' (' + cur.length + ')' : '') })]
-    .concat(cur.length ? cur.map(myJobCard) : [h('div', { class: 'empty', text: t('noJobs') })])));
-  var bb = bidButtonCard(v.bids); if (bb) out.push(bb);
-  if (G.done.length) out.push(card(t('jobsDone'), G.done.map(jobRow), 'jobs-done'));
+    .concat(cur.length ? cur.map(myJobRow) : [h('div', { class: 'empty', text: t('noJobs') })])
+    .concat(G.done.length ? [h('div', { class: 'ss-doneh', 'data-jobs-done': String(G.done.length), text: t('jobsDone') + ' (' + G.done.length + ')' })].concat(G.done.map(myJobRow)) : [])));
   var pm = cur[0] ? cur[0].pm : (v.jobs || [])[0] && v.jobs[0].pm;
   out.push(contactCard(pm && pm.name && pm.name !== 'GrayCo office' ? t('pm') : t('office'), pm ? pm.name : t('office'), pm ? pm.phone : OFFICE, pm ? pm.email : 'office@grayco-cs.com'));
   return out;
@@ -963,35 +971,43 @@ function ssCss(){
     '.myjob .kv{display:grid;grid-template-columns:96px 1fr;gap:4px 8px;font-size:14px;margin:0}.myjob .kv dt{color:var(--mute,#55626F)}.myjob .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}' +
     '.myjob .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.myjob .acts .btn{font-size:14px;padding:0 6px}.ss-scope{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:14px}' +
     '.tosign{border:2px solid var(--gold,#D4A017)}.tosign .need{font-weight:700}.tosign .chev{font-size:14px;white-space:nowrap;color:var(--goldDk,#8A5A00)}.ss-bidbtn{min-height:60px;font-size:18px;width:100%}.ss-doc{display:flex;gap:6px;align-items:center;font-size:14px}.ss-doc a{overflow-wrap:anywhere}' +
-    '#tabs .in button{font-size:13px;padding:0 2px}';
+    '#tabs .in button{font-size:13px;padding:0 2px}' +
+    /* patch SUBHOME2: the short My jobs rows, the lines folded into Today, the job page's head and sections */
+    '.ssrow{display:flex;align-items:center;gap:10px;border-top:1px solid var(--rule,#ECE6D8);padding:10px 0;min-height:56px}.myjobs h2+.ssrow{border-top:0}' +
+    '.ssrow .grow{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}.ssrow .grow b{font-size:16px}.ssrow .grow .muted{font-size:13px;overflow-wrap:anywhere}' +
+    '.ssrow .tags{display:flex;gap:6px;flex-wrap:wrap}.ssrow .btn.sm{flex:0 0 auto;min-height:44px;padding:0 14px}' +
+    '.ss-doneh{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--rule,#ECE6D8);font-size:13px;font-weight:700;color:var(--mute,#55626F)}.ss-doneh+.ssrow{border-top:0}' +
+    '.ss-needs{display:flex;flex-direction:column}.need.sm{min-height:44px;font-size:14px;padding:6px 0}.today .ss-needs .need:first-of-type{border-top:1px solid var(--rule,#ECE6D8)}' +
+    '.ss-jhead{gap:8px}.ss-jhead .kv{display:grid;grid-template-columns:72px 1fr;gap:6px 8px;font-size:14px;margin:0;align-items:baseline}.ss-jhead .kv dt{color:var(--mute,#55626F)}.ss-jhead .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}' +
+    '.ss-sec{display:flex;flex-direction:column;gap:14px}.ss-sec>h2{margin:8px 2px 0;font-size:17px}' +
+    '#jobCos,#jobPunch,#jobProgress,#jobInfo,[data-sec-id]{scroll-margin-top:64px}.ss-day{display:grid;grid-template-columns:1fr 1fr;gap:8px}' +
+    '#gcs-a2-line{margin:10px 0 2px;padding:6px 2px;border:0;background:transparent;font-size:13px;color:var(--mute,#55626F);display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}#gcs-a2-line .btn.sm{min-height:32px;font-size:13px;padding:0 10px}';
   document.head.appendChild(st);
 }
 function tsCard(){
   var L2 = HOME.toSign || []; if (!L2.length) return null;
   return h('section', { class: 'card tosign', 'data-tosign': String(L2.length) }, [h('h2', { text: t('ssToSign') + ' (' + L2.length + ')' })].concat(L2.map(function(x){
-    return h('button', { type: 'button', class: 'need', 'data-tosign-item': x.id, on: { click: function(){ openJob(x.pid, x.kind === 'co' ? 'cos' : 'scope'); } } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }),
+    return h('button', { type: 'button', class: 'need', 'data-tosign-item': x.id, on: { click: function(){ openJob(x.pid, x.kind === 'co' ? 'cos' : 'scope', x.id); } } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }),
       h('span', { class: 'grow', text: (x.kind === 'co' ? t('ssSignCo') : t('ssSignScope')) + ': ' + x.title + ' — ' + x.job + (x.question ? ' (' + t('ssSignQ') + ')' : '') }), h('span', { class: 'chev', text: t('ssSignBtn') })]); })));
 }
-var SS_DOCS = {};
-function myJobCard(j){
-  var pm = j.pm || {}, kids = [];
-  kids.push(h('div', { class: 'row' }, [h('h3', { text: j.name }), pill(j.unread ? j.unread + ' ' + t(j.unread === 1 ? 'unread' : 'unreads') : statusWord(j.status), j.unread ? 'due' : 'ok')]));
-  var dts2 = [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ');
-  kids.push(h('dl', { class: 'kv' }, [
-    h('dt', { text: t('address') }), h('dd', null, [j.address || t('none'), j.maps ? h('span', null, [' · ', h('a', { href: j.maps, target: '_blank', rel: 'noopener', text: '📍 ' + t('maps') })]) : null]),
-    h('dt', { text: t('ssPmL') }), h('dd', null, [pm.name || t('office'), ' ', h('a', { href: telOf(pm.phone || OFFICE), 'data-pmcall': j.id, text: '📞 ' + (pm.phone || OFFICE) })]),
-    h('dt', { text: t('dates') }), h('dd', { text: dts2 || t('ssNoDates') }),
-    h('dt', { text: t('po') }), h('dd', null, [j.po ? poRow(j.po) : t('none')]),
-    h('dt', { text: t('progress') }), h('dd', { text: (j.pct || 0) + '% ' + t('done') })]));
-  var sc = j.scopes || [];
-  if (sc.length) kids.push(h('div', { 'data-myjob-scopes': j.id }, [h('b', { text: t('ssScopeL') })].concat(sc.map(function(x){
-    return h('div', { class: 'ss-scope' }, [h('a', { href: '#', text: (x.kind === 'co' ? '➕ ' : '🧾 ') + x.title + (x.total ? ' · ' + usd(x.total) : ''), on: { click: function(e){ e.preventDefault(); openJob(j.id, x.kind === 'co' ? 'cos' : 'scope'); } } }), pill(x.status === 'accepted' ? t('ssSigned') : t('ssNotSigned'), x.status === 'accepted' ? 'ok' : 'now')]); }))));
-  var docs = h('div', { 'data-myjob-docs': j.id }, [h('b', { text: t('ssDocsL') }), h('div', { class: 'muted', text: t('ssDocsLoading') })]);
-  kids.push(docs); ssDocs(j.id, docs);
-  kids.push(h('div', { class: 'acts' }, [h('button', { type: 'button', class: 'btn', 'data-myjob-open': j.id, text: t('ssOpenJob'), on: { click: function(){ openJob(j.id, 'overview'); } } }),
-    h('button', { type: 'button', class: 'btn', text: t('ssMsgs') + (j.unread ? ' (' + j.unread + ')' : ''), on: { click: function(){ openJob(j.id, 'messages'); } } }),
-    h('button', { type: 'button', class: 'btn gold', 'data-myjob-inv': j.id, style: 'grid-column:1/-1', text: t('ssInvBtn'), on: { click: function(){ quickInvoiceSheet(j.id); } } })]));
-  return h('div', { class: 'myjob', 'data-myjob': j.id }, kids);
+/* patch SUBHOME2: 🏠 My jobs — one short row per job: name, address, a badge (✍ to sign · 💬 new messages · 🔨 punch items) and one
+   Open ›. The PM, dates, PO, progress, scope, plans, 📐 Measure, Messages and 💵 Invoice this job are on the job page. */
+Object.assign(L.en, { shSign: '✍ {n} to sign', shMsg: '💬 {n} new', shPunch: '🔨 {n} punch', shOpen: 'Open ›',
+  shInfo: '📂 Everything on this job', shNoCo: 'No change orders on this job.', shTabsLbl: 'This job' });
+Object.assign(L.es, { shSign: '✍ {n} para firmar', shMsg: '💬 {n} sin leer', shPunch: '🔨 {n} pendiente(s)', shOpen: 'Abrir ›',
+  shInfo: '📂 Todo de este trabajo', shNoCo: 'No hay órdenes de cambio en este trabajo.', shTabsLbl: 'Este trabajo' });
+function myJobRow(j){
+  var sign = (HOME.toSign || []).filter(function(x){ return x.pid === j.id; }).length;
+  var punch = (HOME.needs || []).filter(function(n){ return n.kind === 'punch' && n.pid === j.id; }).length;
+  var tags = [];
+  if (sign) tags.push(pill(t('shSign', { n: sign }), 'now'));
+  else if (j.newScope) tags.push(pill(t('newScope'), 'now'));
+  if (j.unread) tags.push(pill(t('shMsg', { n: j.unread }), 'due'));
+  if (punch) tags.push(pill(t('shPunch', { n: punch }), 'now'));
+  if (!tags.length) tags.push(pill(statusWord(j.status), 'ok'));
+  return h('div', { class: 'ssrow', 'data-myjob': j.id }, [
+    h('div', { class: 'grow' }, [h('b', { text: j.name }), j.address ? h('span', { class: 'muted', text: j.address }) : null, h('span', { class: 'tags', 'data-myjob-tags': j.id }, tags)]),
+    h('button', { type: 'button', class: 'btn sm', 'data-myjob-open': j.id, 'aria-label': t('open') + ' — ' + j.name, text: t('shOpen'), on: { click: function(){ openJob(j.id, 'scope'); } } })]);
 }
 Object.assign(L.en, { wcP: 'Workers’ comp certificate', licP: 'Contractor license' });   /* patch PAPERS1 */
 Object.assign(L.es, { wcP: 'Certificado de compensación al trabajador', licP: 'Licencia de contratista' });
@@ -1004,13 +1020,6 @@ function measureBtn(pid, f){
     var app = window.GCAppOpen && window.GCAppOpen.app(), w = null; if (!app) try { w = window.open('', '_blank'); } catch (e) {}   /* patch PORTALTAPS: never a blank window in the installed app */
     api('p-measure', { projectId: pid, name: f.name }).then(function(r){ if (app) window.GCAppOpen.sheet(r.url, t('measureBtn') + ' · ' + f.name); else if (w) w.location.href = r.url; else location.href = r.url; },
       function(){ if (w) try { w.close(); } catch (e) {} toast(t('measureErr'), true); }); } } });
-}
-function ssDocs(pid, box){
-  function paint(list){ box.innerHTML = ''; box.appendChild(h('b', { text: t('ssDocsL') }));
-    if (!list.length) { box.appendChild(h('div', { class: 'muted', text: t('ssDocsNone') })); return; }
-    list.slice(0, 12).forEach(function(f){ box.appendChild(h('div', { class: 'ss-doc' }, [h('span', { text: /pdf/.test(f.type || '') ? '📄' : /image/.test(f.type || '') ? '🖼️' : '📎' }), f.url && safeUrl(f.url) ? h('a', { href: f.url, target: '_blank', rel: 'noopener', text: f.name }) : h('span', { text: f.name }), measureBtn(pid, f)])); }); }
-  if (SS_DOCS[pid]) return paint(SS_DOCS[pid]);
-  api('p-job', { projectId: pid }).then(function(r){ SS_DOCS[pid] = r.docs || []; paint(SS_DOCS[pid]); }, function(){ paint([]); });
 }
 var SS_BIDOPEN = false;
 function bidOpenCount(){ var J = (BIDS && BIDS.jobs) || []; return J.filter(function(j){ return j.canBid; }).length; }
@@ -1221,37 +1230,64 @@ function scoreCard(){
 }
 
 /* ── ONE JOB ── */
+/* patch SUBHOME2 (owner 11/27: "combine the tabs"): a job has 4 tabs — Scope (the scope, its change orders under it, the plans) ·
+   Photos (photos, 📈 progress, 🔨 punch list) · Invoices · Messages. The old tab names still work (deep links, the buttons that
+   open a job): each lands on the tab that now holds it and scrolls to its section. */
+var JSEC = null;
+var JT_MAP = { overview: ['scope'], scope: ['scope'], cos: ['scope', 'jobCos'], photos: ['photos'], progress: ['photos', 'jobProgress'], punch: ['photos', 'jobPunch'], invoices: ['invoices'], messages: ['messages'], info: ['scope', 'jobInfo'] };
+function jtNorm(k){ return JT_MAP[k] || JT_MAP.scope; }
 function jtabs(){
-  var tabs = [['overview', 'overview'], ['scope', 'scope'], ['cos', 'cos'], ['photos', 'photos'], ['progress', 'progress'], ['punch', 'punch'], ['invoices', 'invoices'], ['messages', 'messages']];
-  return h('div', { class: 'jtabs', role: 'tablist' }, tabs.map(function(x){
-    var n = x[0] === 'messages' && JOB.unread ? ' (' + JOB.unread + ')' : x[0] === 'punch' ? ' (' + JOB.punch.filter(function(p){ return !p.done; }).length + ')' : '';
-    return h('button', { type: 'button', role: 'tab', 'data-jtab': x[0], 'aria-selected': JTAB === x[0] ? 'true' : 'false', text: t(x[1]) + n, on: { click: function(){ JTAB = x[0]; drawJob(); } } });
+  var toSign = (JOB.scopes || []).concat(JOB.cos || []).filter(function(x){ return x.status !== 'accepted'; }).length, punch = (JOB.punch || []).filter(function(p){ return !p.done; }).length;
+  var tabs = [['scope', toSign], ['photos', punch], ['invoices', 0], ['messages', JOB.unread || 0]];
+  return h('div', { class: 'jtabs', role: 'tablist', 'aria-label': t('shTabsLbl') }, tabs.map(function(x){
+    return h('button', { type: 'button', role: 'tab', 'data-jtab': x[0], 'aria-selected': JTAB === x[0] ? 'true' : 'false', text: t(x[0]) + (x[1] ? ' (' + x[1] + ')' : ''), on: { click: function(){ JTAB = x[0]; JSEC = null; JSEC_LAST = null; drawJob(); } } });
   }));
 }
-function overview(){
+/* the job's head: address + Maps, PO + Copy PO, dates · % done, the PM (on the phone above the tabs; on a computer at the top of the left column) */
+function jobHead(wide){
+  var j = JOB.job, pm = JOB.pm || {};
+  var when = [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ');
+  return h('section', { class: 'card ss-jhead', 'data-jobhead': j.id }, [wide ? h('div', { class: 'big', text: j.name }) : null,
+    h('dl', { class: 'kv' }, [h('dt', { text: t('address') }), h('dd', null, [j.address || t('none'), j.maps ? h('span', null, [' · ', h('a', { href: j.maps, target: '_blank', rel: 'noopener', class: 'lnk', text: '📍 ' + t('maps') })]) : null]),
+      h('dt', { text: t('po') }), h('dd', null, [j.po ? poRow(j.po) : t('none')]),
+      h('dt', { text: t('dates') }), h('dd', { text: (when || t('ssNoDates')) + ' · ' + (j.pct || 0) + '% ' + t('done') }),
+      h('dt', { text: t('ssPmL') }), h('dd', null, [pm.name || t('office'), ' ', h('a', { href: telOf(pm.phone || OFFICE), 'data-pmcall': j.id, text: '📞 ' + (pm.phone || OFFICE) })])])]);
+}
+function jobNote(k){
+  var R = JOB.photoRule;
+  if (k === 'lien') return JOB.lien && JOB.lien.required ? h('div', { class: 'how', text: t('lien') }) : null;
+  if (k === 'rule') return R ? h('div', { class: 'how photo-rule', text: R.invoiceOk ? t('photoRuleOk', { have: R.have }) : t('photoRule', { have: R.have, need: R.need }) }) : null;
+  if (k === 'after') return R && R.afterNeed > 0 && (R.afterHave || 0) < R.afterNeed ? h('div', { class: 'how photo-rule', id: 'afterRule', text: t('afterRule', { have: R.afterHave || 0, need: R.afterNeed }) }) : null;   /* SUBAFTER */
+  if (k === 'care') return JOB.care ? h('div', { class: 'how', id: 'careTip', role: 'note', style: 'background:#fff7ed;border-left:3px solid #f97316;padding:8px 10px;border-radius:6px;line-height:1.45' }, [h('b', { text: t('careT') }), h('div', { text: t('careX') })]) : null;   /* CARE */
+  if (k === 'ins') return JOB.insurance ? h('div', { class: 'how', id: 'insTip', role: 'note', style: 'background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;border-radius:6px', text: '🎥 ' + t('insTip') }) : null;   /* SUBAFTER */
+  return null;
+}
+/* 📂 everything else on the job (what the old Overview tab had): my schedule, inspections, the schedule, access codes, site notes, the customer, the PM */
+function jobDetails(){
   var j = JOB.job, s = j.site || {}, pm = JOB.pm || {}, out = [];
-  out.push(card(null, [h('div', { class: 'big', text: j.name }),
-    h('dl', { class: 'info' }, [h('dt', { text: t('address') }), h('dd', null, [j.address || t('none'), j.maps ? h('div', null, [h('a', { href: j.maps, target: '_blank', rel: 'noopener', class: 'lnk', text: '📍 ' + t('maps') })]) : null]),
-      h('dt', { text: t('po') }), h('dd', null, [j.po ? poRow(j.po) : t('none')]), h('dt', { text: t('dates') }), h('dd', { text: [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ') || t('none') }),
-      h('dt', { text: t('progress') }), h('dd', { text: (j.pct || 0) + '% ' + t('done') })]),
-    JOB.lien && JOB.lien.required ? h('div', { class: 'how', text: t('lien') }) : null,
-    JOB.photoRule ? h('div', { class: 'how photo-rule', text: JOB.photoRule.invoiceOk ? t('photoRuleOk', { have: JOB.photoRule.have }) : t('photoRule', { have: JOB.photoRule.have, need: JOB.photoRule.need }) }) : null,
-    JOB.photoRule && JOB.photoRule.afterNeed > 0 && (JOB.photoRule.afterHave || 0) < JOB.photoRule.afterNeed ? h('div', { class: 'how photo-rule', id: 'afterRule', text: t('afterRule', { have: JOB.photoRule.afterHave || 0, need: JOB.photoRule.afterNeed }) }) : null,   /* SUBAFTER */
-    JOB.care ? h('div', { class: 'how', id: 'careTip', role: 'note', style: 'background:#fff7ed;border-left:3px solid #f97316;padding:8px 10px;border-radius:6px;line-height:1.45' }, [h('b', { text: t('careT') }), h('div', { text: t('careX') })]) : null,   /* CARE */
-    JOB.insurance ? h('div', { class: 'how', id: 'insTip', role: 'note', style: 'background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;border-radius:6px', text: '🎥 ' + t('insTip') }) : null,   /* SUBAFTER */
-    dayButtons(j.id)]));   /* patch SUBPHOTOS */
-  out.push(contactCard(t('pm'), pm.name, pm.phone, pm.email));
-  if (j.customer && (j.customer.name || j.customer.phone || j.customer.email)) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
+  var msc = mySchedCard(); if (msc) out.push(msc);   /* patch SUBSCHED: 📅 My schedule for this job */
+  var isc = inspCardSub(); if (isc) out.push(isc);   /* patch INSPECT2: 📋 Inspections on this job (my trade) + Request an inspection */
   var sch = JOB.schedule || [];
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
-  { var msc = mySchedCard(); if (msc) out.splice(1, 0, msc); }   /* patch SUBSCHED: 📅 My schedule for this job — right under the job card */
-  { var isc = inspCardSub(); if (isc) out.splice(msc ? 2 : 1, 0, isc); }   /* patch INSPECT2: 📋 Inspections on this job (my trade) + Request an inspection */
+  out.push(codesCard(j.id));   /* patch X10 */
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
-  out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
-  /* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) */
-  var docs = JOB.docs || [];
-  out.push(h('section', { class: 'card', 'data-subdocs': '1' }, [h('h2', { text: t('jobDocs') })].concat(docs.length ? docs.map(function(f){ return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow', text: f.name }), h('button', { type: 'button', class: 'btn', 'data-subdoc': f.name, text: t('open'), on: { click: function(){ viewer(f); } } }), measureBtn(j.id || (JOB.job && JOB.job.id), f)]); }) : [h('div', { class: 'empty', text: t('noDocs') })])));
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));
+  if (j.customer && (j.customer.name || j.customer.phone || j.customer.email)) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
+  out.push(contactCard(t('pm'), pm.name, pm.phone, pm.email));
+  return out.filter(Boolean);
+}
+/* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) + 📐 Measure */
+function docsCard(){
+  var docs = JOB.docs || [], pid = JOB.job.id;
+  return h('section', { class: 'card', 'data-subdocs': '1' }, [h('h2', { text: t('jobDocs') })].concat(docs.length ? docs.map(function(f){ return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow', text: f.name }), h('button', { type: 'button', class: 'btn', 'data-subdoc': f.name, text: t('open'), on: { click: function(){ viewer(f); } } }), measureBtn(pid, f)]); }) : [h('div', { class: 'empty', text: t('noDocs') })]));
+}
+/* Scope tab: the scope(s) → the change orders (a section under it, with their sign buttons) → plans & documents (→ on the phone, 📂 everything else on the job) */
+function scopePane(wide){
+  var out = JOB.scopes.length ? JOB.scopes.map(scopeCard) : [card(t('scope'), [h('div', { class: 'empty', text: t('noScope') })])];
+  out.push(h('div', { class: 'ss-sec', id: 'jobCos', 'data-cos': String(JOB.cos.length) }, [h('h2', { text: '➕ ' + t('cos') + (JOB.cos.length ? ' (' + JOB.cos.length + ')' : '') })]
+    .concat(JOB.cos.length ? JOB.cos.map(scopeCard) : [card(null, [h('div', { class: 'empty', text: t('shNoCo') })])])));
+  out.push(docsCard());
+  if (!wide) out.push(h('div', { class: 'ss-sec', id: 'jobInfo' }, [h('h2', { text: t('shInfo') })].concat(jobDetails())));
   return out;
 }
 function scopeCard(x){
@@ -1278,7 +1314,7 @@ function scopeCard(x){
     kids.push(h('div', { class: 'btns' }, [acc, askB]));
   } else kids.push(h('div', { class: 'muted', text: (x.signedName ? '✍️ ' + t('signedBy', { n: x.signedName }) : t('accepted')) + ' · ' + dt(x.acceptedAt) }));
   if (x.question) kids.push(h('div', { class: 'how', text: t('asked') }));
-  return card(null, kids, 'scope');
+  var sc = card(null, kids, 'scope'); sc.setAttribute('data-sec-id', x.id); return sc;   /* patch SUBHOME2: #co=<id> scrolls here */
 }
 /* ── patch AUTO6: sign a sub agreement / change order (typed name + drawn signature; the time, IP and version are
    recorded by the server). The pad is the customer portal's: points on a 600 × 200 pad. ── */
@@ -1317,9 +1353,24 @@ function signSheet(x){
   });
   return sh;
 }
+var JSEC_LAST = null;   /* the section a link / a jump scrolled to: scrolled to again once the photo grid above it has loaded */
+function jumpTo(id){ JSEC_LAST = { sec: id, at: Date.now() }; var e = jobSecEl(id); if (e && e.scrollIntoView) try { e.scrollIntoView({ block: 'start' }); } catch (x) {} }
+function dayPair(pid){   /* 📍 I'm here · ✅ Done for today */
+  var hb = h('button', { type: 'button', class: 'btn', 'data-here': pid, text: t('here') }); hb.addEventListener('click', function(){ checkin(pid, 'here', hb); });
+  var db = h('button', { type: 'button', class: 'btn', 'data-doneday': pid, text: t('doneDay') }); db.addEventListener('click', function(){ checkin(pid, 'done', db); });
+  return [hb, db];
+}
+/* patch SUBHOME2: Photos tab = 📷 photos (+ I'm here / Done for today) → 📈 progress → 🔨 punch list; two buttons at the top jump down */
+function photosTab(){ return photosPane().concat(progressPane(), punchPane()); }
 function photosPane(){
-  var box = card(t('photos'), [h('div', { class: 'how', text: t('tipDuring') }), h('div', { class: 'btns3' }, [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(JOB.job.id); } } }),
-    h('button', { type: 'button', class: 'btn gold', id: 'addAfter', text: t('addAfter'), on: { click: function(){ addPhotos(JOB.job.id, 'After'); } } })]), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);   /* SUBAFTER */
+  var pid = JOB.job.id, openP = (JOB.punch || []).filter(function(p){ return !p.done; }).length;
+  var jump = h('div', { class: 'row ss-jump', 'data-photos-jump': '1', style: 'justify-content:flex-start;gap:8px;flex-wrap:wrap' }, [
+    h('button', { type: 'button', class: 'btn sm', 'data-jump': 'jobPunch', text: '🔨 ' + t('punch') + (openP ? ' (' + openP + ')' : ''), on: { click: function(){ jumpTo('jobPunch'); } } }),
+    h('button', { type: 'button', class: 'btn sm', 'data-jump': 'jobProgress', text: '📈 ' + t('progress') + ' · ' + (JOB.job.pct || 0) + '%', on: { click: function(){ jumpTo('jobProgress'); } } })]);
+  var box = card(t('photos'), [jump, h('div', { class: 'how', text: t('tipDuring') }), jobNote('rule'), jobNote('after'), jobNote('care'), jobNote('ins'),
+    h('div', { class: 'btns3', style: 'grid-template-columns:1fr 1fr' }, [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(pid); } } }),
+    h('button', { type: 'button', class: 'btn gold', id: 'addAfter', text: t('addAfter'), on: { click: function(){ addPhotos(pid, 'After'); } } })]),   /* SUBAFTER */
+    h('div', { class: 'ss-day daybtns', 'data-daybtns': pid }, dayPair(pid)), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);
   loadPhotos(JOB.job.id).then(function(list){
     var e = box.querySelector('#phLoad'); if (!e) return;
     if (!list.length) { e.textContent = t('noPhotos'); return; }
@@ -1335,6 +1386,7 @@ function photosPane(){
         [h('img', { src: p.t, alt: '', loading: 'lazy', decoding: 'async', width: '160', height: '160' }), p.tag ? h('span', { class: 'phtag', text: p.tag }) : (p.mine ? h('span', { class: 'phtag', text: t('you') }) : null)]));
     });
     box.appendChild(grid);
+    if (JSEC_LAST && Date.now() - JSEC_LAST.at < 10000) jumpTo(JSEC_LAST.sec);
   });
   return [box];
 }
@@ -1401,12 +1453,12 @@ function progressPane(){
   });
   var hist = (JOB.progress || []).map(function(x){ return h('div', { class: 'post' }, [h('div', { class: 'row' }, [h('b', { text: x.pct + '% ' + t('done') }), h('span', { class: 'muted', text: tm(x.at) })]), x.note ? h('p', { text: x.note }) : null,
     x.photos.length ? h('div', { class: 'pics' }, x.photos.map(function(p, i){ return h('button', { type: 'button', on: { click: function(){ lightbox(x.photos.map(function(q){ return { f: q.url }; }), i); } } }, [h('img', { src: p.url, alt: '', loading: 'lazy' })]); })) : null]); });
-  return [card(t('postProgress'), [h('div', { class: 'row' }, [h('span', { text: t('pct') }), pv]), pct, field(t('progressNote'), note), h('div', { class: 'row' }, [pick, fl]), go]),
-    card(t('progress'), hist.length ? hist : [h('div', { class: 'empty', text: t('noProgress') })])];
+  var pc = card('📈 ' + t('postProgress'), [h('div', { class: 'row' }, [h('span', { text: t('pct') }), pv]), pct, field(t('progressNote'), note), h('div', { class: 'row' }, [pick, fl]), go]); pc.id = 'jobProgress';
+  return [pc, card(t('progress'), hist.length ? hist : [h('div', { class: 'empty', text: t('noProgress') })])];
 }
 function punchPane(){
   var items = JOB.punch || [];
-  return [card(t('punch'), items.length ? items.map(function(x){
+  var pc = card('🔨 ' + t('punch'), items.length ? items.map(function(x){
     var kids = [h('div', { class: 'row' }, [h('b', { text: x.item }), x.done ? pill(t('isDone') + (x.doneAt ? ' ' + dt(x.doneAt) : ''), 'ok') : pill(x.due ? t('due') + ' ' + dt(x.due) : (x.priority || ''), 'now')])];
     if (x.details) kids.push(h('p', { class: 'muted', text: x.details }));
     if (x.photo) kids.push(h('div', { class: 'pics' }, [h('button', { type: 'button', on: { click: function(){ lightbox([{ f: x.photo.url }], 0); } } }, [h('img', { src: x.photo.url, alt: '' })])]));
@@ -1416,11 +1468,15 @@ function punchPane(){
         toGPhotos(fs[0], pid, 'Punch', x.item);
         upload(fs[0], 'punch', pid).then(function(u){ return api('p-punch', { projectId: pid, punchId: x.id, uploadId: u.id }); }).then(function(){ toast(t('saved')); openJob(pid, 'punch'); reloadHome(); }, function(e){ busy(b, false); toast(e.message, true); }); });
     } } }));
-    return h('div', { class: 'post' }, kids);
-  }) : [h('div', { class: 'empty', text: t('noPunch') })])];
+    return h('div', { class: 'post', 'data-sec-id': x.id }, kids);
+  }) : [h('div', { class: 'empty', text: t('noPunch') })]);
+  pc.id = 'jobPunch';
+  return [pc];
 }
-function invoicesPane(){
-  return [card(t('invoices'), [h('div', { class: 'how', text: t('payRule') + (JOB.job.po ? ' ' + t('po') + ' ' + JOB.job.po : '') }), h('button', { type: 'button', class: 'btn gold', id: 'jobNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(JOB.job.id); } } }), mkButton(JOB.job.id, 'jobMakeInv')]
+function invoicesPane(){   /* patch SUBHOME2: + 💵 Invoice this job (⚡ Quick invoice) — it was on the Home card; the photo rule and lien note sit here too */
+  return [card(t('invoices'), [jobNote('lien'), jobNote('rule'), h('div', { class: 'how', text: t('payRule') + (JOB.job.po ? ' ' + t('po') + ' ' + JOB.job.po : '') }),
+    h('button', { type: 'button', class: 'btn gold', id: 'jobQuickInv', 'data-myjob-inv': JOB.job.id, text: t('ssInvBtn'), on: { click: function(){ quickInvoiceSheet(JOB.job.id); } } }),
+    h('button', { type: 'button', class: 'btn', id: 'jobNewInv', text: t('newInvoice'), on: { click: function(){ invoiceSheet(JOB.job.id); } } }), mkButton(JOB.job.id, 'jobMakeInv')]
     .concat(JOB.invoices.length ? JOB.invoices.map(invRow) : [h('div', { class: 'empty', text: t('noInvoices') })]))];
 }
 var msgTimer = null;
@@ -1453,36 +1509,42 @@ function messagesPane(){
   clearInterval(msgTimer); msgTimer = setInterval(function(){ if (JTAB === 'messages' && !document.hidden && document.getElementById('msgList')) load(); else clearInterval(msgTimer); }, 20000);
   return [card(t('messages'), [list, box, h('div', { class: 'row' }, [att, fl]), go])];
 }
-function paneFor(k){
-  if (k === 'scope') return JOB.scopes.length ? JOB.scopes.map(scopeCard) : [card(t('scope'), [h('div', { class: 'empty', text: t('noScope') })])];
-  if (k === 'cos') return JOB.cos.length ? JOB.cos.map(scopeCard) : [card(t('cos'), [h('div', { class: 'empty', text: t('noCo') })])];
-  if (k === 'photos') return photosPane();
-  if (k === 'progress') return progressPane();
-  if (k === 'punch') return punchPane();
+function paneFor(k, wide){
+  if (k === 'photos') return photosTab();
   if (k === 'invoices') return invoicesPane();
   if (k === 'messages') return messagesPane();
-  return overview();
+  return scopePane(wide);
+}
+function jobSecEl(sec){
+  if (!sec) return null;
+  var e = document.getElementById(sec); if (e) return e;
+  var all = document.querySelectorAll('[data-sec-id]');
+  for (var i = 0; i < all.length; i++) if (all[i].getAttribute('data-sec-id') === sec) return all[i];
+  return null;
 }
 function drawJob(){
   var main = document.getElementById('main'); main.innerHTML = '';
+  ssCss();
   var wide = window.matchMedia('(min-width: 1000px)').matches;
+  var nt = jtNorm(JTAB), sec = JSEC || nt[1] || null, sec2 = nt[1] || null; JTAB = nt[0]; JSEC = null;   /* patch SUBHOME2: an old tab name → its new tab + section */
   var bar = h('div', { class: 'jobbar' }, [h('button', { type: 'button', class: 'back', id: 'jobBack', text: t('back'), on: { click: function(){ JOB = null; draw(); } } }), h('b', { text: JOB.job.name })]);
   main.appendChild(bar);
   if (wide) {
-    if (JTAB === 'overview') JTAB = 'scope';
-    var left = h('aside', { class: 'col-l' }, overview());
-    var right = h('section', { class: 'col-r' }, [jtabs()].concat(paneFor(JTAB)));
+    var left = h('aside', { class: 'col-l' }, [jobHead(true)].concat(jobDetails()));
+    var right = h('section', { class: 'col-r' }, [jtabs()].concat(paneFor(JTAB, true)));
     main.appendChild(h('div', { class: 'two' }, [left, right]));
-    var ov = right.querySelector('[data-jtab="overview"]'); if (ov) ov.style.display = 'none';
   } else {
+    main.appendChild(jobHead(false));
     main.appendChild(jtabs());
-    paneFor(JTAB).forEach(function(p){ if (p) main.appendChild(p); });
+    paneFor(JTAB, false).forEach(function(p){ if (p) main.appendChild(p); });
   }
   markTabs();
+  JSEC_LAST = null;
+  if (sec) setTimeout(function(){ var k = jobSecEl(sec) ? sec : sec2; if (k) jumpTo(k); }, 0);
 }
-function openJob(pid, tab){
-  JTAB = tab || 'overview';
-  return api('p-job', { projectId: pid }).then(function(r){ JOB = r; TAB = 'jobs'; drawJob(); window.scrollTo(0, 0); }, function(e){ toast(e.message, true); });
+function openJob(pid, tab, sec){
+  JTAB = tab || 'scope'; JSEC = sec || null;
+  return api('p-job', { projectId: pid }).then(function(r){ JOB = r; TAB = 'jobs'; window.scrollTo(0, 0); drawJob(); }, function(e){ toast(e.message, true); });
 }
 function lightbox(list, i){
   var img = h('img', { alt: '' }), count = h('span');
@@ -2173,7 +2235,8 @@ function a2Btn(){
 }
 function a2Line(){
   if (!a2()) return null;
-  return h('div', { class: 'gca-help', id: 'gcs-a2-line', style: 'margin:14px 0 4px;padding:12px 14px;border:1px dashed var(--edge,#E2DCCD);border-radius:12px;background:#fff;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:15px;line-height:1.4' }, [
+  ssCss();   /* patch SUBHOME2: one small line at the very bottom (never inside the installed app) */
+  return h('div', { class: 'gca-help', id: 'gcs-a2-line' }, [
     (function(){ var sp = document.createElement('span'); sp.innerHTML = t('a2Line'); return sp; })(), h('button', { type: 'button', class: 'btn sm', id: 'gcs-a2-how2', text: t('a2LineGo'), on: { click: a2Show } })]);
 }
 function a2Card(){
@@ -2188,6 +2251,20 @@ function a2Card(){
   ]));
 }
 
+/* patch SUBHOME2: a link into a job — #job=<id> (the message e-mails / texts), + &tab=<a tab, old names too: overview, cos, progress,
+   punch …> or &co=<change order / scope id> (#co=<id> alone finds its job) or &punch[=<id>] / &progress. It lands on the tab that holds
+   it now (Scope · Photos · Invoices · Messages) and scrolls to that section. */
+function hashJob(){
+  var hs = location.hash || '', g = function(k){ var m = new RegExp('[#&]' + k + '=([A-Za-z0-9_.:-]{1,80})').exec(hs); return m ? decodeURIComponent(m[1]) : ''; };
+  var pid = g('job'), co = g('co'), tab = g('tab').toLowerCase(), pu = /[#&]punch(?:=|&|$)/.test(hs), pg = /[#&]progress(?:=|&|$)/.test(hs);
+  if (!pid && co) { var hit = (HOME.toSign || []).filter(function(x){ return x.id === co; })[0]; if (hit) pid = hit.pid;
+    if (!pid) (HOME.jobs || []).forEach(function(j){ if (!pid && (j.scopes || []).some(function(x){ return x.id === co; })) pid = j.id; }); }
+  if (!pid) return;
+  if (co) return openJob(pid, 'cos', co);
+  if (pu) return openJob(pid, 'punch', g('punch') || null);
+  if (pg) return openJob(pid, 'progress');
+  return openJob(pid, JT_MAP[tab] ? tab : 'scope');
+}
 window.GCPartner = {
   a2hs: true,   /* patch A2HS: portal.html's GCP bar leaves subs to this file */
   start: function(opts){
@@ -2201,7 +2278,7 @@ window.GCPartner = {
       if (!saved && r.lang && r.lang !== LANG) setLang(r.lang, false);
       paintHello(); draw();
       a2Btn(); setTimeout(a2Card, 2500);   /* patch A2HS */
-      var m = /[#&]job=([A-Za-z0-9_.:-]{1,80})/.exec(location.hash || ''); if (m) openJob(m[1], 'overview');
+      hashJob();   /* patch SUBHOME2: #job=<id>[&tab=…][&co=<id>] */
       try { if (sessionStorage.getItem('gc_go') === 'papers' || /[#&]go=papers/.test(location.hash || '')) { sessionStorage.removeItem('gc_go'); goTab('papers'); } } catch (e) {}   /* patch PAPERS1 */
       setInterval(function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); }, 60000);
       document.addEventListener('visibilitychange', function(){ if (!document.hidden && !document.querySelector('.sheet')) reloadHome(); });   /* patch SUBSESS: phone awake again → fresh */
