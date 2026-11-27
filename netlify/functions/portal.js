@@ -108,6 +108,7 @@ async function gcStaffAuth(event){
 
 const crypto = require('crypto');
 const JA = require('./_lib/job-auto.js');   /* patch JA: the job's automations (project.auto) */
+function AM(){ return require('./_lib/apmail.js'); }   /* patch APEMAILS: money mail TO accounts payable, the client in CC */
 function CQ(){ return require('./_lib/custquiet.js'); }   /* patch CUSTQUIET: customer quiet hours 7 PM–7 AM Central */
 /* patch CUSTQUIET: an approved item that goes to a customer / sub / GC waits for 7 AM in the window; a staff-only one does not */
 const CQ_STAFF_KINDS = { announcement: 1, preq_change: 1, preq_project: 1 };   /* patch PORTALREQ: a portal request's own card is staff-only (its reply / decline note is held) */
@@ -1820,7 +1821,7 @@ async function queueInvoiceMail(invId, who, opts){
   if (cur && cur.list.some(function(x){ return s(x.id) === qid || (x.status !== 'rejected' && s((x.meta || {}).invoiceId) === s(r.id)); }))
     return { status: 200, out: { ok: true, id: qid, already: true } };
   const view = await buildView(data, p);
-  const to = s(view.customer.email);
+  const to = s(view.customer.email) || AM().firstTo(data, p, '');   /* patch APEMAILS: or the account's accounts payable */
   if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No customer e-mail on this job.' } };
   const doc = invoiceDoc(data, p, r);
   const title = 'Invoice #' + doc.number + ' ' + usd(doc.total) + ' to ' + (doc.client || to);
@@ -1941,11 +1942,17 @@ async function queueApproval(o){
     const off = jp ? JA.blockedKind(jp, o.kind, jaAdmin(d)) : '';
     if (off) { try { console.log('[portal] not queued, ' + off + ' is off for job ' + s(o.pid) + ': ' + s(o.kind)); } catch (e) {} return true; }
   }
+  if (o && AM().isMoneyKind(o.kind) && o.channel !== 'sms' && (o.pid || (o.meta && o.meta.customer))) {   /* patch APEMAILS */
+    try { const d = await crmData(false), jp = o.pid ? findProject(d, o.pid) : null, cu = jp ? null : AM().custOf(d, null, o.meta && o.meta.customer); if (jp || cu) o = AM().addressItem(d, jp, o, cu); } catch (e) {}
+  }
   const now = new Date().toISOString();
   const steps = stepsFor(o.kind, o.pm);
   const item = { id: s(o.id), kind: o.kind, title: s(o.title), jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
     to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
     status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
+  if (Array.isArray(o.toMore) && o.toMore.length) item.toMore = o.toMore.slice(0, 10);   /* patch APEMAILS: the other AP addresses */
+  if (Array.isArray(o.cc) && o.cc.length) item.cc = o.cc.slice(0, 10);
+  if (o.apAuto) item.apAuto = o.apAuto;
   if (o.officeOk === true) item.officeOk = true;   /* patch SOC: the marketing approval stage — the office may approve this one */
   if (o.mmOk === true) item.mmOk = true;
   if (o.pmEsc === true) item.pmEsc = true;   /* patch SUBCONTACT: at the PM step 24 h → the office (escalateDue) */   /* patch MM: the Marketing Manager may approve this one (stage 2+, not flagged, never paid ads) */
@@ -2008,6 +2015,11 @@ async function aqSend(item, now){
   const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: subj, html: html };
   if (item.jobId) { try { const dj = await crmData(false), pj = findProject(dj, item.jobId), CB = require('./_lib/cobrand.js'); CB.apply(payload, CB.info(pj, dj.gc_companies)); } catch (e) {} }   /* patch COTRAIN: a Mitigation / Environmental job's e-mail is that company's (sender, subject, logo, "check made out to") */
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
+  if (Array.isArray(item.toMore) && item.toMore.length) payload.to = [item.to].concat(item.toMore).filter(Boolean);   /* patch APEMAILS */
+  if (AM().isMoneyKind(item.kind) && (item.jobId || (item.meta && item.meta.customer))) {   /* patch APEMAILS: a removed address never goes */
+    let am = null; try { const dj = await crmData(false), pj = item.jobId ? findProject(dj, item.jobId) : null, cu = pj ? null : AM().custOf(dj, null, item.meta.customer); if (pj || cu) am = AM().atSend(dj, pj, item, cu); } catch (e) {}
+    if (am) { if (!am.to.length) return { ok: false, error: 'No address left to send to (removed from the customer) — type one in "To".' }; payload.to = am.to; if (am.cc.length) payload.cc = am.cc; else delete payload.cc; }
+  }
   if (item.jobId) { try { const dj = await crmData(false), pj = findProject(dj, item.jobId), TM = require('./_lib/portalteam.js');   /* patch PORTALTEAM: the customer's coworkers / household who turned "Notify me" on */
     if (pj && TM.custKeys(pj, TM.custOf(pj, dj.customers)).some(function(k){ return k === 'cu:e:' + low(item.to); })) { const cc = (await TM.notifyList(TM.custKeys(pj, TM.custOf(pj, dj.customers)))).filter(function(e){ return e !== low(item.to); }); if (cc.length) payload.cc = (payload.cc || []).concat(cc).slice(0, 10); } } catch (e) {} }
   /* patch AP2: the invoice PDF, made fresh from the CRM's record, goes with the e-mail */
@@ -2073,13 +2085,19 @@ const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i;
 function ccList(v){ return (Array.isArray(v) ? v : s(v).split(/[,;\s]+/)).map(function(x){ return low(x); }).filter(Boolean); }
 function editProblem(edit){
   if (!edit) return '';
-  if (edit.to != null && s(edit.to) && !EMAIL_RE.test(s(edit.to)) && !/^\+?[0-9 ()-]{7,20}$/.test(s(edit.to))) return 'The "To" address does not look right.';
+  if (edit.to != null && s(edit.to) && AM().split(edit.to).length > 1) {   /* patch APEMAILS: several To (accounts payable) */
+    const tl = AM().split(edit.to), bad = tl.filter(function(e){ return !EMAIL_RE.test(e); });
+    if (bad.length) return 'To: ' + bad[0] + ' does not look right.'; if (tl.length > 10) return 'At most 10 "To" addresses.';
+  } else if (edit.to != null && s(edit.to) && !EMAIL_RE.test(s(edit.to)) && !/^\+?[0-9 ()-]{7,20}$/.test(s(edit.to))) return 'The "To" address does not look right.';
   if (edit.cc != null) { const bad = ccList(edit.cc).filter(function(e){ return !EMAIL_RE.test(e); }); if (bad.length) return 'CC: ' + bad[0] + ' does not look right.'; if (ccList(edit.cc).length > 5) return 'At most 5 CC addresses.'; }
   return '';
 }
 function applyEdit(x, edit, me){
   const ch = [];
-  if (edit.to != null && s(edit.to) && low(edit.to) !== low(x.to)) { x.to = clip(edit.to, 200); ch.push('to'); }
+  if (edit.to != null && s(edit.to)) {   /* patch APEMAILS: the first To, the rest in toMore */
+    const tl = x.channel === 'sms' ? [s(edit.to)] : AM().split(edit.to), cur = [s(x.to)].concat(x.toMore || []).filter(Boolean).map(low).join(',');
+    if (tl.map(low).join(',') !== cur) { x.to = clip(tl[0] || edit.to, 200); if (tl.length > 1) x.toMore = tl.slice(1, 10).map(low); else delete x.toMore; ch.push('to'); }
+  }
   if (edit.cc != null) { const cc = ccList(edit.cc); if (JSON.stringify(cc) !== JSON.stringify(x.cc || [])) { x.cc = cc; ch.push('cc'); } }
   if (s(edit.subject) && s(edit.subject) !== s(x.subject)) { x.subject = clip(edit.subject, 200); ch.push('subject'); }
   if (s(edit.text) && String(edit.text) !== String(x.text)) {
@@ -2458,6 +2476,8 @@ async function sendApprovedReminder(tpl, pid){
   }
   const payload = { from: billingFrom(), reply_to: billingEmail(), to: [tpl.to], subject: await (async function(){ try { return withJob(tpl.subject, findProject(await crmData(false), pid)); } catch (e) { return tpl.subject; } })(), html: html };
   if (Array.isArray(tpl.cc) && tpl.cc.length) payload.cc = tpl.cc.slice(0, 5);
+  if (Array.isArray(tpl.toMore) && tpl.toMore.length) payload.to = [tpl.to].concat(tpl.toMore).filter(Boolean);   /* patch APEMAILS */
+  try { const dj = await crmData(false), pj = findProject(dj, pid); if (pj) { const am = AM().atSend(dj, pj, tpl); if (!am.to.length) return { ok: false, error: 'no address (removed from the customer)' }; payload.to = am.to; if (am.cc.length) payload.cc = am.cc; else delete payload.cc; } } catch (e) {}
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     return { ok: r.ok, error: r.ok ? '' : String(r.status) };
@@ -2489,7 +2509,7 @@ async function runReminders(opts){
       if (!first && prev.last_reminder_at && now - new Date(prev.last_reminder_at) < REMIND_EVERY) { report.skipped++; continue; }
       if (first && prev && prev.last_reminder_at && now - new Date(prev.last_reminder_at) < DAY) { report.skipped++; continue; }   /* a try today already */
       const view = await buildView(data, p);
-      const to = s(view.customer.email);
+      const to = s(view.customer.email) || AM().firstTo(data, p, '');   /* patch APEMAILS */
       const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
       if (okEmail && s(process.env.RESEND_API_KEY) && !mailOff() && approvalNeeded(first ? 'final_invoice' : 'final_reminder')) {
         /* owner rule: the PM approves, then an admin; it waits on the approvals list (gc_approval_queue) */

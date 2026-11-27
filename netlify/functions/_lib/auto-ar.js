@@ -20,7 +20,8 @@ function custEmail(data, p){
   const e = s(p.clientEmail || p.customerEmail || p.email); if (okEmail(e)) return low(e);
   const nm = low(p.client || p.customer || p.clientName);
   const c = arr(data.customers).find(function(x){ return nm && low(x.name || x.company) === nm; });
-  return c && okEmail(c.email) ? low(c.email) : '';
+  if (c && okEmail(c.email)) return low(c.email);
+  try { return require('./apmail.js').firstTo(data, p, ''); } catch (e) { return ''; }   /* patch APEMAILS: or the account's accounts payable */
 }
 function first(name){ const t = s(name).split(/\s+/)[0]; return t && !/^(the|mr|mrs|ms|dr)\.?$/i.test(t) ? t : ''; }
 function stageFor(days){ let st = 0; STAGES.forEach(function(x){ if (days >= x) st = x; }); return st; }
