@@ -63,7 +63,7 @@ H.cset('leads', []); H.cset('punch', []);
 const GETS = {};   // sha → storage reads
 const OPEN = [];
 async function computer(who){
-  const a = await H.computer(who, { build, init: ['window.__GC_DOCREAD_FIRST__ = 4000; window.__GC_DOCREAD_EVERY__ = 3000;'] }); OPEN.push(a);
+  const a = await H.computer(who, { build, init: ['window.__GC_DOCREAD_FIRST__ = 4000; window.__GC_DOCREAD_EVERY__ = 3000; window.__GC_DOCREAD_SINCE__ = 1; window.__GC_DOCREAD_JOBS__ = 3;'] }); OPEN.push(a);
   await a.ctx.route(/\/storage\/v1\/object\/authenticated\/crm-files\/([0-9a-f]{64})\.[a-z]+/, r => {
     const sha = /crm-files\/([0-9a-f]{64})/.exec(r.request().url())[1]; GETS[sha] = (GETS[sha] || 0) + 1;
     if (!FILES[sha]) return r.fulfill({ status: 404, body: '{}', headers: { 'access-control-allow-origin': '*' } });

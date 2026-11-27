@@ -608,7 +608,8 @@ SI.call(W, function(){ try { if (D.hidden) return; var op = W._gcOpenProject; if
    Console: _gcDocRead.run({ all: true }), .state(), .tier(doc), .isSched(doc) ── */
 var DR_ID = 'zi_docread';
 var DR = { busy: false, runs: 0, startAt: Date.now(), last: [], errs: 0, lastRun: '' };
-var DR_FIRST = +W.__GC_DOCREAD_FIRST__ || 75000, DR_EVERY = +W.__GC_DOCREAD_EVERY__ || 20000, DR_JOBS = 3;
+var DR_NEW_SINCE = +W.__GC_DOCREAD_SINCE__ || Date.parse('2026-11-27T21:00:00Z');   /* patch DRONCE */
+var DR_FIRST = +W.__GC_DOCREAD_FIRST__ || 180000, DR_EVERY = +W.__GC_DOCREAD_EVERY__ || 120000, DR_JOBS = +W.__GC_DOCREAD_JOBS__ || 1;   /* patch DRSLOW (11/27, after the database outage): one job every 2 minutes, never a burst */
 var GO_ST = /^(active|approved|in[ _-]?progress|scheduled)$/i;
 function isAdminNow(){
   if (!myEmail()) return false;
@@ -747,6 +748,10 @@ async function drRun(o){
   DR.busy = true; DR.runs++; var out = [];
   try {
     var docs = arr(await docsNow()).filter(function(d){ return d && d.deleted !== true && d._deleted !== true && docPid(d) && docSrc(d); });
+    /* patch DRONCE (owner 11/27: "contract reader should read one time when it goes in and when a change order is added, that's it"): on its own
+       the reader only reads documents that came in from now on — once each; older ones only by the admin's 📄 Read button (o.all). A change
+       order needs no reading: an approved one is added to the job's total by itself. */
+    if (!o.all) docs = docs.filter(function(d){ var t = Date.parse(s(d.uploadedAt || d.savedAt || d.createdAt || '')); return isFinite(t) && t >= DR_NEW_SINCE; });
     var pick = function(rec){ return projects().map(function(p){ return String(p.id); }).filter(function(pid){ var w = workOf(pid, docs, rec); return w.ct.length || w.sc.length; })
       .sort(function(a, b){ return (curContract(proj(a)) ? 1 : 0) - (curContract(proj(b)) ? 1 : 0); }); };
     if (!pick(drRec()).length) return out;
