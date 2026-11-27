@@ -103,7 +103,7 @@ async function notActive(headers, t0){ const wait = MIN_FAIL_MS + Math.floor(Mat
 
 /* ── storage: the plans (settings) and the two lists, in gc_kv (JSON text, read again before every write) ── */
 async function readAll(){
-  const d = await core().kvRead(['projects', 'gc_deleted_projects', 'users', M.PLANS_KEY, M.LIST_KEY, M.HEARD_KEY, 'jobAutoDefaults']);
+  const d = await core().kvRead(['projects', 'gc_deleted_projects', 'users', M.PLANS_KEY, M.LIST_KEY, M.HEARD_KEY, 'jobAutoDefaults', 'customers', 'leads']);   /* PORTALSEE: customers / leads for the commercial + GC tests */
   return { data: d, settings: M.settingsOf(d[M.PLANS_KEY]), list: arr(d[M.LIST_KEY]), heard: arr(d[M.HEARD_KEY]) };
 }
 function findProject(d, pid){ return core().findProject(d, pid); }
@@ -146,15 +146,32 @@ function pmOf(d, p){ try { return core().pmOf(d, p); } catch (e) { return null; 
 function custEmail(p){ return s(p.clientEmail || p.customerEmail || p.email); }
 function custName(p){ return s(p.client || p.clientName || p.customer); }
 
+/* ── patch PORTALSEE: what this customer sees (netlify/functions/_lib/portalshow.js). The plans: OFF until an admin turns on
+   "🛠 Show GrayCo Care maintenance plans on customer portals", then residential jobs only; the job's own 🛠 switch overrides
+   (Show / Hide). A customer who already has a plan (asked, quoted or signed) keeps seeing it unless the job says Hide. ── */
+async function showOf(A, p){ return core().portalShowFor(A.data, p); }
+function plansVis(A, p, SH){
+  const st = A.settings, active = M.contractsFor(A.list, p.id);
+  /* a commercial job's plans are the commercial plans (the job type alone said "residential" for a commercial client) */
+  const pp = SH.commercial && M.groupOf(p) !== 'commercial' && M.groupOf(p) !== 'insurance' ? Object.assign({}, p, { type: 'Commercial ' + s(p.type) }) : p;
+  const forced = SH.mode && SH.mode.plans === 'on';
+  const offered = SH.plans === true && (forced ? M.plansFor(pp, st).length > 0 : M.eligible(pp, st));
+  const visible = SH.plans === true ? true : (SH.mode && SH.mode.plans === 'off' ? false : active.length > 0);
+  return { pp: pp, offered: offered, visible: visible };
+}
 /* ── the customer's view ── */
-async function view(A, p){
+async function view(A, p, SH){
+  if (!SH) SH = await showOf(A, p);
+  const PV = plansVis(A, p, SH), pp = PV.pp;
+  const h0 = A.heard.find(function(x){ return s(x.pid) === s(p.id); });
+  const heardOut = SH.heard ? { answer: h0 ? s(h0.answer) : '', who: h0 ? s(h0.who) : '', opts: M.HEARD_OPTS } : null;   /* hidden: never sent */
+  if (!PV.visible) return { ok: true, heard: heardOut, maint: { offered: false }, commercial: !!SH.commercial };   /* hidden: no plans, no prices, no contracts */
   const st = A.settings, mine = M.contractsFor(A.list, p.id).concat(arr(A.list).filter(function(c){ return s(c.pid) === s(p.id) && c.status === 'declined'; }));
-  const offered = M.eligible(p, st);
-  const plans = offered ? M.plansFor(p, st) : [];
+  const offered = PV.offered;
+  const plans = offered ? M.plansFor(pp, st) : [];
   const docs = {};
   for (const c of mine) if (c.docRef) docs[c.id] = await signUrl(c.docRef);
   const agr = {}; for (const c of mine) if (c.agreementRef && !c.docRef && !/^(declined)$/.test(s(c.status))) agr[c.id] = agr[c.agreementRef] || (agr[c.agreementRef] = await signUrl(c.agreementRef));
-  const h = A.heard.find(function(x){ return s(x.pid) === s(p.id); });
   /* patch MAINTPLUS: the visits (the Maintenance Schedule), what was approved for the portal (visit updates, repair quotes),
      the property's Emergency Ready file, the membership tier */
   let X = {}; if (mine.some(function(c){ return c.status === 'signed'; })) { try { X = await core().kvRead(['gc_approval_queue', 'gc_maint_visits', 'gc_maint_props', 'gc_portal_auto_posts']); } catch (e) { X = {}; } }
@@ -170,7 +187,7 @@ async function view(A, p){
   const vis = arr(X.gc_maint_visits).filter(function(v){ return s(v.pid) === s(p.id) && v.status !== 'cancelled'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; });
   const prop = X.gc_maint_props && typeof X.gc_maint_props === 'object' ? X.gc_maint_props[s(p.id)] : null;
   const signedL = mine.filter(function(c){ return c.status === 'signed'; }), tierK = M.bestTier(signedL), T = st.tiers[tierK];
-  return { ok: true, heard: { answer: h ? s(h.answer) : '', who: h ? s(h.who) : '', opts: M.HEARD_OPTS },
+  return { ok: true, heard: heardOut, commercial: !!SH.commercial,
     maint: { offered: offered || mine.length > 0, plans: plans.map(function(x){ return { id: x.id, name: x.name, includes: M.plainIncludes(x.includes), visits: x.visits, freq: x.freq, freqLabel: M.freqLabel(x.freq) }; }),
       contracts: mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }), f = s(c.freq) || (pl ? pl.freq : 'yearly'), bills = M.billsPerYear(c);   /* patch MAINTPLANS */
         return { id: c.id, planId: s(c.planId), planName: s(c.planName), status: s(c.status), price: c.status === 'requested' ? null : (c.price != null ? money(c.price) : null),
@@ -185,8 +202,8 @@ async function view(A, p){
         requestedAt: s(c.requestedAt), quotedAt: s(c.quotedAt), signedAt: s(c.signedAt), signName: s(c.signName), nextVisit: s(c.nextVisit), doc: docs[c.id] || '', agreement: agr[c.id] || '' }; }),
       alacarte: offered || mine.length ? (st.addOns || []).map(function(a){ return { id: a.id, name: a.name, price: a.price, note: a.note }; }) : [],   /* the add-ons; a single visit of a plan: ask in Other plans */
       pm: pmP ? { name: s(pmP.name), initial: s(pmP.name).charAt(0).toUpperCase() } : null, docs: docsOut.reverse().slice(0, 12), phone: OFFICE_PHONE,
-      tiers: ['bronze', 'silver', 'gold'].map(function(k){ const x = st.tiers[k]; return { id: k, name: x.name, discount: x.discount, perks: x.visits, note: x.note || '', monthly: (st.monthly || M.MONTHLY)[M.groupOf(p) === 'commercial' ? 'commercial' : 'residential'][k], yearly: (function(){ const y = st.yearly && st.yearly[M.groupOf(p) === 'commercial' ? 'commercial' : 'residential']; const v = y && Number(y[k]); return v > 0 ? v : null; })(), yearlyDiscount: st.yearlyDiscount != null ? st.yearlyDiscount : 10, extraCalls: x.extraCalls, bullets: x.bullets || [], popular: (st.popularTier || 'silver') === k }; }),   /* patch MAINTSETTINGS */   /* patch CAREYEARLY: a yearly tier price, when the owner set one */
-      market: M.groupOf(p) === 'commercial' ? 'commercial' : 'residential', refCredit: Math.max.apply(null, [0].concat(mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }); return pl ? M.num(pl.refCredit) : 0; }))),
+      tiers: ['bronze', 'silver', 'gold'].map(function(k){ const x = st.tiers[k]; return { id: k, name: x.name, discount: x.discount, perks: x.visits, note: x.note || '', monthly: (st.monthly || M.MONTHLY)[M.groupOf(pp) === 'commercial' ? 'commercial' : 'residential'][k], yearly: (function(){ const y = st.yearly && st.yearly[M.groupOf(pp) === 'commercial' ? 'commercial' : 'residential']; const v = y && Number(y[k]); return v > 0 ? v : null; })(), yearlyDiscount: st.yearlyDiscount != null ? st.yearlyDiscount : 10, extraCalls: x.extraCalls, bullets: x.bullets || [], popular: (st.popularTier || 'silver') === k }; }),   /* patch MAINTSETTINGS */   /* patch CAREYEARLY: a yearly tier price, when the owner set one */
+      market: SH.commercial || M.groupOf(pp) === 'commercial' ? 'commercial' : 'residential',   /* PORTALSEE: "Protect your building" on a commercial job */ refCredit: Math.max.apply(null, [0].concat(mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }); return pl ? M.num(pl.refCredit) : 0; }))),
       agreementSummary: ['A 12-month agreement — pay monthly or yearly.', 'Renews only if you tick auto-renew; otherwise we ask you first.', 'End it any time by e-mail; no refund for a visit already made.', 'Repairs we find are quoted first and only done with your OK.', 'Your plan does not change any manufacturer warranty or insurance policy.'],
       member: signedL.length ? { tier: tierK, name: T.name, discount: T.discount, note: T.note || '', perks: T.visits } : null,
       emready: prop && prop.emready ? { building: s(prop.emready.building), contacts: arr(prop.emready.contacts), shutoffs: arr(prop.emready.shutoffs).map(function(x){ return { what: s(x.what), location: s(x.location), hasPhoto: !!x.photo }; }), updatedAt: s(prop.emready.updatedAt).slice(0, 10) } : null } };
@@ -201,8 +218,9 @@ async function heard(event, row, body, A, p){
   return r.ok ? { status: 200, out: { ok: true, answer: answer, who: who } } : { status: 503, out: { ok: false, error: 'We could not save it just now — please try again.' } };
 }
 async function request(event, row, body, A, p){
-  const plan = M.plansFor(p, A.settings).find(function(x){ return x.id === s(body.planId); });
-  if (!plan || !M.eligible(p, A.settings)) return { status: 400, out: { ok: false, error: 'That plan is not offered for this job — call ' + OFFICE_PHONE + '.' } };
+  const PV = plansVis(A, p, await showOf(A, p));   /* patch PORTALSEE */
+  const plan = M.plansFor(PV.pp, A.settings).find(function(x){ return x.id === s(body.planId); });
+  if (!plan || !PV.offered) return { status: 400, out: { ok: false, error: 'That plan is not offered for this job — call ' + OFFICE_PHONE + '.' } };
   const at = nowIso(), id = 'mt_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
   const note = clip(s(body.note).replace(/[<>]/g, ''), 400);
   const rec = { id: id, pid: s(p.id), planId: plan.id, planName: plan.name, visitsPerYear: plan.visits, freq: plan.freq, status: 'requested', requestedAt: at, requestedBy: 'customer', note: note, history: [{ at: at, by: 'customer (portal)', what: 'Asked for a quote' }], updatedAt: at };
@@ -480,7 +498,9 @@ exports.handler = async function(event){
   let A = null, p = null;
   try { A = await readAll(); p = findProject(A.data, row.project_id); } catch (e) { return reply(503, headers, { ok: false, error: 'We could not load this just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   if (!p) return notActive(headers, t0);
-  if (action === 'view') return reply(200, headers, await view(A, p));
+  let SH = null; try { SH = await showOf(A, p); } catch (e) { return reply(503, headers, { ok: false, error: 'We could not load this just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' }); }   /* patch PORTALSEE */
+  if (action === 'view') return reply(200, headers, await view(A, p, SH));
+  if (action === 'heard' ? !SH.heard : !plansVis(A, p, SH).visible) return reply(403, headers, { ok: false, error: 'That is not on your portal — call GrayCo ' + OFFICE_PHONE + '.' });   /* patch PORTALSEE: a hidden section takes no answers */
   if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can do this.' });
   if (tooManyWrites(row.token || sess)) return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' });
   try {

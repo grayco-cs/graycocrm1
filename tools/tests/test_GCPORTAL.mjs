@@ -57,12 +57,12 @@ await t('mirror: ROTC Cordova (T724, A & B Construction Co., Inc.) → the GC va
   RES = C.listOf(data, ['projects']).find(p => /residential/i.test(p.type || '') && /@/.test(p.clientEmail || '') && !C.portalStyle(data, p).gc && !C.clientIsCompany(data, p) && !/lost|dead|cancel/i.test(p.status || ''));
   assert.ok(RES, 'a residential job in the mirror');
   const r = (await call('portal', { action: 'view' }, linkFor(RES.id))).data;
-  assert.ok(r.variant === 'home' && r.job.stages[0] === 'Lead' && !r.customer.company && r.customer.firstName, 'the residential job keeps the homeowner portal');
+  assert.ok(r.variant === 'home' && r.job.stages[0] === 'Estimate sent' && !r.job.stages.includes('Lead') && !r.customer.company && r.customer.firstName, 'the residential job keeps the homeowner portal');
 });
 await t('the sample homeowner job is unchanged; set to "GC (we\'re the sub)" on its card it turns GC; no carrier / sub / internal words either way', async () => {
   W.setDay(); W.seedSample({ crmDocs: false }); W.resetCaches();
   const L = { 'x-portal-token': W.S.link };
-  let v = (await call('portal', { action: 'view' }, L)).data; assert.ok(v.variant === 'home' && v.customer.firstName === 'Sample' && !v.customer.company && v.job.stages[0] === 'Lead');
+  let v = (await call('portal', { action: 'view' }, L)).data; assert.ok(v.variant === 'home' && v.customer.firstName === 'Sample' && !v.customer.company && v.job.stages[0] === 'Estimate sent');   /* PORTALSEE: no Lead / Contacted / Appointment booked */
   const p = W.get('projects'); p[0].portalStyle = 'gc'; W.put('projects', p); W.resetCaches();
   v = (await call('portal', { action: 'view' }, L)).data; assert.ok(v.variant === 'gc' && v.job.stages[0] === 'Bid submitted', v.job.stageName);
   const j = JSON.stringify(v); for (const w of [W.S.carrier, W.S.sub, '8765', 'INTERNAL', 'Other Person']) assert.ok(!j.includes(w), w);
@@ -102,7 +102,7 @@ if (!process.argv.includes('--no-browser') && HAVE && ROTC) {
       const ctx = await W.context(browser, kind), pg = await ctx.newPage(); pg.on('pageerror', e => ERRS.push(kind + ' home: ' + e.message));
       await pg.goto(srv.ORIGIN + '/#t=' + W.S.link); await pg.waitForSelector('#track', { timeout: 30000 }); await sleep(2500);
       assert.ok(/^Hi Sample — your project$/.test(await pg.textContent('#hi')));
-      assert.ok(/Appointment booked/.test(await pg.textContent('#track')));
+      { const tr = await pg.textContent('#track'); assert.ok(/Estimate sent/.test(tr) && !/Appointment booked|Contacted|\bLead\b/.test(tr), tr.slice(0, 200)); }   /* PORTALSEE: the homeowner steps, no sales steps */
       await pg.waitForSelector('#gcpr-project', { timeout: 15000 }); assert.ok(await pg.isVisible('#gcpr-project'));
       await pg.screenshot({ path: path.join(SHOTS, kind + '_09_homeowner_unchanged.png') });
       await ctx.close();

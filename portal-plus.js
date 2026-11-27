@@ -77,6 +77,7 @@ function makePad(){
 
 /* ── 🙋 How did you hear about us? (shown until answered, then a thank-you) ── */
 function heardCard(){
+  if (!D.heard) return null;   /* patch PORTALSEE: hidden on this job (the server sent nothing) */
   var H = D.heard || {}, c = h('section', { class: 'card', id: 'gcpp-heard' });
   if (H.answer && !note.heard) return null;
   c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🙋 How did you hear about us?' })]));
@@ -112,14 +113,15 @@ function tierPrice(t){
   return ui.billing === 'yearly' ? 'from $' + n(yr) + '/yr' + (!(Number(t && t.yearly) > 0) && dc > 0 ? ' · paid once a year: save ' + dc + '%' : '') : 'from $' + n(mo) + '/mo';
 }
 function priceOf(k){ return ui.billing === 'monthly' ? usd(Math.ceil((Number(k.price) || 0) / 12 * 100) / 100) + ' a month' : usd(k.price) + ' per year'; }
+function bldg(){ return D && (D.commercial || (D.maint && D.maint.market === 'commercial')) ? 'your property' : 'your home'; }   /* patch PORTALSEE: commercial words */
 function maintCard(){
   var M = D.maint || {}; if (!M.offered) return null;
   var cs = M.contracts || [], byPlan = {}; cs.forEach(function(x){ if (!byPlan[x.planId] || byPlan[x.planId].status === 'declined') byPlan[x.planId] = x; });   /* an open plan wins over an old "No thanks" */
   var signed = cs.filter(function(x){ return x.status === 'signed'; }), quoted = cs.filter(function(x){ return x.status === 'quoted'; }), chosen = cs.filter(function(x){ return /^(requested|quoted|signed)$/.test(x.status); });
   var c = h('section', { class: 'card gc-care', id: 'gcpp-maint' });
-  var com = M.market === 'commercial', where = (D.job && (D.job.address || D.job.name)) || '';
-  c.appendChild(h('div', { class: 'care-hero' }, [h('div', { class: 'care-kicker', text: 'GrayCo Care' }), h('div', { class: 'care-h1', text: signed.length ? 'Your GrayCo Care' : (com ? 'Protect your building' : 'Protect your home') }),
-    h('div', { class: 'care-sub', text: signed.length ? 'Thank you for letting GrayCo take care of ' + (com ? 'your building.' : 'your home.') : 'Small fixes on the spot and a photo report after every visit — so little things never become big repairs.' })]));
+  var com = M.market === 'commercial' || D.commercial === true, where = (D.job && (D.job.address || D.job.name)) || '';
+  c.appendChild(h('div', { class: 'care-hero' }, [h('div', { class: 'care-kicker', text: 'GrayCo Care' }), h('div', { class: 'care-h1', text: signed.length ? 'Your GrayCo Care' : (com ? 'Protect your property' : 'Protect your home') }),
+    h('div', { class: 'care-sub', text: signed.length ? 'Thank you for letting GrayCo take care of ' + (com ? 'your property.' : 'your home.') : 'Small fixes on the spot and a photo report after every visit — so little things never become big repairs.' })]));
   c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🛠 Your maintenance plans' }), signed.length ? h('span', { class: 'pill ok', text: 'You are covered' }) : null]));
   if (PREVIEW) c.appendChild(h('div', { class: 'muted', text: 'Preview — only the customer can ask or sign.' }));
   if (signed.length) dashboard(c, M, signed);
@@ -206,9 +208,9 @@ function offer(c, M, cs, byPlan, chosen, quoted){
     if (!k || k.status === 'declined') {
       var ask = h('button', { type: 'button', class: 'btn', 'data-ask': p.id, text: k ? 'Ask for a quote again' : 'Request a quote' }), msg = h('div', { class: 'pp-msg', role: 'status' }); ask.disabled = PREVIEW;
       ask.addEventListener('click', function(){ if (busy) return; busy = true; ask.disabled = true; msg.textContent = 'Sending…';
-        api({ action: 'maint-request', planId: p.id }).then(function(r){ busy = false; if (r.data && r.data.ok) { note.maint = '✓ Thank you — your Project Manager will price it for your home and it will show here.'; load(); } else { msg.textContent = (r.data && r.data.error) || 'That did not work — please call ' + OFFICE + '.'; ask.disabled = false; } }); });
+        api({ action: 'maint-request', planId: p.id }).then(function(r){ busy = false; if (r.data && r.data.ok) { note.maint = '✓ Thank you — your Project Manager will price it for ' + bldg() + ' and it will show here.'; load(); } else { msg.textContent = (r.data && r.data.error) || 'That did not work — please call ' + OFFICE + '.'; ask.disabled = false; } }); });
       box.appendChild(ask); box.appendChild(msg);
-    } else if (k.status === 'requested') box.appendChild(h('span', { class: 'pp-st now', text: '⏳ Quote requested ' + dt(k.requestedAt) + ' — your Project Manager will price it for your home' }));
+    } else if (k.status === 'requested') box.appendChild(h('span', { class: 'pp-st now', text: '⏳ Quote requested ' + dt(k.requestedAt) + ' — your Project Manager will price it for ' + bldg() }));
     else if (k.status === 'quoted') {
       box.appendChild(h('div', { class: 'pp-price', text: priceOf(k) }));
       if (ui.billing === 'yearly' && k.billsPerYear > 1) box.appendChild(h('div', { class: 'muted', text: 'Billed ' + k.billsPerYear + ' times a year: ' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months.' }));
