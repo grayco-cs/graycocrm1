@@ -471,6 +471,61 @@ function portalSteps(p, sched){
   const i = l.findIndex(function(x){ return !x.done; }); if (i >= 0) l[i].now = true;
   return l;
 }
+/* ── patch PORTALSCHED (owner 11/27: "this should be reading my schedule and putting it in here … post in schedule portals"): the
+   customer's 📅 Your schedule = the job's plan steps (portalSteps, above) + the job's POSTED schedule rows, sorted by date.
+   A row is shown only when it is the real schedule for the customer: not tentative (📋 Tentative tab, not posted), not deleted /
+   archived, not a template suggestion or a hidden duplicate bookend (SCHEDVIS), not personal / private / internal / staff-only /
+   customerVisible:false, not an inspection when the job's portalInspections switch is off. Only a title and dates go out — the
+   sub / vendor / crew / assignee, times, notes, costs and phone numbers never do (names are taken out of the title too).
+   A row a plan step already shows (its tplTask), and a hand "Start — …" / "Finish — …" entry on a plan step's day, is not shown
+   twice; the same title on the same day once. ── */
+const ROW_HIDE_TYPE = /^(personal|internal|pto|time ?off|vacation|reminder|todo|to-?do|sales|estimate|lead|appointment|call)$/i;
+const ROW_NAME_KEYS = ['vendor', 'sub', 'subName', 'subCompany', 'assignee', 'assignedTo', 'crew', 'crewName', 'crewLead', 'foreman', 'who', 'createdBy', 'by', 'tech', 'employee', 'super', 'superintendent'];
+function rxEsc(t){ return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function rowNames(r, users){
+  const out = [];
+  ROW_NAME_KEYS.forEach(function(k){ const v = r && r[k]; (Array.isArray(v) ? v : [v]).forEach(function(x){ const t = s(x && typeof x === 'object' ? (x.name || x.company) : x); if (t.length >= 3 && !/^(auto|automations?|system|template|crm|grayco)$/i.test(t)) out.push(t); }); });
+  arr(users).forEach(function(u){ const t = s(u && u.name); if (t.length >= 3) out.push(t); });
+  return out.sort(function(a, b){ return b.length - a.length; });
+}
+function rowTitle(r, users){
+  let t = s(r && (r.title || r.name || r.task));
+  rowNames(r, users).forEach(function(n){ t = t.replace(new RegExp('\\b' + rxEsc(n) + "(?:'s)?\\b", 'gi'), ' '); });
+  arr(users).forEach(function(u){ const f = s(u && u.name).split(/\s+/)[0]; if (f.length >= 3) t = t.replace(new RegExp('\\b' + rxEsc(f) + "'s\\b", 'gi'), ' '); });   /* "Marco's crew" → "crew" */
+  t = t.replace(/\$\s?\d[\d,]*(?:\.\d{2})?/g, ' ').replace(/\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]\d{4}\b/g, ' ').replace(/\b(?:with|by|for|w\/)\s*(?=[—–\-:|,]|$)/gi, ' ')
+    .replace(/\(\s*\)/g, ' ').replace(/\s*([—–\-:|,]\s*)+$/g, '').replace(/^\s*[—–\-:|,]+\s*/, '').replace(/\s*[—–\-:|]\s*[—–\-:|]\s*/g, ' — ').replace(/\s+/g, ' ').trim();
+  return t;
+}
+function rowShown(r, p){
+  if (!r || typeof r !== 'object' || s(r.pid || r.projectId) !== s(p.id)) return false;
+  if (r.deleted === true || r.archived === true || r.tentative === true || /^(tentative|personal|private)$/i.test(s(r.scope))) return false;
+  if (r.private === true || r.internal === true || r.staffOnly === true || r.customerVisible === false || r.portal === false || r.hideCustomer === true) return false;
+  if (ROW_HIDE_TYPE.test(s(r.type))) return false;
+  if (p.portalInspections === false && (r.insId || /^inspection$/i.test(s(r.type)))) return false;
+  return !!ymd(r.date || r.start);
+}
+function custSteps(p, sched, users){
+  const plan = portalSteps(p, sched).map(function(x){ return { name: x.name, date: x.date, end: x.end, done: x.done }; });
+  if (!Array.isArray(sched) || !p) { const k0 = plan.findIndex(function(x){ return !x.done; }); if (k0 >= 0) plan[k0].now = true; return plan; }
+  const t = new Date().toISOString().slice(0, 10), planIds = {}, planDays = {}, seen = {};
+  const pl = p.schedPlan && Array.isArray(p.schedPlan.steps) ? p.schedPlan.steps : [];
+  pl.forEach(function(x){ if (x && x.id) planIds[s(x.id)] = 1; });
+  plan.forEach(function(x){ if (x.date) planDays[x.date] = 1; seen[low(x.name) + '|' + x.date] = 1; });
+  const rows = [];
+  SCHEDVIS.visible(sched).forEach(function(r){
+    if (!rowShown(r, p)) return;
+    if (s(r.tplTask) && planIds[s(r.tplTask)] && plan.length) return;   /* the plan step shows it */
+    const d = ymd(r.date || r.start), e = ymd(r.endDateSch || r.endDate || r.end);
+    if ((SCHEDVIS.kindOf(r) || /^\s*(start|finish|end|completion)\b\s*[—–:-]/i.test(s(r.title))) && planDays[d]) return;   /* a hand Start / Finish entry on a plan step's day */
+    const name = clip(rowTitle(r, users), 90); if (!name || !/[a-z]/i.test(name)) return;
+    const k = low(name) + '|' + d; if (seen[k]) return; seen[k] = 1;
+    const end = e && e > d ? e : '';
+    rows.push({ name: name, date: d, end: end, done: (end || d) < t });
+  });
+  const l = plan.concat(rows).sort(function(a, b){ return (a.date || '9999') < (b.date || '9999') ? -1 : (a.date || '9999') > (b.date || '9999') ? 1 : 0; }).slice(0, 60);
+  const i = l.findIndex(function(x){ return !x.done; }); if (i >= 0) l[i].now = true;
+  return l;
+}
 /* ── patch GCPORTAL (owner 11/03: "this is A&B and this is commercial … this is also a sub, so we won't offer maintenance for
    jobs we're working for big GCs. Make this portal template different for when we're subbing for a big GC.")
    portalStyle(data, p) → { gc, why }: the job's own choice first (job.portalStyle 'gc' | 'home', set on its Customer portal card),
@@ -967,7 +1022,7 @@ async function buildView(data, p, opts){
       address: clip(p.address || p.jobAddress || cust.address, 160),
       phone: clip(p.clientPhone || p.customerPhone || p.phone || cust.phone, 40),
       email: clip(p.clientEmail || p.customerEmail || p.email || cust.email, 120) },
-    job: { name: clip(p.name, 90), address: clip(p.address || p.jobAddress, 160), po: clip(p.autoPO || p.po, 20), stage: stage, stageName: STAGES[stage], stages: STAGES, steps: portalSteps(p, schedNow) },
+    job: { name: clip(p.name, 90), address: clip(p.address || p.jobAddress, 160), po: clip(p.autoPO || p.po, 20), stage: stage, stageName: STAGES[stage], stages: STAGES, steps: custSteps(p, schedNow, users) },   /* patch PORTALSCHED: + the posted schedule rows */
     pm: { name: clip(pmName, 60), phone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40), email: clip(pmUser.email || '', 120) },
     money: { contract: contract, changeOrders: cos.map(function(c){ return { title: clip(c.desc || c.description || c.title || c.name || 'Change order', 120), amount: money(num(c.amt != null ? c.amt : (c.amount != null ? c.amount : c.total))), date: ymd(c.date || c.approvedDate || c.savedAt) }; }),
       invoices: invOut, payments: payments, paid: paid, due: due,
@@ -3147,7 +3202,7 @@ Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tok
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { COMMON_CARRIERS: COMMON_CARRIERS });
-Object.assign(exports._core, { portalStyle: portalStyle, clientIsCompany: clientIsCompany, GC_STAGES: GC_STAGES, portalShowFor: portalShowFor, showApply: showApply, settingsGet: settingsGet, custStages: custStages, custStageName: custStageName });   /* patch PORTALSEE: portalShowFor / showApply */   /* patch GCPORTAL */   /* patch PORTALREQ: never a carrier in a portal request answer */
+Object.assign(exports._core, { portalSteps: portalSteps, portalStyle: portalStyle, clientIsCompany: clientIsCompany, GC_STAGES: GC_STAGES, portalShowFor: portalShowFor, showApply: showApply, settingsGet: settingsGet, custStages: custStages, custStageName: custStageName });   /* patch PORTALSEE: portalShowFor / showApply */   /* patch GCPORTAL */   /* patch PORTALREQ: never a carrier in a portal request answer */
 /* patch ESTPDF: every approval that carries an estimate (the proposal e-mail, the "please sign" e-mail, "Put in the customer
    portal") goes out only with its PDF in the CRM, and what went out is recorded (gc_kv gc_est_sent) — _lib/estpdf.js.
    aqSend is the one place approvals are sent (at approve time, or at 7 AM for a quiet-hours approval), so the sentAt is
@@ -3169,4 +3224,4 @@ Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJ
   ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
   pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });
 exports._estin = { estinEstHidden: estinEstHidden, estinDocHidden: estinDocHidden, proposalShown: proposalShown, docShown: docShown, insDocShown: insDocShown };   /* patch ESTIN: tests */
-exports._sched = { portalSteps: portalSteps };   /* patch VOICESCHED: tests */
+exports._sched = { portalSteps: portalSteps, custSteps: custSteps, rowTitle: rowTitle, rowShown: rowShown };   /* patch PORTALSCHED: + custSteps */   /* patch VOICESCHED: tests */
