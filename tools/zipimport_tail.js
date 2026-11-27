@@ -202,7 +202,7 @@ function mergeLists(a, b){
   arr(a).concat(arr(b)).forEach(function(x){
     if (!x || !x.id) return;
     if (!(x.id in at)) { at[x.id] = out.length; out.push(x); return; }
-    var y = out[at[x.id]], n = newer(y, x), m = Object.assign({}, n === y ? x : y, n); m.files = mergeFiles(y.files, x.files); if (y.contractReads || x.contractReads) m.contractReads = mergeFiles(y.contractReads, x.contractReads); out[at[x.id]] = m;
+    var y = out[at[x.id]], n = newer(y, x), m = Object.assign({}, n === y ? x : y, n); m.files = mergeFiles(y.files, x.files); if (y.contractReads || x.contractReads) m.contractReads = mergeFiles(y.contractReads, x.contractReads); if (y.docReads || x.docReads) m.docReads = mergeFiles(y.docReads, x.docReads); out[at[x.id]] = m;   /* patch CONTRACTREAD2: + docReads */
   });
   return out.sort(function(p, q){ return s(q.at).localeCompare(s(p.at)); });
 }
@@ -524,8 +524,14 @@ function curContract(p){ return parseFloat(String(p && (p.contract != null && p.
 async function applyContract(pid, rd, file, batch, by){
   var p = proj(pid); if (!p || !rd) return null;
   var cur = curContract(p), at = nowIso();
+  if (!cur && +rd.cloudCur > 0) cur = +rd.cloudCur;   /* patch CONTRACTREAD2: the cloud's copy of the job already has one (typed on another computer) */
   var rec = { id: 'ct_' + String(pid) + '_' + low(file).replace(/[^a-z0-9]+/g, '_').slice(0, 40), pid: String(pid), job: s(p.name), file: file, amount: rd.amount, label: rd.label, conf: rd.conf, was: cur, at: at, by: by, updatedAt: at };
-  if (!cur) {
+  /* patch CONTRACTREAD2: a person's ✅ Use / Keep on this job is final — a later read only records itself, it never asks again */
+  var decided = ctFor(pid).filter(function(o){ return o.x.state === 'used' || o.x.state === 'kept'; })[0];
+  if (decided) { rec.state = 'after-decision'; rec.decided = decided.x.state; batch.contractReads = arr(batch.contractReads).filter(function(x){ return x.id !== rec.id; }).concat([rec]); return rec; }
+  if (rd.noteOnly) rec.noteOnly = true;
+  if (!cur && rd.noteOnly) rec.state = 'open';   /* a proposal / estimate: never the price by itself — ✅ Use / Keep */
+  else if (!cur) {
     var ok = false;
     if (typeof W._gcxPatchJob === 'function') { try { ok = await W._gcxPatchJob(String(pid), { contract: rd.amount, contractFrom: { file: file, amount: rd.amount, label: rd.label, at: at, by: by, zipBatch: batch.id } }, 'Contract ' + money2(rd.amount) + ' read from ' + file); } catch (e) { warn(e); } }
     rec.state = ok ? 'set' : 'open';
@@ -559,7 +565,7 @@ function ctPaint(){
         '<span style="flex:1 1 240px;min-width:0;overflow-wrap:anywhere">📄 <b>' + esc(x.file) + '</b> says <b>' + money2(x.amount) + '</b> — the job shows ' + money2(cur) + (x.label ? ' <span style="color:#92400e;font-size:12px">(“' + esc(x.label) + '”)</span>' : '') + '</span>' +
         '<button type="button" data-ct-use="' + esc(x.id) + '" style="border:1px solid #15803d;background:#16a34a;color:#fff;border-radius:8px;padding:6px 12px;font:700 13px inherit;cursor:pointer">✅ Use ' + money2(x.amount) + '</button>' +
         '<button type="button" data-ct-keep="' + esc(x.id) + '" style="border:1px solid #d6dbe3;background:#fff;color:#334155;border-radius:8px;padding:6px 12px;font:600 13px inherit;cursor:pointer">Keep</button></div>'; }).join('') +
-      (last && !open.length ? '<div style="color:#64748b;font-size:12px">📄 Contract ' + money2(last.x.amount) + ' read from ' + esc(last.x.file) + ' · ' + esc(s(last.x.updatedAt).slice(0, 10)) + (last.x.state === 'used' ? ' (used by ' + esc(last.x.decidedBy || '') + ')' : ' (ZIP import by ' + esc(last.x.by) + ')') + '</div>' : '');
+      (last && !open.length ? '<div style="color:#64748b;font-size:12px">📄 Contract ' + money2(last.x.amount) + ' read from ' + esc(last.x.file) + ' · ' + esc(s(last.x.updatedAt).slice(0, 10)) + (last.x.state === 'used' ? ' (used by ' + esc(last.x.decidedBy || '') + ')' : last.b.id === DR_ID ? ' (read from the job\'s documents)' : ' (ZIP import by ' + esc(last.x.by) + ')') + '</div>' : '');
     st.parentNode.insertBefore(el, st);
     el.querySelectorAll('[data-ct-use],[data-ct-keep]').forEach(function(bt){ bt.onclick = function(){ var use = bt.hasAttribute('data-ct-use'); ctDecide(pid, bt.getAttribute(use ? 'data-ct-use' : 'data-ct-keep'), use); }; });
   } catch (e) { warn(e); }
@@ -577,7 +583,256 @@ async function ctDecide(pid, id, use){
   ctSig = ''; var el = D.getElementById('gc-zipct'); if (el) el.__sig = ''; later(ctPaint, 50);
 }
 var ctReadAt = 0;
-SI.call(W, function(){ try { if (D.hidden) return; var op = W._gcOpenProject; if (op && op.id && canImport() && Date.now() - ctReadAt > 60000) { ctReadAt = Date.now(); refresh(false).then(ctPaint); } ctPaint(); } catch (e) {} }, 1500);
+SI.call(W, function(){ try { if (D.hidden) return; var op = W._gcOpenProject; if (op && op.id && canImport() && Date.now() - ctReadAt > 60000) { ctReadAt = Date.now(); refresh(false).then(ctPaint); } ctPaint(); drPaint(); } catch (e) {} }, 1500);
+
+/* ── patch CONTRACTREAD2 + DOCSCHED (owner 11/27, the Projects list with every Head Start job at Contract $0.00: "my contracts with
+   amounts officially are in the crm and under contracts it should be reading that and entering here" + "this should be reading my
+   schedule and putting it in here if i put any schedule in for the job in the documents"): the documents ALREADY on the jobs are
+   read — not only a ZIP being imported. The CRM page reads them (it has the PDF / Word / Excel readers), quietly, a few jobs at a
+   time when the page is idle, on a computer of an admin, the office or a PM (by role). Any way a file got onto a job (📦 ZIP, the
+   job's Documents upload / drag-drop, the field app, the portals) lands in projectDocs, and that list is what is looked at.
+   · The contract: category Contracts or a contract-like name; never a subcontract / sub agreement (nor category Sub Docs), nor
+     change orders, invoices, insurance, lien waivers. In order: "contract" + "signed" / "executed" → an exhibit / award → any
+     other "contract" / "agreement" → (only when nothing else exists) a proposal / estimate / quote. The first of those that has a
+     labelled amount (CONTRACTREAD's own reader) is used. An empty / $0 contract is set through window._gcxPatchJob (contract +
+     contractFrom only); a job that has a contract only gets the "📄 <file> says $X — the job shows $Y · ✅ Use · Keep" note; a
+     proposal / estimate, or one file on several jobs, never sets the price — it is always the note. A person's Use / Keep is final.
+   · A schedule (any category; schedule / tentative schedule / look-ahead / timeline / Gantt / calendar — never a schedule of
+     values) is read with ZIPSCHED's reader and added like ZIPSCHED (never twice: same job + title + start; nothing is removed, the
+     person-typed Start / Finish entries stay). A tentative one goes on the 📋 Tentative tab and, on a job that is already active /
+     approved / scheduled, TENTPOST's card asks on the job page "📅 Tentative schedule found in <file> (N items) — ✅ Post as the
+     schedule · ✏️ Edit first · Later". Never posted silently.
+   · Each file is read once: gc_kv gc_zip_import keeps one record "zi_docread" (docReads per document id + the contractReads the job
+     page shows), so every computer knows what was read. A file that could not be fetched is tried again (3 times).
+   · 💎 → "📄 Read contract prices and schedules from job documents" (admins): runs it now for every job, with the results listed.
+   Console: _gcDocRead.run({ all: true }), .state(), .tier(doc), .isSched(doc) ── */
+var DR_ID = 'zi_docread';
+var DR = { busy: false, runs: 0, startAt: Date.now(), last: [], errs: 0, lastRun: '' };
+var DR_FIRST = +W.__GC_DOCREAD_FIRST__ || 75000, DR_EVERY = +W.__GC_DOCREAD_EVERY__ || 20000, DR_JOBS = 3;
+var GO_ST = /^(active|approved|in[ _-]?progress|scheduled)$/i;
+function isAdminNow(){
+  if (!myEmail()) return false;
+  var st = rpStatus(); if (st && st.admin && st.viewAs) return /^admin/i.test(s(st.viewAs));
+  if (realAdmin()) return true;
+  var u = meU(); return /^admin/i.test(role()) || !!(u && (/^admin/i.test(s(u.role)) || low(u.payType) === 'owner'));
+}
+function drRec(){ var b = cache().filter(function(x){ return x.id === DR_ID; })[0]; return b ? JSON.parse(JSON.stringify(b)) : { id: DR_ID, kind: 'docread', at: '2026-11-27T00:00:00.000Z', by: 'CRM (job documents)', files: [], contractReads: [], docReads: [] }; }
+function docPid(d){ return s(d && (d.pid != null && d.pid !== '' ? d.pid : (d.projectId || d.jobId))); }
+function docName(d){ return s(d && (d.name || d.fileName || d.title)); }
+function docExt(d){ var m = /\.([a-z0-9]{2,5})$/i.exec(docName(d)) || /\.([a-z0-9]{2,5})$/i.exec(s(d && d.ref)); return m ? m[1].toLowerCase() : ''; }
+function docSrc(d){ if (/^sb:crm-files\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(s(d && d.ref))) return 'ref'; if (/^data:[a-z]/i.test(s(d && (d.data || d.url)))) return 'data'; return ''; }
+function nmz(t){ return ' ' + low(t).replace(/\.[a-z0-9]{2,5}$/, '').replace(/[^a-z0-9]+/g, ' ').trim() + ' '; }
+var CT2_NOT = /\bsub ?contract|\bsub(contractor)? ?agreement|\bsubs?\b|change ?order|\bco \d|invoice|\blien\b|waiver|insurance|\bcoi\b|\bw ?9\b|payroll|pay ?app|vendor|supplier|amendment/;
+/* the contract file's rank: 1 signed contract · 2 contract / agreement · 3 exhibit / award · 4 proposal / estimate (the note only) · 0 not one */
+function ctTier(d){
+  if (!d || !/^(pdf|docx|xlsx|xls)$/.test(docExt(d))) return 0;
+  var n = nmz(docName(d)), cat = low(d.cat);
+  if (/\bsub/.test(cat) || CT2_NOT.test(n)) return 0;
+  if (!(cat === 'contracts' || /contract|agreement|award|exhibit|proposal|estimate|quote/.test(n))) return 0;
+  if (/contract/.test(n) && /\b(signed|executed)\b/.test(n)) return 1;
+  if (/exhibit|\baward/.test(n)) return 3;
+  if (/contract|agreement/.test(n)) return 2;
+  if (/proposal|estimate|\bquote\b|\bbid\b/.test(n)) return 4;
+  return 0;
+}
+function isSchedDoc(d){
+  if (!d || !/^(pdf|docx|xlsx|xlsm|xls|csv|txt)$/.test(docExt(d))) return false;
+  var n = nmz(docName(d));
+  if (/schedule of values|\bsov\b|pay ?app|invoice|\bpay ?schedule|payment schedule|draw schedule/.test(n)) return false;
+  return /schedul|look ?ahead|timeline|gantt|calendar/.test(n);
+}
+/* read at its ZIP import already (CONTRACTREAD / ZIPSCHED of that import) */
+function zipHandled(d, kind){
+  if (!d || !d.zipBatch) return false;
+  var b = cache().filter(function(x){ return x.id === d.zipBatch; })[0]; if (!b) return false;
+  if (kind === 'contract') return arr(b.contractReads).some(function(x){ return x && String(x.pid) === docPid(d) && low(x.file) === low(docName(d)); });
+  return arr(b.files).some(function(f){ return f && f.docId === d.id && +f.schedItems > 0; });
+}
+function readsOf(rec){ var h = {}; arr(rec.docReads).forEach(function(x){ if (x && x.id) h[x.id] = x; }); return h; }
+function needRead(h, id){ var x = h[id]; if (!x) return true; return x.state === 'retry' && (+x.tries || 0) < 3 && Date.now() - (Date.parse(x.updatedAt) || 0) > 10 * 60000; }
+function putRead(rec, h, o){ o.updatedAt = nowIso(); h[o.id] = o; rec.docReads = arr(rec.docReads).filter(function(x){ return x && x.id !== o.id; }).concat([o]); return o; }
+async function docBlob(d){
+  if (docSrc(d) === 'ref') { if (typeof W._gcFileBlob !== 'function') { var e0 = new Error('the file store is not on this page'); e0.code = 'offline'; throw e0; } return await W._gcFileBlob(d.ref); }
+  var r = await W.fetch(s(d.data || d.url)); return await r.blob();
+}
+function workOf(pid, docs, rec){
+  var h = readsOf(rec), ct = [], sc = [];
+  docs.forEach(function(d){
+    if (docPid(d) !== pid) return;
+    var t = ctTier(d); if (t && !zipHandled(d, 'contract') && needRead(h, 'ct|' + d.id)) ct.push({ d: d, t: t });
+    if (isSchedDoc(d) && !zipHandled(d, 'sched') && needRead(h, 'sc|' + d.id)) sc.push(d);
+  });
+  return { ct: ct, sc: sc };
+}
+function retryOrGiveUp(rec, h, id, base, e){
+  var x = h[id], n = (+(x && x.tries) || 0) + 1, code = s(e && e.code);
+  var soft = code === 'offline' || code === 'missing' || /fetch|network|storage|reach/i.test(s(e && e.message));
+  return putRead(rec, h, Object.assign(base, { state: soft && n < 3 ? 'retry' : 'unreadable', tries: n, why: s(e && e.message || e).slice(0, 120) }));
+}
+/* the job as the cloud has it now (null = could not be read) */
+function cloudJob(pid){
+  var c = creds(); if (!c.k) return Promise.resolve(null);
+  return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.projects&select=value', { headers: hdr(c), cache: 'no-store' })
+    .then(function(r){ if (!r || !r.ok) throw new Error('read ' + (r && r.status)); return r.json(); })
+    .then(function(rows){ var v = rows && rows[0] && rows[0].value; if (typeof v === 'string') v = JSON.parse(v); return arr(v).filter(function(q){ return q && String(q.id) === String(pid); })[0] || {}; })
+    .catch(function(e){ warn(e); return null; });
+}
+async function drContract(pid, docs, rec, by, out){
+  var p = proj(pid); if (!p) return;
+  var h = readsOf(rec), cands = workOf(pid, docs, rec).ct; if (!cands.length) return;
+  var best = 9;
+  arr(rec.docReads).forEach(function(x){ if (x && x.kind === 'contract' && String(x.pid) === pid && +x.amount > 0 && x.tier && x.state !== 'unreadable') best = Math.min(best, +x.tier); });
+  cache().forEach(function(b){ if (b.id !== DR_ID && arr(b.contractReads).some(function(x){ return x && String(x.pid) === pid; })) best = Math.min(best, 2); });
+  for (var t = 1; t <= 4; t++) {
+    var L = cands.filter(function(c){ return c.t === t; }); if (!L.length) continue;
+    if (t > best) { L.forEach(function(c){ putRead(rec, h, { id: 'ct|' + c.d.id, kind: 'contract', docId: c.d.id, pid: pid, file: docName(c.d), tier: t, state: 'skipped', why: 'a better contract file was read', at: nowIso(), by: by }); }); continue; }
+    var got = null;
+    for (var i = 0; i < L.length; i++) {
+      var d = L[i].d, nm = docName(d), base = { id: 'ct|' + d.id, kind: 'contract', docId: d.id, pid: pid, job: s(p.name), file: nm, tier: t, at: nowIso(), by: by };
+      var rd = null;
+      try { rd = await readContract(function(){ return docBlob(d); }, nm, nm); }
+      catch (e) { warn(e); var rr = retryOrGiveUp(rec, h, base.id, base, e); out.push({ pid: pid, job: s(p.name), kind: 'contract', file: nm, state: rr.state, line: rr.state === 'retry' ? '⏳ ' + esc(p.name) + ': ' + esc(nm) + ' could not be fetched yet — tried again later' : '⚠ ' + esc(p.name) + ': ' + esc(nm) + ' could not be read (' + esc(rr.why) + ')' }); continue; }
+      putRead(rec, h, Object.assign(base, rd ? { state: 'read', amount: rd.amount, label: rd.label, conf: rd.conf } : { state: 'no-amount', amount: 0 }));
+      if (!rd) { out.push({ pid: pid, job: s(p.name), kind: 'contract', file: nm, state: 'no-amount', line: '⚠ ' + esc(p.name) + ': no labelled contract amount in ' + esc(nm) + ' (a scanned PDF has no text to read) — type the contract on the job' }); continue; }
+      if (!got || rd.conf > got.rd.conf || (rd.conf === got.rd.conf && rd.amount > got.rd.amount)) got = { rd: rd, d: d };
+    }
+    if (!got) continue;
+    best = t;
+    var gd = got.d, gn = docName(gd);
+    var multi = docs.some(function(o){ return o && o.id !== gd.id && docPid(o) && docPid(o) !== pid && ((s(o.hash) && s(o.hash) === s(gd.hash)) || (low(docName(o)) === low(gn) && (+o.size || 0) === (+gd.size || 0) && (+gd.size || 0) > 0)); });
+    var cloudCur = 0;
+    if (!curContract(proj(pid)) && !(t === 4 || multi)) {   /* before setting a price: the cloud's newest copy of the job must not have one either */
+      var cj = await cloudJob(pid);
+      if (cj === null) { var dr0 = h['ct|' + gd.id]; putRead(rec, h, Object.assign({}, dr0, { state: 'retry', tries: (+dr0.tries || 0) + 1, why: 'the cloud copy of the job could not be checked' })); out.push({ pid: pid, job: s(p.name), kind: 'contract', file: gn, state: 'retry', line: '⏳ ' + esc(p.name) + ': ' + esc(gn) + ' says ' + money2(got.rd.amount) + ' — set once the cloud can be checked' }); return; }
+      cloudCur = curContract(cj);
+    }
+    var x = await applyContract(pid, Object.assign({}, got.rd, { noteOnly: t === 4 || multi, cloudCur: cloudCur }), gn, rec, by);
+    if (x) {
+      var dr = h['ct|' + gd.id]; if (dr) putRead(rec, h, Object.assign({}, dr, { state: 'applied', result: x.state, noteOnly: !!(t === 4 || multi), multiJob: multi || undefined }));
+      var ln = ctLine(x);
+      if (x.state === 'after-decision') ln = '💲 ' + esc(p.name) + ': ' + esc(gn) + ' says ' + money2(x.amount) + ' — the contract was already decided on the job (' + esc(x.decided) + '), not asked again';
+      if (x.state === 'open' && x.noteOnly && !x.was) ln = '💲 ' + esc(p.name) + ': ' + esc(gn) + ' says ' + money2(x.amount) + (multi ? ' (the same file is on other jobs)' : ' (a proposal / estimate — not the contract)') + ' — ✅ Use / Keep on the job page';
+      out.push({ pid: pid, job: s(p.name), kind: 'contract', file: gn, state: x.state, amount: x.amount, line: ln });
+    }
+  }
+}
+async function drSched(pid, docs, rec, by, out){
+  var p = proj(pid); if (!p) return;
+  var h = readsOf(rec), L = workOf(pid, docs, rec).sc;
+  for (var i = 0; i < L.length; i++) {
+    var d = L[i], nm = docName(d), base = { id: 'sc|' + d.id, kind: 'schedule', docId: d.id, pid: pid, job: s(p.name), file: nm, at: nowIso(), by: by };
+    var x = null;
+    try { x = await readSched({ name: nm, path: nm, size: +d.size || 0, get: function(){ return docBlob(d); } }); }
+    catch (e) { warn(e); var rr = retryOrGiveUp(rec, h, base.id, base, e); out.push({ pid: pid, job: s(p.name), kind: 'schedule', file: nm, state: rr.state, line: (rr.state === 'retry' ? '⏳ ' : '⚠ ') + esc(p.name) + ': the schedule ' + esc(nm) + (rr.state === 'retry' ? ' could not be fetched yet — tried again later' : ' could not be read') }); continue; }
+    if (!x || !arr(x.items).length) {
+      putRead(rec, h, Object.assign(base, { state: 'none', n: 0, noText: !s(x && x.text) }));
+      out.push({ pid: pid, job: s(p.name), kind: 'schedule', file: nm, state: 'none', line: '📅 ' + esc(p.name) + ': no dated rows found in ' + esc(nm) + (!s(x && x.text) ? ' (no text in the file — a scan?)' : '') });
+      continue;
+    }
+    var tent = TENT_RX.test(nm) || TENT_RX.test(s(x.text).slice(0, 3000));
+    var recs = schedRecs(pid, x.items, tent, { file: nm, batch: DR_ID, by: by }).map(function(r){ r.source = 'job-doc'; r.fromDocId = s(d.id); return r; });
+    var added = 0; try { added = await addSched(recs); } catch (e) { warn(e); }
+    /* the page's own copy (window._crm.schedule — what TENTPOST and the job page read) is rebuilt only when another list changes: add the new rows to it */
+    try { if (added && W._crm && Array.isArray(W._crm.schedule)) { var hv = {}; W._crm.schedule.forEach(function(e){ if (e && e.pid != null && e.deleted !== true) hv[schedKey(e)] = 1; }); var nw = recs.filter(function(r){ if (hv[schedKey(r)]) return false; hv[schedKey(r)] = 1; return true; }); if (nw.length) W._crm.schedule = W._crm.schedule.concat(nw); } } catch (e) { warn(e); }
+    var ask = tent && GO_ST.test(s(p.status));
+    putRead(rec, h, Object.assign(base, { state: tent ? (ask ? 'tent-ask' : 'tentative') : 'posted', n: x.items.length, added: added, tent: tent }));
+    out.push({ pid: pid, job: s(p.name), kind: 'schedule', file: nm, state: tent ? 'tentative' : 'posted', n: x.items.length,
+      line: '📅 ' + esc(p.name) + ': ' + x.items.length + (tent ? ' tentative' : '') + ' schedule item' + (x.items.length === 1 ? '' : 's') + ' read from ' + esc(nm) + (added < x.items.length ? ' (' + (x.items.length - added) + ' already on the schedule)' : '') + (tent ? (ask ? ' — ✅ Post / ✏️ Edit first on the job page' : ' — on the 📋 Tentative tab until the job goes active') : ' — on the job\'s Schedule') });
+  }
+}
+async function drRun(o){
+  o = o || {};
+  if (DR.busy) return [];
+  if (typeof W._gcPdfText !== 'function' || typeof W._gcFileBlob !== 'function') return [];   /* the readers are not on this page yet */
+  DR.busy = true; DR.runs++; var out = [];
+  try {
+    var docs = arr(await docsNow()).filter(function(d){ return d && d.deleted !== true && d._deleted !== true && docPid(d) && docSrc(d); });
+    var pick = function(rec){ return projects().map(function(p){ return String(p.id); }).filter(function(pid){ var w = workOf(pid, docs, rec); return w.ct.length || w.sc.length; })
+      .sort(function(a, b){ return (curContract(proj(a)) ? 1 : 0) - (curContract(proj(b)) ? 1 : 0); }); };
+    if (!pick(drRec()).length) return out;
+    await refresh(true);
+    var todo = pick(drRec()), by = myName();
+    if (o.onStart) o.onStart(todo.length);
+    for (var i = 0; i < todo.length; i++) {
+      if (!o.all && i >= (o.max || DR_JOBS)) break;
+      var rec = drRec(), n0 = out.length;
+      try { await drContract(todo[i], docs, rec, by, out); } catch (e) { DR.errs++; warn(e); }
+      try { await drSched(todo[i], docs, rec, by, out); } catch (e) { DR.errs++; warn(e); }
+      await saveBatch(rec);
+      if (o.onLine) o.onLine(out.slice(n0), i + 1, todo.length);
+    }
+  } catch (e) { DR.errs++; warn(e); }
+  finally { DR.busy = false; DR.lastRun = nowIso(); DR.last = out.map(function(x){ return x.line.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&'); }).slice(-60); }
+  if (out.length) { var el = D.getElementById('gc-zipct'); if (el) el.__sig = ''; later(ctPaint, 50); }
+  return out;
+}
+/* idle: a few jobs at a time, on a computer of an admin / the office / a PM, the page shown, nobody typing */
+function drIdle(){
+  try {
+    if (DR.busy || D.hidden || !canImport() || Date.now() - DR.startAt < DR_FIRST || W.__GC_IS_TYPING__ || D.getElementById('gczi-ov')) return;
+    if (!projects().length) return;
+    var go = function(){ drRun({ max: DR_JOBS }); };
+    if (typeof W.requestIdleCallback === 'function') W.requestIdleCallback(go, { timeout: 8000 }); else go();
+  } catch (e) { warn(e); }
+}
+SI.call(W, drIdle, DR_EVERY);
+/* the job page: where its schedule came from, and TENTPOST's card for a tentative schedule read from a document */
+function drPaint(){
+  var op = W._gcOpenProject, pid = op && op.id ? String(op.id) : '', el = D.getElementById('gc-docsched');
+  var st = pid && canImport() ? ctStrip() : null;
+  var rec = cache().filter(function(x){ return x.id === DR_ID; })[0];
+  var L = rec && pid ? arr(rec.docReads).filter(function(x){ return x && x.kind === 'schedule' && String(x.pid) === pid && +x.n > 0; }).sort(function(a, b){ return s(b.updatedAt).localeCompare(s(a.updatedAt)); }) : [];
+  if (!st || !L.length) { if (el) el.remove(); }
+  else {
+    var x = L[0], tp = W._gcTentPost, left = 0;
+    try { left = tp && tp.tentOf ? tp.tentOf(pid).filter(function(r){ return s(r.fromFile) === s(x.file); }).length : 0; } catch (e) {}
+    var h = '📅 ' + x.n + ' schedule item' + (+x.n === 1 ? '' : 's') + ' read from ' + esc(x.file) + ' · ' + esc(s(x.updatedAt).slice(0, 10)) + (x.tent ? (left ? ' (tentative — not posted yet)' : ' (tentative)') : ' (on the Schedule)');
+    if (!el) { el = D.createElement('div'); el.id = 'gc-docsched'; el.setAttribute('data-gc-keep', '1'); el.style.cssText = 'margin:4px 0 8px;color:#64748b;font:12px Inter,-apple-system,Arial,sans-serif'; }
+    if (el.__h !== h) { el.innerHTML = h; el.__h = h; }
+    if (el.nextElementSibling !== st) st.parentNode.insertBefore(el, st);
+  }
+  /* TENTPOST asks once per document on the job's page */
+  try {
+    var T = W._gcTentPost; if (!pid || !T || !T.ask || !rec) return;
+    var ask = arr(rec.docReads).filter(function(x){ return x && x.kind === 'schedule' && x.state === 'tent-ask' && String(x.pid) === pid; })[0];
+    if (!ask || ASKED[ask.id]) return;
+    var n = T.tentOf(pid).filter(function(r){ return s(r.fromFile) === s(ask.file); }).length;
+    if (!n) return;
+    ASKED[ask.id] = 1;
+    T.ask(pid, 'document', { file: ask.file, n: n, readId: ask.id });
+  } catch (e) { warn(e); }
+}
+var ASKED = {};
+/* TENTPOST tells which button was pressed: the answer is kept (✅ Post / ✏️ Edit first / Later — never asked again) */
+W.__gcTentDecided = function(pid, act, info){
+  try {
+    if (!info || !info.readId) return;
+    var rec = drRec(), h = readsOf(rec), x = h[info.readId]; if (!x || x.state !== 'tent-ask') return;
+    putRead(rec, h, Object.assign({}, x, { state: 'tent-' + act, decidedBy: myName(), decidedAt: nowIso() }));
+    saveBatch(rec);
+  } catch (e) { warn(e); }
+};
+/* 💎 → 📄 Read contract prices and schedules from job documents (admins): all jobs now, the results listed */
+function drOpen(){
+  if (!isAdminNow()) { toast('Reading every job\'s documents is for admins.'); return; }
+  var body = shell('gcdr-ov', '📄 Read contract prices and schedules from job documents');
+  body.innerHTML = '<div class="mut">The documents already on every job are read once: the contract (the signed contract first — never a subcontract or sub agreement) and any schedule. ' +
+    'An empty or $0 contract is set from it; a job that already has a contract only gets “📄 … says $X · ✅ Use · Keep” on its page. A schedule goes on the job\'s Schedule; a tentative one waits for ✅ Post on the job page. Files read before are not read again. This also runs by itself, a few jobs at a time.</div>' +
+    '<div class="pick"><button type="button" class="btn go" data-dr="go">▶ Read now (all jobs)</button></div><div class="mut" data-dr="msg"></div><div class="sum" data-dr="list" style="display:none"></div>';
+  var go = body.querySelector('[data-dr="go"]'), m = body.querySelector('[data-dr="msg"]'), list = body.querySelector('[data-dr="list"]');
+  go.onclick = function(){
+    if (DR.busy) { m.textContent = 'Already reading — a moment…'; return; }
+    go.disabled = true; m.textContent = 'Looking at every job\'s documents…'; list.style.display = 'none'; list.innerHTML = '';
+    var shown = 0;
+    drRun({ all: true,
+      onStart: function(n){ m.textContent = n + ' job' + (n === 1 ? '' : 's') + ' with documents not read yet…'; },
+      onLine: function(lines, i, n){ m.textContent = 'Read ' + i + ' of ' + n + ' jobs…'; lines.forEach(function(x){ shown++; list.style.display = 'block'; var dv = D.createElement('div'); dv.style.cssText = 'padding:4px 0;border-top:1px solid #eef2f7'; dv.innerHTML = x.line; dv.setAttribute('data-dr-line', x.kind); list.appendChild(dv); }); }
+    }).then(function(out){
+      go.disabled = false;
+      m.textContent = shown ? '✓ Done — ' + out.length + ' result' + (out.length === 1 ? '' : 's') + '.' : '✓ Nothing new to read — every contract and schedule document on the jobs was read before.';
+    });
+  };
+}
 
 /* ── the sheet ── */
 var S = null;   /* { rows: [...], mode, zips, busy, done } */
@@ -954,6 +1209,16 @@ function hubItem(panel){
     var ph = panel.querySelector('#gc-hub-projhub-link');
     if (ph && ph.parentNode === panel) { if (ph.nextSibling !== it) panel.insertBefore(it, ph.nextSibling); }
     else if (!it.parentNode) { var first = panel.querySelector('.gc-hub-item'); if (first && first.parentNode === panel) panel.insertBefore(it, first.nextSibling); else panel.insertBefore(it, panel.firstChild); }
+    /* patch CONTRACTREAD2: admins — read the documents already on every job now */
+    var dr = panel.querySelector('#gc-docread-hub');
+    if (!isAdminNow()) { if (dr) dr.remove(); return; }
+    if (!dr) {
+      dr = D.createElement('div'); dr.id = 'gc-docread-hub'; dr.className = 'gc-hub-item'; dr.setAttribute('data-label', 'Read contract prices and schedules from job documents');
+      dr.style.cssText = it.style.cssText;
+      dr.innerHTML = '<span class="gc-hub-icon" style="font-size:18px">📄</span><span>Read contract prices and schedules from job documents</span>';
+      dr.onclick = function(){ later(drOpen, 0); };
+    }
+    if (it.parentNode && it.nextSibling !== dr) it.parentNode.insertBefore(dr, it.nextSibling);
   } catch (e) { warn(e); }
 }
 D.addEventListener('gc-hub-open', function(e){ var p = e && e.detail && e.detail.panel; hubItem(p); later(function(){ hubItem(p); }, 0); later(function(){ hubItem(p); }, 250); if (officeOrAdmin()) refresh(false); });
@@ -964,6 +1229,8 @@ SI.call(W, function(){ try { if (!D.hidden && officeOrAdmin()) refresh(false).th
 wrapSet(); SI.call(W, watch, 3000);
 W._gcApxExtra = arr(W._gcApxExtra); W._gcApxExtra.push(rows);
 
+W._gcDocRead = { run: drRun, open: drOpen, tier: ctTier, isSched: isSchedDoc, record: drRec, paint: drPaint,
+  state: function(){ return { busy: DR.busy, runs: DR.runs, lastRun: DR.lastRun, errs: DR.errs, last: DR.last.slice() }; } };   /* patch CONTRACTREAD2 */
 W._gcZipImport = { open: open, openPlace: openPlace, match: match, placeByPath: placeByPath, internalWhy: internalWhy, guessCat: guessCat,
   contractFromText: contractFromText, contractFromRows: contractFromRows, ctPaint: ctPaint,
   schedFromText: schedFromText, rowsToItems: rowsToItems, ymd: ymd,

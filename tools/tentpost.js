@@ -45,10 +45,10 @@ var SEEN = lsJ('gc_tentpost_seen', {}), OPEN = {}, RECENT = {};
 function seen(k){ return !!SEEN[k]; }
 function markSeen(k){ SEEN[k] = Date.now(); var ks = Object.keys(SEEN); if (ks.length > 300) ks.sort(function(a, b){ return SEEN[a] - SEEN[b]; }).slice(0, ks.length - 300).forEach(function(x){ delete SEEN[x]; }); lsS('gc_tentpost_seen', SEEN); }
 
-function ask(pid, why){
+function ask(pid, why, info){
   var p = proj(pid); if (!p) return false;
   var n = tentOf(pid).length; if (!n) return false;
-  OPEN[s(pid)] = { at: Date.now(), why: why || '' }; STATS.asked++;
+  OPEN[s(pid)] = { at: Date.now(), why: why || '', info: info || null }; STATS.asked++;   /* patch CONTRACTREAD2: info = { file, n, readId } — a tentative schedule read from a job document */
   paint(); return true;
 }
 
@@ -173,7 +173,8 @@ function toast(t){
 function cardHtml(pid, mode){
   var p = proj(pid) || {}, n = tentOf(pid).length, nm = esc(p.name || 'This job');
   if (mode === 'edit') return '<div class="t">📋 Tentative schedule of <b>' + nm + '</b> — ' + n + ' item' + (n === 1 ? '' : 's') + '. Change dates here, then post.</div><div class="gc-tp-acts"><button type="button" class="gc-tp-b pri" data-tp="postall" data-pid="' + esc(pid) + '">✅ Post all for ' + nm + '</button><button type="button" class="gc-tp-b" data-tp="done" data-pid="' + esc(pid) + '">✕ Close</button></div>';
-  return '<div class="t">📅 <b>' + nm + '</b> has ' + n + ' tentative schedule item' + (n === 1 ? '' : 's') + '.</div><div class="gc-tp-acts"><button type="button" class="gc-tp-b pri" data-tp="post" data-pid="' + esc(pid) + '">✅ Post as the schedule</button><button type="button" class="gc-tp-b" data-tp="edit" data-pid="' + esc(pid) + '">✏️ Edit first</button><button type="button" class="gc-tp-b" data-tp="later" data-pid="' + esc(pid) + '">Later</button></div>';
+  var inf = OPEN[s(pid)] && OPEN[s(pid)].info;   /* patch CONTRACTREAD2 */
+  return '<div class="t">' + (inf && inf.file ? '📅 Tentative schedule found in <b>' + esc(inf.file) + '</b> (' + n + ' item' + (n === 1 ? '' : 's') + ') for <b>' + nm + '</b>.' : '📅 <b>' + nm + '</b> has ' + n + ' tentative schedule item' + (n === 1 ? '' : 's') + '.') + '</div><div class="gc-tp-acts"><button type="button" class="gc-tp-b pri" data-tp="post" data-pid="' + esc(pid) + '">✅ Post as the schedule</button><button type="button" class="gc-tp-b" data-tp="edit" data-pid="' + esc(pid) + '">✏️ Edit first</button><button type="button" class="gc-tp-b" data-tp="later" data-pid="' + esc(pid) + '">Later</button></div>';
 }
 function anchorFor(pid){
   var c = D.querySelector('#_gcJobDash .gcq-card[data-field][data-pid="' + pid + '"]') || D.querySelector('main .gcq-card:not([data-field])[data-pid="' + pid + '"]');
@@ -216,6 +217,8 @@ D.addEventListener('click', function(e){
   var b = e.target && e.target.closest && e.target.closest('[data-tp]'); if (!b) return;
   e.preventDefault(); e.stopPropagation();
   var a = b.getAttribute('data-tp'), pid = b.getAttribute('data-pid');
+  var inf = (OPEN[s(pid)] || {}).info;   /* patch CONTRACTREAD2: the reader keeps the answer */
+  if (inf && /^(post|edit|later)$/.test(a)) { try { if (typeof W.__gcTentDecided === 'function') W.__gcTentDecided(pid, a, inf); } catch (x) { oops(x); } }
   try {
     if (a === 'post') post(pid, 'activation');
     else if (a === 'postall') post(pid, 'schedule (tentative tab)');
