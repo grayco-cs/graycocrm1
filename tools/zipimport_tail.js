@@ -751,7 +751,7 @@ async function drRun(o){
     /* patch DRONCE (owner 11/27: "contract reader should read one time when it goes in and when a change order is added, that's it"): on its own
        the reader only reads documents that came in from now on — once each; older ones only by the admin's 📄 Read button (o.all). A change
        order needs no reading: an approved one is added to the job's total by itself. */
-    if (!o.all) docs = docs.filter(function(d){ var t = Date.parse(s(d.uploadedAt || d.savedAt || d.createdAt || '')); return isFinite(t) && t >= DR_NEW_SINCE; });
+    if (!o.all && !isAdminNow()) docs = docs.filter(function(d){ var t = Date.parse(s(d.uploadedAt || d.savedAt || d.createdAt || '')); return isFinite(t) && t >= DR_NEW_SINCE; });   /* patch DRNOW: an admin's CRM also reads the older documents, once each */
     var pick = function(rec){ return projects().map(function(p){ return String(p.id); }).filter(function(pid){ var w = workOf(pid, docs, rec); return w.ct.length || w.sc.length; })
       .sort(function(a, b){ return (curContract(proj(a)) ? 1 : 0) - (curContract(proj(b)) ? 1 : 0); }); };
     if (!pick(drRec()).length) return out;
@@ -1214,16 +1214,9 @@ function hubItem(panel){
     var ph = panel.querySelector('#gc-hub-projhub-link');
     if (ph && ph.parentNode === panel) { if (ph.nextSibling !== it) panel.insertBefore(it, ph.nextSibling); }
     else if (!it.parentNode) { var first = panel.querySelector('.gc-hub-item'); if (first && first.parentNode === panel) panel.insertBefore(it, first.nextSibling); else panel.insertBefore(it, panel.firstChild); }
-    /* patch CONTRACTREAD2: admins — read the documents already on every job now */
-    var dr = panel.querySelector('#gc-docread-hub');
-    if (!isAdminNow()) { if (dr) dr.remove(); return; }
-    if (!dr) {
-      dr = D.createElement('div'); dr.id = 'gc-docread-hub'; dr.className = 'gc-hub-item'; dr.setAttribute('data-label', 'Read contract prices and schedules from job documents');
-      dr.style.cssText = it.style.cssText;
-      dr.innerHTML = '<span class="gc-hub-icon" style="font-size:18px">📄</span><span>Read contract prices and schedules from job documents</span>';
-      dr.onclick = function(){ later(drOpen, 0); };
-    }
-    if (it.parentNode && it.nextSibling !== dr) it.parentNode.insertBefore(dr, it.nextSibling);
+    /* patch DRNOW (owner 11/27: "I don't want a button to read them, just make it read them now, delete that button"): no 💎 item — an
+       admin's CRM reads the documents already on the jobs by itself (slowly, DRSLOW), once each */
+    var dr = panel.querySelector('#gc-docread-hub'); if (dr) dr.remove();
   } catch (e) { warn(e); }
 }
 D.addEventListener('gc-hub-open', function(e){ var p = e && e.detail && e.detail.panel; hubItem(p); later(function(){ hubItem(p); }, 0); later(function(){ hubItem(p); }, 250); if (officeOrAdmin()) refresh(false); });
