@@ -33,7 +33,7 @@ async function after(d, o){
       const recent = await d.dbGet('gc_portal_msg', 'select=id,created_at&project_id=eq.' + encodeURIComponent(s(o.pid)) + '&party=eq.' + encodeURIComponent('s:' + s(o.subId)) + '&side=eq.gc&created_at=gt.' + encodeURIComponent(since) + '&limit=5');
       if ((recent || []).some(r => r && s(r.id) !== s(o.id))) { out.skipped = 'told less than 30 minutes ago'; return out; }
       const link = await d.subLinkCreate(s(o.subId), name, 'sub thread');
-      const url = d.linkFor(link.token) + '&job=' + encodeURIComponent(s(o.pid));
+      const url = d.linkFor(link.token) + '&job=' + encodeURIComponent(s(o.pid)) + '&tab=messages';   /* patch SUBHOME2: lands on the job's Messages tab */
       const tag = d.jobTagOf ? s(d.jobTagOf(data, o.pid)) : '';
       const es = /^es/i.test(s(sub.lang));
       const subj = (es ? 'Nuevo mensaje de GrayCo' : 'New message from GrayCo') + (tag ? ' — ' + tag : '');

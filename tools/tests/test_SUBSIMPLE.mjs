@@ -237,19 +237,24 @@ await waitFor(() => P.evaluate(() => document.querySelectorAll('[data-myjob-docs
 const lay = await P.evaluate(() => {
   const main = document.getElementById('main'), kids = [...main.children];
   const idx = sel => kids.findIndex(k => k.matches(sel) || k.querySelector(sel));
-  return { tabs: [...document.querySelectorAll('#tabs button')].map(b => b.textContent), tosign: idx('[data-tosign]'), myjobs: idx('[data-myjobs]'), bidbtn: idx('[data-bidbtncard]'), cards: document.querySelectorAll('[data-myjob]').length,
+  return { tabs: [...document.querySelectorAll('#tabs button')].map(b => b.textContent), tosign: idx('[data-tosign]'), myjobs: idx('[data-myjobs]'), bidbtn: idx('[data-bidbtncard], #bidsBtn, [data-bidlist]'), pm: idx('.pm'), cards: document.querySelectorAll('[data-myjob]').length,
+    rowBtns: [...document.querySelectorAll('[data-myjob]')].map(r => r.querySelectorAll('button').length), rowPo: document.querySelectorAll('[data-myjob] [data-copy-po], [data-myjob] .po').length, tags: (document.querySelector('[data-myjob-tags="PDEMO1"]') || {}).textContent || '',
     details: document.querySelectorAll('[data-myjobs] details').length, panelHidden: (document.getElementById('bidsPanel') || {}).hidden, listShown: !!document.querySelector('[data-bidjob]'),
     info: (document.querySelector('[data-myjob="PDEMO1"]') || {}).textContent || '', btn: (document.getElementById('bidsBtn') || {}).textContent || '', tsText: (document.querySelector('[data-tosign]') || {}).textContent || '',
     hscroll: document.documentElement.scrollWidth > window.innerWidth + 1 };
 });
 ok('B1 five big tabs: Jobs · Schedule · Bids · Pay · Papers', JSON.stringify(lay.tabs) === JSON.stringify(['Jobs', 'Schedule', 'Bids', 'Pay', 'Papers']), lay.tabs);
-ok('B2 Home top to bottom: ✍ To sign (2 — the one approved in A8 too) first → My jobs → the "🔨 Jobs open for bids (N)" button', lay.tosign === 0 && lay.myjobs > lay.tosign && lay.bidbtn > lay.myjobs && /To sign \(2\)/.test(lay.tsText) && /Drywall — kitchen and hall/.test(lay.tsText) && /Drywall — bath/.test(lay.tsText), lay);
-ok('B3 every current job is its own open card (2), no dropdown — with address, PM name + phone, dates, PO, scope (To sign), plans & documents', lay.cards === 2 && lay.details === 0 && /123 Demo St/.test(lay.info) && /Sam Sample/.test(lay.info) && /901-555-0100/.test(lay.info) && /T601/.test(lay.info) && /starts/i.test(lay.info) && /Drywall — kitchen and hall/.test(lay.info) && /Plans & documents/.test(lay.info), lay.info);
-ok('B4 the bid list is CLOSED until tapped; the button counts the open jobs', lay.panelHidden === true && !lay.listShown && /Jobs open for bids \(2\)/.test(lay.btn) && !lay.hscroll, lay);
+/* patch SUBHOME2 (owner 11/27: "make the simpler home and combine the tabs"): Home = ✍ To sign → Today → 🏠 My jobs (short rows) → the PM; bids only in the Bids tab */
+ok('B2 Home top to bottom: ✍ To sign (2 — the one approved in A8 too) first → My jobs → the PM; no bid button / list on Home', lay.tosign === 0 && lay.myjobs > lay.tosign && lay.pm > lay.myjobs && lay.bidbtn < 0 && /To sign \(2\)/.test(lay.tsText) && /Drywall — kitchen and hall/.test(lay.tsText) && /Drywall — bath/.test(lay.tsText), lay);
+ok('B3 every current job is one short row (2), no dropdown — name, address, a badge (✍ 1 to sign), ONE Open › button, no PO there', lay.cards === 2 && lay.details === 0 && /Demo Kitchen Remodel/.test(lay.info) && /123 Demo St/.test(lay.info) && /1 to sign/.test(lay.tags) && lay.rowBtns.every(n => n === 1) && lay.rowPo === 0 && !lay.hscroll, lay);
 if (SHOTS) await P.screenshot({ path: path.join(SHOTS, 'subsimple_home.png'), fullPage: true });
-await P.click('#bidsBtn');
+await P.click('[data-myjob-open="PDEMO1"]'); await P.waitForSelector('[data-jobhead]', { timeout: 15000 }); await sleep(500);
+const jp = await P.evaluate(() => ({ head: document.querySelector('[data-jobhead]').textContent, body: document.getElementById('main').textContent, tabs: [...document.querySelectorAll('[data-jtab]')].map(b => b.getAttribute('data-jtab')), docs: !!document.querySelector('[data-subdocs]') }));
+ok('B3 … Open › → the job page has what the old Home card had: address, PM name + phone, dates, PO + Copy PO, scope (To sign), plans & documents; 4 tabs', /123 Demo St/.test(jp.head) && /Sam Sample/.test(jp.head) && /901-555-0100/.test(jp.head) && /T601/.test(jp.head) && /starts/i.test(jp.head) && /Drywall — kitchen and hall/.test(jp.body) && jp.docs && jp.tabs.join() === 'scope,photos,invoices,messages', jp);
+await P.click('#jobBack'); await sleep(300);
+await P.click('#tabs [data-tab="bids"]');
 await waitFor(() => P.evaluate(() => document.querySelectorAll('[data-bidjob]').length === 2));
-ok('B4 … tapped → the 2 bid jobs show under it', await P.evaluate(() => !document.getElementById('bidsPanel').hidden && document.querySelectorAll('#bidsPanel [data-bidjob]').length === 2));
+ok('B4 the Bids tab lists the 2 open bid jobs', await P.evaluate(() => document.querySelectorAll('[data-bidjob]').length === 2));
 /* the bid: PDF + price required */
 await P.click('[data-bidopen="bj1"]'); await P.waitForSelector('#bidSend');
 const acc = await P.getAttribute('#bidFiles', 'accept');
