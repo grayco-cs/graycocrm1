@@ -70,7 +70,8 @@ function custEmail(data, p){
   const e = s(p.clientEmail || p.customerEmail || p.email); if (okEmail(e)) return low(e);
   const nm = low(p.client || p.customer || p.clientName);
   const c = arr(data.customers).find(function(x){ return nm && low(x.name || x.company) === nm; });
-  return c && okEmail(c.email) ? low(c.email) : '';
+  if (c && okEmail(c.email)) return low(c.email);
+  try { return require('./apmail.js').firstTo(data, p, ''); } catch (e) { return ''; }   /* patch APEMAILS: or the account's accounts payable */
 }
 /* a to-do on the shared Office To-Do (gc_office_tasks), once per id; extra fields ride along (they tick it off later) */
 async function todoAdd(id, label, o){
