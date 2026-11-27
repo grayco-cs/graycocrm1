@@ -89,6 +89,13 @@ li.todo{color:#6B7682}
 @media(min-width:700px){#grid .pics{grid-template-columns:repeat(5,minmax(0,1fr))}}
 /* patch GCPORTAL: subbing for a GC — no homeowner offers: GrayCo Care / maintenance plans, "how did you hear", My home,
    the testimonial ask, referral gifts, the residential warranty block, "Request a new project" */
+/* patch PORTALSEE: the job's "What the customer sees" switches (V.show — the server also leaves out what is hidden) */
+body.ps-off-plans #gcpp-maint,body.ps-off-heard #gcpp-heard,body.ps-off-myhome #gcph-home,body.ps-off-review #gcph-testi,body.ps-off-review #gcReview,body.ps-off-referral #gcRefCard,body.ps-off-referral #gcrefer,body.ps-off-project #gcpr-project,
+body.ps-off-pay #tabs button[data-tab="pay"],body.ps-off-photos #tabs button[data-tab="photos"],body.ps-off-photos #gp-open,body.ps-off-docs #tabs button[data-tab="docs"]{display:none!important}
+/* patch PORTALSEE (owner 11/27: "should be at the bottom, and schedule should be at the top"): Home — 📅 Your schedule first (right
+   after the job header), the asks last: How did you hear about us, GrayCo Care, referral, review / testimonial */
+#main > .jobbar{order:-3}#gcSched{order:-2}
+#gcpp-heard{order:90}#gcpp-maint{order:91}#gcRefCard{order:92}#gcrefer{order:93}#gcReview{order:94}#gcph-testi{order:95}
 body.gc-variant #gcpp-maint,body.gc-variant #gcpp-heard,body.gc-variant #gcph-home,body.gc-variant #gcph-testi,body.gc-variant #gcRefCard,body.gc-variant #gcrefer,body.gc-variant #gcpr-project{display:none!important}
 .pics button{position:relative}.gp-you{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:800;color:#fff;background:#1D5E2C;padding:1px 5px;border-radius:4px}   /* patch CUSTPORTAL */
 .gp-add{display:flex;flex-direction:column;gap:6px;margin:4px 0 10px}.gp-add .btn{align-self:flex-start}
@@ -374,7 +381,7 @@ function dt(s){ if (!s) return ''; var d = new Date(String(s).length === 10 ? s 
 function when(s){ var d = new Date(s); if (isNaN(d)) return ''; var days = Math.floor((Date.now() - d) / 864e5); if (days <= 0) return LANG === 'es' ? 'Hoy' : 'Today'; if (days === 1) return LANG === 'es' ? 'Ayer' : 'Yesterday'; return dt(s); }
 function tm(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleString(LANG === 'es' ? 'es-US' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
 function tel(p){ return 'tel:' + String(p || '').replace(/[^0-9+]/g, ''); }
-function card(title, kids){ return h('section', { class: 'card' }, [title ? h('h2', { text: title }) : null].concat(kids || [])); }
+function card(title, kids, id){ return h('section', { class: 'card', id: id || null }, [title ? h('h2', { text: title }) : null].concat(kids || [])); }
 function wide(){ return window.matchMedia('(min-width: 1000px)').matches; }
 function store(k, v){ try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
 
@@ -652,6 +659,8 @@ function loadView(){
     /* patch GCPORTAL: a company client is greeted by its name ("A & B Construction Co., Inc. — your project", never "Hi A") */
     $('hi').textContent = c.company && c.name ? c.name + (LANG === 'es' ? ' — su proyecto' : ' — your project') : (LANG === 'es' ? 'Hola ' : 'Hi ') + (c.firstName || (LANG === 'es' ? '' : 'there')) + (LANG === 'es' ? ' — su proyecto' : ' — your project');
     try { document.body.classList.toggle('gc-variant', V.variant === 'gc'); } catch (e) {}   /* patch GCPORTAL: the GC (we are the sub) portal */
+    try { var SHW = V.show || {}; ['plans', 'heard', 'review', 'referral', 'project', 'myhome', 'super', 'pay', 'photos', 'docs'].forEach(function(k){ document.body.classList.toggle('ps-off-' + k, SHW[k] === false); });
+      document.body.classList.toggle('ps-com', SHW.commercial === true); if (SHW[TAB] === false && /^(pay|photos|docs)$/.test(TAB)) TAB = 'home'; } catch (e) {}   /* patch PORTALSEE: what this customer sees; ps-com = "property" words */
     $('jobName').textContent = j.name || 'Your project';
     $('jobSub').textContent = [j.address, j.po ? 'Job ' + j.po : ''].filter(Boolean).join(' · ');
     $('hello').hidden = false; $('tabs').hidden = false;
@@ -666,20 +675,30 @@ function loadView(){
 /* ── HOME ── */
 function tracker(){
   var j = V.job, list = h('ol', { class: 'steps' });
-  (j.stages || []).forEach(function(n, i){
-    var cls = i < j.stage ? 'done' : (i === j.stage ? 'now' : 'todo');
-    list.appendChild(h('li', { class: cls }, [h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: n + (i === j.stage ? ' — now' : '') })]));
+  /* patch PORTALSEE: the server starts the list at "Estimate sent" (no Lead / Contacted / Appointment booked); Spanish words for the steps */
+  var es = typeof LANG !== 'undefined' && LANG === 'es', SW = { 'Estimate sent': 'Presupuesto enviado', 'Contract signed + scheduled': 'Contrato firmado + programado', 'In progress': 'En progreso', 'Punch list': 'Lista de detalles finales',
+    'Final invoice': 'Factura final', 'Closed': 'Terminado', 'Getting your estimate ready': 'Preparando su presupuesto', 'Lead': 'Presupuesto enviado', 'Contacted': 'Presupuesto enviado', 'Appointment booked': 'Presupuesto enviado' };
+  var w = function(n){ return es && SW[n] ? SW[n] : n; };
+  (j.stages || []).filter(function(n){ return !/^(Lead|Contacted|Appointment booked)$/.test(n); }).forEach(function(n, i, all){
+    var k = (j.stages || []).length - all.length, at = j.stage - k;   /* a page given the old full list: the same steps, index moved */
+    var cls = i < at ? 'done' : (i === at ? 'now' : 'todo');
+    list.appendChild(h('li', { class: cls }, [h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: w(n) + (i === at ? (es ? ' — ahora' : ' — now') : '') })]));
   });
-  var kids = [h('div', { class: 'row' }, [h('h2', { text: 'Where your job is' }), h('span', { class: 'pill now', text: j.stageName || '' })]), list];
+  var kids = [h('div', { class: 'row' }, [h('h2', { text: es ? 'Dónde va su trabajo' : 'Where your job is' }), h('span', { class: 'pill now', text: /^(Lead|Contacted|Appointment booked)$/.test(j.stageName || '') ? w('Getting your estimate ready') : w(j.stageName || '') })]), list];
+  return h('section', { class: 'card', id: 'track' }, kids);
+}
+/* patch PORTALSEE: 📅 Your schedule — its own card, at the top of Home (it was inside "Where your job is") */
+function schedCard(){
+  var j = V.job || {}, kids = [];
   if (j.steps && j.steps.length) {   /* patch AUT3: the job's schedule, step by step (dates move when the schedule does) */
     var sl = h('ol', { class: 'steps', id: 'schedSteps' });
     j.steps.forEach(function(x){
       var d = x.date ? new Date(x.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + (x.end && x.end !== x.date ? ' – ' + new Date(x.end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') : '';
       sl.appendChild(h('li', { class: x.done ? 'done' : (x.now ? 'now' : 'todo') }, [h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: x.name + (d ? ' · ' + d : '') + (x.now ? (typeof LANG !== 'undefined' && LANG === 'es' ? ' — siguiente' : ' — next') : '') })]));
     });
-    kids.push(h('h3', { text: (typeof LANG !== 'undefined' && LANG === 'es' ? 'Su calendario' : 'Your schedule'), style: 'margin:14px 0 6px;font-size:15px' }), sl);
+    kids.push(h('h2', { text: (typeof LANG !== 'undefined' && LANG === 'es' ? '📅 Su calendario' : '📅 Your schedule') }), sl);
   }
-  return h('section', { class: 'card', id: 'track' }, kids);
+  return kids.length ? h('section', { class: 'card', id: 'gcSched' }, kids) : null;
 }
 function postEl(p){
   var kids = [h('div', { class: 'row' }, [h('b', { style: 'font-size:13px', text: (p.by ? p.by + ' · ' : '') + tr('yourTeam') }), h('span', { class: 'muted', text: when(p.at) })])];
@@ -701,6 +720,21 @@ function pmCard(){
     h('div', { class: 'btns3' }, [h('a', { class: 'btn gold', href: tel(phone), text: LANG === 'es' ? 'Llamar' : 'Call' }), h('a', { class: 'btn', href: 'sms:' + String(phone).replace(/[^0-9+]/g, ''), text: LANG === 'es' ? 'Texto' : 'Text' }),
       TAB === 'msgs' ? h('a', { class: 'btn', href: 'mailto:' + (email || 'office@grayco-cs.com'), text: 'E-mail' }) : h('button', { type: 'button', class: 'btn', text: tr('msgs'), on: { click: function(){ go('msgs'); } } })])
   ]);
+}
+/* patch PORTALSEE (owner 11/27: "for commercial jobs should also have superintendent here"): 👷 Your Superintendent — commercial
+   jobs (or the job's own switch); the server sends only the name, work phone and work e-mail, and nothing when none is set */
+function superCard(){
+  var su = V && V.super; if (!su || !su.name || (V.show && V.show.super === false)) return null;
+  var es = LANG === 'es', phone = su.phone || '', email = su.email || '';
+  var ini = su.name.split(/\s+/).map(function(x){ return x[0] || ''; }).join('').slice(0, 2).toUpperCase();
+  var c = card(null, [
+    h('div', { class: 'pm' }, [h('div', { class: 'av', text: ini || 'S' }), h('div', { class: 'grow' }, [
+      h('div', { class: 'muted', text: es ? 'Su Superintendente' : 'Your Superintendent' }), h('div', { style: 'font-size:15px;font-weight:700', text: su.name }),
+      h('div', { class: 'sel' }, [phone ? h('a', { href: tel(phone), text: phone }) : null, phone && email ? ' · ' : '', email ? h('a', { href: 'mailto:' + email, text: email }) : null])])]),
+    phone ? h('div', { class: 'btns3' }, [h('a', { class: 'btn gold', href: tel(phone), text: es ? 'Llamar' : 'Call' }), h('a', { class: 'btn', href: 'sms:' + String(phone).replace(/[^0-9+]/g, ''), text: es ? 'Texto' : 'Text' }),
+      email ? h('a', { class: 'btn', href: 'mailto:' + email, text: 'E-mail' }) : null]) : (email ? h('div', { class: 'btns3' }, [h('a', { class: 'btn', href: 'mailto:' + email, text: 'E-mail' })]) : null)]);
+  c.id = 'gcSuper';
+  return c;
 }
 function reachBlock(){
   var es = LANG === 'es';
@@ -729,7 +763,7 @@ function reviewCard(){
   return card('Thank you for choosing GrayCo!', [
     h('p', { class: 'muted', style: 'margin:0', text: 'If you were happy with our work, a quick review helps a lot.' }),
     h('a', { class: 'btn gold', href: V.review.google, target: '_blank', rel: 'noopener', text: '★ Leave a Google review' }),
-    V.review.facebook ? h('a', { class: 'btn', href: V.review.facebook, target: '_blank', rel: 'noopener', text: 'Find us on Facebook' }) : null].filter(Boolean));   /* patch COTRAIN: a company without its own Facebook page shows none */
+    V.review.facebook ? h('a', { class: 'btn', href: V.review.facebook, target: '_blank', rel: 'noopener', text: 'Find us on Facebook' }) : null].filter(Boolean), 'gcReview');   /* PORTALSEE: id; patch COTRAIN: a company without its own Facebook page shows none */
 }
 /* signed in with the starter password (first name): an optional, dismissible card — never forced */
 function ownPwCard(){
@@ -816,8 +850,9 @@ function home(){
   var ed = edCards();   /* patch PORTALED */
   var nq = newQCard();   /* patch PORTALPOL: "💬 1 new question from GrayCo" first */
   if (nq) ec = [nq].concat(ec);
-  if (wide()) return [ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []).concat(icd ? [icd] : []), ed, [updates(), photosButton(), reviewCard()]);   /* patch INSPECT2: + icd */
-  return [ownPwCard()].concat(ec, tr0, ed, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
+  var sc = V.insurance ? null : schedCard();   /* patch PORTALSEE: 📅 Your schedule at the top */
+  if (wide()) return [sc, ownPwCard()].concat(ec, V.insurance ? tr0 : (ch ? [ch] : []).concat(icd ? [icd] : []), ed, [updates(), photosButton(), reviewCard()]);   /* patch INSPECT2: + icd */
+  return [sc, ownPwCard()].concat(ec, tr0, ed, [updates(), pmCard(), superCard(), photosButton(), reviewCard(), infoCard()]);   /* PORTALSEE: + 👷 Superintendent */
 }
 
 /* ── PHOTOS: GrayCo Photos of this job only ── */
@@ -1218,14 +1253,14 @@ function insPay(){
 }
 
 /* ── frame ── */
-function go(t){ TAB = t; draw(); window.scrollTo(0, 0); }
+function go(t){ if (V && V.show && V.show[t === 'pay' ? 'pay' : t] === false && /^(pay|photos|docs)$/.test(t)) t = 'home'; TAB = t; draw(); window.scrollTo(0, 0); }   /* patch PORTALSEE: a hidden tab opens Home */
 function draw(){
   var main = $('main'); main.innerHTML = '';
   var parts = TAB === 'photos' ? photos() : TAB === 'docs' ? docs() : TAB === 'pay' ? pay() : TAB === 'msgs' ? msgs() : home();
   var top = [];
   if (JOBS && JOBS.length > 1) top.push(h('div', { class: 'jobbar' }, [h('button', { type: 'button', class: 'back', id: 'allJobs', text: tr('allProjects'), on: { click: function(){ V = null; PID = ''; picker(); } } })]));
   if (wide()) {
-    var left = h('aside', { class: 'col-l' }, [V.insurance ? null : tracker(), pmCard(), infoCard()].filter(Boolean));
+    var left = h('aside', { class: 'col-l' }, [V.insurance ? null : tracker(), pmCard(), superCard(), infoCard()].filter(Boolean));   /* PORTALSEE: + 👷 Superintendent */
     var right = h('section', { class: 'col-r' }, []);
     parts.forEach(function(p){ if (p) right.appendChild(p); });
     top.forEach(function(x){ main.appendChild(x); });

@@ -49,7 +49,7 @@ async function profile(data, p, words){
   const jobOut = [];
   for (const j of jobs) {
     const v = j === p ? view : await C.buildView(data, j);
-    jobOut.push({ name: clip(v.job.name, 90), po: v.job.po, stage: v.job.stageName, warranty: v.warranty ? { label: s(v.warranty.title || v.warranty.label), start: s(v.warranty.start), end: s(v.warranty.end) } : null,
+    jobOut.push({ name: clip(v.job.name, 90), po: v.job.po, stage: C.custStageName ? C.custStageName(v.job.stageName) : v.job.stageName,   /* PORTALSEE: never a sales step */ warranty: v.warranty ? { label: s(v.warranty.title || v.warranty.label), start: s(v.warranty.start), end: s(v.warranty.end) } : null,
       invoices: arr(v.money && v.money.invoices).map(function(i){ return { number: i.number, date: i.date, amount: i.amount, balance: i.balance, status: i.status }; }) });
   }
   const pids = jobs.map(function(j){ return s(j.id); });
@@ -89,11 +89,14 @@ exports.handler = async function(event){
     const data = await C.crmData(false), p = C.findProject(data, row.project_id);
     if (!p) return reply(404, headers, { ok: false, error: C.NOT_ACTIVE });
     const words = C.portalInsWords ? C.portalInsWords(data, p) : C.insWords(data, p);   /* patch PORTALPOL: the customer's own carrier is shown in the portal */
+    let SH = null; try { SH = C.portalShowFor ? await C.portalShowFor(data, p) : null; } catch (e) { SH = null; }   /* patch PORTALSEE */
+    if (action === 'testimonial' && SH && SH.review === false) return reply(403, headers, { ok: false, error: 'That is not on your portal.' });
     const testi = await X10.listGet(X10.K.TESTI), mine = testi.find(function(x){ return s(x.pid) === s(p.id) && !x.deleted; });
     if (action === 'home') {
       const out = await profile(data, p, words);
       const stage = out.stage; delete out.stage;
       out.testimonial = { ask: !mine && (stage >= 7 || p.reviewLeft === true || Number(p.reviewRating) >= 4 || /happy|😀|great/i.test(s(p.portalMood || p.checkinMood))), sent: !!mine };
+      if (SH) { out.commercial = !!SH.commercial; if (SH.review === false) out.testimonial = null; if (SH.myhome === false) out.myhome = false; }   /* patch PORTALSEE: what this customer sees */
       return reply(200, headers, out);
     }
     if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can send this.' });

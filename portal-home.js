@@ -43,16 +43,16 @@ function css(){
   document.head.appendChild(st);
 }
 function sheet(){
-  var ov = h('div', { class: 'ph-ov', role: 'dialog', 'aria-label': 'My home' }), sh = h('div', { class: 'ph-sheet' });
+  var ov = h('div', { class: 'ph-ov', role: 'dialog', 'aria-label': com() ? 'My property' : 'My home' }), sh = h('div', { class: 'ph-sheet' });
   var close = function(){ ov.remove(); };
   sh.appendChild(h('button', { type: 'button', class: 'ph-x', text: 'Close', on: { click: close } }));
-  sh.appendChild(h('h2', { text: '🏠 My home' }));
+  sh.appendChild(h('h2', { text: com() ? '🏢 My property' : '🏠 My home' }));
   if (D.address) sh.appendChild(h('div', { style: 'color:#55626F', text: D.address }));
   var f = D.fields || {}, labels = D.labels || [];
   var have = labels.filter(function(l){ return f[l[0]]; });
   sh.appendChild(h('h3', { text: 'What we used' }));
   if (have.length) have.forEach(function(l){ sh.appendChild(h('div', { class: 'ph-row' }, [h('span', { text: l[1] }), h('b', { text: f[l[0]], style: 'text-align:right' })])); });
-  else sh.appendChild(h('div', { style: 'color:#55626F', text: 'Your Project Manager fills this in as the job goes — the materials and colors used on your home.' }));
+  else sh.appendChild(h('div', { style: 'color:#55626F', text: 'Your Project Manager fills this in as the job goes — the materials and colors used on ' + (com() ? 'your property.' : 'your home.') }));
   sh.appendChild(h('h3', { text: 'Warranties' }));
   (D.jobs || []).forEach(function(j){ sh.appendChild(h('div', { class: 'ph-row' }, [h('span', { text: j.name + (j.po ? ' · PO ' + j.po : '') }), h('b', { text: j.warranty ? j.warranty.label + (j.warranty.end ? ' — to ' + dt(j.warranty.end) : ' — starts when the job is complete') : '—' })])); });
   if ((D.plans || []).length) { sh.appendChild(h('h3', { text: 'Maintenance plan' })); D.plans.forEach(function(p){ sh.appendChild(h('div', { class: 'ph-row' }, [h('span', { text: p.name }), h('b', { text: p.nextVisit ? 'Next visit ' + dt(p.nextVisit) : 'Active' })])); }); }
@@ -66,11 +66,16 @@ function sheet(){
   ov.appendChild(sh); ov.addEventListener('click', function(e){ if (e.target === ov) close(); });
   document.body.appendChild(ov);
 }
+function com(){ return !!(D && D.commercial) || document.body.classList.contains('ps-com'); }   /* patch PORTALSEE: a commercial job says "property" */
 function homeCard(){
+  if (D && D.myhome === false) return null;   /* patch PORTALSEE: hidden on this job */
+  if (com()) return h('section', { class: 'card', id: 'gcph-home' }, [h('h2', { text: '🏢 My property' }), h('p', { text: 'Everything about your property in one place: the materials and colors used, warranties, photos, invoices and service history.' }),
+    h('button', { type: 'button', class: 'ph-btn', text: 'Open my property record', on: { click: sheet } })]);
   return h('section', { class: 'card', id: 'gcph-home' }, [h('h2', { text: '🏠 My home' }), h('p', { text: 'Everything about your home in one place: the materials and colors used, warranties, photos, invoices and service history.' }),
     h('button', { type: 'button', class: 'ph-btn', text: 'Open my home record', on: { click: sheet } })]);
 }
 function testiCard(){
+  if (!D.testimonial) return null;   /* patch PORTALSEE: hidden on this job */
   var T = D.testimonial || {}; if (!T.ask && !T.sent) return null;
   var c = h('section', { class: 'card', id: 'gcph-testi' });
   c.appendChild(h('h2', { text: '💬 Share a few words?' }));

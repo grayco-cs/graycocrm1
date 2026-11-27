@@ -127997,6 +127997,13 @@ function cardHtml(p, compact){
     '<button type="button" data-q="post" style="min-height:40px;padding:0 14px;border:0;border-radius:10px;background:' + GOLD + ';color:' + NAVY + ';font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;white-space:nowrap">📣 Post</button>' +
     ib('copy', '📋', 'Copy link', true) + ib('sms', '💬', 'Text it', true) + ib('mail', '✉️', 'Email it', true) + ib('open', '👁', 'See what the customer sees', true) + ib('docs', '📄', 'Documents & Google Docs', false) +
     '<button type="button" data-q="more" title="More" aria-label="More" aria-expanded="false" style="' + IB + ';font-weight:800">⋯</button></div>';
+  try {   /* patch PORTALSEE: a job made in the last 14 days with no picks yet — what the customer's portal will show, one tap away */
+    var mk0 = Date.parse(p.createdAt || p.created || p.dateCreated || p.createdDate || '') || 0, picked = p.portalShow && typeof p.portalShow === 'object' && Object.keys(p.portalShow).length;
+    if (window._gcPortalEd && typeof window._gcPortalEd.openSee === 'function' && window._gcPortalEd.can(p.id) && mk0 && Date.now() - mk0 < 14 * 864e5 && !picked)
+      h += '<div data-q="seerow" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;padding:8px 10px;border:1px solid #F0D9A0;background:#FFF8E5;border-radius:10px;font-size:13px">' +
+        '<span style="flex:1 1 200px">New job — choose what the customer sees (maintenance plans, “How did you hear about us”, tabs…).</span>' +
+        '<button type="button" data-q="psee" style="min-height:40px;padding:0 12px;border:1px solid ' + GOLD + ';border-radius:10px;background:#fff;color:#7C4A03;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit">👤 Customer portal: what they see</button></div>';
+  } catch (e) {}
   h += '<div data-q="panel" hidden style="border-top:1px solid #EFEAE0;margin-top:8px;padding-top:8px;font-size:13px;display:flex;flex-direction:column;gap:8px">';
   if (posts.length) h += '<div style="font-size:12px;font-weight:800;color:#8A5A00">LATEST POSTS</div>' + posts.slice(0, 3).map(function(x){
     return '<div style="font-size:13px;line-height:1.4"><b>' + esc(first(x.by) || 'GrayCo') + '</b> · <span style="color:#55626F">' + esc(ago(x.at)) + '</span>' + (x.files && x.files.length ? ' · 📷 ' + x.files.length : '') + '<div style="overflow-wrap:anywhere">' + esc(s(x.text).slice(0, 160)) + '</div></div>';
@@ -128004,7 +128011,7 @@ function cardHtml(p, compact){
   h += '<label style="display:flex;align-items:center;gap:8px" title="Automatic: a GC job, a GC client account or a bid we made as the sub gets the GC style (no maintenance plans, My home, referral or review asks; commercial sub stages)">Portal style <select data-q="pstyle" style="flex:1;min-height:36px;border-radius:8px;border:1px solid #C9C2B2;font-size:14px">' +   /* patch GCPORTAL */
     [['', 'Automatic'], ['home', 'Homeowner'], ['gc', 'GC (we\u2019re the sub)']].map(function(o){ return '<option value="' + o[0] + '"' + (String(p.portalStyle || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
   h += '<label style="display:flex;align-items:center;gap:8px">Stage the customer sees <select data-q="stage" style="flex:1;min-height:36px;border-radius:8px;border:1px solid #C9C2B2;font-size:14px">' +
-      '<option value="auto"' + (stage === 'auto' ? ' selected' : '') + '>Automatic</option>' + STAGES.map(function(n, i){ return '<option value="' + i + '"' + (stage === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
+      '<option value="auto"' + (stage === 'auto' ? ' selected' : '') + '>Automatic</option>' + STAGES.map(function(n, i){ return i < 3 && stage !== String(i) ? '' : '<option value="' + i + '"' + (stage === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +   /* patch PORTALSEE: no sales steps */
     '<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-q="pause"' + (p.portalRemindersPaused ? ' checked' : '') + ' style="width:22px;height:22px"> Pause automatic e-mails to this customer (payment reminders and "new in your portal" notes)</label>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + (url ? '<button type="button" data-q="off" style="' + BTN + 'border-color:#b91c1c;color:#b91c1c">Turn link off</button>' : '<button type="button" data-q="make" style="' + BTN + '">Make the link</button>') + '<button type="button" data-q="new" style="' + BTN + '">New link</button></div>' +
     '<div style="color:#55626F;font-size:12px">Turning it off stops the old link at once. A new link replaces it (send the new one).</div>' +
@@ -128022,6 +128029,7 @@ function wire(el, pid){
     var url = linkOf(p);
     if (q === 'more') { var pn = el.querySelector('[data-q="panel"]'); if (pn) { pn.hidden = !pn.hidden; t.setAttribute('aria-expanded', pn.hidden ? 'false' : 'true'); if (!pn.hidden) loadSettings(el); } return; }
     if (q === 'ped') { if (window._gcPortalEd) window._gcPortalEd.open(pid); return; }   /* patch PORTALED */
+    if (q === 'psee') { if (window._gcPortalEd && window._gcPortalEd.openSee) window._gcPortalEd.openSee(pid); return; }   /* patch PORTALSEE */
     if (q === 'post') return openPost(pid);
     if (q === 'docs') return openDocs(pid);
     if (q === 'copy' && url) return copy(url).then(function(ok){ toast(ok ? 'Link copied — paste it in a text or e-mail.' : url, ok ? null : '#1e3a5f'); });
@@ -131596,7 +131604,9 @@ var PF = ['status','pct','pm','contract','name','client','address','type','start
              note: each is the newest PERSON edit of that field, so neither is lost to the other's whole-job copy */
           'company','notes','customerNotes','clientPhone','clientEmail','phone','email','jobStage','leadSource','apm','estimator',
           /* patch CLEARSTICK (owner 11/25: "I deleted the address and now it's back, same on scope of work — if I enter anything it should be forever"): */
-          'scope','description','sector','superintendent'];
+          'scope','description','sector','superintendent',
+          /* patch PORTALSEE: the job's "What the customer sees" switches */
+          'portalShow'];
 var PFS = {}; PF.forEach(function(f){ PFS[f] = 1; });
 var LSK = 'gc_field_edits';
 
@@ -147538,6 +147548,8 @@ function sectionCount(sec){
 }
 function embedHtml(r){
   if (r.embed === 'portal') return '<label style="display:flex;gap:8px;align-items:center;font-weight:700;margin-top:4px"><input type="checkbox" id="gc-adm-autosend" disabled> Send new customers their portal link by e-mail</label><span id="gc-adm-autosend-msg" class="w"></span>'
+    + '<div id="gc-adm-plans-box" style="margin-top:10px;border-top:1px solid #e2e8f0;padding-top:8px"><label style="display:flex;gap:8px;align-items:center;font-weight:700"><input type="checkbox" id="gc-adm-plans" disabled> 🛠 Show GrayCo Care maintenance plans on customer portals</label><span id="gc-adm-plans-msg" class="w"></span>'
+    + '<div class="w" style="margin:2px 0 0">Off: no customer portal shows the plans. On: residential jobs only (never commercial or GC jobs). A job\u2019s ✏️ Edit portal → 👤 What the customer sees can still Show or Hide them for that one job.</div></div>'   /* patch PORTALSEE */
     + '<div id="gc-adm-card" style="margin-top:10px;border-top:1px solid #e2e8f0;padding-top:8px"><div style="font-weight:700">💳 Credit card payments <span id="gc-adm-card-st" class="w"></span></div>'
     + '<div class="w" style="margin:2px 0 6px">When you sign up with a card company (Stripe, Square, QuickBooks Payments…), paste its pay link here. Until then the portal says "We do not take credit cards yet."</div>'
     + '<input id="gc-adm-card-url" type="url" placeholder="https://… (the card company\u2019s pay link)" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px" disabled>'
@@ -147614,11 +147626,21 @@ function cardPaint(m, c){
   sv.onclick = function(){ var v = s(u.value).trim(); if (v && !/^https:\/\//.test(v)) { toast('The pay link must start with https://'); return; } save({ url: v, note: s(n.value).trim() }); };
   of.onclick = function(){ save({ url: '', note: '' }); };
 }
+/* patch PORTALSEE: ⚙ Admin → 🛠 Show GrayCo Care maintenance plans on customer portals (default OFF; the server lets only an admin save it) */
+function plansPaint(m, j){
+  var c = m.querySelector('#gc-adm-plans'), out = m.querySelector('#gc-adm-plans-msg'); if (!c) return;
+  c.checked = !!(j && j.plans === true); c.disabled = false;
+  if (out) out.textContent = c.checked ? ' — ON: residential customers see the plans' : ' — OFF: no customer sees the plans';
+  c.onchange = function(){ var v = !!c.checked; c.disabled = true;
+    fetch('/.netlify/functions/portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings', set: { plans: v } }) })
+      .then(function(r){ return r.json(); }).then(function(r2){ if (r2 && r2.ok) { plansPaint(m, r2); toast(v ? '🛠 Maintenance plans ON — residential customer portals show them.' : '🛠 Maintenance plans OFF — no customer portal shows them.'); } else { c.disabled = false; c.checked = !v; toast((r2 && r2.error) || 'Could not save.'); } })
+      .catch(function(){ c.disabled = false; c.checked = !v; toast('Could not reach the portal server.'); }); };
+}
 function wireEmbeds(m){
   var a = m.querySelector('#gc-adm-autosend');
   if (a) {
     fetch('/.netlify/functions/portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings' }) })
-      .then(function(r){ return r.json(); }).then(function(j){ if (j && j.ok) { a.checked = j.autoSend !== false; a.disabled = false; try { cardPaint(m, j.card); } catch (_c) {} } else { var x = m.querySelector('#gc-adm-autosend-msg'); if (x) x.textContent = ' — the portal server did not answer (is it set up? see Setup checklist).'; } })
+      .then(function(r){ return r.json(); }).then(function(j){ if (j && j.ok) { a.checked = j.autoSend !== false; a.disabled = false; try { cardPaint(m, j.card); } catch (_c) {} try { plansPaint(m, j); } catch (_p) {} } else { var x = m.querySelector('#gc-adm-autosend-msg'); if (x) x.textContent = ' — the portal server did not answer (is it set up? see Setup checklist).'; } })
       .catch(function(){ var x = m.querySelector('#gc-adm-autosend-msg'); if (x) x.textContent = ' — the portal server did not answer.'; });
     a.onchange = function(){ var v = !!a.checked; a.disabled = true;
       fetch('/.netlify/functions/portal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'settings', set: { autoSend: v } }) })
@@ -213948,7 +213970,7 @@ function open(pid){
     if (e === o || /^gcpe/.test(e.id) || e.tagName === 'SCRIPT' || e.tagName === 'STYLE') return;
     try { var cs = W.getComputedStyle(e), r = e.getBoundingClientRect(); if (cs.position === 'fixed' && cs.display !== 'none' && cs.visibility !== 'hidden' && parseInt(cs.zIndex, 10) > Z && r.width > 0 && r.width <= 120 && r.height <= 120) { e.setAttribute('data-gcpe-hid', '1'); e.style.setProperty('visibility', 'hidden', 'important'); } } catch (x) {}
   });
-  paint(); loadAll();
+  paint(); loadAll(); loadSee();   /* patch PORTALSEE */
   return true;
 }
 function close(quiet){
@@ -213995,7 +214017,7 @@ function makeHtml(p){
   if (p.portalOff) return '<div class="pe-card pe-make"><div class="big">🔒</div><h3 style="justify-content:center">The portal link is turned off for this job</h3><p class="pe-sub">Turn it back on from the desk (the job’s 🏠 Portal card → ⋯ → New link). Nothing is sent from there either.</p></div>';
   return '<div class="pe-card pe-make" data-pe-make="1"><div class="big">🏠</div><h3 style="justify-content:center">No customer portal yet</h3>' +
     '<p class="pe-sub" style="font-size:14px">Make ' + esc(who) + '’s portal for <b>' + esc(p.name) + '</b> in one tap. Then you can see it and add updates, tasks, plans, papers to sign and questions.</p>' +
-    '<button type="button" class="pe-b pri" data-pe="make" style="width:100%;min-height:52px;font-size:16px">🏠 Make the portal</button></div>';
+    '<button type="button" class="pe-b pri" data-pe="make" style="width:100%;min-height:52px;font-size:16px">🏠 Make the portal</button></div>' + seeSec(p);   /* patch PORTALSEE: set it before the portal is made too */
 }
 function makeConfirmHtml(p){
   var who = s(p.client) || 'the customer';
@@ -214013,8 +214035,36 @@ function editHtml(p){
   h += '<div class="pe-card" data-pe-sec="status"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pe-pill ok">🔗 Portal ready</span><span class="pe-note" data-pe-viewed>' + (CUR.viewed === undefined ? 'Checking when it was last opened…' : CUR.viewed ? 'Opened by the customer ' + esc(ago(CUR.viewed)) : 'Not opened by the customer yet') + '</span></div>' +
     '<div class="pe-btns two"><button type="button" class="pe-b" data-pe="view">👁 See it as ' + esc(who) + '</button><button type="button" class="pe-b" data-pe="copy">📋 Copy link</button></div>' +
     '<p class="pe-note" style="margin:6px 0 0">Copying the link sends nothing — paste it in your own text or e-mail.</p></div>';
+  h += seeSec(p);   /* patch PORTALSEE */
   h += detailsSec(p) + schedSec(p) + tasksSec(p) + needsSec(p) + scopeSec(p) + docsSec(p) + coSec(p) + msgSec(p) + postsSec(p) + jobsSec(p) + tellSec(p);
   return h;
+}
+/* patch PORTALSEE: 👤 What the customer sees — each section Automatic / Show / Hide (job.portalShow; the server sends nothing hidden) */
+var SEE = [['plans', '🛠 Maintenance plans (GrayCo Care)', 'Automatic: only when ⚙ Admin turns the plans on, and only on a residential job.'],
+  ['heard', '🙋 How did you hear about us', 'Automatic: shown (not on a GC job).'],
+  ['review', '⭐ Review & “Share a few words” asks', 'Automatic: when the job is done (not on a GC job).'],
+  ['referral', '🎁 Referral program & Refer a friend', 'Automatic: shown (not on a GC job).'],
+  ['project', '🏗 Request a new project', 'Automatic: shown (not on a GC job).'],
+  ['myhome', '🏠 My home / 🏢 My property record', 'Automatic: shown (not on a GC job).'],
+  ['super', '👷 Your Superintendent card', 'Automatic: commercial jobs, when the job has a superintendent.'],
+  ['pay', '💵 Payments tab', 'Automatic: shown.'], ['photos', '📷 Photos tab', 'Automatic: shown.'], ['docs', '📄 Documents tab', 'Automatic: shown.']];
+function seeMode(p, k){ var o = p && p.portalShow && typeof p.portalShow === 'object' ? p.portalShow : {}; var v = low(o[k]); return v === 'on' || v === 'off' ? v : 'auto'; }
+function loadSee(){ var pid = CUR.pid; if (!pid) return; fn('portal', { action: 'portalsee', projectId: pid }).then(function(r){ if (CUR.pid !== pid) return; CUR.see = r && r.ok ? r : false; repaintSec('see', seeSec); }); }
+function seeSec(p){
+  var A = CUR.see, com = A && A.commercial, gc = A && A.gc;
+  var kind = A ? (gc ? 'a GC job (we are the sub)' : com ? 'a commercial job' : 'a residential job') : '';
+  var h = A === undefined ? '<p class="pe-note" data-pe-seeload="1">Checking what Automatic means on this job…</p>' : A === false ? '<p class="pe-note">The portal server did not answer — Automatic still works the usual way.</p>'
+    : '<p class="pe-note" data-pe-seekind="' + (gc ? 'gc' : com ? 'commercial' : 'residential') + '">This is <b>' + esc(kind) + '</b>' + (com ? ': the customer’s portal says “property” instead of “home”.' : '.') + ' GrayCo Care plans are <b>' + (A.plansOn ? 'ON' : 'OFF') + '</b> company-wide (⚙ Admin).</p>';
+  SEE.forEach(function(x){
+    var m = seeMode(p, x[0]), auto = A && A.auto ? A.auto[x[0]] : null;
+    var now = m === 'on' ? true : m === 'off' ? false : auto;
+    h += '<div class="pe-row" data-pe-see="' + x[0] + '"><div class="pe-x">' + esc(x[1]) + '<small>' + esc(x[2]) + (m === 'auto' && auto != null ? ' Now: ' + (auto ? 'shown' : 'hidden') + '.' : '') + '</small>' +
+      (now === true ? '<span class="pe-pill ok">Customer sees it</span>' : now === false ? '<span class="pe-pill off">Hidden from customer</span>' : '') + '</div>' +
+      '<div class="pe-btns" role="group" aria-label="' + esc(x[1]) + '" style="margin:0;flex:0 0 auto;gap:4px">' + [['auto', 'Automatic'], ['on', 'Show'], ['off', 'Hide']].map(function(o){
+        return '<button type="button" class="pe-b sm' + (m === o[0] ? ' pri' : '') + '" data-pe="see-set" data-k="' + x[0] + '" data-v="' + o[0] + '" aria-pressed="' + (m === o[0] ? 'true' : 'false') + '">' + o[1] + '</button>'; }).join('') + '</div></div>';
+  });
+  h += '<p class="pe-note" data-pe-seemsg role="status" style="margin:6px 0 0">' + esc(CUR.seeMsg || 'Each tap saves on the job — nothing is sent to the customer. 👁 Customer view shows exactly what they get.') + '</p>';
+  return sec('see', '👤 What the customer sees', 'Turn sections of ' + esc(first(p.client) || 'the customer') + '’s portal on or off for this job.', h);
 }
 /* 📝 details */
 function detailsSec(p){
@@ -214023,7 +214073,7 @@ function detailsSec(p){
   return sec('details', '📝 Project details', 'What the customer sees at the top of their portal.',
     '<label class="pe-f"><span>Job name (the CRM and the portal)</span><input class="pe-i" data-f="name" value="' + esc(p.name) + '" maxlength="90"></label>' +
     '<label class="pe-f"><span>Job address</span><input class="pe-i" data-f="address" value="' + esc(p.address) + '" maxlength="160"></label>' +
-    '<label class="pe-f"><span>Stage the customer sees</span><select class="pe-i" data-f="stage"><option value="auto"' + (st === 'auto' ? ' selected' : '') + '>Automatic (from the job)</option>' + STAGES.map(function(n, i){ return '<option value="' + i + '"' + (st === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
+    '<label class="pe-f"><span>Stage the customer sees</span><select class="pe-i" data-f="stage"><option value="auto"' + (st === 'auto' ? ' selected' : '') + '>Automatic (from the job)</option>' + STAGES.map(function(n, i){ return i < 3 && st !== String(i) ? '' : '<option value="' + i + '"' + (st === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>' +
     '<label class="pe-f"><span>About your project (scope summary the customer reads)</span><textarea class="pe-i" data-f="summary" maxlength="3000" placeholder="e.g. Full roof replacement with architectural shingles, new gutters on the front, and a kitchen remodel.">' + esc(sum) + '</textarea></label>' +
     '<button type="button" class="pe-b pri" data-pe="details-save" style="width:100%">Save details</button>');
 }
@@ -214243,6 +214293,21 @@ function onClick(e){
     }
     CUR.mode = b.getAttribute('data-m'); if (CUR.mode === 'cust') CUR.frameT = Date.now(); paint(); return; }
   if (a === 'view') { CUR.mode = 'cust'; CUR.frameT = Date.now(); paint(); return; }
+  if (a === 'see-set') {   /* patch PORTALSEE: one switch — from the newest copy of the job, only job.portalShow, through the job's person-edit path */
+    var sk = b.getAttribute('data-k'), sv = b.getAttribute('data-v');
+    if (!SEE.some(function(x){ return x[0] === sk; }) || !/^(auto|on|off)$/.test(sv)) return;
+    var np = proj(pid) || p, cur0 = np.portalShow && typeof np.portalShow === 'object' ? np.portalShow : {}, ps = {};
+    Object.keys(cur0).forEach(function(k){ if (SEE.some(function(x){ return x[0] === k; }) && /^(on|off)$/.test(low(cur0[k]))) ps[k] = low(cur0[k]); });
+    if (sv === 'auto') delete ps[sk]; else ps[sk] = sv;
+    if (seeMode(np, sk) === sv) return;
+    var lab = (SEE.filter(function(x){ return x[0] === sk; })[0] || [])[1] || sk;
+    b.disabled = true;
+    patchJob(pid, { portalShow: ps }, 'customer portal: what the customer sees').then(function(ok){
+      CUR.seeMsg = ok ? '✓ Saved — ' + lab + ': ' + (sv === 'auto' ? 'Automatic' : sv === 'on' ? 'shown to the customer' : 'hidden from the customer') + '. Nothing was sent.' : 'Not saved — reload the CRM and try again.';
+      CUR.frameT = Date.now(); repaintSec('see', seeSec); if (!ok) toast('Not saved — reload the CRM and try again.', true);
+    });
+    return;
+  }
   if (a === 'make') { var c0 = b.closest('.pe-make'); if (c0 && !c0.querySelector('[data-pe-makeok]')) c0.insertAdjacentHTML('beforeend', makeConfirmHtml(p)); return; }
   if (a === 'make-no') { var x0 = b.closest('[data-pe-makeok]'); if (x0) x0.remove(); return; }
   if (a === 'make-go') {
@@ -214413,7 +214478,9 @@ function upload(files, label){
 }
 
 /* ── the job card / job page button (FIELDPORTAL's run 'fp-cust') and the desk's 🏠 Portal card call this ── */
-W._gcPortalEd = { msPlan: msPlan, msSync: msSync, msRowId: msRowId, staffLive: staffLive, open: open, close: close, can: function(pid){ return can(proj(pid)); }, state: function(){ return { pid: CUR.pid, mode: CUR.mode, open: !!ov(), gate: CUR.gate, msgs: CUR.msgs, needs: CUR.needs }; }, warnings: function(pid, t){ return warnings(proj(pid), t); } };
+/* patch PORTALSEE: open the editor at "👤 What the customer sees" (the job page's inline link after a new job) */
+function openSee(pid){ if (!open(pid)) return false; later(function(){ var el = body() && body().querySelector('[data-pe-sec="see"]'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' }); }, 60); return true; }
+W._gcPortalEd = { openSee: openSee, msPlan: msPlan, msSync: msSync, msRowId: msRowId, staffLive: staffLive, open: open, close: close, can: function(pid){ return can(proj(pid)); }, state: function(){ return { pid: CUR.pid, mode: CUR.mode, open: !!ov(), gate: CUR.gate, msgs: CUR.msgs, needs: CUR.needs }; }, warnings: function(pid, t){ return warnings(proj(pid), t); } };
 /* the phone's back gesture / Escape closes it like ‹ Back */
 D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && ov() && !D.querySelector('.pe-vis')) close(); });
 D.addEventListener('click', function(e){ try { if (ov() && e.target && e.target.closest && e.target.closest('#gc-fh-tabs')) close(); } catch (x) {} }, true);   /* a bottom-bar tab goes where it says: this page closes */

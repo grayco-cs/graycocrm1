@@ -497,6 +497,36 @@ function portalStyle(data, p){
   if (COMMERCIAL_TYPE.test(s(p.type || p.jobType)) && GC_NAME.test(nm)) return { gc: true, why: 'a commercial job for a contractor' };
   return { gc: false, why: '' };
 }
+/* ── patch PORTALSEE: what the customer's portal shows (netlify/functions/_lib/portalshow.js) — the company switch
+   (gc_portal_settings.plans, default OFF), residential vs commercial, a GC job, and the job's own switches (job.portalShow) ── */
+function PS(){ return require('./_lib/portalshow.js'); }
+async function portalShowFor(data, p){
+  const st = await settingsGet();
+  return PS().resolve(p, { gc: portalStyle(data, p).gc, commercial: PS().commercial(p, custRecOf(data, p)), plansOn: st.plans === true });
+}
+/* takes a hidden section out of the customer's view (never sent), and tells the page what to show */
+/* patch PORTALSEE (owner 11/27: "dont have lead in these"): the customer's "Where your job is" never lists GrayCo's own sales steps
+   (Lead, Contacted, Appointment booked). A residential job starts at "Estimate sent"; a commercial job at "Contract signed +
+   scheduled" (or "Estimate sent" while that is where it is). Before the first step shown: stage -1 (nothing "now"),
+   "Getting your estimate ready". The stage index is moved with the list, so it still points at the right step. */
+const SALES_STEPS = 3, PRE_STAGE = 'Getting your estimate ready';
+function custStages(view, commercial){
+  const j = view && view.job; if (!j || !Array.isArray(j.stages) || j.stages[0] !== STAGES[0] || j.stages.length !== STAGES.length) return view;
+  const st = Number(j.stage) || 0, from = commercial && st !== SALES_STEPS ? SALES_STEPS + 1 : SALES_STEPS;
+  j.stages = STAGES.slice(from); j.stage = st - from;
+  if (j.stage < 0) { j.stage = -1; j.stageName = PRE_STAGE; }
+  return view;
+}
+function custStageName(name){ return STAGES.indexOf(s(name)) >= 0 && STAGES.indexOf(s(name)) < SALES_STEPS ? PRE_STAGE : name; }
+function showApply(view, sh){
+  if (!view || !sh) return view;
+  view.show = PS().forPage(sh);
+  if (view.variant !== 'gc') custStages(view, sh.commercial);
+  if (sh.review === false) { view.showReview = false; view.review = null; }
+  if (sh.pay === false) { view.money = { contract: 0, changeOrders: [], invoices: [], payments: [], paid: 0, due: 0, finalInvoice: null }; view.payCard = null; }
+  if (sh.docs === false) view.docs = [];
+  return view;
+}
 /* the client is a company (greet it by its name — never "Hi A" from "A & B Construction Co., Inc.") */
 function clientIsCompany(data, p){
   const c = custRecOf(data, p), nm = s(p.client || p.customer || p.clientName || (c && (c.name || c.company)));
@@ -2480,13 +2510,13 @@ async function settingsGet(){
   try {
     const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value&key=eq.' + SETTINGS_KEY, { headers: H() });
     if (r.ok) { const rows = await r.json(); let v = rows && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
-      if (v && typeof v === 'object') return { autoSend: v.autoSend !== false, text: v.text === true, by: s(v.by), at: s(v.at), card: cardOf(v.card) }; }
+      if (v && typeof v === 'object') return { autoSend: v.autoSend !== false, text: v.text === true, by: s(v.by), at: s(v.at), card: cardOf(v.card), plans: v.plans === true }; }
   } catch (e) {}
-  return { autoSend: true, text: false, by: '', at: '', card: cardOf(null) };   /* the owner asked for ON */
+  return { autoSend: true, text: false, by: '', at: '', card: cardOf(null), plans: false };   /* patch PORTALSEE: GrayCo Care plans OFF until the owner turns them on */   /* the owner asked for ON */
 }
 async function settingsSet(patch, by){
   const cur = await settingsGet();
-  const next = { autoSend: patch.autoSend == null ? cur.autoSend : !!patch.autoSend, text: patch.text == null ? cur.text : !!patch.text, card: patch.card == null ? cur.card : cardOf(patch.card), by: clip(by, 120), at: new Date().toISOString() };
+  const next = { autoSend: patch.autoSend == null ? cur.autoSend : !!patch.autoSend, text: patch.text == null ? cur.text : !!patch.text, card: patch.card == null ? cur.card : cardOf(patch.card), plans: patch.plans == null ? cur.plans === true : patch.plans === true, by: clip(by, 120), at: new Date().toISOString() };
   const r = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
     body: JSON.stringify({ key: SETTINGS_KEY, value: next, updated_at: next.at }) });
   if (!r.ok) throw new Error('settings write ' + r.status);
@@ -2908,7 +2938,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare', 'devices', 'claimhelp'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare', 'devices', 'claimhelp', 'portalsee'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -2921,6 +2951,10 @@ exports.handler = async function (event) {
             const cu = s(body.set.card && body.set.card.url).trim();
             if (cu && !/^https:\/\/[^\s<>"']{4,300}$/.test(cu)) return reply(400, headers, { ok: false, error: 'The pay link must start with https://' });
             body.set.card = Object.assign({}, body.set.card, { by: who.email, at: new Date().toISOString() });
+          }
+          if (body.set.plans != null) {   /* patch PORTALSEE: "🛠 Show GrayCo Care maintenance plans on customer portals" — admins only */
+            if (!require('./_lib/staff-role.js').isAdmin(who)) return reply(403, headers, { ok: false, error: 'Only an admin turns the maintenance plans on or off for customer portals.' });
+            if (typeof body.set.plans !== 'boolean') return reply(400, headers, { ok: false, error: 'Bad request' });
           }
           return reply(200, headers, Object.assign({ ok: true }, await settingsSet(body.set, who.email)));
         }
@@ -2935,6 +2969,15 @@ exports.handler = async function (event) {
         const rows = await r.json();
         return reply(200, headers, { ok: true, links: (Array.isArray(rows) ? rows : []).map(function(x){ return { projectId: x.project_id, createdAt: x.created_at, lastViewedAt: x.last_viewed_at, revoked: !!x.revoked, sentAt: x.sent_at }; }) });
       } catch (e) { return reply(500, headers, { ok: false, error: 'The portal server hit a problem: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'portalsee') {   /* patch PORTALSEE: the editor's "What the customer sees" — what Automatic means on this job (yes / no only) */
+      try {
+        const data = await crmData(true), p = findProject(data, s(body.projectId));
+        if (!p) return reply(404, headers, { ok: false, error: 'That job is not in the CRM.' });
+        const a = await portalShowFor(data, Object.assign({}, p, { portalShow: {} }));
+        const auto = {}; PS().KEYS.forEach(function(k){ auto[k] = a[k] === true; });
+        return reply(200, headers, { ok: true, commercial: a.commercial, gc: a.gc, plansOn: a.plansOn, auto: auto, hasSuper: !!s(p.superintendent) });
+      } catch (e) { return reply(502, headers, { ok: false, error: 'Could not read the portal settings.' }); }
     }
     if (action === 'gate') {   /* patch PORTALGATE: what waits to go in a portal (op state), or look for new things now (op scan) */
       try {
@@ -3043,6 +3086,7 @@ exports.handler = async function (event) {
     catch (e) { return reply(503, headers, { ok: false, error: 'We could not add that photo just now. Please try again, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   }
   if (action === 'photos') {
+    try { if ((await portalShowFor(data, p)).photos === false) return reply(200, headers, { ok: true, photos: [], expiresIn: SIGN_SECS }); } catch (e) {}   /* patch PORTALSEE: the Photos tab is hidden on this job */
     const ccId = ccIdOf(p);
     const recs = await grayCoRecords();
     const cc = ccId ? await ccCustomerPhotos(p, recs, 'customer') : [];   /* patch CCPHOTOS2: a click decides, on the server */
@@ -3052,6 +3096,9 @@ exports.handler = async function (event) {
     try { const ai = (await kvRead(['gc_photo_ai'])).gc_photo_ai; const map = (ai && ai.map) || {}; const X12 = require('./_lib/x12.js');
       list.forEach(function(x){ const k = /^cc_/.test(s(x.id)) ? 'cc:' + s(x.id).slice(3) : s(x.id), lab = X12.portalLabel(map[k]); if (lab) x.stage = lab; }); } catch (e) {}
     return reply(200, headers, { ok: true, photos: list, expiresIn: SIGN_SECS });
+  }
+  if (action === 'referral') {
+    try { if ((await portalShowFor(data, p)).referral === false) return reply(200, headers, { ok: false, off: true, error: 'Not on this portal.' }); } catch (e) {}   /* patch PORTALSEE */
   }
   if (action === 'referral') {   /* patch REF: the referral program card — join, refer a friend, the member's gift cards, use a gift card on this job */
     if (body.preview === true && s(body.op) && s(body.op) !== 'state') return reply(200, headers, { ok: false, error: 'Preview — nothing is saved.' });
@@ -3067,6 +3114,7 @@ exports.handler = async function (event) {
     catch (e) { return reply(503, headers, { ok: false, error: 'We could not load that just now. Please try again, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   }
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
+    try { if ((await portalShowFor(data, p)).pay === false) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' }); } catch (e) {}   /* patch PORTALSEE: Payments hidden */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
     if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
     /* patch CUSTPORTAL (owner 11/02: "I want 1 invoice … the blue animated screen should be my invoice"): the CRM's own invoice
@@ -3077,6 +3125,8 @@ exports.handler = async function (event) {
   const view = await buildView(data, p);
   try { const cd = (await settingsGet()).card; view.payCard = cd.url ? { url: cd.url, note: cd.note } : null; } catch (e) { view.payCard = null; }   /* patch PAYCARD */
   try { const sa = await subcLib().readAll(exports._core); view.crew = subcLib().crewFor(p, sa.subs, subcLib().recOf(sa.list, p.id)); } catch (e) { view.crew = []; }   /* patch SUBCONTACT: only the approved subs' shared fields */
+  try { showApply(view, await portalShowFor(data, p)); } catch (e) { showApply(view, PS().resolve(p, { gc: view.variant === 'gc', commercial: true, plansOn: false })); }   /* patch PORTALSEE: what this customer sees (a hidden section is never sent) */
+  try { view.super = view.show && view.show.super ? PS().superOf(p, data.users) : null; } catch (e) { view.super = null; }   /* patch PORTALSEE: 👷 Your Superintendent — name, work phone, work e-mail only */
   /* when was it last opened (at most once every 10 minutes per link) */
   const last = row.last_viewed_at ? Date.parse(row.last_viewed_at) : 0;
   if (row.token && body.preview !== true && (!last || Date.now() - last > 10 * 60e3)) {   /* patch INSP: a staff preview is not a visit */
@@ -3097,7 +3147,7 @@ Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tok
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { COMMON_CARRIERS: COMMON_CARRIERS });
-Object.assign(exports._core, { portalStyle: portalStyle, clientIsCompany: clientIsCompany, GC_STAGES: GC_STAGES });   /* patch GCPORTAL */   /* patch PORTALREQ: never a carrier in a portal request answer */
+Object.assign(exports._core, { portalStyle: portalStyle, clientIsCompany: clientIsCompany, GC_STAGES: GC_STAGES, portalShowFor: portalShowFor, showApply: showApply, settingsGet: settingsGet, custStages: custStages, custStageName: custStageName });   /* patch PORTALSEE: portalShowFor / showApply */   /* patch GCPORTAL */   /* patch PORTALREQ: never a carrier in a portal request answer */
 /* patch ESTPDF: every approval that carries an estimate (the proposal e-mail, the "please sign" e-mail, "Put in the customer
    portal") goes out only with its PDF in the CRM, and what went out is recorded (gc_kv gc_est_sent) — _lib/estpdf.js.
    aqSend is the one place approvals are sent (at approve time, or at 7 AM for a quiet-hours approval), so the sentAt is
