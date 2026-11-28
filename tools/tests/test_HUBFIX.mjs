@@ -193,8 +193,9 @@ async function profileRun(who, acct, opts){
       /* the items other patches put at the TOP are there the moment it opens (they used to pop in seconds later, under the pointer) */
       await A.ev(() => window._gcCloseHub && window._gcCloseHub()); await A.page().mouse.move(300, 300); await A.page().mouse.move(900, 500);
       await openHub(A); await A.page().mouse.move(1200, 600);
-      const top = await A.ev(() => { const p = window.__hub.panel(); return ['#gc-hub-projhub-link', '#gc-emailq-hub-link', '#gc-clean-hub'].filter(k => !p.querySelector(k)); });
-      ok(!top.length, who + ': Project Hubs, Email Queue, Clean up the job list are in the menu the moment it opens', top);
+      /* patch DIAMOND: Project Hubs, Email Queue and Clean up the job list are off the 💎; the Shortcuts group is there at once instead */
+      const top = await A.ev(() => { const p = window.__hub.panel(); return ['#gc-dm-shortcuts', '#gc-dm-custmail'].filter(k => !p.querySelector(k)); });
+      ok(!top.length, who + ': the 💎 Shortcuts are in the menu the moment it opens', top);
       /* the menu's own controls */
       await A.page().locator('.gc-hub-panel .gc-hub-x').click(); await sleep(300);
       ok(!(await A.ev(() => !!window.__hub.panel())), who + ': the menu’s own ✕ closes it');
@@ -216,7 +217,7 @@ async function profileRun(who, acct, opts){
         await tryItem(A, it, who);
       }
       /* the screens that live on the page all the time (shown / hidden): they work a SECOND time too, after a close */
-      if (!ONLY) for (const k of ['#gc-emailq-hub-link', '#gc-hub-projhub-link', 'L:Contract & Doc Templates']) { const it = items.find(i => i.key === k); if (it) await tryItem(A, Object.assign({}, it, { label: it.label + ' (again)' }), who); }
+      if (!ONLY) for (const k of ['#gc-dm-custmail', '#gc-dm-portals']) {   /* patch DIAMOND: Email Queue / Project Hubs / Contract & Doc Templates are off the 💎 */ const it = items.find(i => i.key === k); if (it) await tryItem(A, Object.assign({}, it, { label: it.label + ' (again)' }), who); }
     }
     if (opts.desk) {
       console.log('== ' + who + ': the toolbar and the desk');

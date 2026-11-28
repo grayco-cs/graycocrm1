@@ -6,8 +6,8 @@
      7 days before (or the item's own lead)  → "🧾 Due in 7 days: Form 941 Q4 — Jan 31"     once
      the due day                             → "🧾 Due today: …"                             once
      every day after                         → "🧾 OVERDUE 3 days: … — was due Jan 31"       once a day, until ✓ Paid
-   To: the item's people — company items: the admins and the office (or admins / office only); an owner's quarterly
-   estimated tax: that owner (or both admins) — NEVER the office. Each person gets ONE e-mail (staff only, @grayco-cs.com)
+   To: the item's people — company items: the admins only (patch DIAMOND, owner 11/28: "tax deadlines I only need
+   notifications to admin"); an owner's quarterly estimated tax: that owner (or both admins) — NEVER the office. Each person gets ONE e-mail (staff only, @grayco-cs.com)
    and ONE phone push listing their alerts, and a text only when they turned on "Approvals waiting for me" texts (quiet
    hours and business hours apply, so never at night; data-entry mode skips texts). The CRM's To-Do shows the same lines
    (computed on each admin / office computer, with ✓ Paid). Exactly once: a marker per item / due date / stage (per day

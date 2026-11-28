@@ -171,7 +171,7 @@ function cleanItem(x, base){
   if (/^(941|suta|futa)$/.test(s(x.pay))) it.pay = s(x.pay);
   if (isYmd(x.since)) it.since = s(x.since);
   if (x.personal || x.owner) { it.personal = true; it.owner = low(x.owner); it.who = x.who === 'admins' ? 'admins' : 'own'; it.amount = r2(x.amount); }
-  else it.who = /^(admins\+office|admins|office)$/.test(s(x.who)) ? s(x.who) : 'admins+office';
+  else it.who = 'admins';   /* patch DIAMOND (owner 11/28: "tax deadlines I only need notifications to admin"): the admins, never the office */
   if (x.custom) it.custom = true;
   if (x.confirmedBy) it.confirmedBy = s(x.confirmedBy).slice(0, 80);
   return it;
@@ -243,7 +243,7 @@ function recipients(item, people){
     out = item.who === 'admins' || !item.owner || A.indexOf(low(item.owner)) < 0 ? A : [low(item.owner)];
     return uniq(out.filter(function(e){ return A.indexOf(e) >= 0; }));
   }
-  out = item.who === 'admins' ? A : item.who === 'office' ? O : A.concat(O);
+  out = A; void O;   /* patch DIAMOND: company items remind the admins only (role) */
   return uniq(out);
 }
 function uniq(l){ var o = []; l.forEach(function(x){ if (x && o.indexOf(x) < 0) o.push(x); }); return o; }

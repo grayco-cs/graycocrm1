@@ -1,7 +1,7 @@
 /* test_TAXALERTS.mjs [build-dir] [--no-browser] — patch TAXALERTS (🧾 tax deadlines), with a fake clock.
    Part A — the server (netlify/functions/_lib/taxcal.js + _lib/taxalerts.js through auto-wins.js), in memory, no network:
      1. due dates: monthly / quarterly / yearly rules, the weekend and federal-holiday shift (MLK Day, D.C. Emancipation Day)
-     2. 7 days before and on the due day: e-mail + push to the admins + the office, each exactly once
+     2. 7 days before and on the due day: e-mail + push to the admins (never the office — patch DIAMOND), each exactly once
      3. overdue: again every day until ✓ Paid; Paid stops it
      4. an admin's edit applies (a new due day); a switched-off item never alerts
      5. the owners' quarterly estimated tax: only the admins (each his own, or both) — never the office; the estimate from
@@ -82,33 +82,33 @@ if (!ONLY_BROWSER) {
   ok(C0.items.concat(O0.items).every(x => x.cpa === true), 'every default is marked “Confirm with CPA”');
   ok(O0.items.map(x => x.name).join(' | ') === 'Wesley Johnson — quarterly estimated tax | Nick Thomas — quarterly estimated tax' && O0.items.every(x => x.dates.join(',') === '04-15,06-15,09-15,01-15'), 'one owner item per owner — Apr 15, Jun 15, Sep 15, Jan 15');
 
-  console.log('2. 7 days before and the due day — admins + office, exactly once');
+  console.log('2. 7 days before and the due day — the admins only (patch DIAMOND), exactly once');
   KV.gc_tax_calendar = { v: 1, startedAt: '2027-01-18', items: [] }; KV.gc_tax_paid = []; KV.payrollRuns = RUNS;
   ADM.gc_tax_owner = { v: 1, startedAt: '2027-03-01', items: [{ id: 'est_wj', amount: 12500 }, { id: 'est_nt', amount: 9000, who: 'admins' }] };
   let r = await runDay('2027-01-24');
   ok(r.out.ok && r.out.sent === 0 && r.mails.length === 0, '8 days before Feb 1: nothing', r.out);
   r = await runDay('2027-01-25');
-  const t25 = r.out.to[OF] || [];
+  const t25 = r.out.to[W_] || [];
   ok(r.out.sent === 5 && t25.length === 5, '7 days before: Form 941 Q4, TN SUTA Q4, Form 940, W-2s, 1099-NEC (all due Mon Feb 1)', r.out);
   ok(t25.indexOf('🧾 Due in 7 days: Form 941 Q4 2026 — Feb 1') >= 0, 'the line reads “🧾 Due in 7 days: Form 941 Q4 2026 — Feb 1”', t25);
-  ok([W_, N_, OF].every(e => to(r.mails, e).length === 1) && to(r.mails, PM).length === 0 && r.mails.length === 3, 'ONE e-mail each to Wesley, Nick and the office; none to a PM', r.mails.map(m => m.to));
-  ok(PUSH.filter(p => p.title.indexOf('5 tax deadlines') >= 0).length === 3, 'one phone push each', PUSH);
-  ok(/Estimated from Payroll: \$759\.00/.test(subj(to(r.mails, OF))), 'Form 941 Q4: the estimate from the approved Payroll runs of the quarter ($759.00 = 3 lines × $253; a pending run not counted)', subj(to(r.mails, OF)).slice(0, 400));
-  ok(/TN unemployment \(SUTA\) Q4 2026/.test(subj(to(r.mails, OF))) && /jobs4tn|eftps|irs\.gov/i.test(to(r.mails, OF)[0].html), 'the pay / file link is in the e-mail');
-  ok(/not tax advice/i.test(to(r.mails, OF)[0].html), 'the CPA note is in the e-mail');
+  ok([W_, N_].every(e => to(r.mails, e).length === 1) && to(r.mails, OF).length === 0 && to(r.mails, PM).length === 0 && r.mails.length === 2, 'ONE e-mail each to the admins (Wesley, Nick); none to the office or a PM (patch DIAMOND)', r.mails.map(m => m.to));
+  ok(PUSH.filter(p => p.title.indexOf('5 tax deadlines') >= 0).length === 2, 'one phone push each', PUSH);
+  ok(/Estimated from Payroll: \$759\.00/.test(subj(to(r.mails, W_))), 'Form 941 Q4: the estimate from the approved Payroll runs of the quarter ($759.00 = 3 lines × $253; a pending run not counted)', subj(to(r.mails, W_)).slice(0, 400));
+  ok(/TN unemployment \(SUTA\) Q4 2026/.test(subj(to(r.mails, W_))) && /jobs4tn|eftps|irs\.gov/i.test(to(r.mails, W_)[0].html), 'the pay / file link is in the e-mail');
+  ok(/not tax advice/i.test(to(r.mails, W_)[0].html), 'the CPA note is in the e-mail');
   r = await again('2027-01-25');
   ok(r.out.sent === 0 && r.mails.length === 0, 'a second run the same day sends nothing (exactly once)', r.out);
   r = await runDay('2027-01-26');
   ok(r.out.sent === 0 && r.mails.length === 0, 'the next day: nothing new (the 7-day alert is once)', r.out);
   r = await runDay('2027-02-01');
-  ok(r.out.sent === 5 && (r.out.to[OF] || []).every(x => /^🧾 Due today: /.test(x)) && to(r.mails, OF).length === 1 && to(r.mails, W_).length === 1, 'the due day: “🧾 Due today: …” to the admins + office', r.out.to[OF]);
+  ok(r.out.sent === 5 && (r.out.to[W_] || []).length === 5 && (r.out.to[W_] || []).every(x => /^🧾 Due today: /.test(x)) && to(r.mails, OF).length === 0 && to(r.mails, W_).length === 1, 'the due day: “🧾 Due today: …” to the admins (not the office)', r.out.to[W_]);
   r = await again('2027-02-01');
   ok(r.out.sent === 0, 'the due-day alert is once too');
 
   console.log('3. overdue — every day until ✓ Paid');
   KV.gc_tax_paid = [{ key: '941q|2027-01-31', itemId: '941q', paidOn: '2027-02-01', amount: 759, confirm: 'EFT-1', by: 'Office Gal' }, { key: 'w2|2027-01-31', itemId: 'w2', paidOn: '2027-01-29', amount: 0, none: true, by: 'Office Gal' }];
   r = await runDay('2027-02-02');
-  let lines2 = r.out.to[OF] || [];
+  let lines2 = r.out.to[W_] || [];
   ok(r.out.sent === 3 && lines2.every(x => /^🧾 OVERDUE 1 day: /.test(x)) && !lines2.some(x => /Form 941 Q4|W-2/.test(x)), 'Feb 2: SUTA, Form 940, 1099-NEC overdue; Form 941 and W-2s paid → not sent', lines2);
   r = await runDay('2027-02-03');
   ok(r.out.sent === 3 && (r.out.to[W_] || []).every(x => /OVERDUE 2 days/.test(x)), 'Feb 3: overdue again (daily)', r.out.to[W_]);
@@ -123,8 +123,8 @@ if (!ONLY_BROWSER) {
   ok(r.out.sent === 0, 'Feb 5: the Jan 941 deposit is due Feb 16 → not yet');
   KV.gc_tax_calendar = { v: 1, startedAt: '2027-01-18', items: [{ id: '941dep', day: 12 }, { id: 'tnsales', on: false }] };
   r = await runDay('2027-02-06');
-  ok(r.out.sent === 1 && (r.out.to[OF] || [])[0] === '🧾 Due in 6 days: 941 deposit Jan 2027 — Feb 12', 'the admin moved 941 deposits to the 12th → Feb 6: “Due in 6 days … Feb 12” (inside the 7 days)', r.out.to[OF]);
-  ok(/Estimated from Payroll: \$203\.00/.test(subj(to(r.mails, OF))), 'its estimate: January’s Payroll (fed + both halves of FICA) = $203.00', subj(to(r.mails, OF)).slice(0, 300));
+  ok(r.out.sent === 1 && (r.out.to[W_] || [])[0] === '🧾 Due in 6 days: 941 deposit Jan 2027 — Feb 12', 'the admin moved 941 deposits to the 12th → Feb 6: “Due in 6 days … Feb 12” (inside the 7 days)', r.out.to[W_]);
+ok(/Estimated from Payroll: \$203\.00/.test(subj(to(r.mails, W_))), 'its estimate: January’s Payroll (fed + both halves of FICA) = $203.00', subj(to(r.mails, W_)).slice(0, 300));
   KV.gc_tax_calendar.items.push({ id: 'futa', on: false }, { id: 'suta', who: 'admins' });
   const all = []; for (const d of ['2027-04-23', '2027-04-30', '2027-05-01', '2027-05-02']) { const x = await runDay(d); all.push(...Object.values(x.out.to || {}).flat()); }
   ok(!all.some(x => /FUTA deposit|TN sales/.test(x)), 'switched off: FUTA deposit (due Apr 30) and TN sales tax never alert', all);
@@ -202,7 +202,7 @@ if (!NO_BROWSER) {
   ok(st.canSee && st.seesOwner && st.canEdit && st.today === '2027-01-25', 'admin: sees the calendar, the owner items, can edit; the fake clock says Jan 25 2027', st);
   ok(st.owner && st.owner.join(',') === 'est_wj,est_nt' && st.runs === 4, 'admin: the owners-only list read from gc_admin_kv; the Payroll runs read for the estimates', st);
   let td = await ev(() => window._gcTax.todo().map(x => x.title + ' | ' + x.vis + ' | ' + x.sub));
-  ok(td.filter(x => /^🧾 Due in 7 days: /.test(x)).length === 5 && td.some(x => x.indexOf('🧾 Due in 7 days: Form 941 Q4 2026 — Feb 1 | company | Form 941') === 0), 'To-Do: the five “Due in 7 days” lines, for the admins + office', td);
+  ok(td.filter(x => /^🧾 Due in 7 days: /.test(x)).length === 5 && td.some(x => x.indexOf('🧾 Due in 7 days: Form 941 Q4 2026 — Feb 1 | company | Form 941') === 0), 'To-Do: the five “Due in 7 days” lines, for the admins', td);
   ok(td.some(x => /^🧾 OVERDUE 10 days: Wesley Johnson — quarterly estimated tax \(Q4 2026\) — was due Jan 15 \| who \| .*amount \$12,500\.00/.test(x)), 'To-Do: Wesley’s Q4 estimated tax (Jan 15) overdue, admins only, with his amount', td);
   ok(td.some(x => /est\. \$759\.00/.test(x)), 'Form 941 Q4: the Payroll estimate on the To-Do line');
   await waitFor(A, () => window._gcTD2 && window._gcTD2.state().items.some(x => /^🧾 Due in 7 days: Form 941 Q4/.test(x.title)), null, 20000, 500);
@@ -271,7 +271,7 @@ if (!NO_BROWSER) {
   ok(O.adminKv.length === 0, 'office: never asks for gc_admin_kv', O.adminKv);
   await eo(ms => window._gcTax.setClock(ms), Date.UTC(2027, 1, 2, 18, 0));
   td = await eo(() => window._gcTax.todo().map(x => x.title));
-  ok(td.some(x => /OVERDUE 1 day: Form 940/.test(x)) && !td.some(x => /estimated tax|Wesley|Nick/.test(x)) && !td.some(x => /Form 941 Q4/.test(x)), 'office To-Do: the payroll items (Form 941 Q4 paid by the admin is gone) — never an owner item', td);
+  ok(td.length === 0, 'office To-Do: no tax lines — the reminders are the admins\' (patch DIAMOND)', td);
   await eo(() => window._gcTax.open()); await sleep(1200);
   const oc = await eo(() => { const c = document.querySelector('#gctx-calov [data-tax-cal]'); return c ? { text: c.innerText, edits: c.querySelectorAll('[data-tax-a="edit"]').length, toggles: c.querySelectorAll('input[data-tax-a="toggle"]').length, rows: c.querySelectorAll('tr[data-tax-item]').length } : null; });
   ok(oc && oc.rows === 11 && oc.edits === 0 && oc.toggles === 0 && /Only an admin changes this list/.test(oc.text), 'office: the calendar read-only (11 company items, no switches, no Edit)', oc && { rows: oc.rows, edits: oc.edits });
