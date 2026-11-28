@@ -1,5 +1,5 @@
 // test_ZIPIMPORT.mjs <build-dir> — patch ZIPIMPORT (owner 11/25): 💎 → "📦 Import ZIP of job files".
-//   · the 💎 item is near the top (right after 🏗 Project Hubs) for an admin and a PM, opens the sheet (no pop-ups);
+//   · the 💎 item is near the top (above the 💎 Shortcuts; 🏗 Project Hubs is gone — patch DIAMOND) for an admin and a PM, opens the sheet (no pop-ups);
 //   · a ZIP with a folder per address / PO: automatic placement (address, PO, Head Start client + address, PDF text),
 //     "needs a job" for a folder with no clue and for a folder that matches several jobs;
 //   · the folder pulldown changes a whole folder; ☑ portal ON by default, OFF (with why) for a sub invoice / W-9;
@@ -91,10 +91,11 @@ try {
   const hub = await a.ev(() => { if (!document.querySelector('.gc-hub-panel') && window._gcToggleHub) window._gcToggleHub(); return new Promise(r => setTimeout(() => {
     const p = [...document.querySelectorAll('.gc-hub-panel')].filter(x => x.getClientRects().length).pop(); if (!p) return r(null);
     const items = [...p.querySelectorAll('.gc-hub-item')]; const it = p.querySelector('#gc-zipimp-hub');
-    r({ idx: items.indexOf(it), n: items.length, prev: it && it.previousElementSibling && it.previousElementSibling.id, text: it && it.textContent.trim() }); }, 600)); });
+    const sc = p.querySelector('#gc-dm-shortcuts');   /* patch DIAMOND: 🏗 Project Hubs is off the 💎; the item stays at the top, above the Shortcuts */
+    r({ idx: items.indexOf(it), n: items.length, prev: it && it.previousElementSibling && it.previousElementSibling.id, beforeSc: !!(it && (!sc || (it.compareDocumentPosition(sc) & 4))), text: it && it.textContent.trim() }); }, 600)); });
   console.log('    💎 item: ' + JSON.stringify(hub));
   ok(hub && hub.idx >= 0 && hub.idx <= 4 && hub.n > 8, 'admin: 💎 "📦 Import ZIP of job files" is near the top of the menu', hub);
-  ok(hub && hub.prev === 'gc-hub-projhub-link', 'right after 🏗 Project Hubs', hub);
+  ok(hub && hub.beforeSc && hub.prev !== 'gc-hub-projhub-link', 'at the top, above the 💎 Shortcuts (🏗 Project Hubs is no longer on the 💎 — patch DIAMOND)', hub);
   await a.ev(() => document.querySelector('#gc-zipimp-hub').click());
   const opened = await H.waitFor(a, () => { const o = document.getElementById('gczi-ov'); return o && o.getClientRects().length ? getComputedStyle(o.querySelector('.gczi')).backgroundColor : null; }, null, 8000);
   ok(opened === 'rgb(255, 255, 255)', 'the sheet opens, light (white) panel', opened);

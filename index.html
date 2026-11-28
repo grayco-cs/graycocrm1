@@ -25116,11 +25116,9 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🔍", label: "Find a Sub", fn: function(){ if(window._gcOpenSubSearch) window._gcOpenSubSearch(); } },
         { icon: "🔎", label: "Search Everything", fn: function(){ if(window._gcUniversalSearch) window._gcUniversalSearch(); } },
         { icon: "➕", label: "Sub Sign-Up", fn: function(){ if(window._gcSubSignup) window._gcSubSignup(); } },
-        { icon: "📜", label: "Contract & Doc Templates", fn: function(){ try{ if(window.gcSettings && window.gcSettings.open) window.gcSettings.open(); }catch(e){} } },
         { icon: "📋", label: "Approvals", fn: function(){ if(window._gcOpenPmApprovals) window._gcOpenPmApprovals(); else if(window._gcOpenExpenseApprovals) window._gcOpenExpenseApprovals(); } },
         { icon: "🔔", label: "Alerts", fn: function(){ if(window._gcOpenAlerts) window._gcOpenAlerts(); } },
         { icon: "📬", label: "Notifications", fn: function(){ if(window._gcOpenNotifications) window._gcOpenNotifications(); } },
-        { icon: "♻️", label: "Recover Approvals", fn: function(){ if(window._gcRecoverApprovalsUI) window._gcRecoverApprovalsUI(); } },
         { icon: "💰", label: "Project Payments", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ if(window._gcMyFinancials) window._gcMyFinancials(); } else { openPaymentsDashboard(); } } },
         { icon: "📄", label: "All Company Invoices", fn: function(){ window._gcOpenAllInvoices && window._gcOpenAllInvoices(); } },
         { icon: "📊", label: "Financials", fn: function(){ if(window._gcIsPM && window._gcIsPM()){ if(window._gcMyFinancials) window._gcMyFinancials(); } else if(window._gcOpenOwnerFinancials){ window._gcOpenOwnerFinancials(); } } },
@@ -25133,18 +25131,14 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "📅", label: "Add to iPhone Calendar", fn: function(){ window._gcOpenPhoneCalPicker && window._gcOpenPhoneCalPicker(); } },
         { icon: "📅", label: "Edit Schedule", fn: function(){ window._gcOpenFieldSchedule && window._gcOpenFieldSchedule(); } },
         { icon: "🔧", label: "Fix Schedule Items (no job)", fn: function(){ window._gcOpenFixSchedule && window._gcOpenFixSchedule(); } },
-        { icon: "🧪", label: "Test the CRM", adminOnly: true, fn: function(){ if(window._gcIsPM && window._gcIsPM()){ alert("Testing is for owners/office."); return; } if(window._gcRunTests) window._gcRunTests(120); } },   /* HUBFIX: owners / office only — a PM got a button that only said no */
         { icon: "\uD83E\uDDF9", label: "Clean Empty Drafts", adminOnly:true, fn: function(){ if(window._gcCleanEmptyDrafts) window._gcCleanEmptyDrafts(); else alert("Cleanup not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDCAC", label: "Job Messages", fn: function(){ if(window._gcPickJobForMessages) window._gcPickJobForMessages(); else alert("Job Messages not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDCB0", label: "Collections Desk", fn: function(){ if(window._gcOpenCollectionsDesk) window._gcOpenCollectionsDesk(); else alert("Collections Desk not loaded — hard-refresh and try again."); } },
         { icon: "\uD83D\uDD18", label: "Test Buttons On This Screen", adminOnly: true, fn: function(){ if(window._gcButtonSelfTest) window._gcButtonSelfTest(); else alert("Button test not loaded — hard-refresh and try again."); } },
-        { icon: "🧹", label: "Purge Test Data", adminOnly: true, fn: function(){ if(window._gcPurgeTestDataUI) window._gcPurgeTestDataUI(); } },
-        { icon: "☁️", label: "Force-Clean Cloud", adminOnly: true, fn: function(){ if(window._gcForceCleanCloudUI) window._gcForceCleanCloudUI(); } },
         { icon: "☁", label: "Cloud Backups", fn: function(){ if(window._gcOpenBackupManager) window._gcOpenBackupManager(); } },
         { icon: "💰", label: "Cash Position", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenCashPosition && window._gcOpenCashPosition(); } },
         { icon: "📊", label: "P&L (auto)", adminOnly: true, fn: function(){ window._gcOpenPnL && window._gcOpenPnL(); } },
         { icon: "👥", label: "Team Status", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenTeamStatus && window._gcOpenTeamStatus(); } },
-        { icon: "\uD83D\uDCF7", label: "Import CompanyCam Jobs", fn: function(){ if(window._gcPullCompanyCamJobs){ window._gcPullCompanyCamJobs(true); } else { alert("CompanyCam import not ready."); } } },
         { icon: "\uD83D\uDCC4", label: "Sync my Google Docs", fn: function(){ window._gcPullGoogleQuotes && window._gcPullGoogleQuotes(true); } },
         
         { icon: "\uD83D\uDCE2", label: "Send Alert to All PMs", adminOnly: true, fn: function(){ if(window._gcOpenBroadcast) window._gcOpenBroadcast(); else alert("Broadcast not loaded \u2014 hard-refresh and try again."); } },   /* HUBFIX: owners / office only — a PM got a button that only said no */
@@ -25154,23 +25148,15 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\u2699", label: "Pay Structure Templates", payroll: true, adminOnly: true, fn: function(){ if(window._gcPayTemplatesOpen) window._gcPayTemplatesOpen(); else alert("Not loaded \u2014 hard-refresh and try again."); } },   /* patch PMG */
         { icon: "\uD83E\uDDEE", label: "PM Commission + Calculator", fn: function(){ if(window._gcPickPMForCommission) window._gcPickPMForCommission(); else alert("Commission screen not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDCB0", label: "PM Pay (type & source)", payroll: true, adminOnly: true, fn: function(){ if(window._gcPickPMForMatrixPay) window._gcPickPMForMatrixPay(); else if(window._gcPickPMForPay) window._gcPickPMForPay(); else alert("Pay editor not loaded \u2014 hard-refresh and try again."); } },
-        { icon: "\uD83D\uDCF7", label: "Map CompanyCam \u2192 PM (lead credit)", adminOnly: true, fn: function(){ if(window._gcSetCCCreatorMap) window._gcSetCCCreatorMap(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
-        { icon: "\uD83D\uDD04", label: "Re-import ALL CompanyCam jobs", fn: function(){ if(window._gcReimportAllCompanyCam) window._gcReimportAllCompanyCam(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83D\uDC64", label: "Set Job Lead Source", fn: function(){ if(window._gcPickJobForLeadSource) window._gcPickJobForLeadSource(); else alert("Lead source picker not loaded \u2014 hard-refresh and try again."); } },
-        { icon: "\uD83D\uDCBE", label: "Restore Schedule (this device)", adminOnly: true, fn: function(){ if(window._gcRestoreSchedFromLocalBackup) window._gcRestoreSchedFromLocalBackup(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
-        { icon: "\uD83E\uDE7A", label: "Data Health Check (read-only)", adminOnly: true, fn: function(){ if(window._gcDataHealthCheck) window._gcDataHealthCheck(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         { icon: "\uD83E\uDE7A", label: "Sync Health Check", adminOnly: true, fn: function(){ if(window._gcSyncHealthCheck) window._gcSyncHealthCheck(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
         
-        { icon: "\uD83D\uDD04", label: "Recover Deleted Jobs", adminOnly: true, fn: function(){ if(window._gcRecoverDeletedJobs) window._gcRecoverDeletedJobs(); else alert("Not loaded \u2014 hard-refresh and try again."); } },
-        
-        { icon: "\uD83D\uDCBE", label: "Download Full Backup (all data)", adminOnly: true, fn: function(){ if(window._gcDownloadFullBackup) window._gcDownloadFullBackup(); else alert("Backup not loaded \u2014 hard-refresh and try again."); } },
         
         
         
         
-        { icon: "\uD83D\uDEA8", label: "UN-HIDE All Estimates", adminOnly: true, fn: function(){ if(window._gcUnhideAllEstimates) window._gcUnhideAllEstimates(); else alert("Un-hide tool not loaded — hard-refresh and try again."); } },
         
-        { icon: "\uD83D\uDD17", label: "Merge Duplicate Jobs", adminOnly: true, fn: function(){ if(window._gcMergeDuplicateJobs) window._gcMergeDuplicateJobs(); else alert("Merge jobs tool not loaded — hard-refresh and try again."); } },
+        
         
         
         { icon: "💵", label: "PM Commission Setup", adminOnly: true, ownerOnly: true, fn: function(){ window._gcOpenCustomCommission && window._gcOpenCustomCommission(); } },
@@ -25181,7 +25167,6 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🔍", label: "Rate Category Check", fn: function(){ window._gcOpenCategoryCheck && window._gcOpenCategoryCheck(); } },
         { icon: "✉️", label: "Overdue Reminders", fn: function(){ window._gcOpenOverdueEmails && window._gcOpenOverdueEmails(); } },
         { icon: "🧾", label: "Merge Draw Invoices", fn: function(){ window._gcOpenDrawMerge && window._gcOpenDrawMerge(); } },
-        { icon: "📅", label: "Download Schedule PDF", fn: function(){ window._gcOpenSchedulePrint && window._gcOpenSchedulePrint(); } },
         { icon: "👷", label: "Sub Details", fn: function(){ window._gcOpenSubExtra && window._gcOpenSubExtra(); } },
         { icon: "🌅", label: "My Daily Digest", fn: function(){ window._gcOpenDailyDigest && window._gcOpenDailyDigest(true); } },
         { icon: "📥", label: "Owner Inbox", fn: function(){ window._gcOpenOwnerInbox && window._gcOpenOwnerInbox(); } },
@@ -25196,13 +25181,11 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83C\uDFE6", label: "Bank Accounts", adminOnly: true, fn: function(){ if (window._gcStmtBankDoor && window._gcStmtBankDoor("accounts")) return; window._gcOpenAccounts && window._gcOpenAccounts(); } },
         { icon: "\uD83E\uDDFE", label: "Monthly Bank Check", adminOnly: true, fn: function(){ if (window._gcStmtBankDoor && window._gcStmtBankDoor("recon")) return; window._gcOpenBankReconcile && window._gcOpenBankReconcile(); } },
         { icon: "⚖️", label: "Contract Overrides", fn: function(){ window._gcOpenOverrideApprovals && window._gcOpenOverrideApprovals(); } },
-        { icon: "🧠", label: "Business Brain (issues)", fn: function(){ window._gcOpenBusinessBrain && window._gcOpenBusinessBrain(); } },
         { icon: "💰", label: "Pay Structures", payroll: true, fn: function(){ window._gcOpenPayStructures && window._gcOpenPayStructures(); } },
         { icon: "📄", label: "Import Google Docs", fn: function(){
             if (window.GC && window.GC.openGDocsImporter) window.GC.openGDocsImporter();
             else GC.toast("Importer not loaded yet, try again in a moment", "warn");
           } },
-        { icon: "📈", label: "P&L by Job", fn: function(){ if(window._gcOpenPnL) window._gcOpenPnL(); } },
         { icon: "\uD83D\uDCD8", label: "The Books", fn: function(){ if(window._gcOpenBooks) window._gcOpenBooks(); } },
         { icon: "\uD83D\uDCB5", label: "My Pay", fn: function(){ if(window._gcOpenMyPay) window._gcOpenMyPay(); } },
         { icon: "\u2705", label: "Payroll Check", payroll: true, fn: function(){ if(window._gcOpenPayrollCheck) window._gcOpenPayrollCheck(); } },
@@ -25211,22 +25194,14 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "\uD83E\uDDFE", label: "Commission Audit", fn: function(){ if(window._gcOpenCommissionAudit) window._gcOpenCommissionAudit(); } },
         { icon: "\uD83D\uDCF7", label: "CompanyCam", fn: function(){ if(window._gcOpenCompanyCamTab) window._gcOpenCompanyCamTab(); } },
         { icon: "\u2601", label: "Check the cloud", fn: function(){ if(window._gcOpenCloudCheck) window._gcOpenCloudCheck(); } },
-        { icon: "\uD83E\uDDF9", label: "Duplicates", fn: function(){ if(window._gcOpenDupeReview) window._gcOpenDupeReview(); } },
-        { icon: "\uD83D\uDD0D", label: "Duplicate check", fn: function(){ if(window._gcOpenDupCheck) window._gcOpenDupCheck(); } },
         { icon: "\uD83D\uDCE5", label: "Import from QuickBooks (CSV)", fn: function(){ if(window._gcOpenQbCsvImport) window._gcOpenQbCsvImport(); } },
         { icon: "👤", label: "Card holders", adminOnly: true, fn: function(){ if(window._gcCardHolders) window._gcCardHolders.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "🔗", label: "QuickBooks ↔ CRM", adminOnly: true, fn: function(){ if(window._gcQbCheck) window._gcQbCheck.open(); else alert("Still loading, try again in a moment."); } },   /* patch QBCSV */
         { icon: "💎", label: "Project CRMs", fn: openBigJobPicker },
         { icon: "🚨", label: "Review Queue", fn: openReviewQueue },
-        { icon: "🔁", label: "Restore from Backup", fn: openRestoreTool },
-        { icon: "⬇️", label: "Download Backup", fn: function(){ window._gcDownloadBackup && window._gcDownloadBackup(); } },
-        { icon: "🔄", label: "Recover My Data", adminOnly: true, fn: function(){ if(window._gcRecoverEverything) window._gcRecoverEverything(); else alert("Recovery is still loading, try again in a moment."); } },
-        { icon: "🧹", label: "Remove Duplicates", adminOnly: true, fn: function(){ if(window._gcCleanup) window._gcCleanup(); else if(window._gcOpenDupeReview) window._gcOpenDupeReview(); else alert("Still loading, try again in a moment."); } },   /* HUBFIX: _gcRemoveDuplicates() only writes to the console — open the copies-grouped screen instead */
         { icon: "🗓️", label: "Fix Duplicate Schedule", adminOnly: true, fn: function(){ if(window._gcForceFixSchedule) window._gcForceFixSchedule(); else alert("Still loading, try again in a moment."); } },
         { icon: "🕐", label: "Timesheets", notPM: true, fn: function(){ if(window._gcOpenTimesheets) window._gcOpenTimesheets(); else alert("Still loading, try again in a moment."); } },
         { icon: "💵", label: "Payroll", payroll: true, adminOnly: true, fn: function(){ if(window._gcOpenPayroll) window._gcOpenPayroll(); else alert("Still loading, try again in a moment."); } },
-        { icon: "🔎", label: "Deep Scan Recovery", adminOnly: true, fn: function(){ if(window._gcDeepScanRecover) window._gcDeepScanRecover(); else alert("Still loading, try again in a moment."); } },
-        { icon: "🗑️", label: "Delete Job by PO/Title", adminOnly: true, fn: function(){ if(window._gcDeleteJobPrompt) window._gcDeleteJobPrompt(); else alert("Still loading, try again in a moment."); } },
         { icon: "📅", label: "Daily Backups", fn: function(){ window._gcOpenDailyBackups && window._gcOpenDailyBackups(); } },
         { icon: "🏦", label: "Bank / ACH details", adminOnly: true, fn: function(){ window._gcEditACHDetails && window._gcEditACHDetails(); } },
         { icon: "💾", label: "Import / Export Data", fn: function(){ window.gcImportExport && window.gcImportExport(); } },
@@ -25237,8 +25212,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🎛", label: "Reset Button Positions", fn: function(){
             if (window.GC && window.GC.resetButtonPositions) window.GC.resetButtonPositions();
             else GC.toast("Reset unavailable", "warn");
-          } },
-        { icon: "🩺", label: "System Health Check", fn: openHealthCheck }
+          } }
       ];
       // --- Apply saved custom order; default puts "Import / Export Data" 3rd ---
       (function(){
@@ -25293,7 +25267,8 @@ if (!localStorage.getItem("_helpShown")) {
           return !it.payroll || _canPay;
         });
       })();
-      var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Card holders": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
+      /* patch DIAMOND (owner 11/28): the one-time fixes, the red recovery tools and the duplicates are off the 💎 */
+      var _hubGroups = {"Business Brain": "Daily Work", "Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Import card statement": "Money & Invoices", "Import bank statement": "Money & Invoices", "Import from QuickBooks (CSV)": "Money & Invoices", "QuickBooks ↔ CRM": "Money & Invoices", "Card holders": "Money & Invoices", "Needs a job": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Reset Button Positions": "Help & Tools"};
       var _hubOrder = ['Daily Work','Money & Invoices','Pay & Commissions','Schedule','Automation','Data & Setup','Help & Tools'];
       // Group items, then render each section with a header.
       var _bySec = {}; items.forEach(function(it){ var g=_hubGroups[it.label]||'More'; (_bySec[g]=_bySec[g]||[]).push(it); });
@@ -26078,6 +26053,7 @@ function openRestoreTool(){
 
     // Expose globally
     window.GC.openPaymentsDashboard = openPaymentsDashboard;
+    window._gcOpenSystemHealth = openHealthCheck;   /* patch DIAMOND: ⚙ Admin → CRM health → 🖥 System check */
 
     // System Health Check — shows captured errors + storage stats
     function openHealthCheck(){
@@ -48126,9 +48102,7 @@ function injectHubLink(){
   hubPanel.insertBefore(item, hubPanel.firstChild);
 }
 
-var _hObs = new MutationObserver(injectHubLink);
-document.addEventListener('gc-hub-open', function(){ try { injectHubLink(); } catch (e) {} });   /* HUBFIX: in the menu the moment it opens */
-setTimeout(function(){ _hObs.observe(document.body,{childList:true,subtree:false}); }, 2000);
+void injectHubLink;   /* patch DIAMOND (owner 11/28): no 🏗 Project Hubs on the 💎 — 💎 Project CRMs is the same picker */
 
 // ── Auto-flag on project save ─────────────────────────────────────────────
 // Poll projects every 30s for new $500K+ jobs not yet flagged
@@ -50877,10 +50851,7 @@ if(typeof window.getAlerts === 'function'){
   };
 }
 
-var _eqObs = new MutationObserver(injectEmailQueueBtn);
-document.addEventListener('gc-hub-open', function(){ try { injectEmailQueueBtn(); } catch (e) {} });   /* HUBFIX: in the menu the moment it opens */
-setTimeout(function(){ _eqObs.observe(document.body,{childList:true,subtree:false}); }, 2000);
-setInterval(injectEmailQueueBtn,15000);
+void injectEmailQueueBtn;   /* patch DIAMOND (owner 11/28): no 📧 Email Queue on the 💎 — ✉ Customer e-mails & texts (the approval list) replaces it */
 
 })();
 
@@ -81977,6 +81948,8 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var pushKeys=['projects','schedule','invs','expenses','customers','subs','cos','estimates','leads'];
       pushKeys.forEach(function(pk){
         try{
+          /* patch DIAMOND: only a list this run actually cleaned (it pushed all nine every time, found or not) */
+          if(!(report.removed['grayco_'+pk] || report.removed[pk] || (pk==='invs' && report.removed.invoices))) return;
           var v=localStorage.getItem('grayco_'+pk);
           if(v && window._supaUpsertNow){ window._supaUpsertNow(pk, v); }
         }catch(e){}
@@ -82731,7 +82704,7 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
 /* ===== Auto-purge test data — test data never lingers more than a few minutes ===== */
 (function(){
   'use strict';
-  var SWEEP_MS = 2 * 60 * 1000;   // every 2 minutes (test data never lingers past 2 min)
+  var SWEEP_MS = 2 * 60 * 60 * 1000;   // patch DIAMOND (owner 11/28: "nah do every 2 hours"): at most every 2 hours (was 2 minutes)
   var lastRun = 0;
 
   function hasTestData(){
@@ -82774,7 +82747,7 @@ window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: abov
     }catch(e){ console.warn('[GC] auto-purge failed', e); }
   }
 
-  // Check every minute; the SWEEP_MS gate means it actually cleans at most every 3 min.
+  // Checked every 30 s (a cheap look); the SWEEP_MS gate means it cleans at most every 2 hours, and it writes only what it removed.
   setInterval(sweep, 30*1000);
   setTimeout(sweep, 30*1000);   // first pass 30s after load
   console.log('[GC] Test-data auto-purge armed (only active within 10 min after a test).');
@@ -95811,8 +95784,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
       row.innerHTML='<button type="button" id="_gcGPOpenBtn" data-gcu-open="'+String(proj.id).replace(/[&"<>]/g,'')+'" '
         +'style="background:#16a34a;color:#fff;border:none;cursor:pointer;padding:6px 13px;border-radius:7px;'
         +'font-size:12px;font-weight:800;font-family:inherit">📸 Open in GrayCo Photos</button>'
-        +(url?('<a href="'+url+'" target="_blank" rel="noreferrer" style="font-size:11px;color:#64748b;text-decoration:underline">CompanyCam ↗</a>'):'')
-        +'<span style="font-size:11px;color:#8a94a6">Every photo of this job</span>';
+        +(url?('<a href="'+url+'" target="_blank" rel="noreferrer" style="font-size:11px;color:#64748b;text-decoration:underline">CompanyCam ↗</a>'):'');   /* patch DIAMOND: no "Every photo of this job" caption (owner: "we know") */
       if(h1.parentElement) h1.parentElement.insertBefore(row, h1.nextSibling);
     }catch(e){}
   }
@@ -119082,9 +119054,7 @@ window._gcCleanup = function(){
       panel.insertBefore(item, panel.firstChild);
     }catch(e){}
   }
-  try{ if(window.__GC_BEAT) window.__GC_BEAT('cleanup menu', add); }catch(e){}
-  document.addEventListener('gc-hub-open', add);   /* HUBFIX: it goes at the top — there the moment the menu opens, not 150 ms later under the pointer */
-  document.addEventListener('click', function(){ setTimeout(add, 150); }, true);
+  void add;   /* patch DIAMOND (owner 11/28: "take off clean up job list button"): not on the 💎 menu — _gcCleanup() stays */
 })();
 
 console.log('[GC] _gcCleanup() — every job, an × on each, copies grouped, one merge button. '
@@ -121686,8 +121656,7 @@ window._gcRestoreExact = async function(data, opts){
       panel.appendChild(item);
     }catch(e){}
   }
-  try{ if(window.__GC_BEAT) window.__GC_BEAT('backup menu', add); else setInterval(add, 3000); }catch(e){}
-  document.addEventListener('click', function(){ setTimeout(add, 150); }, true);
+  void add;   /* patch DIAMOND (owner 11/28: no duplicate buttons): not on the 💎 menu — 💎 Daily Backups is the one restore door; _gcBackupNow / _gcRestoreExact stay */
 })();
 console.log('[GC] Backup & restore: _gcBackupNow() · _gcBackupCheck() · _gcRestoreExact() then _gcRestoreExact({yes:true}). A restore is your decision — removed rows are tombstoned and pushed, so no sync puts them back.');
 })();
@@ -147345,7 +147314,6 @@ function SECTIONS0(){ return withCustom([
     row('Sync health', 'Is this computer sharing with the cloud? What is waiting?', '💎 → Sync check', F('_gcSyncHealthCheck')),
     row('Cloud check', 'Compare this computer with the cloud.', '💎 → Cloud check', F('_gcOpenCloudCheck')),
     row('Data health', 'Duplicate jobs, invoices with no job, schedule problems.', '💎 → Data health', F('_gcDataHealthCheck')),
-    row('Make the cloud the truth', 'Old records coming back? Every other computer drops the records only it has (it keeps a copy) instead of sending them back.', 'Admin (moved here)', F('_gcMakeCloudTheTruth'), 'act'),
     row('Find edits that were undone', 'Compare every job with the backups kept and put back what a sync undid (you choose).', 'Admin (moved here)', F('_gcxOpenUndone')),
     row('Recover deleted jobs', 'Scan the backups for jobs that were deleted and bring them back.', '💎 → Recover jobs', F('_gcRecoverDeletedJobs')),
     row('Storage', 'How many records of each kind, and the cloud connection.', 'Admin → Storage', { have: function(){ return true; }, run: function(){ adminTab('Storage'); } }, 'act')
@@ -180204,7 +180172,7 @@ D.addEventListener('click', function(ev){
 
 /* ═══ ⚙ ADMIN SECTIONS ══════════════════════════════════════════════════════ */
 function renderHealth(box){
-  box.innerHTML = (W._gcSpeedSummary ? '<div id="gc-speed-summary" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#f1f5f9;color:#0f172a;font-size:13px;font-weight:600">⚡ ' + esc(W._gcSpeedSummary()) + '</div>' : '') +   /* patch BOOT */
+  box.innerHTML = (W._gcDiamond && W._gcDiamond.healthStrip ? W._gcDiamond.healthStrip() : '') /* patch DIAMOND */ + (W._gcSpeedSummary ? '<div id="gc-speed-summary" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#f1f5f9;color:#0f172a;font-size:13px;font-weight:600">⚡ ' + esc(W._gcSpeedSummary()) + '</div>' : '') +   /* patch BOOT */
     '<p style="color:#55626F">The same short report the admins get by e-mail on the 1st of each month.</p><div data-h>Checking…</div><div style="margin-top:10px"><button type="button" data-send style="' + BTNP + '">📨 Send it to the admins now</button><button type="button" data-re style="' + BTN + '">↻ Check again</button></div>';
   var DOTS = { green: '🟢', amber: '🟡', red: '🔴' };
   function chAuth(){ var h = {}; try { var s = JSON.parse(W.localStorage.getItem('gc_auth_v1') || 'null'); if (s && s.access_token) h.Authorization = 'Bearer ' + s.access_token; } catch (e) {} return h; }   /* patch SPEED2 */
@@ -221840,7 +221808,7 @@ function cleanItem(x, base){
   if (/^(941|suta|futa)$/.test(s(x.pay))) it.pay = s(x.pay);
   if (isYmd(x.since)) it.since = s(x.since);
   if (x.personal || x.owner) { it.personal = true; it.owner = low(x.owner); it.who = x.who === 'admins' ? 'admins' : 'own'; it.amount = r2(x.amount); }
-  else it.who = /^(admins\+office|admins|office)$/.test(s(x.who)) ? s(x.who) : 'admins+office';
+  else it.who = 'admins';   /* patch DIAMOND (owner 11/28: "tax deadlines I only need notifications to admin"): the admins, never the office */
   if (x.custom) it.custom = true;
   if (x.confirmedBy) it.confirmedBy = s(x.confirmedBy).slice(0, 80);
   return it;
@@ -221912,7 +221880,7 @@ function recipients(item, people){
     out = item.who === 'admins' || !item.owner || A.indexOf(low(item.owner)) < 0 ? A : [low(item.owner)];
     return uniq(out.filter(function(e){ return A.indexOf(e) >= 0; }));
   }
-  out = item.who === 'admins' ? A : item.who === 'office' ? O : A.concat(O);
+  out = A; void O;   /* patch DIAMOND: company items remind the admins only (role) */
   return uniq(out);
 }
 function uniq(l){ var o = []; l.forEach(function(x){ if (x && o.indexOf(x) < 0) o.push(x); }); return o; }
@@ -222071,7 +222039,7 @@ function alerts(){
   return out;
 }
 function todoItems(){
-  if (!canSee()) return [];
+  if (!canSee() || !realAdmin()) return [];   /* patch DIAMOND: tax reminders are the admins' (by role), not the office's */
   var sig = today() + '|' + S.ver + '|' + canSee() + seesOwner(); if (sig === TD.sig) return TD.v;
   var P = people(), out = [];
   alerts().forEach(function(a){
@@ -222267,7 +222235,7 @@ function editForm(it, kind){
       ? '<label>Remind<select data-f="who">' + opt('own', 'the owner only', it.who) + opt('admins', 'both admins', it.who) + '</select></label>'
         + '<label>Owner<select data-f="owner">' + P.admins.map(function(e){ return opt(e, nameOf(e), it.owner); }).join('') + '</select></label>'
         + '<label>The quarterly number ($)<input data-f="amount" inputmode="decimal" value="' + (num(it.amount) > 0 ? num(it.amount).toFixed(2) : '') + '"></label>'
-      : '<label>Remind<select data-f="who">' + opt('admins+office', 'admins + office', it.who) + opt('admins', 'admins only', it.who) + opt('office', 'office only', it.who) + '</select></label>'
+      : '<label>Remind<select data-f="who">' + opt('admins', 'the admins', 'admins') + '</select></label>'   /* patch DIAMOND: the admins only */
         + '<label>Amount estimate from Payroll<select data-f="pay">' + opt('', 'none', it.pay || '') + opt('941', 'Form 941 taxes', it.pay || '') + opt('suta', 'state unemployment', it.pay || '') + opt('futa', 'FUTA', it.pay || '') + '</select></label>')
     + '<label>Link <small>(https://…, e.g. EFTPS or TNTAP)</small><input data-f="link" value="' + esc(it.link) + '"></label>'
     + '</div><label>Notes<textarea data-f="notes" rows="2">' + esc(it.notes) + '</textarea></label>'
@@ -222292,7 +222260,7 @@ function calHtml(){
   var h = '<div class="gctx-cal" data-tax-cal="1"><div class="gctx-top"><div><b>🧾 Tax deadlines</b><div class="gctx-sub">Today ' + esc(T.longDate(today())) + '. Alerts: 7 days before, on the due day (8 AM Central) and every day while overdue — until someone taps ✓ Paid. '
     + (canEdit() ? 'Switch on what applies; the CPA confirms the rest.' : 'Only an admin changes this list.') + '</div></div>'
     + '<div class="gctx-tops">' + rowsHtml().html + '</div></div>'
-    + '<h4>Company &amp; payroll taxes <small>— admins + office</small></h4><div class="gctx-scroll"><table class="gctx-t">' + head + '<tbody>' + S.cal.items.map(function(it){ return itemRow(it, 'company', S.paid); }).join('') + '</tbody></table></div>'
+    + '<h4>Company &amp; payroll taxes <small>— reminders to the admins</small></h4><div class="gctx-scroll"><table class="gctx-t">' + head + '<tbody>' + S.cal.items.map(function(it){ return itemRow(it, 'company', S.paid); }).join('') + '</tbody></table></div>'
     + (canEdit() ? '<button type="button" class="gctx-btn" data-tax-a="add" data-kind="company">+ Add a deadline</button>' : '');
   if (seesOwner()) {
     h += '<h4>Owners — quarterly estimated tax <small>— admins only; the office never sees these</small></h4>'
@@ -222372,7 +222340,7 @@ D.addEventListener('change', function(e){
 /* ── ⚙ Admin → 🧾 Tax deadlines ── */
 function admSection(){
   if (typeof W._gcAdmAddSection !== 'function') return false;
-  W._gcAdmAddSection({ id: 'taxes', after: 'pay', ic: '🧾', t: 'Tax deadlines', d: 'Payroll taxes, the owners’ quarterly estimated tax, TN taxes — alerts to the admins and the office until paid',
+  W._gcAdmAddSection({ id: 'taxes', after: 'pay', ic: '🧾', t: 'Tax deadlines', d: 'Payroll taxes, the owners’ quarterly estimated tax, TN taxes — alerts to the admins until paid',
     render: function(box){ renderCal(box); load(); },
     count: function(){ var r = lists(), n = 0; r.forEach(function(L){ n += T.upcoming(L.cal, today(), L.paid, 0).overdue.length; }); return n ? n + ' overdue' : 'calendar'; } });
   return true;
@@ -262732,5 +262700,118 @@ window._gcAMJobPanel = function(e, re, z, De){
 
 window._gcAcctMail = { ok:ok, split:split, lists:lists, billTo:billTo, route:route, custOfJob:custOfJob, findByEmail:findByEmail, norm:norm, edRows:edRows, setRows:setRows };
 try{ console.log('[GC] APEMAILS: several client and accounts-payable e-mails per customer; money mail TO accounts payable, the client in CC (_gcAcctMail).'); }catch(e){}
+})();
+</script>
+<script>
+/* __GC_PATCH_DIAMOND__ — the 💎 menu, cleaned up (owner 11/28).   (patch DIAMOND)
+   Owner: "take off clean up job list button, take out 3 company cam imports — they should be imported through integrations —
+   and company cam email[queue] and project hubs, we don't want any duplicate button, those red ones delete them … ok add portals,
+   emails, don't add sales and spam, add bid portal … data health and job health can go there, crm health saves duplicates add".
+   • A small "Shortcuts" group near the top of the 💎 (before Daily Work), each item only for the roles that can use its screen
+     (by role, never by name):
+       👤 Customer portals        — the Customer portals tab (the roles that post to customers: SUPERPORTAL's canTab)
+       ✉ Customer e-mails & texts — the approval list of e-mails / texts to customers (gc_approval_queue; not the PM / expense
+                                     "Approvals"): admins, the office, PMs
+       🏗 Bid portal              — the SYS tab: admins, the office, and a role whose tab list has it (the Estimator)
+       🩺 CRM health · ☁ Cloud saves · 🔁 Duplicates — ⚙ Admin sections (admins and the office: whoever may open ⚙ Admin)
+   • ⚙ Admin → 🩺 CRM health starts with a row of links: 🩺 Job health (⚙ Admin → Job health), 📋 Data health (read-only) and
+     🖥 System check (this computer) — the two 💎 health items moved here.
+   Nothing here runs on a timer and nothing is written. API: window._gcDiamond = { items(), healthStrip(), state() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_DIAMOND__) return; window.__GC_PATCH_DIAMOND__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function warn(e){ try { console.warn('[GC DIAMOND]', e && e.message || e); } catch (x) {} }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+/* ── who (roles only) ── */
+function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function vas(){ try { return !!(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }
+function role(){
+  try { if (W._gcRP && typeof W._gcRP.role === 'function') { var r = s(W._gcRP.role()); if (r) return r; } } catch (e) {}
+  try { var m = W._gcMeNow || (typeof W._gcMeUser === 'function' ? W._gcMeUser() : null); return s(m && m.role); } catch (e) { return ''; }
+}
+/* admins and the office — the people ⚙ Admin opens for (👁 View as… shows the role being viewed) */
+function staff(){
+  if (vas()) { var r = role(); return /^admin$/i.test(r) || /^office/i.test(r); }
+  try { if (typeof W._gcAdmCanOpen === 'function') return !!W._gcAdmCanOpen(); } catch (e) {}
+  return realAdmin();
+}
+function pmRole(){ return /project manager|\bapm\b|assistant p/i.test(role()); }
+function uxHas(id){ try { var U = W._gcUx || {}, r = role(); return arr(U[r] || U[r.trim()]).indexOf(id) >= 0; } catch (e) { return false; } }
+function construction(){ try { var f = W._gcCo && W._gcCo.filter ? s(W._gcCo.filter()) : ''; return f !== 'mitigation' && f !== 'environmental'; } catch (e) { return true; } }
+function adm(sec){ return function(){ if (W._gcAdm && typeof W._gcAdm.open === 'function') W._gcAdm.open(sec); }; }
+function view(v){ return function(){ if (typeof W._setView === 'function') W._setView(v); }; }
+
+var ITEMS = [
+  { id: 'gc-dm-portals', ic: '👤', l: 'Customer portals',
+    can: function(){ try { return !!(W._gcSuperPortal && W._gcSuperPortal.canTab()); } catch (e) { return false; } }, run: view('custportals') },
+  { id: 'gc-dm-custmail', ic: '✉', l: 'Customer e-mails & texts to approve',
+    can: function(){ return typeof W._gcOpenApprovals === 'function' && (staff() || pmRole()); }, run: function(){ W._gcOpenApprovals(); } },
+  { id: 'gc-dm-bidportal', ic: '🏗', l: 'Bid portal',
+    can: function(){ return construction() && (staff() || uxHas('bidportal')); }, run: view('bidportal') },
+  { id: 'gc-dm-crmhealth', ic: '🩺', l: 'CRM health (job health, data health)', can: staff, run: adm('crmhealth') },
+  { id: 'gc-dm-syncq', ic: '☁', l: 'Cloud saves', can: staff, run: adm('syncq') },
+  { id: 'gc-dm-dedupe', ic: '🔁', l: 'Duplicates (merge, 7-day Undo)', can: staff, run: adm('dedupe') }
+];
+function mine(){ return ITEMS.filter(function(it){ try { return !!it.can(); } catch (e) { return false; } }); }
+
+var ITEM_CSS = 'display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#1f2937;border-bottom:1px solid #f1f5f9;';
+function build(list){
+  var box = D.createElement('div'); box.id = 'gc-dm-shortcuts';
+  var h = D.createElement('div'); h.className = 'gc-hub-sec'; h.textContent = 'Shortcuts';
+  h.style.cssText = 'padding:8px 12px 4px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#6b8ab5;';
+  box.appendChild(h);
+  list.forEach(function(it){
+    var el = D.createElement('div'); el.id = it.id; el.className = 'gc-hub-item'; el.setAttribute('data-label', it.l); el.style.cssText = ITEM_CSS;
+    el.innerHTML = '<span class="gc-hub-icon" style="font-size:18px">' + it.ic + '</span><span>' + esc(it.l) + '</span>';
+    el.addEventListener('click', function(){
+      try { if (typeof W._gcCloseHub === 'function') W._gcCloseHub(); } catch (e) {}
+      try { it.run(); } catch (e) { warn(e); }
+    });
+    box.appendChild(el);
+  });
+  return box;
+}
+/* right after the menu's title, before Daily Work (the items other patches put at the very top stay above it) */
+function place(panel){
+  try {
+    if (!panel || !panel.isConnected) return;
+    var box = panel.querySelector('#gc-dm-shortcuts');
+    if (!box) { var l = mine(); if (!l.length) return; box = build(l); }
+    var first = null; for (var c = panel.firstChild; c; c = c.nextSibling) { if (c !== box && c.classList && c.classList.contains('gc-hub-sec')) { first = c; break; } }
+    if (first) { if (box.nextSibling !== first) panel.insertBefore(box, first); }
+    else if (!box.parentNode) panel.appendChild(box);
+  } catch (e) { warn(e); }
+}
+D.addEventListener('gc-hub-open', function(e){
+  var p = e && e.detail && e.detail.panel; if (!p) p = D.querySelector('.gc-hub-panel');
+  place(p); later(function(){ place(p); }, 0); later(function(){ place(p); }, 300);
+});
+
+/* ── ⚙ Admin → 🩺 CRM health: the job health and data health doors ── */
+var BTN = 'border:1px solid #cbd5e1;background:#f8fafc;color:#1f2937;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit';
+function healthStrip(){
+  var b = [['job', '🩺 Job health — every open job scored'], ['data', '📋 Data health (read-only)'], ['sys', '🖥 System check (this computer)']];
+  return '<div id="gc-dm-health" style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px">' + b.map(function(x){
+    return '<button type="button" data-gcdm-h="' + x[0] + '" style="' + BTN + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>';
+}
+D.addEventListener('click', function(e){
+  var b = e.target && e.target.closest && e.target.closest('[data-gcdm-h]'); if (!b) return;
+  var k = b.getAttribute('data-gcdm-h');
+  try {
+    if (k === 'job') adm('health')();
+    else if (k === 'data' && typeof W._gcDataHealthCheck === 'function') W._gcDataHealthCheck();
+    else if (k === 'sys' && typeof W._gcOpenSystemHealth === 'function') W._gcOpenSystemHealth();
+  } catch (x) { warn(x); }
+}, false);
+
+W._gcDiamond = { items: function(){ return mine().map(function(it){ return it.id; }); }, healthStrip: healthStrip,
+  state: function(){ return { role: role(), staff: staff(), pm: pmRole(), items: mine().map(function(it){ return it.l; }) }; } };
+try { console.log('[GC] 💎 Shortcuts (patch DIAMOND) — _gcDiamond.state()'); } catch (e) {}
 })();
 </script>
